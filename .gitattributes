@@ -1,0 +1,9 @@
+# Normalize line endings to LF in the repository
+* text=auto eol=lf
+
+# Native / binary assets must not be touched
+*.node binary
+*.png binary
+*.ico binary
+*.icns binary
+pnpm-lock.yaml -text

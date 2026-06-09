@@ -1,0 +1,32 @@
+{
+  "name": "codepulse-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "CodePulse Desktop / 码脉桌面端 — local AI coding-agent status hub",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @codepulse/desktop dev",
+    "build": "pnpm -r --filter ./packages/* build && pnpm --filter @codepulse/desktop build",
+    "build:packages": "pnpm -r --filter ./packages/* build",
+    "dist": "pnpm --filter @codepulse/desktop dist",
+    "typecheck": "pnpm -r typecheck",
+    "smoke": "node scripts/run-smoke.mjs",
+    "lint": "prettier --check \"**/*.{ts,tsx,js,json,md}\"",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
+    "db:generate": "pnpm --filter @codepulse/storage db:generate"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.21.5",
+    "prettier": "^3.4.0",
+    "typescript": "^5.7.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["better-sqlite3", "electron", "esbuild"]
+  },
+  "packageManager": "pnpm@10.19.0"
+}

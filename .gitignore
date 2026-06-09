@@ -1,0 +1,36 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+out/
+build/
+release/
+*.tsbuildinfo
+
+# local data / db
+*.sqlite
+*.sqlite-journal
+*.db
+data/
+.codepulse/
+
+# generated test bundles
+scripts/*.generated.mjs
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# editor / os
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+Thumbs.db
+
+# env
+.env
+.env.local

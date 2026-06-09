@@ -1,0 +1,26 @@
+appId: dev.codepulse.desktop
+productName: CodePulse
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - package.json
+# Native addon must stay unpacked from the asar archive so it can be dlopen'd.
+asarUnpack:
+  - "**/*.node"
+  - "**/better-sqlite3/**"
+win:
+  target:
+    - nsis
+mac:
+  target:
+    - dmg
+  category: public.app-category.developer-tools
+linux:
+  target:
+    - AppImage
+  category: Development
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true

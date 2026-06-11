@@ -12,12 +12,13 @@ import { readdir, open, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { normalizeEvent, type StatusHub } from '@codepulse/core'
-import type { AgentEventInput, TokenPayload } from '@codepulse/shared'
+import { parseTokenCount, type AgentEventInput, type TokenPayload } from '@codepulse/shared'
 
 const TAIL_BYTES = 1024 * 1024
 const HEAD_BYTES = 64 * 1024
 const MAX_ROLLOUT_FILES = 300
-const DEFAULT_CODEX_CONTEXT_WINDOW = Number(process.env.CODEPULSE_CODEX_CONTEXT_WINDOW) || 256_000
+const DEFAULT_CODEX_CONTEXT_WINDOW =
+  parseTokenCount(process.env.CODEPULSE_CODEX_CONTEXT_WINDOW) ?? 256_000
 export const CODEX_USAGE_POLL_INTERVAL_MS =
   Number(process.env.CODEPULSE_CODEX_USAGE_POLL_MS) || 5_000
 
@@ -259,7 +260,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function numberValue(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+  return parseTokenCount(value)
 }
 
 function stringValue(value: unknown): string | undefined {

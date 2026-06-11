@@ -192,6 +192,43 @@ test('Codex usage reader does not double count cached input for context percent'
   }
 })
 
+test('Codex usage reader parses 1M context window strings as one million tokens', async () => {
+  const home = join(tmpdir(), `codepulse-codex-window-unit-${Date.now()}`)
+  const sessions = join(home, 'sessions', '2026', '06', '11')
+  const rollout = join(sessions, 'rollout-2026-06-11T10-00-00-window-unit.jsonl')
+
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    rollout,
+    [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: 'window-unit', cwd: 'E:/project/window-unit' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: '1M',
+            total_token_usage: { input_tokens: 250000, output_tokens: 1000, total_tokens: 251000 },
+            last_token_usage: { input_tokens: 250000, output_tokens: 1000, total_tokens: 251000 },
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  try {
+    const usage = await readLatestCodexUsage({ cwd: 'E:/project/window-unit' }, { codexHome: home })
+    assert.equal(usage.context_window_size, 1_000_000)
+    assert.equal(usage.context_used_percent, 25)
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
 test('Codex usage reader scans newer session folders before capped history', async () => {
   const home = join(tmpdir(), `codepulse-codex-cap-${Date.now()}`)
   const oldSessions = join(home, 'sessions', '2025', '01', '01')

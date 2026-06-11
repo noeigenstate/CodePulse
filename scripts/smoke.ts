@@ -11,6 +11,7 @@ import { detectCodexAgent, startLocalServer } from '@codepulse/local-server'
 import {
   formatTokenCount,
   formatTokenPercent,
+  formatTokenUsage,
   type AgentRuntimeState,
   type NotificationRequest,
   TurnState,
@@ -130,6 +131,11 @@ function createFakeDb() {
 try {
   // --- 共享 token 格式化 ------------------------------------------------
   check('token count formats thousands', formatTokenCount(66899) === '66.9k')
+  check('token count formats millions', formatTokenCount(1_000_000) === '1M')
+  check(
+    'token usage labels million counts as token units',
+    formatTokenUsage({ accuracy: 'estimated', total: 1_000_000 }) === '总计 1M token',
+  )
   check('token percent formats as percentage', formatTokenPercent(83.4) === '83%')
   check(
     'dashboard display always includes Codex slot',

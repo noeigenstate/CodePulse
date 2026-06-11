@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { formatTokenQuotaNotice } from '@codepulse/shared'
+import { formatTokenCount, formatTokenQuotaNotice, formatTokenUsage } from '@codepulse/shared'
 import { formatQuotaDetail } from '../apps/desktop/src/renderer/src/lib/quotaFormat.js'
+
+test('token counts use decimal M as one million tokens', () => {
+  assert.equal(formatTokenCount(1_000_000), '1M')
+  assert.equal(formatTokenCount(1_250_000), '1.25M')
+  assert.equal(formatTokenUsage({ accuracy: 'estimated', total: 1_000_000 }), '总计 1M token')
+})
 
 test('quota detail includes five-hour and weekly reset countdowns', () => {
   const now = 1_000_000_000_000

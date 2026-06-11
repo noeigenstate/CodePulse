@@ -21,7 +21,7 @@ import { statSync, openSync, readSync, closeSync } from 'node:fs'
 import { readStdinJson, postEvent } from '../lib/post.js'
 
 /** 默认模型上下文窗口，可通过 CODEPULSE_CONTEXT_WINDOW 覆盖。 */
-const CONTEXT_WINDOW = Number(process.env.CODEPULSE_CONTEXT_WINDOW) || 200000
+const CONTEXT_WINDOW = parseTokenCount(process.env.CODEPULSE_CONTEXT_WINDOW) ?? 200000
 /** 从 transcript 末尾扫描 usage 块的字节数。 */
 const TAIL_BYTES = 512 * 1024
 
@@ -163,5 +163,18 @@ function normalizeContextWindow(value) {
 }
 
 function numberValue(value) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+  return parseTokenCount(value)
+}
+
+function parseTokenCount(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value !== 'string') return undefined
+  const normalized = value.trim().replace(/,/g, '').replace(/_/g, '')
+  const match = normalized.match(/^(\d+(?:\.\d+)?)\s*([km])?(?:\s*(?:tok|tokens?))?$/i)
+  if (!match) return undefined
+  const amount = Number(match[1])
+  if (!Number.isFinite(amount)) return undefined
+  const unit = match[2]?.toLowerCase()
+  const multiplier = unit === 'm' ? 1_000_000 : unit === 'k' ? 1_000 : 1
+  return Math.round(amount * multiplier)
 }

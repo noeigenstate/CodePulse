@@ -10,7 +10,8 @@ import { basename, join } from 'node:path'
 
 const TAIL_BYTES = 1024 * 1024
 const MAX_ROLLOUT_FILES = 500
-const DEFAULT_CODEX_CONTEXT_WINDOW = Number(process.env.CODEPULSE_CODEX_CONTEXT_WINDOW) || 256000
+const DEFAULT_CODEX_CONTEXT_WINDOW =
+  parseTokenCount(process.env.CODEPULSE_CODEX_CONTEXT_WINDOW) ?? 256000
 
 export async function readLatestCodexUsage(raw, options = {}) {
   try {
@@ -204,9 +205,22 @@ function normalizePath(value) {
 }
 
 function numberValue(value) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+  return parseTokenCount(value) ?? 0
 }
 
 function optionalNumber(value) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+  return parseTokenCount(value)
+}
+
+function parseTokenCount(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value !== 'string') return undefined
+  const normalized = value.trim().replace(/,/g, '').replace(/_/g, '')
+  const match = normalized.match(/^(\d+(?:\.\d+)?)\s*([km])?(?:\s*(?:tok|tokens?))?$/i)
+  if (!match) return undefined
+  const amount = Number(match[1])
+  if (!Number.isFinite(amount)) return undefined
+  const unit = match[2]?.toLowerCase()
+  const multiplier = unit === 'm' ? 1_000_000 : unit === 'k' ? 1_000 : 1
+  return Math.round(amount * multiplier)
 }

@@ -7,7 +7,7 @@
 import { memo, useEffect, useMemo, type ReactNode } from 'react'
 import {
   TOKEN_QUOTA_WINDOW_LABEL,
-  formatTokenCount,
+  formatTokenCountWithUnit,
   formatTokenPercent,
   formatTokenUsage,
   type AgentRuntimeState,
@@ -17,7 +17,6 @@ import {
 } from '@codepulse/shared'
 import { useStore } from './store.js'
 import { Header } from './components/Header.js'
-import { NotificationsRail } from './components/NotificationsRail.js'
 import { buildAgentPanels, type AgentPanel, type AgentWorkspaceItem } from './lib/displayAgents.js'
 import { formatDuration, formatRelative, turnStateStyle } from './lib/format.js'
 import { formatQuotaDetail } from './lib/quotaFormat.js'
@@ -29,17 +28,7 @@ import { useNow } from './lib/useNow.js'
  * @returns 渲染后的 Dashboard。
  */
 export function App(): JSX.Element {
-  const {
-    snapshot,
-    muted,
-    agents,
-    notifications,
-    init,
-    ack,
-    clearAlerts,
-    toggleMute,
-    dismissNotification,
-  } = useStore()
+  const { snapshot, muted, init, ack, clearAlerts, toggleMute } = useStore()
   const panels = useMemo(() => buildAgentPanels(snapshot.agents), [snapshot.agents])
 
   useEffect(() => init(), [init])
@@ -52,9 +41,9 @@ export function App(): JSX.Element {
         onToggleMute={toggleMute}
         onClearAlerts={clearAlerts}
       />
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden px-5 pb-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <main className="min-w-0 overflow-y-auto pr-1">
-          <div className="space-y-4">
+      <div className="min-h-0 flex-1 overflow-hidden px-5 pb-5">
+        <main className="h-full min-w-0 overflow-y-auto pr-1">
+          <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
             {panels.map((panel) => (
               <AgentPanelView
                 key={panel.agentType}
@@ -64,12 +53,6 @@ export function App(): JSX.Element {
             ))}
           </div>
         </main>
-        <NotificationsRail
-          agents={snapshot.agents}
-          detectedAgents={agents}
-          notifications={notifications}
-          onDismiss={dismissNotification}
-        />
       </div>
     </div>
   )
@@ -89,7 +72,7 @@ const AgentPanelView = memo(function AgentPanelView({
 
   return (
     <section className="liquid-glass rounded-2xl p-4">
-      <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <div className="mb-3 flex flex-col gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <span className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-amber-300/30 bg-white/55 shadow-[0_14px_34px_rgb(61_80_111_/_0.1)]">
             <span className={`h-3.5 w-3.5 rounded-full ${style.dot}`} />
@@ -106,19 +89,15 @@ const AgentPanelView = memo(function AgentPanelView({
             </p>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-2 text-sm md:w-[30rem] md:grid-cols-[5.5rem_7rem_minmax(0,1fr)]">
+        <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-[5rem_6.5rem_minmax(0,1fr)]">
           <Metric label="项目" value={String(projectCount || panel.workspaces.length)} />
           <Metric label="最近事件" value={<RelativeTime timestamp={latest?.lastEventAt} />} />
-          <div className="col-span-2 md:col-span-1">
+          <div className="col-span-2 sm:col-span-1">
             <PanelQuotaMeter token={panel.quotaToken} />
           </div>
         </div>
       </div>
-      <div
-        className={`grid gap-3 ${
-          isCodex && panel.workspaces.length > 1 ? 'grid-cols-1 2xl:grid-cols-2' : 'grid-cols-1'
-        }`}
-      >
+      <div className="grid grid-cols-1 gap-3">
         {panel.workspaces.map((item) => (
           <ProjectTile
             key={item.id}
@@ -146,8 +125,8 @@ const ProjectTile = memo(function ProjectTile({
 
   return (
     <article className="glass-subtle rounded-xl px-4 py-3">
-      <div className="grid gap-3 xl:grid-cols-[minmax(12rem,0.85fr)_minmax(25rem,2fr)_minmax(13rem,0.85fr)] xl:items-center">
-        <div className="flex min-w-0 items-center justify-between gap-3 xl:block">
+      <div className="grid gap-3">
+        <div className="flex min-w-0 items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${style.dot}`} />
@@ -157,7 +136,7 @@ const ProjectTile = memo(function ProjectTile({
               {item.workspacePath ?? '等待项目路径'}
             </p>
           </div>
-          <div className="flex shrink-0 items-center gap-2 xl:mt-2">
+          <div className="flex shrink-0 items-center gap-2">
             <span className={`rounded-full px-2 py-1 text-xs ${stateChipClass(agent.state)}`}>
               {style.label}
             </span>
@@ -172,11 +151,11 @@ const ProjectTile = memo(function ProjectTile({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(8rem,1.7fr)_minmax(4.5rem,0.8fr)_minmax(4rem,0.7fr)_minmax(5rem,0.8fr)]">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(7rem,1.5fr)_minmax(4.5rem,0.8fr)_minmax(4rem,0.7fr)_minmax(6rem,0.9fr)]">
           <InlineMetric label="模型" value={agent.model ?? '—'} />
           <InlineMetric label="耗时" value={<ElapsedTime since={agent.turnStartedAt} />} />
           <InlineMetric label="工具" value={String(agent.toolCallCount)} />
-          <InlineMetric label="Token" value={formatTokenCount(token?.total)} />
+          <InlineMetric label="Token" value={formatTokenCountWithUnit(token?.total)} />
         </div>
 
         <TokenMeter
@@ -290,7 +269,7 @@ function formatContextDetail(
   token: TokenPayload | undefined,
   contextWindow: number | undefined,
 ): string {
-  const windowText = contextWindow ? `窗口 ${formatTokenCount(contextWindow)}` : '窗口 —'
+  const windowText = contextWindow ? `窗口 ${formatTokenCountWithUnit(contextWindow)}` : '窗口 —'
   return `${formatTokenUsage(token)} · ${windowText}`
 }
 

@@ -31,6 +31,19 @@ test('Claude status line sums current_usage cache tokens into context input', ()
   assert.equal(event?.token?.rateLimits?.sevenDay?.usedPercent, 41.2)
 })
 
+test('Claude status line parses 1M context window strings as one million tokens', () => {
+  const event = fromClaudeStatusLine({
+    channel: 'statusline',
+    context_window: {
+      context_window_size: '1M',
+      current_usage: { input_tokens: 500000 },
+    },
+  })
+
+  assert.equal(event?.token?.contextWindow, 1_000_000)
+  assert.equal(event?.token?.contextUsedPercent, 50)
+})
+
 test('Claude status line prefers official used_percentage when present', () => {
   const event = fromClaudeStatusLine({
     session_id: 'claude-token',
@@ -73,4 +86,17 @@ test('Codex hook does not double count cached input for context percent', () => 
   })
 
   assert.equal(event?.token?.contextUsedPercent, 50)
+})
+
+test('Codex hook parses 1M context window strings as one million tokens', () => {
+  const event = fromCodexHook({
+    hook_event_name: 'UserPromptSubmit',
+    context_window_size: '1M',
+    context_usage: {
+      input_tokens: 250000,
+    },
+  })
+
+  assert.equal(event?.token?.contextWindow, 1_000_000)
+  assert.equal(event?.token?.contextUsedPercent, 25)
 })

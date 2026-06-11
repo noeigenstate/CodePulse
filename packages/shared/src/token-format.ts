@@ -10,6 +10,22 @@ import type { TokenPayload, TokenRateLimitWindow } from './types/token.js'
 /** AI CLI 滚动配额窗口的用户可见标签。 */
 export const TOKEN_QUOTA_WINDOW_LABEL = '5 小时额度'
 
+export function parseTokenCount(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value !== 'string') return undefined
+
+  const normalized = value.trim().replace(/,/g, '').replace(/_/g, '')
+  const match = normalized.match(/^(\d+(?:\.\d+)?)\s*([km])?(?:\s*(?:tok|tokens?))?$/i)
+  if (!match) return undefined
+
+  const amount = Number(match[1])
+  if (!Number.isFinite(amount)) return undefined
+
+  const unit = match[2]?.toLowerCase()
+  const multiplier = unit === 'm' ? 1_000_000 : unit === 'k' ? 1_000 : 1
+  return Math.round(amount * multiplier)
+}
+
 /**
  * 紧凑格式化 token 数量，例如 `512`、`66.9k`、`1.25M`。
  *
@@ -21,6 +37,11 @@ export function formatTokenCount(n: number | undefined): string {
   if (n < 1000) return String(n)
   if (n < 1_000_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`
   return `${(n / 1_000_000).toFixed(2).replace(/\.?0+$/, '')}M`
+}
+
+export function formatTokenCountWithUnit(n: number | undefined): string {
+  const count = formatTokenCount(n)
+  return n == null ? count : `${count} token`
 }
 
 /**
@@ -43,11 +64,13 @@ export function formatTokenPercent(pct: number | undefined): string {
 export function formatTokenUsage(token: TokenPayload | undefined): string {
   if (!token) return 'Token 暂无数据'
   const parts: string[] = []
-  if (token.input != null) parts.push(`输入 ${formatTokenCount(token.input)}`)
-  if (token.cachedInput != null) parts.push(`缓存 ${formatTokenCount(token.cachedInput)}`)
-  if (token.output != null) parts.push(`输出 ${formatTokenCount(token.output)}`)
-  if (token.reasoningOutput != null) parts.push(`推理 ${formatTokenCount(token.reasoningOutput)}`)
-  if (token.total != null) parts.push(`总计 ${formatTokenCount(token.total)}`)
+  if (token.input != null) parts.push(`输入 ${formatTokenCountWithUnit(token.input)}`)
+  if (token.cachedInput != null) parts.push(`缓存 ${formatTokenCountWithUnit(token.cachedInput)}`)
+  if (token.output != null) parts.push(`输出 ${formatTokenCountWithUnit(token.output)}`)
+  if (token.reasoningOutput != null) {
+    parts.push(`推理 ${formatTokenCountWithUnit(token.reasoningOutput)}`)
+  }
+  if (token.total != null) parts.push(`总计 ${formatTokenCountWithUnit(token.total)}`)
   return parts.length > 0 ? parts.join(' / ') : 'Token 暂无数据'
 }
 

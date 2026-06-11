@@ -6,7 +6,7 @@
  * @module adapters/util
  */
 
-import type { TokenPayload } from '@codepulse/shared'
+import { parseTokenCount, type TokenPayload } from '@codepulse/shared'
 
 type RateLimitWindowPayload = NonNullable<TokenPayload['rateLimits']>['fiveHour']
 
@@ -34,8 +34,8 @@ export function pickString(raw: Record<string, unknown>, ...keys: string[]): str
  */
 export function pickNumber(raw: Record<string, unknown>, ...keys: string[]): number | undefined {
   for (const key of keys) {
-    const value = raw[key]
-    if (typeof value === 'number' && Number.isFinite(value)) return value
+    const value = parseTokenCount(raw[key])
+    if (value != null) return value
   }
   return undefined
 }

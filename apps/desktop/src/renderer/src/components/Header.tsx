@@ -51,7 +51,7 @@ export function Header({
           <img
             src={codePulseIcon}
             alt=""
-            className="h-16 w-16 shrink-0 rounded-[1.35rem] object-cover shadow-[0_18px_48px_rgb(71_91_124_/_0.16)]"
+            className="h-16 w-16 shrink-0 rounded-[1.35rem] object-cover"
           />
           <div>
             <div className="flex items-baseline gap-2">

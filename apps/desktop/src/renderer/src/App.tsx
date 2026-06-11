@@ -19,7 +19,7 @@ import { useStore } from './store.js'
 import { Header } from './components/Header.js'
 import { buildAgentPanels, type AgentPanel, type AgentWorkspaceItem } from './lib/displayAgents.js'
 import { formatDuration, formatRelative, turnStateStyle } from './lib/format.js'
-import { formatQuotaDetail } from './lib/quotaFormat.js'
+import { formatQuotaReset } from './lib/quotaFormat.js'
 import { useNow } from './lib/useNow.js'
 
 /**
@@ -68,10 +68,9 @@ const AgentPanelView = memo(function AgentPanelView({
   const latest = panel.workspaces[0]?.agent
   const style = turnStateStyle(latest?.state ?? TurnState.IDLE)
   const projectCount = panel.workspaces.filter((item) => item.agent.lastEventAt > 0).length
-  const isCodex = panel.agentType === 'codex'
 
   return (
-    <section className="liquid-glass rounded-2xl p-4">
+    <section className="liquid-glass agent-panel rounded-2xl p-4">
       <div className="mb-3 flex flex-col gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <span className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-amber-300/30 bg-white/55 shadow-[0_14px_34px_rgb(61_80_111_/_0.1)]">
@@ -84,9 +83,6 @@ const AgentPanelView = memo(function AgentPanelView({
               <h2 className="truncate text-xl font-semibold text-slate-950">{panel.name}</h2>
               <span className={`text-sm ${style.text}`}>{style.label}</span>
             </div>
-            <p className="mt-1 truncate text-sm text-slate-500">
-              {isCodex ? 'Codex 项目集中视图' : 'Claude Code 项目状态'}
-            </p>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-[5rem_6.5rem_minmax(0,1fr)]">
@@ -124,7 +120,7 @@ const ProjectTile = memo(function ProjectTile({
   const contextPct = token?.contextUsedPercent
 
   return (
-    <article className="glass-subtle rounded-xl px-4 py-3">
+    <article className="glass-subtle project-tile rounded-xl px-4 py-3">
       <div className="grid gap-3">
         <div className="flex min-w-0 items-center justify-between gap-3">
           <div className="min-w-0">
@@ -165,15 +161,6 @@ const ProjectTile = memo(function ProjectTile({
           compact
         />
       </div>
-
-      <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-white/60 bg-white/35 px-3 py-2 text-xs">
-        <p className="min-w-0 truncate font-medium text-slate-800">
-          <span className="font-semibold text-amber-700">当前</span> {agent.activity ?? '等待事件'}
-        </p>
-        <span className="shrink-0 font-semibold text-slate-500">
-          <RelativeTime timestamp={agent.lastEventAt} />
-        </span>
-      </div>
     </article>
   )
 })
@@ -181,10 +168,21 @@ const ProjectTile = memo(function ProjectTile({
 function PanelQuotaMeter({ token }: { token: TokenPayload | undefined }): JSX.Element {
   const now = useNow()
   const fiveHour = token?.rateLimits?.fiveHour
-  const detail = formatQuotaDetail(token, now)
+  const sevenDay = token?.rateLimits?.sevenDay
 
   return (
-    <TokenMeter label={TOKEN_QUOTA_WINDOW_LABEL} percent={fiveHour?.usedPercent} detail={detail} />
+    <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+      <TokenMeter
+        label={TOKEN_QUOTA_WINDOW_LABEL}
+        percent={fiveHour?.usedPercent}
+        detail={token ? formatQuotaReset(fiveHour?.resetsAt, now) : '等待 CLI 同步额度'}
+      />
+      <TokenMeter
+        label="每周额度"
+        percent={sevenDay?.usedPercent}
+        detail={token ? formatQuotaReset(sevenDay?.resetsAt, now) : '等待 CLI 同步额度'}
+      />
+    </div>
   )
 }
 

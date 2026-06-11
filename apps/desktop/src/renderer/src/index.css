@@ -134,6 +134,24 @@ body {
     -webkit-backdrop-filter: blur(18px) saturate(135%);
   }
 
+  .agent-panel {
+    border-color: rgb(148 163 184 / 0.48);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.95),
+      inset 0 -1px 0 rgb(255 255 255 / 0.44),
+      0 0 0 1px rgb(15 23 42 / 0.06),
+      0 24px 70px rgb(71 91 124 / 0.2);
+  }
+
+  .project-tile {
+    border-color: rgb(148 163 184 / 0.42);
+    background: rgb(255 255 255 / 0.52);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.82),
+      0 0 0 1px rgb(255 255 255 / 0.5),
+      0 14px 34px rgb(71 91 124 / 0.12);
+  }
+
   .control-glass {
     border: 1px solid rgb(255 255 255 / 0.82);
     background: rgb(255 255 255 / 0.58);

@@ -4,8 +4,14 @@
  *
  * @module renderer/components/Header
  */
-import type { OverallState } from '@codepulse/shared'
+import {
+  TOKEN_QUOTA_WINDOW_LABEL,
+  formatTokenPercent,
+  type OverallState,
+  type TokenPayload,
+} from '@codepulse/shared'
 import { overallStyle } from '../lib/format.js'
+import codePulseIcon from '../assets/codepulse-icon.png'
 
 /**
  * {@link Header} 的 props。
@@ -13,6 +19,8 @@ import { overallStyle } from '../lib/format.js'
 interface Props {
   /** 要指示的聚合总体状态。 */
   overall: OverallState
+  /** 最近一次同步到的 CLI 共享额度。 */
+  quotaToken?: TokenPayload
   /** 通知声音当前是否静音。 */
   muted: boolean
   /** 切换静音。 */
@@ -27,16 +35,24 @@ interface Props {
  * @param props 见 {@link Props}。
  * @returns 头部元素。
  */
-export function Header({ overall, muted, onToggleMute, onClearAlerts }: Props): JSX.Element {
+export function Header({
+  overall,
+  quotaToken,
+  muted,
+  onToggleMute,
+  onClearAlerts,
+}: Props): JSX.Element {
   const style = overallStyle(overall)
+  const quota = quotaToken?.rateLimits?.fiveHour
   return (
     <header className="px-6 py-5">
       <div className="flex items-center justify-between gap-5">
         <div className="flex items-center gap-3">
-          <span className="relative flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-400/60 bg-white/60 shadow-[0_18px_48px_rgb(71_91_124_/_0.16)]">
-            <span className="h-0.5 w-7 rounded-full bg-amber-500" />
-            <span className="absolute h-7 w-0.5 rounded-full bg-amber-500" />
-          </span>
+          <img
+            src={codePulseIcon}
+            alt=""
+            className="h-16 w-16 shrink-0 rounded-[1.35rem] object-cover shadow-[0_18px_48px_rgb(71_91_124_/_0.16)]"
+          />
           <div>
             <div className="flex items-baseline gap-2">
               <span className="text-3xl font-semibold tracking-tight text-slate-950">
@@ -51,6 +67,25 @@ export function Header({ overall, muted, onToggleMute, onClearAlerts }: Props): 
           <div className="control-glass flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-medium">
             <span className={`inline-block h-2.5 w-2.5 rounded-full ${style.dot}`} />
             <span className={style.text}>{style.label}</span>
+          </div>
+          <div className="control-glass min-w-44 rounded-xl px-4 py-2.5">
+            <div className="flex items-center justify-between gap-3 text-xs">
+              <span className="text-slate-500">{TOKEN_QUOTA_WINDOW_LABEL}</span>
+              <span className="font-semibold text-amber-700">
+                {formatTokenPercent(quota?.usedPercent)}
+              </span>
+            </div>
+            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-200/80">
+              <div
+                className="h-full rounded-full bg-amber-500"
+                style={{
+                  width:
+                    typeof quota?.usedPercent === 'number'
+                      ? `${Math.min(100, Math.max(2, quota.usedPercent))}%`
+                      : '0%',
+                }}
+              />
+            </div>
           </div>
           <button
             onClick={onClearAlerts}

@@ -184,3 +184,42 @@ test('Codex usage reader falls back to 256k context window', async () => {
     await rm(home, { recursive: true, force: true })
   }
 })
+
+test('Codex usage reader accepts rate limits under info', async () => {
+  const home = join(tmpdir(), `codepulse-codex-info-rate-${Date.now()}`)
+  const sessions = join(home, 'sessions', '2026', '06', '11')
+  const rollout = join(sessions, 'rollout-2026-06-11T10-00-00-info-rate.jsonl')
+
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    rollout,
+    [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: 'info-rate', cwd: 'E:/project/info-rate' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 256000,
+            total_token_usage: { input_tokens: 2000, output_tokens: 100, total_tokens: 2100 },
+            last_token_usage: { input_tokens: 2000, output_tokens: 100, total_tokens: 2100 },
+            rate_limits: {
+              primary: { used_percent: 57, window_minutes: 300, resets_at: 1781160358 },
+            },
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  try {
+    const usage = await readLatestCodexUsage({ cwd: 'E:/project/info-rate' }, { codexHome: home })
+    assert.equal(usage.rate_limits.five_hour.used_percentage, 57)
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})

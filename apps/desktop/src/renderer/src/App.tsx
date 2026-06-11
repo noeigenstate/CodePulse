@@ -6,7 +6,6 @@
  */
 import { useEffect, useState } from 'react'
 import {
-  TOKEN_QUOTA_WINDOW_LABEL,
   formatTokenCount,
   formatTokenPercent,
   formatTokenUsage,
@@ -58,14 +57,14 @@ export function App(): JSX.Element {
     <div className="app-shell flex h-full flex-col text-slate-950">
       <Header
         overall={snapshot.overall}
+        quotaToken={quotaToken}
         muted={muted}
         onToggleMute={toggleMute}
         onClearAlerts={clearAlerts}
       />
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-hidden px-6 pb-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
         <main className="min-w-0 overflow-y-auto pr-1">
-          <GlobalQuotaBar token={quotaToken} />
-          <div className="mt-5 space-y-5">
+          <div className="space-y-5">
             {panels.map((panel) => (
               <AgentPanelView
                 key={panel.agentType}
@@ -85,42 +84,6 @@ export function App(): JSX.Element {
         />
       </div>
     </div>
-  )
-}
-
-function GlobalQuotaBar({ token }: { token: TokenPayload | undefined }): JSX.Element {
-  const fiveHour = token?.rateLimits?.fiveHour
-  const sevenDay = token?.rateLimits?.sevenDay
-  const pct = fiveHour?.usedPercent
-
-  return (
-    <section className="liquid-glass rounded-2xl p-4">
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_16rem] lg:items-center">
-        <div className="min-w-0">
-          <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-amber-300/40 bg-amber-200/30 text-lg text-amber-700">
-              ≋
-            </span>
-            <div className="min-w-0">
-              <p className="hud-label">Quota</p>
-              <h2 className="truncate text-lg font-semibold text-slate-950">
-                {TOKEN_QUOTA_WINDOW_LABEL}
-              </h2>
-            </div>
-          </div>
-          <p className="mt-3 truncate text-xs text-slate-500">
-            Context 按项目分别显示；额度为账号/CLI 共享窗口，取最近一次 /status 上报。
-          </p>
-        </div>
-        <TokenMeter
-          label={TOKEN_QUOTA_WINDOW_LABEL}
-          percent={pct}
-          detail={`${formatReset(fiveHour?.resetsAt)} · 7 天 ${formatTokenPercent(
-            sevenDay?.usedPercent,
-          )}`}
-        />
-      </div>
-    </section>
   )
 }
 
@@ -167,7 +130,7 @@ function AgentPanelView({
       </div>
       <div
         className={`grid gap-3 ${
-          isCodex ? 'grid-cols-1 2xl:grid-cols-2' : 'grid-cols-1 xl:grid-cols-2'
+          isCodex && panel.workspaces.length > 1 ? 'grid-cols-1 2xl:grid-cols-2' : 'grid-cols-1'
         }`}
       >
         {panel.workspaces.map((item) => (
@@ -282,14 +245,6 @@ function TokenMeter({
       <p className="mt-2 truncate text-[11px] text-slate-500">{detail}</p>
     </div>
   )
-}
-
-function formatReset(resetsAt: number | undefined): string {
-  if (!resetsAt) return '以 CLI /status 为准'
-  return `重置 ${new Date(resetsAt * 1000).toLocaleTimeString('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-  })}`
 }
 
 function Metric({

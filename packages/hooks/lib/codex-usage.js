@@ -154,7 +154,7 @@ function toUsagePatch(tokenCount, taskStarted) {
     contextWindow && contextInput > 0
       ? Math.min(100, (contextInput / contextWindow) * 100)
       : undefined
-  const rateLimits = normalizeRateLimits(tokenCount.rate_limits)
+  const rateLimits = normalizeRateLimits(tokenCount.rate_limits ?? info.rate_limits)
 
   return {
     ...(usage ? { usage } : {}),

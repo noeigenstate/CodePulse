@@ -6,7 +6,7 @@
  * @module main
  */
 import { join } from 'node:path'
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu } from 'electron'
 import {
   DEFAULT_SERVER_HOST,
   DEFAULT_SERVER_PORT,
@@ -19,6 +19,7 @@ import { openDb, persistEvent, type DB } from '@codepulse/storage'
 import { detectAgents, startLocalServer, type LocalServer } from '@codepulse/local-server'
 import { TrayController } from './tray.js'
 import { showNotification } from './notifications.js'
+import { startCodexUsagePoller } from './codex-usage-poller.js'
 
 /** 「静音」持续多久后自动取消（需求 §5.6）。 */
 const MUTE_DURATION_MS = 30 * 60_000
@@ -28,6 +29,7 @@ let tray: TrayController | null = null
 let server: LocalServer | null = null
 let db: DB | null = null
 let muteTimer: NodeJS.Timeout | null = null
+let stopCodexUsagePoller: (() => void) | null = null
 
 /** 进程级唯一的状态 hub。 */
 const hub = new StatusHub()
@@ -76,8 +78,9 @@ function createWindow(): void {
     minWidth: 720,
     minHeight: 480,
     show: false,
+    autoHideMenuBar: true,
     title: 'CodePulse',
-    backgroundColor: '#0b0f17',
+    backgroundColor: '#edf6ff',
     icon: appIconPath(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -178,6 +181,8 @@ function registerIpc(): void {
  * 启动本地服务器与无活动看门狗、创建托盘并打开窗口。
  */
 async function bootstrap(): Promise<void> {
+  Menu.setApplicationMenu(null)
+
   const dbPath = join(app.getPath('userData'), 'codepulse.sqlite')
   try {
     db = openDb(dbPath).db
@@ -200,6 +205,7 @@ async function bootstrap(): Promise<void> {
   }
 
   hub.startWatchdog()
+  stopCodexUsagePoller = startCodexUsagePoller(hub)
 
   tray = new TrayController({
     onOpen: showWindow,
@@ -249,6 +255,7 @@ if (!gotLock) {
 
   app.on('before-quit', () => {
     hub.stopWatchdog()
+    stopCodexUsagePoller?.()
     tray?.destroy()
     void server?.close()
   })

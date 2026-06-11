@@ -74,7 +74,7 @@ test('Codex usage reader extracts latest token_count from rollout JSONL', async 
         total_tokens: 2100,
       },
       context_window_size: 200000,
-      context_used_percent: 1.25,
+      context_used_percent: 1,
       rate_limits: {
         five_hour: { used_percentage: 34, resets_at: 1781160358, window_minutes: 300 },
         seven_day: { used_percentage: 5, resets_at: 1781747174, window_minutes: 10080 },
@@ -141,6 +141,52 @@ test('Codex usage reader prefers the rollout matching current cwd', async () => 
     const usage = await readLatestCodexUsage({ cwd: 'E:/project/target' }, { codexHome: home })
     assert.equal(usage.usage.total_tokens, 4500)
     assert.equal(usage.context_used_percent, 2)
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('Codex usage reader does not double count cached input for context percent', async () => {
+  const home = join(tmpdir(), `codepulse-codex-context-${Date.now()}`)
+  const sessions = join(home, 'sessions', '2026', '06', '11')
+  const rollout = join(sessions, 'rollout-2026-06-11T10-00-00-context.jsonl')
+
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    rollout,
+    [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: 'context', cwd: 'E:/project/context' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 200000,
+            total_token_usage: {
+              input_tokens: 120000,
+              cached_input_tokens: 90000,
+              output_tokens: 1000,
+              total_tokens: 121000,
+            },
+            last_token_usage: {
+              input_tokens: 100000,
+              cached_input_tokens: 90000,
+              output_tokens: 1000,
+              total_tokens: 101000,
+            },
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  try {
+    const usage = await readLatestCodexUsage({ cwd: 'E:/project/context' }, { codexHome: home })
+    assert.equal(usage.context_used_percent, 50)
   } finally {
     await rm(home, { recursive: true, force: true })
   }

@@ -200,8 +200,7 @@ function tokenFromTokenCount(tokenCount: Record<string, unknown>): TokenPayload 
   const usage = recordValue(info.total_token_usage) ?? recordValue(info.last_token_usage)
   const contextUsage = recordValue(info.last_token_usage) ?? usage
   const contextWindow = numberValue(info.model_context_window) ?? DEFAULT_CODEX_CONTEXT_WINDOW
-  const contextInput =
-    zeroNumber(contextUsage?.input_tokens) + zeroNumber(contextUsage?.cached_input_tokens)
+  const contextInput = codexContextInputTokens(contextUsage)
   const contextUsedPercent =
     contextWindow && contextInput > 0
       ? Math.min(100, (contextInput / contextWindow) * 100)
@@ -228,6 +227,10 @@ function normalizeRateLimits(raw: unknown): TokenPayload['rateLimits'] {
   const sevenDay = normalizeWindow(raw.seven_day ?? raw.sevenDay ?? raw.secondary)
   if (!fiveHour && !sevenDay) return undefined
   return { fiveHour, sevenDay }
+}
+
+function codexContextInputTokens(usage: Record<string, unknown> | undefined): number {
+  return numberValue(usage?.input_tokens) ?? numberValue(usage?.cached_input_tokens) ?? 0
 }
 
 function normalizeWindow(raw: unknown): NonNullable<TokenPayload['rateLimits']>['fiveHour'] {
@@ -257,10 +260,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function numberValue(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
-}
-
-function zeroNumber(value: unknown): number {
-  return numberValue(value) ?? 0
 }
 
 function stringValue(value: unknown): string | undefined {

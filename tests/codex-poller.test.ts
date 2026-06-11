@@ -64,7 +64,53 @@ test('Codex usage poller reads latest rollout rate limits', async () => {
     assert.equal(event?.token?.rateLimits?.fiveHour?.usedPercent, 61)
     assert.equal(event?.token?.rateLimits?.sevenDay?.usedPercent, 12)
     assert.equal(event?.token?.contextWindow, 256000)
-    assert.equal(event?.token?.contextUsedPercent, 2)
+    assert.equal(event?.token?.contextUsedPercent, 1.953125)
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('Codex usage poller does not double count cached input for context percent', async () => {
+  const home = join(tmpdir(), `codepulse-codex-poller-context-${Date.now()}`)
+  const sessions = join(home, 'sessions', '2026', '06', '11')
+  const rollout = join(sessions, 'rollout-2026-06-11T10-00-00-context.jsonl')
+
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    rollout,
+    [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: 'context-session', cwd: 'E:/project/context', model: 'gpt-5-codex' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 200000,
+            total_token_usage: {
+              input_tokens: 120000,
+              cached_input_tokens: 90000,
+              output_tokens: 1000,
+              total_tokens: 121000,
+            },
+            last_token_usage: {
+              input_tokens: 100000,
+              cached_input_tokens: 90000,
+              output_tokens: 1000,
+              total_tokens: 101000,
+            },
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  try {
+    const event = await readLatestCodexTokenSnapshot(home)
+    assert.equal(event?.token?.contextUsedPercent, 50)
   } finally {
     await rm(home, { recursive: true, force: true })
   }

@@ -20,6 +20,7 @@ import { Header } from './components/Header.js'
 import { NotificationsRail } from './components/NotificationsRail.js'
 import { buildAgentPanels, type AgentPanel, type AgentWorkspaceItem } from './lib/displayAgents.js'
 import { formatDuration, formatRelative, turnStateStyle } from './lib/format.js'
+import { formatQuotaDetail } from './lib/quotaFormat.js'
 import { useNow } from './lib/useNow.js'
 
 /**
@@ -201,13 +202,7 @@ const ProjectTile = memo(function ProjectTile({
 function PanelQuotaMeter({ token }: { token: TokenPayload | undefined }): JSX.Element {
   const now = useNow()
   const fiveHour = token?.rateLimits?.fiveHour
-  const sevenDay = token?.rateLimits?.sevenDay
-  const detail =
-    fiveHour || sevenDay
-      ? `${formatQuotaReset(fiveHour?.resetsAt, now)} · 7 天 ${formatTokenPercent(
-          sevenDay?.usedPercent,
-        )}`
-      : '等待 CLI 同步额度'
+  const detail = formatQuotaDetail(token, now)
 
   return (
     <TokenMeter label={TOKEN_QUOTA_WINDOW_LABEL} percent={fiveHour?.usedPercent} detail={detail} />
@@ -297,13 +292,6 @@ function formatContextDetail(
 ): string {
   const windowText = contextWindow ? `窗口 ${formatTokenCount(contextWindow)}` : '窗口 —'
   return `${formatTokenUsage(token)} · ${windowText}`
-}
-
-function formatQuotaReset(resetsAt: number | undefined, now: number): string {
-  if (!resetsAt) return '重置 —'
-  const remaining = resetsAt - now
-  if (remaining <= 0) return '可刷新'
-  return `重置 ${formatDuration(remaining)}`
 }
 
 function effectiveContextWindow(agent: AgentRuntimeState): number | undefined {

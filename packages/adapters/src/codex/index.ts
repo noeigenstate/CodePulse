@@ -121,10 +121,10 @@ function extractCodexToken(raw: Record<string, unknown>): AgentEventInput['token
     pickNumber(raw, 'context_window_size', 'contextWindowSize') ??
     pickNumber(info ?? {}, 'model_context_window', 'modelContextWindow') ??
     DEFAULT_CODEX_CONTEXT_WINDOW
-  const contextInput = sumKnown(
-    pickNumber(contextUsage ?? usage, 'input_tokens', 'inputTokens'),
-    pickNumber(contextUsage ?? usage, 'cached_input_tokens', 'cachedInputTokens'),
-  )
+  const contextSource = contextUsage ?? usage
+  const contextInput =
+    pickNumber(contextSource, 'input_tokens', 'inputTokens') ??
+    pickNumber(contextSource, 'cached_input_tokens', 'cachedInputTokens')
   const pct =
     pickNumber(raw, 'context_used_percent', 'contextUsedPercent') ??
     pickNumber(usage, 'context_used_percent', 'contextUsedPercent') ??
@@ -155,13 +155,6 @@ function extractCodexToken(raw: Record<string, unknown>): AgentEventInput['token
     costUsd,
     accuracy: 'estimated',
   }
-}
-
-function sumKnown(...values: Array<number | undefined>): number | undefined {
-  if (values.every((value) => value == null)) return undefined
-  let sum = 0
-  for (const value of values) sum += value ?? 0
-  return sum
 }
 
 function percentOf(value: number | undefined, total: number | undefined): number | undefined {

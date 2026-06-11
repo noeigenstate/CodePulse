@@ -14,6 +14,7 @@ import {
   type NotificationRequest,
 } from '@codepulse/shared'
 import { formatRelative } from '../lib/format.js'
+import { formatQuotaDetail } from '../lib/quotaFormat.js'
 import { useNow } from '../lib/useNow.js'
 
 /**
@@ -184,8 +185,8 @@ function UsageItem({
   agent: AgentRuntimeState | undefined
 }): JSX.Element {
   const pct = agent?.token?.contextUsedPercent
-  const quotaPct = agent?.token?.rateLimits?.fiveHour?.usedPercent
   const hasPct = typeof pct === 'number'
+  const now = useNow()
 
   return (
     <li className="glass-subtle rounded-xl p-3">
@@ -197,10 +198,7 @@ function UsageItem({
           {formatTokenPercent(pct)}
         </span>
       </div>
-      <div className="mb-1 flex items-center justify-between text-[10px] text-slate-500">
-        <span>{TOKEN_QUOTA_WINDOW_LABEL}</span>
-        <span>{formatTokenPercent(quotaPct)}</span>
-      </div>
+      <div className="mb-1 text-[10px] text-slate-500">Context</div>
       <div className="h-2 overflow-hidden rounded-full bg-slate-200/80 ring-1 ring-white/80">
         <div
           className={`neon-progress h-full rounded-full ${hasPct ? quotaBarColor(pct) : 'bg-slate-300'}`}
@@ -208,6 +206,9 @@ function UsageItem({
         />
       </div>
       <p className="mt-2 truncate text-[11px] text-slate-500">{formatTokenUsage(agent?.token)}</p>
+      <p className="mt-1 truncate text-[10px] text-slate-500">
+        {formatQuotaDetail(agent?.token, now)}
+      </p>
     </li>
   )
 }

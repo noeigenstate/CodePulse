@@ -359,6 +359,10 @@ try {
     workspace: { current_dir: 'E:/proj/ai-hardware' },
     context_used_percent: 83,
     cost: { total_cost_usd: 0.42 },
+    rate_limits: {
+      primary: { used_percent: 61, window_minutes: 300, resets_at: 1_000_005_400 },
+      secondary: { used_percent: 12, window_minutes: 10080, resets_at: 1_000_561_600 },
+    },
   })
   snap = await status()
   const claudeTok = snap.agents.find((a) => a.agentType === 'claude_code')
@@ -375,8 +379,10 @@ try {
   )
   check('claude token notification shows percentage', claudeCtxNote?.body.includes('83%') === true)
   check(
-    'claude token notification mentions 5h quota',
-    claudeCtxNote?.body.includes('5 小时额度') === true,
+    'claude token notification mentions 5h and weekly reset',
+    claudeCtxNote?.body.includes('5h') === true &&
+      claudeCtxNote.body.includes('每周') &&
+      claudeCtxNote.body.includes('刷新'),
   )
 
   await post({
@@ -417,6 +423,10 @@ try {
       total_tokens: 120000,
       context_used_percent: 96,
     },
+    rate_limits: {
+      primary: { used_percent: 72, window_minutes: 300, resets_at: 1_000_005_400 },
+      secondary: { used_percent: 18, window_minutes: 10080, resets_at: 1_000_561_600 },
+    },
   })
   snap = await status()
   const codex = snap.agents.find((a) => a.agentType === 'codex')
@@ -435,8 +445,10 @@ try {
   check('codex context>95 strong notification fired', codexCtxNote?.level === 'strong')
   check('codex token notification shows percentage', codexCtxNote?.body.includes('96%') === true)
   check(
-    'codex token notification mentions 5h quota',
-    codexCtxNote?.body.includes('5 小时额度') === true,
+    'codex token notification mentions 5h and weekly reset',
+    codexCtxNote?.body.includes('5h') === true &&
+      codexCtxNote.body.includes('每周') &&
+      codexCtxNote.body.includes('刷新'),
   )
 
   await post({

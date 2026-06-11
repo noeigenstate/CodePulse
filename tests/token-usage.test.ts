@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { fromClaudeStatusLine } from '@codepulse/adapters'
+import { fromClaudeStatusLine, fromCodexHook } from '@codepulse/adapters'
 
 test('Claude status line sums current_usage cache tokens into context input', () => {
   const event = fromClaudeStatusLine({
@@ -52,4 +52,25 @@ test('Claude status line prefers official used_percentage when present', () => {
   assert.equal(event?.token?.output, 1000)
   assert.equal(event?.token?.total, 25000)
   assert.equal(event?.token?.contextUsedPercent, 12.5)
+})
+
+test('Codex hook does not double count cached input for context percent', () => {
+  const event = fromCodexHook({
+    hook_event_name: 'UserPromptSubmit',
+    context_window_size: 200000,
+    usage: {
+      input_tokens: 120000,
+      cached_input_tokens: 90000,
+      output_tokens: 1000,
+      total_tokens: 121000,
+    },
+    context_usage: {
+      input_tokens: 100000,
+      cached_input_tokens: 90000,
+      output_tokens: 1000,
+      total_tokens: 101000,
+    },
+  })
+
+  assert.equal(event?.token?.contextUsedPercent, 50)
 })

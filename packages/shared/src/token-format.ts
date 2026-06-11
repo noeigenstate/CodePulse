@@ -5,7 +5,7 @@
  * @module shared/token-format
  */
 import type { AgentType } from './types/agent.js'
-import type { TokenPayload } from './types/token.js'
+import type { TokenPayload, TokenRateLimitWindow } from './types/token.js'
 
 /** AI CLI 滚动配额窗口的用户可见标签。 */
 export const TOKEN_QUOTA_WINDOW_LABEL = '5 小时额度'
@@ -51,6 +51,45 @@ export function formatTokenUsage(token: TokenPayload | undefined): string {
   return parts.length > 0 ? parts.join(' / ') : 'Token 暂无数据'
 }
 
+export function formatTokenQuotaDetail(token: TokenPayload | undefined, now = Date.now()): string {
+  if (!token) return '等待 CLI 同步额度'
+  const rateLimits = token?.rateLimits
+  return [
+    formatTokenQuotaWindow('5h', rateLimits?.fiveHour, now),
+    formatTokenQuotaWindow('每周', rateLimits?.sevenDay, now),
+  ].join(' / ')
+}
+
+function formatTokenQuotaWindow(
+  label: string,
+  window: TokenRateLimitWindow | undefined,
+  now: number,
+): string {
+  return `${label} ${formatTokenPercent(window?.usedPercent)} · ${formatTokenQuotaReset(
+    window?.resetsAt,
+    now,
+  )}`
+}
+
+export function formatTokenQuotaReset(resetsAt: number | undefined, now = Date.now()): string {
+  if (!resetsAt) return '刷新 —'
+  const resetAtMs = resetsAt < 1_000_000_000_000 ? resetsAt * 1000 : resetsAt
+  const remaining = resetAtMs - now
+  if (remaining <= 0) return '可刷新'
+  return `刷新 ${formatResetDuration(remaining)}`
+}
+
+function formatResetDuration(ms: number): string {
+  const totalMinutes = Math.max(0, Math.floor(ms / 60_000))
+  const days = Math.floor(totalMinutes / 1440)
+  const hours = Math.floor((totalMinutes % 1440) / 60)
+  const minutes = totalMinutes % 60
+  if (days > 0) return `${days}d ${hours}h`
+  if (hours > 0) return `${hours}h ${minutes}m`
+  if (minutes > 0) return `${minutes}m`
+  return '<1m'
+}
+
 /**
  * 构造高用量通知中使用的标准配额/上下文提示文案。
  *
@@ -58,13 +97,13 @@ export function formatTokenUsage(token: TokenPayload | undefined): string {
  * @param token 最新的 token 载荷。
  * @returns 简短的通知正文。
  */
-export function formatTokenQuotaNotice(agent: AgentType, token: TokenPayload): string {
+export function formatTokenQuotaNotice(
+  agent: AgentType,
+  token: TokenPayload,
+  now = Date.now(),
+): string {
   const pct = formatTokenPercent(token.contextUsedPercent)
-  const quotaPct = token.rateLimits?.fiveHour?.usedPercent
-  const quotaText =
-    quotaPct == null
-      ? TOKEN_QUOTA_WINDOW_LABEL
-      : `${TOKEN_QUOTA_WINDOW_LABEL}已用 ${formatTokenPercent(quotaPct)}`
+  const quotaText = formatTokenQuotaDetail(token, now)
   const sourceNote =
     agent === 'codex'
       ? 'Codex token 为估算值'

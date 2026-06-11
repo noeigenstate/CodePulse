@@ -149,8 +149,7 @@ function toUsagePatch(tokenCount, taskStarted) {
     optionalNumber(info.model_context_window) ??
     optionalNumber(taskStarted?.model_context_window) ??
     DEFAULT_CODEX_CONTEXT_WINDOW
-  const contextInput =
-    numberValue(contextUsage?.input_tokens) + numberValue(contextUsage?.cached_input_tokens)
+  const contextInput = codexContextInputTokens(contextUsage)
   const pct =
     contextWindow && contextInput > 0
       ? Math.min(100, (contextInput / contextWindow) * 100)
@@ -175,6 +174,10 @@ function normalizeRateLimits(raw) {
     ...(fiveHour ? { five_hour: fiveHour } : {}),
     ...(sevenDay ? { seven_day: sevenDay } : {}),
   }
+}
+
+function codexContextInputTokens(usage) {
+  return optionalNumber(usage?.input_tokens) ?? optionalNumber(usage?.cached_input_tokens) ?? 0
 }
 
 function normalizeWindow(raw) {

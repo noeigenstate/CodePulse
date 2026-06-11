@@ -1,6 +1,6 @@
 /**
  * Dashboard 根组件。布局包含头部、agent 卡片网格与通知栏，
- * 并驱动 1 秒一跳的时钟，使耗时与相对时间保持实时。
+ * 并驱动高频时钟，使耗时与相对时间保持实时。
  *
  * @module renderer/App
  */
@@ -20,6 +20,7 @@ import { Header } from './components/Header.js'
 import { NotificationsRail } from './components/NotificationsRail.js'
 import { buildAgentPanels, type AgentPanel, type AgentWorkspaceItem } from './lib/displayAgents.js'
 import { formatDuration, formatRelative, turnStateStyle } from './lib/format.js'
+import { UI_REFRESH_INTERVAL_MS } from './lib/timing.js'
 
 /**
  * 应用外壳 Dashboard。
@@ -44,7 +45,7 @@ export function App(): JSX.Element {
   useEffect(() => init(), [init])
 
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000)
+    const timer = setInterval(() => setNow(Date.now()), UI_REFRESH_INTERVAL_MS)
     return () => clearInterval(timer)
   }, [])
 
@@ -56,9 +57,9 @@ export function App(): JSX.Element {
         onToggleMute={toggleMute}
         onClearAlerts={clearAlerts}
       />
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-hidden px-6 pb-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden px-5 pb-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <main className="min-w-0 overflow-y-auto pr-1">
-          <div className="space-y-5">
+          <div className="space-y-4">
             {panels.map((panel) => (
               <AgentPanelView
                 key={panel.agentType}
@@ -96,17 +97,17 @@ function AgentPanelView({
   const isCodex = panel.agentType === 'codex'
 
   return (
-    <section className="liquid-glass rounded-2xl p-5">
-      <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div className="flex min-w-0 items-center gap-4">
-          <span className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-amber-300/30 bg-white/55 shadow-[0_18px_42px_rgb(61_80_111_/_0.12)]">
-            <span className={`h-4 w-4 rounded-full ${style.dot}`} />
+    <section className="liquid-glass rounded-2xl p-4">
+      <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-amber-300/30 bg-white/55 shadow-[0_14px_34px_rgb(61_80_111_/_0.1)]">
+            <span className={`h-3.5 w-3.5 rounded-full ${style.dot}`} />
             <span className="absolute inset-3 rounded-full border border-amber-400/30" />
           </span>
           <div className="min-w-0">
             <p className="hud-label">Agent</p>
             <div className="flex min-w-0 items-center gap-3">
-              <h2 className="truncate text-2xl font-semibold text-slate-950">{panel.name}</h2>
+              <h2 className="truncate text-xl font-semibold text-slate-950">{panel.name}</h2>
               <span className={`text-sm ${style.text}`}>{style.label}</span>
             </div>
             <p className="mt-1 truncate text-sm text-slate-500">
@@ -114,7 +115,7 @@ function AgentPanelView({
             </p>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-2 text-sm md:w-[30rem] md:grid-cols-[6.5rem_7.5rem_minmax(0,1fr)]">
+        <div className="grid grid-cols-2 gap-2 text-sm md:w-[30rem] md:grid-cols-[5.5rem_7rem_minmax(0,1fr)]">
           <Metric label="项目" value={String(projectCount || panel.workspaces.length)} />
           <Metric
             label="最近事件"
@@ -160,52 +161,53 @@ function ProjectTile({
   const elapsed = agent.turnStartedAt ? formatDuration(now - agent.turnStartedAt) : '—'
 
   return (
-    <article className="glass-subtle rounded-xl p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${style.dot}`} />
-            <h3 className="truncate text-lg font-semibold text-slate-950">{item.name}</h3>
+    <article className="glass-subtle rounded-xl px-4 py-3">
+      <div className="grid gap-3 xl:grid-cols-[minmax(12rem,0.85fr)_minmax(25rem,2fr)_minmax(13rem,0.85fr)] xl:items-center">
+        <div className="flex min-w-0 items-center justify-between gap-3 xl:block">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${style.dot}`} />
+              <h3 className="truncate text-base font-semibold text-slate-950">{item.name}</h3>
+            </div>
+            <p className="mt-1 truncate text-xs font-medium text-slate-500">
+              {item.workspacePath ?? '等待项目路径'}
+            </p>
           </div>
-          <p className="mt-1 truncate text-xs text-slate-500">
-            {item.workspacePath ?? '等待项目路径'}
-          </p>
+          <div className="flex shrink-0 items-center gap-2 xl:mt-2">
+            <span className={`rounded-full px-2 py-1 text-xs ${stateChipClass(agent.state)}`}>
+              {style.label}
+            </span>
+            {agent.unread && (
+              <button
+                onClick={onAck}
+                className="rounded-full border border-emerald-300/50 bg-emerald-50/80 px-2.5 py-1 text-xs text-emerald-700 transition hover:bg-emerald-100 active:translate-y-px"
+              >
+                已读
+              </button>
+            )}
+          </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <span className={`rounded-full px-2 py-1 text-xs ${stateChipClass(agent.state)}`}>
-            {style.label}
-          </span>
-          {agent.unread && (
-            <button
-              onClick={onAck}
-              className="rounded-full border border-emerald-300/50 bg-emerald-50/80 px-2.5 py-1 text-xs text-emerald-700 transition hover:bg-emerald-100 active:translate-y-px"
-            >
-              已读
-            </button>
-          )}
+
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(8rem,1.7fr)_minmax(4.5rem,0.8fr)_minmax(4rem,0.7fr)_minmax(5rem,0.8fr)]">
+          <InlineMetric label="模型" value={agent.model ?? '—'} />
+          <InlineMetric label="耗时" value={elapsed} />
+          <InlineMetric label="工具" value={String(agent.toolCallCount)} />
+          <InlineMetric label="Token" value={formatTokenCount(token?.total)} />
         </div>
-      </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-2 text-sm xl:grid-cols-5">
-        <Metric label="模型" value={agent.model ?? '—'} className="xl:col-span-2" />
-        <Metric label="耗时" value={elapsed} />
-        <Metric label="工具" value={String(agent.toolCallCount)} />
-        <Metric label="Token" value={formatTokenCount(token?.total)} />
-      </div>
-
-      <div className="mt-4">
         <TokenMeter
           label="Context"
           percent={contextPct}
           detail={formatContextDetail(token, contextWindow)}
+          compact
         />
       </div>
 
-      <div className="mt-3 flex items-center justify-between gap-3 text-xs">
-        <p className="min-w-0 truncate text-slate-600">
-          <span className="text-amber-700">当前</span> {agent.activity ?? '等待事件'}
+      <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-white/60 bg-white/35 px-3 py-2 text-xs">
+        <p className="min-w-0 truncate font-medium text-slate-800">
+          <span className="font-semibold text-amber-700">当前</span> {agent.activity ?? '等待事件'}
         </p>
-        <span className="shrink-0 text-slate-400">
+        <span className="shrink-0 font-semibold text-slate-500">
           {agent.lastEventAt ? formatRelative(agent.lastEventAt, now) : '—'}
         </span>
       </div>
@@ -238,19 +240,27 @@ function TokenMeter({
   label,
   percent,
   detail,
+  compact = false,
 }: {
   label: string
   percent: number | undefined
   detail: string
+  compact?: boolean
 }): JSX.Element {
   const hasPercent = typeof percent === 'number'
   const width = hasPercent ? `${Math.min(100, Math.max(2, percent))}%` : '0%'
 
   return (
-    <div className="rounded-xl border border-white/70 bg-white/45 px-3 py-2 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.7)]">
+    <div
+      className={`rounded-xl border border-white/70 bg-white/45 px-3 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.7)] ${
+        compact ? 'py-1.5' : 'py-2'
+      }`}
+    >
       <div className="mb-1 flex items-center justify-between gap-2 text-xs">
-        <span className="text-slate-500">{label}</span>
-        <span className={hasPercent ? tokenTextColor(percent) : 'text-slate-400'}>
+        <span className="font-medium text-slate-500">{label}</span>
+        <span
+          className={`font-semibold ${hasPercent ? tokenTextColor(percent) : 'text-slate-400'}`}
+        >
           {formatTokenPercent(percent)}
         </span>
       </div>
@@ -260,7 +270,18 @@ function TokenMeter({
           style={{ width }}
         />
       </div>
-      <p className="mt-2 truncate text-[11px] text-slate-500">{detail}</p>
+      <p className={`${compact ? 'mt-1' : 'mt-2'} truncate text-[11px] font-medium text-slate-500`}>
+        {detail}
+      </p>
+    </div>
+  )
+}
+
+function InlineMetric({ label, value }: { label: string; value: string }): JSX.Element {
+  return (
+    <div className="min-w-0 rounded-xl border border-white/65 bg-white/42 px-3 py-2 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.58)]">
+      <p className="text-[10px] font-medium text-slate-500">{label}</p>
+      <p className="mt-0.5 truncate text-sm font-semibold text-slate-950">{value}</p>
     </div>
   )
 }

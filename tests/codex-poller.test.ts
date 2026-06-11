@@ -3,7 +3,14 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { readLatestCodexTokenSnapshot } from '../apps/desktop/src/main/codex-usage-poller.js'
+import {
+  CODEX_USAGE_POLL_INTERVAL_MS,
+  readLatestCodexTokenSnapshot,
+} from '../apps/desktop/src/main/codex-usage-poller.js'
+
+test('Codex usage poller defaults to a responsive quota sync interval', () => {
+  assert.equal(CODEX_USAGE_POLL_INTERVAL_MS, 5_000)
+})
 
 test('Codex usage poller reads latest rollout rate limits', async () => {
   const home = join(tmpdir(), `codepulse-codex-poller-${Date.now()}`)

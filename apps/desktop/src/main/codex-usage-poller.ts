@@ -18,7 +18,8 @@ const TAIL_BYTES = 1024 * 1024
 const HEAD_BYTES = 64 * 1024
 const MAX_ROLLOUT_FILES = 300
 const DEFAULT_CODEX_CONTEXT_WINDOW = Number(process.env.CODEPULSE_CODEX_CONTEXT_WINDOW) || 256_000
-const DEFAULT_POLL_INTERVAL_MS = Number(process.env.CODEPULSE_CODEX_USAGE_POLL_MS) || 30_000
+export const CODEX_USAGE_POLL_INTERVAL_MS =
+  Number(process.env.CODEPULSE_CODEX_USAGE_POLL_MS) || 5_000
 
 interface RolloutFile {
   path: string
@@ -40,7 +41,7 @@ interface RolloutMeta {
  */
 export function startCodexUsagePoller(
   hub: StatusHub,
-  intervalMs = DEFAULT_POLL_INTERVAL_MS,
+  intervalMs = CODEX_USAGE_POLL_INTERVAL_MS,
 ): () => void {
   let stopped = false
   let lastSignature = ''

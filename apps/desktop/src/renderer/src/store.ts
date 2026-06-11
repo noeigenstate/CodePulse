@@ -6,6 +6,7 @@
  */
 import { create } from 'zustand'
 import type { Agent, AgentType, NotificationRequest, StatusSnapshot } from '@codepulse/shared'
+import { STATUS_REFRESH_INTERVAL_MS } from './lib/timing.js'
 
 /** 首个真实状态到达前使用的快照。 */
 const EMPTY_SNAPSHOT: StatusSnapshot = { overall: 'idle', agents: [], updatedAt: Date.now() }
@@ -57,9 +58,14 @@ export const useStore = create<CodePulseStore>((set, get) => ({
       return () => undefined
     }
 
-    void api.getStatus().then((snapshot) => set({ snapshot, ready: true }))
+    const refreshStatus = (): void => {
+      void api.getStatus().then((snapshot) => set({ snapshot, ready: true }))
+    }
+
+    refreshStatus()
     void api.detectAgents().then((agents) => set({ agents }))
 
+    const refreshTimer = window.setInterval(refreshStatus, STATUS_REFRESH_INTERVAL_MS)
     const offStatus = api.onStatus((snapshot) => set({ snapshot }))
     const offMute = api.onMute((muted) => set({ muted }))
     const offNote = api.onNotification((note) =>
@@ -72,6 +78,7 @@ export const useStore = create<CodePulseStore>((set, get) => ({
     )
 
     return () => {
+      window.clearInterval(refreshTimer)
       offStatus()
       offMute()
       offNote()

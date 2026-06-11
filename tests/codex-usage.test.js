@@ -146,6 +146,99 @@ test('Codex usage reader prefers the rollout matching current cwd', async () => 
   }
 })
 
+test('Codex usage reader scans newer session folders before capped history', async () => {
+  const home = join(tmpdir(), `codepulse-codex-cap-${Date.now()}`)
+  const oldSessions = join(home, 'sessions', '2025', '01', '01')
+  const freshSessions = join(home, 'sessions', '2026', '06', '11')
+  const fresh = join(freshSessions, 'rollout-2026-06-11T10-00-00-fresh.jsonl')
+
+  await mkdir(oldSessions, { recursive: true })
+  await mkdir(freshSessions, { recursive: true })
+
+  const oldPayload = [
+    JSON.stringify({ type: 'session_meta', payload: { id: 'old', cwd: 'E:/project/old' } }),
+    JSON.stringify({
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: {
+          model_context_window: 100000,
+          total_token_usage: { input_tokens: 1000, output_tokens: 100, total_tokens: 1100 },
+          last_token_usage: { input_tokens: 1000, output_tokens: 100, total_tokens: 1100 },
+        },
+      },
+    }),
+  ].join('\n')
+  await Promise.all(
+    Array.from({ length: 510 }, (_, i) =>
+      writeFile(
+        join(oldSessions, `rollout-2025-01-01T00-00-${String(i).padStart(3, '0')}.jsonl`),
+        oldPayload,
+        'utf8',
+      ),
+    ),
+  )
+  await writeFile(
+    fresh,
+    [
+      JSON.stringify({ type: 'session_meta', payload: { id: 'fresh', cwd: 'E:/project/fresh' } }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 100000,
+            total_token_usage: { input_tokens: 4200, output_tokens: 300, total_tokens: 4500 },
+            last_token_usage: { input_tokens: 2000, output_tokens: 100, total_tokens: 2100 },
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  try {
+    const usage = await readLatestCodexUsage({ cwd: 'E:/project/fresh' }, { codexHome: home })
+    assert.equal(usage.usage.total_tokens, 4500)
+    assert.equal(usage.context_used_percent, 2)
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('Codex usage reader does not fall back to another project when cwd is known', async () => {
+  const home = join(tmpdir(), `codepulse-codex-no-fallback-${Date.now()}`)
+  const sessions = join(home, 'sessions', '2026', '06', '11')
+  const other = join(sessions, 'rollout-2026-06-11T10-01-00-other.jsonl')
+
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    other,
+    [
+      JSON.stringify({ type: 'session_meta', payload: { id: 'other', cwd: 'E:/project/other' } }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 100000,
+            total_token_usage: { input_tokens: 90000, output_tokens: 500, total_tokens: 90500 },
+            last_token_usage: { input_tokens: 80000, output_tokens: 250, total_tokens: 80250 },
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  try {
+    const usage = await readLatestCodexUsage({ cwd: 'E:/project/missing' }, { codexHome: home })
+    assert.deepEqual(usage, {})
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
 test('Codex usage reader falls back to 256k context window', async () => {
   const home = join(tmpdir(), `codepulse-codex-window-${Date.now()}`)
   const sessions = join(home, 'sessions', '2026', '06', '11')

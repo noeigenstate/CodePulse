@@ -15,6 +15,7 @@ export * from './types/session.js'
 export * from './types/event.js'
 export * from './types/runtime.js'
 export * from './token-format.js'
+export * from './path.js'
 
 /** 本地 HTTP/WebSocket 服务器绑定的默认主机（仅回环地址）。 */
 export const DEFAULT_SERVER_HOST = '127.0.0.1'

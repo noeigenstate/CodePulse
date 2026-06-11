@@ -14,6 +14,7 @@ import {
   type NotificationRequest,
 } from '@codepulse/shared'
 import { formatRelative } from '../lib/format.js'
+import { useNow } from '../lib/useNow.js'
 
 /**
  * {@link NotificationsRail} 的 props。
@@ -25,8 +26,6 @@ interface Props {
   detectedAgents: Agent[]
   /** 最近的通知，新者在前。 */
   notifications: NotificationRequest[]
-  /** 当前时间（epoch 毫秒），用于相对时间戳。 */
-  now: number
   /** 按去重键关闭一条通知。 */
   onDismiss: (dedupeKey: string, createdAt: number) => void
 }
@@ -50,7 +49,6 @@ export function NotificationsRail({
   agents,
   detectedAgents,
   notifications,
-  now,
   onDismiss,
 }: Props): JSX.Element {
   return (
@@ -114,7 +112,7 @@ export function NotificationsRail({
               </div>
               <p className="mt-1 line-clamp-3 text-xs leading-5 text-slate-600">{note.body}</p>
               <p className="mt-1 text-[10px] text-slate-400">
-                {formatRelative(note.createdAt, now)}
+                <NotificationAge createdAt={note.createdAt} />
               </p>
             </li>
           ))}
@@ -122,6 +120,11 @@ export function NotificationsRail({
       )}
     </aside>
   )
+}
+
+function NotificationAge({ createdAt }: { createdAt: number }): JSX.Element {
+  const now = useNow()
+  return <>{formatRelative(createdAt, now)}</>
 }
 
 /** 「本机侦测」中单个 agent 的 CLI/Hook 检测行。 */

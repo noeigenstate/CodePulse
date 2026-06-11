@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { StatusHub } from '@codepulse/core'
+import { STUCK_VISIBLE_MS, StatusHub } from '@codepulse/core'
 import { TurnState } from '@codepulse/shared'
 import {
   buildAgentPanels,
@@ -60,6 +60,52 @@ test('StatusHub routes workspace-less events back to the original session worksp
   assert.equal(codexAgents.length, 1)
   assert.equal(codexAgents[0]?.workspacePath, 'E:/project/a')
   assert.equal(codexAgents[0]?.state, 'DONE')
+})
+
+test('StatusHub treats slash and backslash workspace paths as the same project', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+
+  hub.ingest({
+    id: 'prompt',
+    source: 'codex',
+    eventType: 'prompt_submit',
+    externalSessionId: 'session-a',
+    cwd: 'E:\\project\\a',
+    timestamp: 100,
+  })
+  hub.ingest({
+    id: 'token',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    timestamp: 200,
+    token: { contextUsedPercent: 12, accuracy: 'estimated' },
+  })
+
+  const codexAgents = hub.snapshot().agents.filter((agent) => agent.agentType === 'codex')
+  assert.equal(codexAgents.length, 1)
+  assert.equal(codexAgents[0]?.state, TurnState.PROMPT_SUBMITTED)
+  assert.equal(codexAgents[0]?.token?.contextUsedPercent, 12)
+})
+
+test('StatusHub keeps turn start time when watchdog marks TIMEOUT', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const startedAt = 1_000_000
+
+  hub.ingest({
+    id: 'prompt',
+    source: 'codex',
+    eventType: 'prompt_submit',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    timestamp: startedAt,
+  })
+  ;(hub as unknown as { tick(now?: number): void }).tick(startedAt + STUCK_VISIBLE_MS + 1)
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.state, TurnState.TIMEOUT)
+  assert.equal(codex?.turnStartedAt, startedAt)
 })
 
 test('StatusHub can acknowledge one workspace without clearing another', () => {
@@ -137,6 +183,71 @@ test('StatusHub keeps Claude and Codex token snapshots separate in the same work
   assert.equal(codex?.token?.rateLimits?.fiveHour?.usedPercent, 61)
 })
 
+test('StatusHub merges partial token snapshots instead of dropping previous fields', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+
+  hub.ingest({
+    id: 'full-token',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    cwd: 'E:/project/a',
+    timestamp: 100,
+    token: {
+      total: 10_000,
+      contextUsedPercent: 24,
+      contextWindow: 256_000,
+      rateLimits: {
+        fiveHour: { usedPercent: 61, resetsAt: 2_000, windowMinutes: 300 },
+        sevenDay: { usedPercent: 18, resetsAt: 9_000 },
+      },
+      accuracy: 'estimated',
+    },
+  })
+  hub.ingest({
+    id: 'partial-token',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    cwd: 'E:/project/a',
+    timestamp: 200,
+    token: {
+      total: 12_000,
+      contextUsedPercent: 26,
+      accuracy: 'estimated',
+    },
+  })
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.token?.total, 12_000)
+  assert.equal(codex?.token?.contextUsedPercent, 26)
+  assert.equal(codex?.token?.contextWindow, 256_000)
+  assert.equal(codex?.token?.rateLimits?.fiveHour?.usedPercent, 61)
+  assert.equal(codex?.token?.rateLimits?.fiveHour?.resetsAt, 2_000)
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 18)
+})
+
+test('StatusHub clears stale token data at session boundaries', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+
+  hub.ingest({
+    id: 'token',
+    source: 'claude_code',
+    eventType: 'token_snapshot',
+    cwd: 'E:/project/a',
+    timestamp: 100,
+    token: { contextUsedPercent: 88, accuracy: 'exact' },
+  })
+  hub.ingest({
+    id: 'session-start',
+    source: 'claude_code',
+    eventType: 'session_start',
+    cwd: 'E:/project/a',
+    timestamp: 200,
+  })
+
+  const claude = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
+  assert.equal(claude?.token, undefined)
+})
+
 test('display agents are grouped by workspace with a shared token', () => {
   const groups = buildWorkspaceAgentGroups([
     {
@@ -182,6 +293,38 @@ test('display agents are grouped by workspace with a shared token', () => {
     ],
   )
   assert.equal(groups.find((group) => group.workspacePath === 'E:/project/a')?.token?.total, 1200)
+})
+
+test('display panels group slash and backslash variants into one project', () => {
+  const panels = buildAgentPanels([
+    {
+      agentType: 'codex',
+      state: TurnState.PROMPT_SUBMITTED,
+      toolCallCount: 0,
+      needPermission: false,
+      needUserInput: false,
+      activity: 'running',
+      lastEventAt: 100,
+      unread: false,
+      workspacePath: 'E:\\project\\a',
+    },
+    {
+      agentType: 'codex',
+      state: TurnState.THINKING,
+      toolCallCount: 0,
+      needPermission: false,
+      needUserInput: false,
+      activity: 'thinking',
+      lastEventAt: 200,
+      unread: false,
+      workspacePath: 'E:/project/a',
+      token: { contextUsedPercent: 12, accuracy: 'estimated' },
+    },
+  ])
+
+  const codexPanel = panels.find((panel) => panel.agentType === 'codex')
+  assert.equal(codexPanel?.workspaces.length, 1)
+  assert.equal(codexPanel?.workspaces[0]?.agent.token?.contextUsedPercent, 12)
 })
 
 test('display panels keep Codex projects inside one panel', () => {

@@ -11,6 +11,8 @@ import {
   type AgentEvent,
   type AgentRuntimeState,
   type AgentType,
+  type TokenPayload,
+  type TokenRateLimitWindow,
   TurnState,
   isTerminalState,
 } from '@codepulse/shared'
@@ -73,12 +75,13 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
   if (event.externalTurnId) next.externalTurnId = event.externalTurnId
   if (event.workspacePath ?? event.cwd) next.workspacePath = event.workspacePath ?? event.cwd
   if (event.model) next.model = event.model
-  if (event.token) next.token = event.token
+  if (event.token) next.token = mergeToken(current.token, event.token)
 
   switch (event.eventType) {
     case 'session_start':
       next.state = TurnState.IDLE
       next.unread = false
+      next.token = undefined
       break
 
     case 'prompt_submit':
@@ -157,6 +160,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       next.needUserInput = false
       next.toolName = undefined
       next.activity = undefined
+      next.token = undefined
       break
 
     default:
@@ -168,6 +172,49 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
     next,
     turnEnded: isTerminalState(next.state) && !isTerminalState(previousState),
     previousState,
+  }
+}
+
+function mergeToken(current: TokenPayload | undefined, patch: TokenPayload): TokenPayload {
+  const next: TokenPayload = {
+    ...current,
+    accuracy: patch.accuracy ?? current?.accuracy ?? 'unknown',
+  }
+
+  if (patch.input !== undefined) next.input = patch.input
+  if (patch.cachedInput !== undefined) next.cachedInput = patch.cachedInput
+  if (patch.output !== undefined) next.output = patch.output
+  if (patch.reasoningOutput !== undefined) next.reasoningOutput = patch.reasoningOutput
+  if (patch.total !== undefined) next.total = patch.total
+  if (patch.contextUsedPercent !== undefined) next.contextUsedPercent = patch.contextUsedPercent
+  if (patch.contextWindow !== undefined) next.contextWindow = patch.contextWindow
+  if (patch.costUsd !== undefined) next.costUsd = patch.costUsd
+  if (patch.rateLimits) next.rateLimits = mergeRateLimits(current?.rateLimits, patch.rateLimits)
+
+  return next
+}
+
+function mergeRateLimits(
+  current: TokenPayload['rateLimits'],
+  patch: TokenPayload['rateLimits'],
+): TokenPayload['rateLimits'] {
+  if (!patch) return current
+  return {
+    fiveHour: mergeRateLimitWindow(current?.fiveHour, patch.fiveHour),
+    sevenDay: mergeRateLimitWindow(current?.sevenDay, patch.sevenDay),
+  }
+}
+
+function mergeRateLimitWindow(
+  current: TokenRateLimitWindow | undefined,
+  patch: TokenRateLimitWindow | undefined,
+): TokenRateLimitWindow | undefined {
+  if (!patch) return current
+  return {
+    ...current,
+    ...(patch.usedPercent !== undefined ? { usedPercent: patch.usedPercent } : {}),
+    ...(patch.resetsAt !== undefined ? { resetsAt: patch.resetsAt } : {}),
+    ...(patch.windowMinutes !== undefined ? { windowMinutes: patch.windowMinutes } : {}),
   }
 }
 

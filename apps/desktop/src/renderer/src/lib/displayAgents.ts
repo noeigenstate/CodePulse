@@ -3,6 +3,7 @@ import {
   type AgentRuntimeState,
   type AgentType,
   type TokenPayload,
+  workspaceKey,
 } from '@codepulse/shared'
 
 export const DISPLAY_AGENT_ORDER: readonly AgentType[] = ['claude_code', 'codex']
@@ -140,10 +141,6 @@ function idleAgent(agentType: AgentType, workspacePath?: string): AgentRuntimeSt
 function latestToken(agents: AgentRuntimeState[]): TokenPayload | undefined {
   return agents.filter((agent) => agent.token).sort((a, b) => b.lastEventAt - a.lastEventAt)[0]
     ?.token
-}
-
-function workspaceKey(path: string | undefined): string {
-  return (path ?? '').replace(/[\\/]+$/, '').toLowerCase()
 }
 
 function workspaceName(path: string): string {

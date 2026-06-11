@@ -61,6 +61,7 @@ async function findRolloutFile(raw, options) {
     const matched = files.find((file) => basename(file.path).includes(sessionId))
     if (matched) return matched.path
   }
+  if (cwd || sessionId) return undefined
   return files[0]?.path
 }
 
@@ -110,7 +111,7 @@ async function collectRolloutFiles(dir, out) {
     return
   }
 
-  for (const entry of entries) {
+  for (const entry of [...entries].sort((a, b) => b.name.localeCompare(a.name))) {
     if (out.length >= MAX_ROLLOUT_FILES) return
     const path = join(dir, entry.name)
     if (entry.isDirectory()) {
@@ -194,6 +195,7 @@ function stringValue(value) {
 
 function normalizePath(value) {
   return stringValue(value)
+    ?.replace(/\\/g, '/')
     ?.replace(/[\\/]+$/, '')
     .toLowerCase()
 }

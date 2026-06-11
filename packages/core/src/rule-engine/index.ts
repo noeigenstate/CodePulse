@@ -12,6 +12,7 @@ import {
   TurnState,
   formatTokenQuotaNotice,
   isActiveState,
+  workspaceKey,
 } from '@codepulse/shared'
 import type { TransitionResult } from '../state-machine/index.js'
 
@@ -291,5 +292,5 @@ function agentLabel(agent: string): string {
 }
 
 function agentScope(agent: AgentRuntimeState): string {
-  return `${agent.agentType}:${(agent.workspacePath ?? '').replace(/[\\/]+$/, '').toLowerCase()}`
+  return `${agent.agentType}:${workspaceKey(agent.workspacePath)}`
 }

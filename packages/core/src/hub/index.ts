@@ -14,6 +14,7 @@ import {
   type StatusSnapshot,
   TurnState,
   isActiveState,
+  workspaceKey,
 } from '@codepulse/shared'
 import { buildStatusSnapshot } from '../aggregate/index.js'
 import { createInitialRuntimeState, reduce } from '../state-machine/index.js'
@@ -156,7 +157,6 @@ export class StatusHub extends EventEmitter {
         this.agents.set(key, {
           ...agent,
           state: TurnState.TIMEOUT,
-          turnStartedAt: undefined,
           toolName: undefined,
           activity: '疑似卡住',
         })
@@ -216,8 +216,4 @@ function runtimeKey(agentType: AgentType, workspacePath: string): string {
 
 function sessionKey(agentType: AgentType, sessionId: string): string {
   return `${agentType}\0${sessionId}`
-}
-
-function workspaceKey(path: string | undefined): string {
-  return (path ?? '').replace(/[\\/]+$/, '').toLowerCase()
 }

@@ -4,7 +4,7 @@
  *
  * @module renderer/App
  */
-import { useEffect, useState } from 'react'
+import { memo, useEffect, useMemo, type ReactNode } from 'react'
 import {
   TOKEN_QUOTA_WINDOW_LABEL,
   formatTokenCount,
@@ -20,7 +20,7 @@ import { Header } from './components/Header.js'
 import { NotificationsRail } from './components/NotificationsRail.js'
 import { buildAgentPanels, type AgentPanel, type AgentWorkspaceItem } from './lib/displayAgents.js'
 import { formatDuration, formatRelative, turnStateStyle } from './lib/format.js'
-import { UI_REFRESH_INTERVAL_MS } from './lib/timing.js'
+import { useNow } from './lib/useNow.js'
 
 /**
  * 应用外壳 Dashboard。
@@ -39,15 +39,9 @@ export function App(): JSX.Element {
     toggleMute,
     dismissNotification,
   } = useStore()
-  const [now, setNow] = useState(() => Date.now())
-  const panels = buildAgentPanels(snapshot.agents)
+  const panels = useMemo(() => buildAgentPanels(snapshot.agents), [snapshot.agents])
 
   useEffect(() => init(), [init])
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), UI_REFRESH_INTERVAL_MS)
-    return () => clearInterval(timer)
-  }, [])
 
   return (
     <div className="app-shell flex h-full flex-col text-slate-950">
@@ -64,7 +58,6 @@ export function App(): JSX.Element {
               <AgentPanelView
                 key={panel.agentType}
                 panel={panel}
-                now={now}
                 onAck={(agentType, workspacePath) => ack(agentType, workspacePath)}
               />
             ))}
@@ -74,7 +67,6 @@ export function App(): JSX.Element {
           agents={snapshot.agents}
           detectedAgents={agents}
           notifications={notifications}
-          now={now}
           onDismiss={dismissNotification}
         />
       </div>
@@ -82,13 +74,11 @@ export function App(): JSX.Element {
   )
 }
 
-function AgentPanelView({
+const AgentPanelView = memo(function AgentPanelView({
   panel,
-  now,
   onAck,
 }: {
   panel: AgentPanel
-  now: number
   onAck: (agentType: AgentType, workspacePath?: string) => void
 }): JSX.Element {
   const latest = panel.workspaces[0]?.agent
@@ -117,12 +107,9 @@ function AgentPanelView({
         </div>
         <div className="grid grid-cols-2 gap-2 text-sm md:w-[30rem] md:grid-cols-[5.5rem_7rem_minmax(0,1fr)]">
           <Metric label="项目" value={String(projectCount || panel.workspaces.length)} />
-          <Metric
-            label="最近事件"
-            value={latest?.lastEventAt ? formatRelative(latest.lastEventAt, now) : '—'}
-          />
+          <Metric label="最近事件" value={<RelativeTime timestamp={latest?.lastEventAt} />} />
           <div className="col-span-2 md:col-span-1">
-            <PanelQuotaMeter token={panel.quotaToken} now={now} />
+            <PanelQuotaMeter token={panel.quotaToken} />
           </div>
         </div>
       </div>
@@ -135,22 +122,19 @@ function AgentPanelView({
           <ProjectTile
             key={item.id}
             item={item}
-            now={now}
             onAck={() => onAck(panel.agentType, item.workspacePath)}
           />
         ))}
       </div>
     </section>
   )
-}
+})
 
-function ProjectTile({
+const ProjectTile = memo(function ProjectTile({
   item,
-  now,
   onAck,
 }: {
   item: AgentWorkspaceItem
-  now: number
   onAck: () => void
 }): JSX.Element {
   const agent = item.agent
@@ -158,7 +142,6 @@ function ProjectTile({
   const token = agent.token
   const contextWindow = effectiveContextWindow(agent)
   const contextPct = token?.contextUsedPercent
-  const elapsed = agent.turnStartedAt ? formatDuration(now - agent.turnStartedAt) : '—'
 
   return (
     <article className="glass-subtle rounded-xl px-4 py-3">
@@ -190,7 +173,7 @@ function ProjectTile({
 
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(8rem,1.7fr)_minmax(4.5rem,0.8fr)_minmax(4rem,0.7fr)_minmax(5rem,0.8fr)]">
           <InlineMetric label="模型" value={agent.model ?? '—'} />
-          <InlineMetric label="耗时" value={elapsed} />
+          <InlineMetric label="耗时" value={<ElapsedTime since={agent.turnStartedAt} />} />
           <InlineMetric label="工具" value={String(agent.toolCallCount)} />
           <InlineMetric label="Token" value={formatTokenCount(token?.total)} />
         </div>
@@ -208,20 +191,15 @@ function ProjectTile({
           <span className="font-semibold text-amber-700">当前</span> {agent.activity ?? '等待事件'}
         </p>
         <span className="shrink-0 font-semibold text-slate-500">
-          {agent.lastEventAt ? formatRelative(agent.lastEventAt, now) : '—'}
+          <RelativeTime timestamp={agent.lastEventAt} />
         </span>
       </div>
     </article>
   )
-}
+})
 
-function PanelQuotaMeter({
-  token,
-  now,
-}: {
-  token: TokenPayload | undefined
-  now: number
-}): JSX.Element {
+function PanelQuotaMeter({ token }: { token: TokenPayload | undefined }): JSX.Element {
+  const now = useNow()
   const fiveHour = token?.rateLimits?.fiveHour
   const sevenDay = token?.rateLimits?.sevenDay
   const detail =
@@ -234,6 +212,16 @@ function PanelQuotaMeter({
   return (
     <TokenMeter label={TOKEN_QUOTA_WINDOW_LABEL} percent={fiveHour?.usedPercent} detail={detail} />
   )
+}
+
+function RelativeTime({ timestamp }: { timestamp: number | undefined }): JSX.Element {
+  const now = useNow()
+  return <>{timestamp ? formatRelative(timestamp, now) : '—'}</>
+}
+
+function ElapsedTime({ since }: { since: number | undefined }): JSX.Element {
+  const now = useNow()
+  return <>{since ? formatDuration(now - since) : '—'}</>
 }
 
 function TokenMeter({
@@ -277,7 +265,7 @@ function TokenMeter({
   )
 }
 
-function InlineMetric({ label, value }: { label: string; value: string }): JSX.Element {
+function InlineMetric({ label, value }: { label: string; value: ReactNode }): JSX.Element {
   return (
     <div className="min-w-0 rounded-xl border border-white/65 bg-white/42 px-3 py-2 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.58)]">
       <p className="text-[10px] font-medium text-slate-500">{label}</p>
@@ -292,7 +280,7 @@ function Metric({
   className = '',
 }: {
   label: string
-  value: string
+  value: ReactNode
   className?: string
 }): JSX.Element {
   return (

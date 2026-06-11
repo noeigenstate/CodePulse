@@ -112,7 +112,7 @@ async function collectRolloutFiles(dir: string, out: RolloutFile[]): Promise<voi
     return
   }
 
-  for (const entry of entries) {
+  for (const entry of [...entries].sort((a, b) => b.name.localeCompare(a.name))) {
     if (out.length >= MAX_ROLLOUT_FILES) return
     const path = join(dir, entry.name)
     if (entry.isDirectory()) {

@@ -7,6 +7,7 @@
 import { create } from 'zustand'
 import type { Agent, AgentType, NotificationRequest, StatusSnapshot } from '@codepulse/shared'
 import { STATUS_REFRESH_INTERVAL_MS } from './lib/timing.js'
+import { sameSnapshotData } from './lib/snapshotKey.js'
 
 /** 首个真实状态到达前使用的快照。 */
 const EMPTY_SNAPSHOT: StatusSnapshot = { overall: 'idle', agents: [], updatedAt: Date.now() }
@@ -58,15 +59,29 @@ export const useStore = create<CodePulseStore>((set, get) => ({
       return () => undefined
     }
 
-    const refreshStatus = (): void => {
-      void api.getStatus().then((snapshot) => set({ snapshot, ready: true }))
+    const applySnapshot = (snapshot: StatusSnapshot, ready = false): void => {
+      set((state) => {
+        const nextReady = ready || state.ready
+        if (sameSnapshotData(state.snapshot, snapshot)) {
+          return state.ready === nextReady ? state : { ready: nextReady }
+        }
+        return { snapshot, ready: nextReady }
+      })
+    }
+    const refreshStatus = (force = false): void => {
+      if (!force && document.hidden) return
+      void api.getStatus().then((snapshot) => applySnapshot(snapshot, true))
     }
 
-    refreshStatus()
+    refreshStatus(true)
     void api.detectAgents().then((agents) => set({ agents }))
 
     const refreshTimer = window.setInterval(refreshStatus, STATUS_REFRESH_INTERVAL_MS)
-    const offStatus = api.onStatus((snapshot) => set({ snapshot }))
+    const handleVisibility = (): void => {
+      if (!document.hidden) refreshStatus(true)
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    const offStatus = api.onStatus((snapshot) => applySnapshot(snapshot))
     const offMute = api.onMute((muted) => set({ muted }))
     const offNote = api.onNotification((note) =>
       set((s) => {
@@ -79,6 +94,7 @@ export const useStore = create<CodePulseStore>((set, get) => ({
 
     return () => {
       window.clearInterval(refreshTimer)
+      document.removeEventListener('visibilitychange', handleVisibility)
       offStatus()
       offMute()
       offNote()

@@ -69,3 +69,73 @@ test('Codex usage poller reads latest rollout rate limits', async () => {
     await rm(home, { recursive: true, force: true })
   }
 })
+
+test('Codex usage poller scans newer session folders before capped history', async () => {
+  const home = join(tmpdir(), `codepulse-codex-poller-cap-${Date.now()}`)
+  const oldSessions = join(home, 'sessions', '2025', '01', '01')
+  const freshSessions = join(home, 'sessions', '2026', '06', '11')
+  const fresh = join(freshSessions, 'rollout-2026-06-11T10-00-00-fresh.jsonl')
+
+  await mkdir(oldSessions, { recursive: true })
+  await mkdir(freshSessions, { recursive: true })
+
+  const oldPayload = [
+    JSON.stringify({
+      type: 'session_meta',
+      payload: { id: 'old', cwd: 'E:/project/old', model: 'gpt-old' },
+    }),
+    JSON.stringify({
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: {
+          model_context_window: 100000,
+          total_token_usage: { input_tokens: 1000, output_tokens: 100, total_tokens: 1100 },
+          last_token_usage: { input_tokens: 1000, output_tokens: 100, total_tokens: 1100 },
+        },
+        rate_limits: { primary: { used_percent: 7 } },
+      },
+    }),
+  ].join('\n')
+  await Promise.all(
+    Array.from({ length: 310 }, (_, i) =>
+      writeFile(
+        join(oldSessions, `rollout-2025-01-01T00-00-${String(i).padStart(3, '0')}.jsonl`),
+        oldPayload,
+        'utf8',
+      ),
+    ),
+  )
+  await writeFile(
+    fresh,
+    [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: 'fresh', cwd: 'E:/project/fresh', model: 'gpt-5-codex' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 100000,
+            total_token_usage: { input_tokens: 4200, output_tokens: 300, total_tokens: 4500 },
+            last_token_usage: { input_tokens: 2000, output_tokens: 100, total_tokens: 2100 },
+          },
+          rate_limits: { primary: { used_percent: 61 } },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  try {
+    const event = await readLatestCodexTokenSnapshot(home)
+    assert.equal(event?.workspacePath, 'E:/project/fresh')
+    assert.equal(event?.model, 'gpt-5-codex')
+    assert.equal(event?.token?.total, 4500)
+    assert.equal(event?.token?.rateLimits?.fiveHour?.usedPercent, 61)
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})

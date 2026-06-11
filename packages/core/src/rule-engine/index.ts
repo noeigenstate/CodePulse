@@ -89,6 +89,7 @@ export class RuleEngine {
   onTransition(result: TransitionResult, now = Date.now()): NotificationRequest[] {
     const { next, previous, previousState } = result
     const agent = next.agentType
+    const scope = agentScope(next)
     const out: NotificationRequest[] = []
 
     if (next.state === previousState) {
@@ -97,7 +98,7 @@ export class RuleEngine {
       return out
     }
 
-    this.stuckLevelFired.delete(agent)
+    this.stuckLevelFired.delete(scope)
 
     switch (next.state) {
       case TurnState.DONE:
@@ -105,7 +106,7 @@ export class RuleEngine {
           level: 'normal',
           title: `${agentLabel(agent)} 完成一轮任务`,
           body: next.lastAssistantMessage ?? '当前一轮任务已完成',
-          dedupeKey: `done:${agent}:${
+          dedupeKey: `done:${scope}:${
             next.externalTurnId ?? previous.externalTurnId ?? previous.turnStartedAt ?? now
           }`,
         })
@@ -115,7 +116,7 @@ export class RuleEngine {
           level: 'strong',
           title: `${agentLabel(agent)} 需要授权`,
           body: next.activity ?? '请求执行操作，等待授权',
-          dedupeKey: `perm:${agent}:${next.externalTurnId ?? ''}`,
+          dedupeKey: `perm:${scope}:${next.externalTurnId ?? ''}`,
           throttleMs: this.options.permissionThrottleMs ?? DEFAULTS.permissionThrottleMs,
         })
         break
@@ -124,7 +125,7 @@ export class RuleEngine {
           level: 'strong',
           title: `${agentLabel(agent)} 等待输入`,
           body: next.activity ?? '等待用户继续输入',
-          dedupeKey: `input:${agent}:${next.externalTurnId ?? ''}`,
+          dedupeKey: `input:${scope}:${next.externalTurnId ?? ''}`,
         })
         break
       case TurnState.CANCELLED:
@@ -132,7 +133,7 @@ export class RuleEngine {
           level: 'normal',
           title: `${agentLabel(agent)} 任务已取消`,
           body: next.activity ?? '当前一轮任务已取消',
-          dedupeKey: `cancelled:${agent}:${
+          dedupeKey: `cancelled:${scope}:${
             next.externalTurnId ?? previous.externalTurnId ?? previous.turnStartedAt ?? now
           }`,
         })
@@ -142,7 +143,7 @@ export class RuleEngine {
           level: 'strong',
           title: `${agentLabel(agent)} 执行出错`,
           body: next.activity ?? '任务执行出错',
-          dedupeKey: `error:${agent}:${next.externalTurnId ?? now}`,
+          dedupeKey: `error:${scope}:${next.externalTurnId ?? now}`,
         })
         break
     }
@@ -164,35 +165,36 @@ export class RuleEngine {
     const out: NotificationRequest[] = []
     const inactiveFor = now - agent.lastEventAt
     const canCheckStuck = isActiveState(agent.state) || agent.state === TurnState.TIMEOUT
+    const scope = agentScope(agent)
     if (!canCheckStuck || agent.lastEventAt === 0) {
-      this.stuckLevelFired.delete(agent.agentType)
+      this.stuckLevelFired.delete(scope)
       return out
     }
 
-    const fired = this.stuckLevelFired.get(agent.agentType)
+    const fired = this.stuckLevelFired.get(scope)
     if (inactiveFor >= STUCK_STRONG_MS && fired !== 'strong') {
-      this.stuckLevelFired.set(agent.agentType, 'strong')
+      this.stuckLevelFired.set(scope, 'strong')
       this.push(out, now, {
         level: 'strong',
         title: `${agentLabel(agent.agentType)} 疑似卡住`,
         body: '超过 10 分钟没有新事件',
-        dedupeKey: `stuck:${agent.agentType}:strong`,
+        dedupeKey: `stuck:${scope}:strong`,
       })
     } else if (inactiveFor >= STUCK_VISIBLE_MS && (fired === undefined || fired === 'soft')) {
-      this.stuckLevelFired.set(agent.agentType, 'visible')
+      this.stuckLevelFired.set(scope, 'visible')
       this.push(out, now, {
         level: 'soft',
         title: `${agentLabel(agent.agentType)} 可能卡住`,
         body: '超过 5 分钟没有新事件',
-        dedupeKey: `stuck:${agent.agentType}:visible`,
+        dedupeKey: `stuck:${scope}:visible`,
       })
     } else if (inactiveFor >= STUCK_SOFT_MS && fired === undefined) {
-      this.stuckLevelFired.set(agent.agentType, 'soft')
+      this.stuckLevelFired.set(scope, 'soft')
       this.push(out, now, {
         level: 'soft',
         title: `${agentLabel(agent.agentType)} 长时间无响应`,
         body: '超过 2 分钟没有新事件',
-        dedupeKey: `stuck:${agent.agentType}:soft`,
+        dedupeKey: `stuck:${scope}:soft`,
       })
     }
     return out
@@ -214,25 +216,26 @@ export class RuleEngine {
     const token = agent.token
     const pct = token?.contextUsedPercent
     if (pct == null || !token) return
-    const already = this.contextLevelFired.get(agent.agentType)
+    const scope = agentScope(agent)
+    const already = this.contextLevelFired.get(scope)
     if (pct >= CONTEXT_STRONG_PERCENT && already !== 'strong') {
-      this.contextLevelFired.set(agent.agentType, 'strong')
+      this.contextLevelFired.set(scope, 'strong')
       this.push(out, now, {
         level: 'strong',
         title: `${agentLabel(agent.agentType)} 上下文即将耗尽`,
         body: formatTokenQuotaNotice(agent.agentType, token),
-        dedupeKey: `ctx:${agent.agentType}:strong`,
+        dedupeKey: `ctx:${scope}:strong`,
       })
     } else if (pct >= CONTEXT_SOFT_PERCENT && already === undefined) {
-      this.contextLevelFired.set(agent.agentType, 'soft')
+      this.contextLevelFired.set(scope, 'soft')
       this.push(out, now, {
         level: 'soft',
         title: `${agentLabel(agent.agentType)} 上下文偏高`,
         body: formatTokenQuotaNotice(agent.agentType, token),
-        dedupeKey: `ctx:${agent.agentType}:soft`,
+        dedupeKey: `ctx:${scope}:soft`,
       })
     } else if (pct < CONTEXT_SOFT_PERCENT) {
-      this.contextLevelFired.delete(agent.agentType)
+      this.contextLevelFired.delete(scope)
     }
   }
 
@@ -285,4 +288,8 @@ export class RuleEngine {
  */
 function agentLabel(agent: string): string {
   return agent === 'codex' ? 'Codex' : 'Claude Code'
+}
+
+function agentScope(agent: AgentRuntimeState): string {
+  return `${agent.agentType}:${(agent.workspacePath ?? '').replace(/[\\/]+$/, '').toLowerCase()}`
 }

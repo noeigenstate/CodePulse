@@ -40,8 +40,10 @@ export interface StatusHubEvents {
  * 它也可以在测试中直接驱动。
  */
 export class StatusHub extends EventEmitter {
-  /** 当前运行时状态，每个 agent 一个槽位。 */
-  private agents = new Map<AgentType, AgentRuntimeState>()
+  /** 当前运行时状态，每个 agent + workspace 一个槽位。 */
+  private agents = new Map<string, AgentRuntimeState>()
+  /** 让缺少 cwd 的后续事件仍能回到原 workspace。 */
+  private sessionKeys = new Map<string, string>()
   /** 共享的、有状态的通知规则引擎。 */
   private rules: RuleEngine
   /** 无活动看门狗定时器句柄（运行中时存在）。 */
@@ -64,9 +66,11 @@ export class StatusHub extends EventEmitter {
    * @param event 待应用的归一化事件。
    */
   ingest(event: AgentEvent): void {
-    const current = this.agents.get(event.source) ?? createInitialRuntimeState(event.source)
+    const key = this.keyForEvent(event)
+    const current = this.agents.get(key) ?? createInitialRuntimeState(event.source)
     const result = reduce(current, event)
-    this.agents.set(event.source, result.next)
+    this.agents.set(key, result.next)
+    this.rememberEventKey(event, key)
 
     this.emit('event', event)
     this.emit('status', this.snapshot())
@@ -82,11 +86,16 @@ export class StatusHub extends EventEmitter {
    *
    * @param agentType 要确认的 agent。
    */
-  acknowledge(agentType: AgentType): void {
-    const current = this.agents.get(agentType)
-    if (!current || !current.unread) return
-    this.agents.set(agentType, { ...current, unread: false })
-    this.emit('status', this.snapshot())
+  acknowledge(agentType: AgentType, workspacePath?: string): void {
+    let changed = false
+    for (const [key, current] of this.agents) {
+      if (current.agentType !== agentType || !current.unread) continue
+      if (workspacePath && workspaceKey(current.workspacePath) !== workspaceKey(workspacePath))
+        continue
+      this.agents.set(key, { ...current, unread: false })
+      changed = true
+    }
+    if (changed) this.emit('status', this.snapshot())
   }
 
   /**
@@ -134,7 +143,7 @@ export class StatusHub extends EventEmitter {
    */
   private tick(now = Date.now()): void {
     let changed = false
-    for (const agent of this.agents.values()) {
+    for (const [key, agent] of this.agents) {
       for (const note of this.rules.onTick(agent, now)) {
         this.emit('notification', note)
         changed = true
@@ -144,7 +153,7 @@ export class StatusHub extends EventEmitter {
         isActiveState(agent.state) &&
         now - agent.lastEventAt >= STUCK_VISIBLE_MS
       ) {
-        this.agents.set(agent.agentType, {
+        this.agents.set(key, {
           ...agent,
           state: TurnState.TIMEOUT,
           turnStartedAt: undefined,
@@ -183,4 +192,32 @@ export class StatusHub extends EventEmitter {
   ): boolean {
     return super.emit(event, ...args)
   }
+
+  private keyForEvent(event: AgentEvent): string {
+    const workspace = event.workspacePath ?? event.cwd
+    if (workspace) return runtimeKey(event.source, workspace)
+    if (event.externalSessionId) {
+      const known = this.sessionKeys.get(sessionKey(event.source, event.externalSessionId))
+      if (known) return known
+    }
+    return runtimeKey(event.source, '')
+  }
+
+  private rememberEventKey(event: AgentEvent, key: string): void {
+    if (event.externalSessionId) {
+      this.sessionKeys.set(sessionKey(event.source, event.externalSessionId), key)
+    }
+  }
+}
+
+function runtimeKey(agentType: AgentType, workspacePath: string): string {
+  return `${agentType}\0${workspaceKey(workspacePath)}`
+}
+
+function sessionKey(agentType: AgentType, sessionId: string): string {
+  return `${agentType}\0${sessionId}`
+}
+
+function workspaceKey(path: string | undefined): string {
+  return (path ?? '').replace(/[\\/]+$/, '').toLowerCase()
 }

@@ -366,9 +366,13 @@ try {
   check('model captured', claudeTok?.model === 'Claude Sonnet')
   check(
     'context>80 soft notification fired',
-    notifications.some((n) => n.dedupeKey === 'ctx:claude_code:soft'),
+    notifications.some(
+      (n) => n.dedupeKey.startsWith('ctx:claude_code:') && n.dedupeKey.endsWith(':soft'),
+    ),
   )
-  const claudeCtxNote = notifications.find((n) => n.dedupeKey === 'ctx:claude_code:soft')
+  const claudeCtxNote = notifications.find(
+    (n) => n.dedupeKey.startsWith('ctx:claude_code:') && n.dedupeKey.endsWith(':soft'),
+  )
   check('claude token notification shows percentage', claudeCtxNote?.body.includes('83%') === true)
   check(
     'claude token notification mentions 5h quota',
@@ -425,7 +429,9 @@ try {
     'done notification fired (normal)',
     notifications.some((n) => n.level === 'normal' && n.dedupeKey.startsWith('done:')),
   )
-  const codexCtxNote = notifications.find((n) => n.dedupeKey === 'ctx:codex:strong')
+  const codexCtxNote = notifications.find(
+    (n) => n.dedupeKey.startsWith('ctx:codex:') && n.dedupeKey.endsWith(':strong'),
+  )
   check('codex context>95 strong notification fired', codexCtxNote?.level === 'strong')
   check('codex token notification shows percentage', codexCtxNote?.body.includes('96%') === true)
   check(

@@ -34,7 +34,8 @@ const api = {
   /** 获取当前状态快照。 */
   getStatus: (): Promise<StatusSnapshot> => ipcRenderer.invoke('codepulse:get-status'),
   /** 确认某 agent 的未读终结结果。 */
-  ack: (agent: AgentType): Promise<boolean> => ipcRenderer.invoke('codepulse:ack', agent),
+  ack: (agent: AgentType, workspacePath?: string): Promise<boolean> =>
+    ipcRenderer.invoke('codepulse:ack', agent, workspacePath),
   /** 确认所有 agent 的未读结果。 */
   clearAlerts: (): Promise<boolean> => ipcRenderer.invoke('codepulse:clear-alerts'),
   /** 设置静音状态；解析为实际应用的值。 */

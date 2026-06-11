@@ -44,7 +44,9 @@ export function formatTokenUsage(token: TokenPayload | undefined): string {
   if (!token) return 'Token 暂无数据'
   const parts: string[] = []
   if (token.input != null) parts.push(`输入 ${formatTokenCount(token.input)}`)
+  if (token.cachedInput != null) parts.push(`缓存 ${formatTokenCount(token.cachedInput)}`)
   if (token.output != null) parts.push(`输出 ${formatTokenCount(token.output)}`)
+  if (token.reasoningOutput != null) parts.push(`推理 ${formatTokenCount(token.reasoningOutput)}`)
   if (token.total != null) parts.push(`总计 ${formatTokenCount(token.total)}`)
   return parts.length > 0 ? parts.join(' / ') : 'Token 暂无数据'
 }
@@ -58,11 +60,16 @@ export function formatTokenUsage(token: TokenPayload | undefined): string {
  */
 export function formatTokenQuotaNotice(agent: AgentType, token: TokenPayload): string {
   const pct = formatTokenPercent(token.contextUsedPercent)
+  const quotaPct = token.rateLimits?.fiveHour?.usedPercent
+  const quotaText =
+    quotaPct == null
+      ? TOKEN_QUOTA_WINDOW_LABEL
+      : `${TOKEN_QUOTA_WINDOW_LABEL}已用 ${formatTokenPercent(quotaPct)}`
   const sourceNote =
     agent === 'codex'
       ? 'Codex token 为估算值'
       : token.accuracy === 'estimated'
         ? 'Claude token 为估算值'
         : 'Claude token 来自 status line'
-  return `Token/context 已使用 ${pct}；${formatTokenUsage(token)}。${TOKEN_QUOTA_WINDOW_LABEL}窗口以对应 CLI 的官方重置时间为准，${sourceNote}。`
+  return `Token/context 已使用 ${pct}；${formatTokenUsage(token)}。${quotaText}，窗口以对应 CLI 的官方重置时间为准，${sourceNote}。`
 }

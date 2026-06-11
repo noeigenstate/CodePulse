@@ -6,6 +6,10 @@
  * @module adapters/util
  */
 
+import type { TokenPayload } from '@codepulse/shared'
+
+type RateLimitWindowPayload = NonNullable<TokenPayload['rateLimits']>['fiveHour']
+
 /**
  * 返回候选键中找到的第一个非空字符串。
  *
@@ -59,4 +63,30 @@ export function preview(text: string | undefined, max = 120): string | undefined
   if (!text) return undefined
   const trimmed = text.trim()
   return trimmed.length <= max ? trimmed : `${trimmed.slice(0, max)}…`
+}
+
+/** 从 Claude/Codex 的 rate limit 结构中读取 5 小时与 7 天额度。 */
+export function pickRateLimits(raw: Record<string, unknown>): TokenPayload['rateLimits'] {
+  const rateLimits = asRecord(raw.rate_limits ?? raw.rateLimits)
+  if (!rateLimits) return undefined
+
+  const fiveHour = readRateLimitWindow(
+    rateLimits.five_hour ?? rateLimits.fiveHour ?? rateLimits.primary,
+  )
+  const sevenDay = readRateLimitWindow(
+    rateLimits.seven_day ?? rateLimits.sevenDay ?? rateLimits.secondary,
+  )
+
+  if (!fiveHour && !sevenDay) return undefined
+  return { fiveHour, sevenDay }
+}
+
+function readRateLimitWindow(value: unknown): RateLimitWindowPayload {
+  const record = asRecord(value)
+  if (!record) return undefined
+  const usedPercent = pickNumber(record, 'used_percentage', 'usedPercent', 'used_percent')
+  const resetsAt = pickNumber(record, 'resets_at', 'resetsAt')
+  const windowMinutes = pickNumber(record, 'window_minutes', 'windowMinutes')
+  if (usedPercent == null && resetsAt == null && windowMinutes == null) return undefined
+  return { usedPercent, resetsAt, windowMinutes }
 }

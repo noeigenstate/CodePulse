@@ -51,14 +51,35 @@ export interface TokenSnapshot {
 export interface TokenPayload {
   /** 提示词/输入 token 数。 */
   input?: number
+  /** 缓存命中的输入 token 数，如 agent 单独上报。 */
+  cachedInput?: number
   /** 补全/输出 token 数。 */
   output?: number
+  /** 推理输出 token 数，如 agent 单独上报。 */
+  reasoningOutput?: number
   /** 总 token 数。 */
   total?: number
   /** 上下文窗口已用百分比（0–100）。 */
   contextUsedPercent?: number
+  /** 上下文窗口大小，如 agent 上报。 */
+  contextWindow?: number
+  /** CLI 自身的滚动额度窗口。 */
+  rateLimits?: {
+    fiveHour?: TokenRateLimitWindow
+    sevenDay?: TokenRateLimitWindow
+  }
   /** 花费（美元）。 */
   costUsd?: number
   /** 数字的可信度。 */
   accuracy: TokenAccuracy
+}
+
+/** CLI 上报的滚动额度窗口。 */
+export interface TokenRateLimitWindow {
+  /** 已用百分比。 */
+  usedPercent?: number
+  /** 重置时间，epoch 秒。 */
+  resetsAt?: number
+  /** 窗口长度，分钟。 */
+  windowMinutes?: number
 }

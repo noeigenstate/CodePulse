@@ -83,7 +83,7 @@ export function NotificationsRail({
             <UsageItem
               key={agentType}
               agentType={agentType}
-              agent={agents.find((agent) => agent.agentType === agentType)}
+              agent={latestAgentOfType(agents, agentType)}
             />
           ))}
         </ul>
@@ -181,6 +181,7 @@ function UsageItem({
   agent: AgentRuntimeState | undefined
 }): JSX.Element {
   const pct = agent?.token?.contextUsedPercent
+  const quotaPct = agent?.token?.rateLimits?.fiveHour?.usedPercent
   const hasPct = typeof pct === 'number'
 
   return (
@@ -192,6 +193,10 @@ function UsageItem({
         <span className={`text-xs ${hasPct ? quotaTextColor(pct) : 'text-gray-500'}`}>
           {formatTokenPercent(pct)}
         </span>
+      </div>
+      <div className="mb-1 flex items-center justify-between text-[10px] text-gray-500">
+        <span>{TOKEN_QUOTA_WINDOW_LABEL}</span>
+        <span>{formatTokenPercent(quotaPct)}</span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-slate-950/70 ring-1 ring-white/10">
         <div
@@ -216,4 +221,13 @@ function quotaTextColor(pct: number): string {
   if (pct >= 95) return 'text-red-300'
   if (pct >= 80) return 'text-yellow-300'
   return 'text-blue-300'
+}
+
+function latestAgentOfType(
+  agents: AgentRuntimeState[],
+  agentType: AgentType,
+): AgentRuntimeState | undefined {
+  return agents
+    .filter((agent) => agent.agentType === agentType)
+    .sort((a, b) => b.lastEventAt - a.lastEventAt)[0]
 }

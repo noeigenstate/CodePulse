@@ -26,6 +26,8 @@ interface Props {
   now: number
   /** 用户确认未读结果时调用。 */
   onAck: () => void
+  /** 是否在卡片内展示 token，用于项目组共享 token 条时关闭。 */
+  showToken?: boolean
 }
 
 /**
@@ -34,7 +36,7 @@ interface Props {
  * @param props 见 {@link Props}。
  * @returns 卡片元素。
  */
-export function AgentCard({ agent, now, onAck }: Props): JSX.Element {
+export function AgentCard({ agent, now, onAck, showToken = true }: Props): JSX.Element {
   const style = turnStateStyle(agent.state)
   const tok = agent.token
   const ctx = tok?.contextUsedPercent
@@ -83,7 +85,7 @@ export function AgentCard({ agent, now, onAck }: Props): JSX.Element {
         {agent.activity ?? '等待事件'}
       </div>
 
-      {(typeof ctx === 'number' || hasTokens || tok?.costUsd != null) && (
+      {showToken && (typeof ctx === 'number' || hasTokens || tok?.costUsd != null) && (
         <div className="mt-5">
           {typeof ctx === 'number' && (
             <>

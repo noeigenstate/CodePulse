@@ -5,7 +5,7 @@
  * @module adapters/claude-code
  */
 import type { AgentEventInput, AgentEventType } from '@codepulse/shared'
-import { asRecord, pickNumber, pickString, preview } from '../util.js'
+import { asRecord, pickNumber, pickRateLimits, pickString, preview } from '../util.js'
 
 /**
  * 把 Claude Code 的 hook 载荷映射为 {@link AgentEventInput}。
@@ -150,17 +150,29 @@ export function fromClaudeStatusLine(raw: unknown): AgentEventInput | null {
   const usage = asRecord(r.usage) ?? r
   const contextUsage = asRecord(contextWindow?.current_usage ?? contextWindow?.currentUsage)
   const usageSource = contextUsage ?? usage
+  const currentInput = sumKnown(
+    pickNumber(contextUsage ?? {}, 'input_tokens', 'inputTokens'),
+    pickNumber(contextUsage ?? {}, 'cache_read_input_tokens', 'cacheReadInputTokens'),
+    pickNumber(contextUsage ?? {}, 'cache_creation_input_tokens', 'cacheCreationInputTokens'),
+  )
   const input =
     pickNumber(contextWindow ?? {}, 'total_input_tokens', 'totalInputTokens') ??
+    currentInput ??
     pickNumber(usageSource, 'input_tokens', 'inputTokens')
   const output =
     pickNumber(contextWindow ?? {}, 'total_output_tokens', 'totalOutputTokens') ??
     pickNumber(usageSource, 'output_tokens', 'outputTokens')
   const total = pickNumber(usageSource, 'total_tokens', 'totalTokens') ?? sumKnown(input, output)
+  const contextWindowSize = pickNumber(
+    contextWindow ?? {},
+    'context_window_size',
+    'contextWindowSize',
+  )
   const contextUsedPercent =
     pickNumber(contextWindow ?? {}, 'used_percentage', 'usedPercentage') ??
     pickNumber(r, 'context_used_percent', 'contextUsedPercent') ??
-    pickNumber(usageSource, 'context_used_percent', 'contextUsedPercent')
+    pickNumber(usageSource, 'context_used_percent', 'contextUsedPercent') ??
+    percentOf(input, contextWindowSize)
 
   return {
     source: 'claude_code',
@@ -177,6 +189,13 @@ export function fromClaudeStatusLine(raw: unknown): AgentEventInput | null {
       output,
       total,
       contextUsedPercent,
+      contextWindow: contextWindowSize,
+      cachedInput: sumKnown(
+        pickNumber(contextUsage ?? {}, 'cache_read_input_tokens', 'cacheReadInputTokens'),
+        pickNumber(contextUsage ?? {}, 'cache_creation_input_tokens', 'cacheCreationInputTokens'),
+      ),
+      reasoningOutput: pickNumber(usageSource, 'reasoning_output_tokens', 'reasoningOutputTokens'),
+      rateLimits: pickRateLimits(r),
       costUsd: cost ? pickNumber(cost, 'total_cost_usd', 'total_cost') : pickNumber(r, 'cost_usd'),
       accuracy: 'exact',
     },
@@ -184,6 +203,14 @@ export function fromClaudeStatusLine(raw: unknown): AgentEventInput | null {
   }
 }
 
-function sumKnown(a: number | undefined, b: number | undefined): number | undefined {
-  return a == null && b == null ? undefined : (a ?? 0) + (b ?? 0)
+function sumKnown(...values: Array<number | undefined>): number | undefined {
+  if (values.every((value) => value == null)) return undefined
+  let sum = 0
+  for (const value of values) sum += value ?? 0
+  return sum
+}
+
+function percentOf(value: number | undefined, total: number | undefined): number | undefined {
+  if (value == null || total == null || total <= 0) return undefined
+  return Math.min(100, (value / total) * 100)
 }

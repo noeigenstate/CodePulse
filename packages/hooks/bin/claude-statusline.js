@@ -123,18 +123,45 @@ function normalizeContextWindow(value) {
   const used = value.used_percentage
   const input = value.total_input_tokens
   const output = value.total_output_tokens
-  if (typeof used !== 'number' && typeof input !== 'number' && typeof output !== 'number') {
+  const current = value.current_usage
+  const currentInput =
+    current && typeof current === 'object'
+      ? (numberValue(current.input_tokens) ?? 0) +
+        (numberValue(current.cache_read_input_tokens) ?? 0) +
+        (numberValue(current.cache_creation_input_tokens) ?? 0)
+      : undefined
+  const currentOutput =
+    current && typeof current === 'object' ? numberValue(current.output_tokens) : undefined
+  const contextWindowSize = numberValue(value.context_window_size)
+  const effectiveInput = typeof input === 'number' ? input : currentInput
+  const effectiveOutput = typeof output === 'number' ? output : currentOutput
+  const effectiveUsed =
+    typeof used === 'number'
+      ? used
+      : contextWindowSize && effectiveInput
+        ? Math.min(100, (effectiveInput / contextWindowSize) * 100)
+        : undefined
+  if (
+    typeof effectiveUsed !== 'number' &&
+    typeof effectiveInput !== 'number' &&
+    typeof effectiveOutput !== 'number'
+  ) {
     return null
   }
   return {
     usage: {
-      input_tokens: typeof input === 'number' ? input : undefined,
-      output_tokens: typeof output === 'number' ? output : undefined,
+      input_tokens: typeof effectiveInput === 'number' ? effectiveInput : undefined,
+      output_tokens: typeof effectiveOutput === 'number' ? effectiveOutput : undefined,
       total_tokens:
-        typeof input === 'number' || typeof output === 'number'
-          ? (typeof input === 'number' ? input : 0) + (typeof output === 'number' ? output : 0)
+        typeof effectiveInput === 'number' || typeof effectiveOutput === 'number'
+          ? (typeof effectiveInput === 'number' ? effectiveInput : 0) +
+            (typeof effectiveOutput === 'number' ? effectiveOutput : 0)
           : undefined,
     },
-    context_used_percent: typeof used === 'number' ? used : undefined,
+    context_used_percent: typeof effectiveUsed === 'number' ? effectiveUsed : undefined,
   }
+}
+
+function numberValue(value) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }

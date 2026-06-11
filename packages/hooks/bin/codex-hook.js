@@ -10,7 +10,9 @@
  * @module hooks/bin/codex-hook
  */
 import { readStdinJson, postEvent } from '../lib/post.js'
+import { readLatestCodexUsage } from '../lib/codex-usage.js'
 
 const data = await readStdinJson()
-await postEvent({ source: 'codex', ...data })
+const usagePatch = await readLatestCodexUsage(data)
+await postEvent({ source: 'codex', ...data, ...usagePatch })
 process.exit(0)

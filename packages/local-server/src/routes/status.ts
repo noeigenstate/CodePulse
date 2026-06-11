@@ -25,8 +25,15 @@ export function registerStatusRoutes(app: FastifyInstance, hub: StatusHub): void
 
   app.get('/api/device/status', async () => toDeviceStatus(hub.snapshot()))
 
-  app.post<{ Params: { agent: AgentType } }>('/api/ack/:agent', async (request) => {
-    hub.acknowledge(request.params.agent)
+  app.post<{
+    Params: { agent: AgentType }
+    Body: { workspacePath?: string }
+    Querystring: { workspacePath?: string }
+  }>('/api/ack/:agent', async (request) => {
+    hub.acknowledge(
+      request.params.agent,
+      request.body?.workspacePath ?? request.query.workspacePath,
+    )
     return { ok: true }
   })
 

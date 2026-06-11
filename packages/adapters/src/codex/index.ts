@@ -5,7 +5,7 @@
  * @module adapters/codex
  */
 import type { AgentEventInput, AgentEventType } from '@codepulse/shared'
-import { asRecord, pickNumber, pickString, preview } from '../util.js'
+import { asRecord, pickNumber, pickRateLimits, pickString, preview } from '../util.js'
 
 /**
  * 把 Codex 的 hook 载荷映射为 {@link AgentEventInput}。
@@ -107,23 +107,61 @@ function mapCodexEvent(hookEvent: string): AgentEventType | null {
  * @returns 估算的 token 载荷；无任何用量数据时为 `undefined`。
  */
 function extractCodexToken(raw: Record<string, unknown>): AgentEventInput['token'] | undefined {
-  const usage = asRecord(raw.usage ?? raw.token) ?? raw
+  const info = asRecord(raw.info)
+  const usage = asRecord(raw.usage ?? raw.token ?? info?.total_token_usage) ?? raw
+  const contextUsage = asRecord(raw.context_usage ?? raw.contextUsage ?? info?.last_token_usage)
   const input = pickNumber(usage, 'input_tokens', 'inputTokens')
+  const cachedInput = pickNumber(usage, 'cached_input_tokens', 'cachedInputTokens')
   const output = pickNumber(usage, 'output_tokens', 'outputTokens')
+  const reasoningOutput = pickNumber(usage, 'reasoning_output_tokens', 'reasoningOutputTokens')
   const total = pickNumber(usage, 'total_tokens', 'totalTokens')
+  const contextWindow =
+    pickNumber(raw, 'context_window_size', 'contextWindowSize') ??
+    pickNumber(info ?? {}, 'model_context_window', 'modelContextWindow')
+  const contextInput = sumKnown(
+    pickNumber(contextUsage ?? usage, 'input_tokens', 'inputTokens'),
+    pickNumber(contextUsage ?? usage, 'cached_input_tokens', 'cachedInputTokens'),
+  )
   const pct =
     pickNumber(raw, 'context_used_percent', 'contextUsedPercent') ??
-    pickNumber(usage, 'context_used_percent', 'contextUsedPercent')
+    pickNumber(usage, 'context_used_percent', 'contextUsedPercent') ??
+    percentOf(contextInput, contextWindow)
   const costUsd = pickNumber(raw, 'cost_usd', 'costUsd') ?? pickNumber(usage, 'cost_usd', 'costUsd')
-  if (input == null && output == null && total == null && pct == null && costUsd == null) {
+  const rateLimits = pickRateLimits(raw)
+  if (
+    input == null &&
+    cachedInput == null &&
+    output == null &&
+    reasoningOutput == null &&
+    total == null &&
+    pct == null &&
+    costUsd == null &&
+    !rateLimits
+  ) {
     return undefined
   }
   return {
     input,
+    cachedInput,
     output,
+    reasoningOutput,
     total,
     contextUsedPercent: pct,
+    contextWindow,
+    rateLimits,
     costUsd,
     accuracy: 'estimated',
   }
+}
+
+function sumKnown(...values: Array<number | undefined>): number | undefined {
+  if (values.every((value) => value == null)) return undefined
+  let sum = 0
+  for (const value of values) sum += value ?? 0
+  return sum
+}
+
+function percentOf(value: number | undefined, total: number | undefined): number | undefined {
+  if (value == null || total == null || total <= 0) return undefined
+  return Math.min(100, (value / total) * 100)
 }

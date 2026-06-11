@@ -1,0 +1,55 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { fromClaudeStatusLine } from '@codepulse/adapters'
+
+test('Claude status line sums current_usage cache tokens into context input', () => {
+  const event = fromClaudeStatusLine({
+    session_id: 'claude-token',
+    model: { display_name: 'Claude Sonnet' },
+    context_window: {
+      context_window_size: 200000,
+      current_usage: {
+        input_tokens: 8500,
+        cache_creation_input_tokens: 5000,
+        cache_read_input_tokens: 2000,
+        output_tokens: 1200,
+      },
+    },
+    rate_limits: {
+      five_hour: { used_percentage: 23.5, resets_at: 1738425600 },
+      seven_day: { used_percentage: 41.2, resets_at: 1738857600 },
+    },
+  })
+
+  assert.equal(event?.eventType, 'token_snapshot')
+  assert.equal(event?.token?.input, 15500)
+  assert.equal(event?.token?.output, 1200)
+  assert.equal(event?.token?.total, 16700)
+  assert.equal(event?.token?.contextUsedPercent, 7.75)
+  assert.equal(event?.token?.rateLimits?.fiveHour?.usedPercent, 23.5)
+  assert.equal(event?.token?.rateLimits?.fiveHour?.resetsAt, 1738425600)
+  assert.equal(event?.token?.rateLimits?.sevenDay?.usedPercent, 41.2)
+})
+
+test('Claude status line prefers official used_percentage when present', () => {
+  const event = fromClaudeStatusLine({
+    session_id: 'claude-token',
+    context_window: {
+      total_input_tokens: 24000,
+      total_output_tokens: 1000,
+      context_window_size: 200000,
+      used_percentage: 12.5,
+      current_usage: {
+        input_tokens: 8500,
+        cache_creation_input_tokens: 5000,
+        cache_read_input_tokens: 2000,
+        output_tokens: 1200,
+      },
+    },
+  })
+
+  assert.equal(event?.token?.input, 24000)
+  assert.equal(event?.token?.output, 1000)
+  assert.equal(event?.token?.total, 25000)
+  assert.equal(event?.token?.contextUsedPercent, 12.5)
+})

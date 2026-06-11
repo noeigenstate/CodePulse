@@ -31,7 +31,7 @@ interface CodePulseStore {
    */
   init: () => () => void
   /** 确认某个 agent 的未读结果。 */
-  ack: (agent: AgentType) => void
+  ack: (agent: AgentType, workspacePath?: string) => void
   /** 确认所有 agent 并清空本地通知列表。 */
   clearAlerts: () => void
   /** 切换静音并把新值推送给主进程。 */
@@ -78,8 +78,8 @@ export const useStore = create<CodePulseStore>((set, get) => ({
     }
   },
 
-  ack: (agent) => {
-    void window.codepulse.ack(agent)
+  ack: (agent, workspacePath) => {
+    void window.codepulse.ack(agent, workspacePath)
   },
 
   clearAlerts: () => {

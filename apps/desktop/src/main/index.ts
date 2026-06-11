@@ -151,8 +151,8 @@ function setMuted(muted: boolean): void {
  */
 function registerIpc(): void {
   ipcMain.handle('codepulse:get-status', () => hub.snapshot())
-  ipcMain.handle('codepulse:ack', (_event, agent: AgentType) => {
-    hub.acknowledge(agent)
+  ipcMain.handle('codepulse:ack', (_event, agent: AgentType, workspacePath?: string) => {
+    hub.acknowledge(agent, workspacePath)
     return true
   })
   ipcMain.handle('codepulse:set-mute', (_event, muted: boolean) => {

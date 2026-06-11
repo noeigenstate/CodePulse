@@ -1,6 +1,6 @@
 /**
- * Claude Code adapter. Maps Claude's hook JSON and status-line JSON onto the
- * normalized {@link AgentEventInput} shape (requirements §6.2).
+ * Claude Code 适配器。把 Claude 的 hook JSON 与 status-line JSON
+ * 映射到归一化的 {@link AgentEventInput} 形态（需求 §6.2）。
  *
  * @module adapters/claude-code
  */
@@ -8,15 +8,15 @@ import type { AgentEventInput, AgentEventType } from '@codepulse/shared'
 import { asRecord, pickNumber, pickString, preview } from '../util.js'
 
 /**
- * Maps a Claude Code hook payload into an {@link AgentEventInput}.
+ * 把 Claude Code 的 hook 载荷映射为 {@link AgentEventInput}。
  *
- * Claude hook JSON carries `hook_event_name`, `session_id`, `cwd`, `tool_name`,
- * etc. The `Notification` hook is overloaded for both permission prompts and
- * idle "waiting for input" states, so it is disambiguated on the message text.
+ * Claude 的 hook JSON 携带 `hook_event_name`、`session_id`、`cwd`、
+ * `tool_name` 等字段。`Notification` hook 同时承担授权提示与
+ * 空闲「等待输入」两种含义，因此根据消息文本进行区分。
  *
- * @param raw The parsed hook payload (untrusted).
- * @returns The normalized event input, or `null` if the payload is unrecognised
- *   or is an event CodePulse ignores (e.g. `SubagentStop`).
+ * @param raw 解析后的 hook 载荷（不可信）。
+ * @returns 归一化事件输入；若载荷无法识别或属于 CodePulse 忽略的
+ *   事件（如 `SubagentStop`）则为 `null`。
  */
 export function fromClaudeHook(raw: unknown): AgentEventInput | null {
   const r = asRecord(raw)
@@ -56,6 +56,7 @@ export function fromClaudeHook(raw: unknown): AgentEventInput | null {
       event.message = preview(pickString(r, 'prompt', 'user_prompt'))
       break
     case 'turn_stop':
+    case 'turn_cancelled':
       event.message = preview(pickString(r, 'last_message', 'assistant_message'))
       break
   }
@@ -64,16 +65,13 @@ export function fromClaudeHook(raw: unknown): AgentEventInput | null {
 }
 
 /**
- * Maps a native Claude hook event name onto the normalized event vocabulary.
+ * 把 Claude 原生 hook 事件名映射到归一化事件词汇表。
  *
- * @param hookEvent The `hook_event_name` from the payload.
- * @param raw The full payload, used to classify the overloaded `Notification`.
- * @returns The mapped event type, or `null` for events CodePulse ignores.
+ * @param hookEvent 载荷中的 `hook_event_name`。
+ * @param raw 完整载荷，用于区分语义重载的 `Notification`。
+ * @returns 映射后的事件类型；CodePulse 忽略的事件返回 `null`。
  */
-function mapClaudeEvent(
-  hookEvent: string,
-  raw: Record<string, unknown>,
-): AgentEventType | null {
+function mapClaudeEvent(hookEvent: string, raw: Record<string, unknown>): AgentEventType | null {
   switch (hookEvent) {
     case 'SessionStart':
       return 'session_start'
@@ -87,8 +85,15 @@ function mapClaudeEvent(
       return classifyNotification(pickString(raw, 'message'))
     case 'Stop':
       return 'turn_stop'
+    case 'Cancel':
+    case 'Cancelled':
+    case 'Canceled':
+    case 'Abort':
+    case 'Aborted':
+    case 'Interrupted':
+      return 'turn_cancelled'
     case 'SubagentStop':
-      return null // ignored for now — does not end the user-visible turn
+      return null // 暂时忽略 —— 不会结束用户可见的轮次
     case 'SessionEnd':
       return 'session_end'
     default:
@@ -97,12 +102,12 @@ function mapClaudeEvent(
 }
 
 /**
- * Classifies an overloaded `Notification` hook as a permission request or an
- * input request, based on keywords in its message.
+ * 根据消息关键字，把语义重载的 `Notification` hook 分类为
+ * 授权请求或输入请求。
  *
- * @param message The notification message text, if any.
- * @returns `'permission_request'` for permission-like text, else
- *   `'user_input_required'`.
+ * @param message 通知消息文本（如有）。
+ * @returns 含授权类文本时为 `'permission_request'`，否则为
+ *   `'user_input_required'`。
  */
 function classifyNotification(message: string | undefined): AgentEventType {
   const text = (message ?? '').toLowerCase()
@@ -113,10 +118,10 @@ function classifyNotification(message: string | undefined): AgentEventType {
 }
 
 /**
- * Extracts a representative command/path from a tool-use payload's `tool_input`.
+ * 从工具调用载荷的 `tool_input` 中提取有代表性的命令/路径。
  *
- * @param raw The hook payload.
- * @returns A command/path string for display, or `undefined`.
+ * @param raw hook 载荷。
+ * @returns 用于展示的命令/路径字符串，或 `undefined`。
  */
 function extractCommand(raw: Record<string, unknown>): string | undefined {
   const input = asRecord(raw.tool_input ?? raw.toolInput)
@@ -125,14 +130,14 @@ function extractCommand(raw: Record<string, unknown>): string | undefined {
 }
 
 /**
- * Maps a Claude Code status-line payload into a `token_snapshot` event.
+ * 把 Claude Code 的 status-line 载荷映射为 `token_snapshot` 事件。
  *
- * The status-line collector forwards the structured JSON Claude provides
- * (model, workspace, cost, token usage, context %). Because this comes from a
- * stable structured source, the snapshot is tagged `accuracy: 'exact'`.
+ * status-line 收集器转发 Claude 提供的结构化 JSON（模型、工作区、
+ * 花费、token 用量、上下文百分比）。由于来源是稳定的结构化数据，
+ * 快照被标记为 `accuracy: 'exact'`。
  *
- * @param raw The parsed status-line payload (untrusted).
- * @returns The normalized token-snapshot event, or `null` if not an object.
+ * @param raw 解析后的 status-line 载荷（不可信）。
+ * @returns 归一化的 token 快照事件；非对象时为 `null`。
  */
 export function fromClaudeStatusLine(raw: unknown): AgentEventInput | null {
   const r = asRecord(raw)
@@ -141,27 +146,44 @@ export function fromClaudeStatusLine(raw: unknown): AgentEventInput | null {
   const cost = asRecord(r.cost)
   const model = asRecord(r.model)
   const workspace = asRecord(r.workspace)
+  const contextWindow = asRecord(r.context_window ?? r.contextWindow)
   const usage = asRecord(r.usage) ?? r
+  const contextUsage = asRecord(contextWindow?.current_usage ?? contextWindow?.currentUsage)
+  const usageSource = contextUsage ?? usage
+  const input =
+    pickNumber(contextWindow ?? {}, 'total_input_tokens', 'totalInputTokens') ??
+    pickNumber(usageSource, 'input_tokens', 'inputTokens')
+  const output =
+    pickNumber(contextWindow ?? {}, 'total_output_tokens', 'totalOutputTokens') ??
+    pickNumber(usageSource, 'output_tokens', 'outputTokens')
+  const total = pickNumber(usageSource, 'total_tokens', 'totalTokens') ?? sumKnown(input, output)
+  const contextUsedPercent =
+    pickNumber(contextWindow ?? {}, 'used_percentage', 'usedPercentage') ??
+    pickNumber(r, 'context_used_percent', 'contextUsedPercent') ??
+    pickNumber(usageSource, 'context_used_percent', 'contextUsedPercent')
 
   return {
     source: 'claude_code',
     eventType: 'token_snapshot',
     externalSessionId: pickString(r, 'session_id', 'sessionId'),
-    cwd: pickString(r, 'cwd') ?? (workspace ? pickString(workspace, 'current_dir', 'cwd') : undefined),
+    cwd:
+      pickString(r, 'cwd') ?? (workspace ? pickString(workspace, 'current_dir', 'cwd') : undefined),
     workspacePath: workspace
       ? pickString(workspace, 'project_dir', 'current_dir')
       : pickString(r, 'cwd'),
     model: model ? pickString(model, 'display_name', 'id') : pickString(r, 'model'),
     token: {
-      input: pickNumber(usage, 'input_tokens', 'inputTokens'),
-      output: pickNumber(usage, 'output_tokens', 'outputTokens'),
-      total: pickNumber(usage, 'total_tokens', 'totalTokens'),
-      contextUsedPercent:
-        pickNumber(r, 'context_used_percent', 'contextUsedPercent') ??
-        (usage ? pickNumber(usage, 'context_used_percent') : undefined),
+      input,
+      output,
+      total,
+      contextUsedPercent,
       costUsd: cost ? pickNumber(cost, 'total_cost_usd', 'total_cost') : pickNumber(r, 'cost_usd'),
       accuracy: 'exact',
     },
     raw,
   }
+}
+
+function sumKnown(a: number | undefined, b: number | undefined): number | undefined {
+  return a == null && b == null ? undefined : (a ?? 0) + (b ?? 0)
 }

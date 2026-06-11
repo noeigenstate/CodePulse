@@ -1,6 +1,6 @@
 /**
- * Status and control routes: reading current status, the hardware projection,
- * acknowledging results, toggling mute, and a health probe.
+ * 状态与控制路由：读取当前状态、硬件投影、确认结果、切换静音，
+ * 以及健康探针。
  *
  * @module local-server/routes/status
  */
@@ -9,16 +9,16 @@ import { toDeviceStatus, type StatusHub } from '@codepulse/core'
 import type { AgentType } from '@codepulse/shared'
 
 /**
- * Registers the read/control routes:
+ * 注册读取/控制路由：
  *
- * - `GET /api/status` — full {@link StatusSnapshot} for the Dashboard.
- * - `GET /api/device/status` — minimal {@link DeviceStatus} for hardware.
- * - `POST /api/ack/:agent` — mark an agent's terminal result as read.
- * - `POST /api/mute` — `{ muted }` to toggle notification sound.
- * - `GET /api/health` — liveness probe.
+ * - `GET /api/status` —— Dashboard 用的完整 {@link StatusSnapshot}。
+ * - `GET /api/device/status` —— 硬件用的极简 {@link DeviceStatus}。
+ * - `POST /api/ack/:agent` —— 把 agent 的终结结果标记为已读。
+ * - `POST /api/mute` —— `{ muted }` 切换通知声音。
+ * - `GET /api/health` —— 存活探针。
  *
- * @param app The Fastify instance to register the routes on.
- * @param hub The status hub to read from and control.
+ * @param app 注册路由的 Fastify 实例。
+ * @param hub 读取与控制的状态 hub。
  */
 export function registerStatusRoutes(app: FastifyInstance, hub: StatusHub): void {
   app.get('/api/status', async () => hub.snapshot())

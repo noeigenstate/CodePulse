@@ -1,8 +1,7 @@
 /**
- * The {@link StatusHub} — the in-memory brain that ties the reducer and rule
- * engine together and exposes a small event API the rest of the app subscribes
- * to. It holds one runtime state per agent and is intentionally
- * framework-agnostic (no Electron, HTTP, or DB dependency).
+ * {@link StatusHub} —— 把 reducer 与规则引擎串联起来的内存「大脑」，
+ * 并向应用其余部分暴露一个小型事件 API。它为每个 agent 持有一份
+ * 运行时状态，并刻意保持与框架无关（不依赖 Electron、HTTP 或数据库）。
  *
  * @module core/hub
  */
@@ -13,41 +12,43 @@ import {
   type AgentType,
   type NotificationRequest,
   type StatusSnapshot,
+  TurnState,
+  isActiveState,
 } from '@codepulse/shared'
 import { buildStatusSnapshot } from '../aggregate/index.js'
 import { createInitialRuntimeState, reduce } from '../state-machine/index.js'
-import { RuleEngine, type RuleEngineOptions } from '../rule-engine/index.js'
+import { RuleEngine, STUCK_VISIBLE_MS, type RuleEngineOptions } from '../rule-engine/index.js'
 
 /**
- * The typed events a {@link StatusHub} emits.
+ * {@link StatusHub} 发出的强类型事件。
  */
 export interface StatusHubEvents {
-  /** Every persisted, normalized event (consumed by storage/logging). */
+  /** 每个已持久化的归一化事件（供存储/日志消费）。 */
   event: (event: AgentEvent) => void
-  /** Emitted whenever the aggregated status changes. */
+  /** 聚合状态变化时发出。 */
   status: (snapshot: StatusSnapshot) => void
-  /** Emitted when the rule engine decides a notification should fire. */
+  /** 规则引擎决定触发通知时发出。 */
   notification: (notification: NotificationRequest) => void
 }
 
 /**
- * The in-memory brain of CodePulse.
+ * CodePulse 的内存「大脑」。
  *
- * Feed it normalized events via {@link ingest}; it applies the state-machine
- * reducer, runs the rule engine, and emits `event` / `status` / `notification`
- * for the Electron main process (or any host) to act on. Because it carries no
- * platform dependencies it can also be driven directly in tests.
+ * 通过 {@link ingest} 投喂归一化事件；它应用状态机 reducer、运行
+ * 规则引擎，并发出 `event` / `status` / `notification` 供 Electron
+ * 主进程（或任意宿主）处理。由于不携带任何平台依赖，
+ * 它也可以在测试中直接驱动。
  */
 export class StatusHub extends EventEmitter {
-  /** Current runtime state, one slot per agent. */
+  /** 当前运行时状态，每个 agent 一个槽位。 */
   private agents = new Map<AgentType, AgentRuntimeState>()
-  /** The shared, stateful notification rule engine. */
+  /** 共享的、有状态的通知规则引擎。 */
   private rules: RuleEngine
-  /** Handle for the inactivity watchdog interval, when running. */
+  /** 无活动看门狗定时器句柄（运行中时存在）。 */
   private tickTimer?: NodeJS.Timeout
 
   /**
-   * @param options Rule-engine tuning (throttling, initial mute state).
+   * @param options 规则引擎调优（节流、初始静音状态）。
    */
   constructor(options: RuleEngineOptions = {}) {
     super()
@@ -55,12 +56,12 @@ export class StatusHub extends EventEmitter {
   }
 
   /**
-   * Feeds one normalized event through the state machine and rule engine.
+   * 把一个归一化事件投喂给状态机与规则引擎。
    *
-   * Emits `event` (always), `status` (always — the snapshot may be unchanged but
-   * subscribers re-render cheaply), and `notification` for each rule that fired.
+   * 总会发出 `event` 与 `status`（快照可能未变，但订阅方重渲染成本低），
+   * 并对每条触发的规则发出 `notification`。
    *
-   * @param event The normalized event to apply.
+   * @param event 待应用的归一化事件。
    */
   ingest(event: AgentEvent): void {
     const current = this.agents.get(event.source) ?? createInitialRuntimeState(event.source)
@@ -76,10 +77,10 @@ export class StatusHub extends EventEmitter {
   }
 
   /**
-   * Marks an agent's latest terminal result as acknowledged, clearing the tray
-   * "unread" badge. No-op if there is nothing unread.
+   * 把 agent 最近的终结结果标记为已确认，清除托盘「未读」标记。
+   * 若没有未读内容则为空操作。
    *
-   * @param agentType The agent to acknowledge.
+   * @param agentType 要确认的 agent。
    */
   acknowledge(agentType: AgentType): void {
     const current = this.agents.get(agentType)
@@ -89,30 +90,29 @@ export class StatusHub extends EventEmitter {
   }
 
   /**
-   * Enables or disables notification sound globally.
+   * 全局开启或关闭通知声音。
    *
-   * @param muted `true` to suppress sound.
+   * @param muted `true` 表示抑制声音。
    */
   setMuted(muted: boolean): void {
     this.rules.setMuted(muted)
   }
 
   /**
-   * Builds the current aggregated status snapshot.
+   * 构建当前的聚合状态快照。
    *
-   * @param now Current time in epoch millis (injectable for testing).
-   * @returns The snapshot of all agents plus the overall indicator.
+   * @param now 当前时间（epoch 毫秒，可注入便于测试）。
+   * @returns 包含所有 agent 与总体指示的快照。
    */
   snapshot(now = Date.now()): StatusSnapshot {
     return buildStatusSnapshot([...this.agents.values()], now)
   }
 
   /**
-   * Starts the inactivity ("疑似卡住") watchdog. Safe to call repeatedly; any
-   * existing timer is replaced. The timer is `unref`'d so it never keeps the
-   * process alive on its own.
+   * 启动无活动（「疑似卡住」）看门狗。可重复调用；已有定时器会被替换。
+   * 定时器已 `unref`，不会单独维持进程存活。
    *
-   * @param intervalMs How often to run the stuck check, in ms.
+   * @param intervalMs 卡住检查的运行间隔（毫秒）。
    */
   startWatchdog(intervalMs = 30_000): void {
     this.stopWatchdog()
@@ -120,17 +120,17 @@ export class StatusHub extends EventEmitter {
     this.tickTimer.unref?.()
   }
 
-  /** Stops the inactivity watchdog if running. */
+  /** 停止无活动看门狗（若在运行）。 */
   stopWatchdog(): void {
     if (this.tickTimer) clearInterval(this.tickTimer)
     this.tickTimer = undefined
   }
 
   /**
-   * One watchdog iteration: runs the stuck check for every agent and emits any
-   * resulting notifications (plus a `status` update if anything changed).
+   * 一次看门狗迭代：对每个 agent 运行卡住检查，发出由此产生的通知
+   * （如有变化再发一次 `status` 更新）。
    *
-   * @param now Current time in epoch millis (injectable for testing).
+   * @param now 当前时间（epoch 毫秒，可注入便于测试）。
    */
   private tick(now = Date.now()): void {
     let changed = false
@@ -139,29 +139,43 @@ export class StatusHub extends EventEmitter {
         this.emit('notification', note)
         changed = true
       }
+      if (
+        agent.lastEventAt !== 0 &&
+        isActiveState(agent.state) &&
+        now - agent.lastEventAt >= STUCK_VISIBLE_MS
+      ) {
+        this.agents.set(agent.agentType, {
+          ...agent,
+          state: TurnState.TIMEOUT,
+          turnStartedAt: undefined,
+          toolName: undefined,
+          activity: '疑似卡住',
+        })
+        changed = true
+      }
     }
     if (changed) this.emit('status', this.snapshot(now))
   }
 
-  // Typed event helpers ------------------------------------------------------
+  // 强类型事件辅助方法 --------------------------------------------------------
 
   /**
-   * Type-safe {@link EventEmitter.on} restricted to {@link StatusHubEvents}.
+   * 限定到 {@link StatusHubEvents} 的类型安全 {@link EventEmitter.on}。
    *
-   * @param event The event name.
-   * @param listener The strongly-typed listener for that event.
-   * @returns This hub, for chaining.
+   * @param event 事件名。
+   * @param listener 该事件的强类型监听器。
+   * @returns 本 hub，便于链式调用。
    */
   override on<E extends keyof StatusHubEvents>(event: E, listener: StatusHubEvents[E]): this {
     return super.on(event, listener as (...args: unknown[]) => void)
   }
 
   /**
-   * Type-safe {@link EventEmitter.emit} restricted to {@link StatusHubEvents}.
+   * 限定到 {@link StatusHubEvents} 的类型安全 {@link EventEmitter.emit}。
    *
-   * @param event The event name.
-   * @param args The strongly-typed arguments for that event.
-   * @returns `true` if the event had listeners.
+   * @param event 事件名。
+   * @param args 该事件的强类型参数。
+   * @returns 若事件有监听器则为 `true`。
    */
   override emit<E extends keyof StatusHubEvents>(
     event: E,

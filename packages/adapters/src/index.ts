@@ -1,7 +1,7 @@
 /**
- * `@codepulse/adapters` — translates the agent-specific hook / status-line
- * payloads that arrive at `POST /api/events` into the normalized
- * {@link AgentEventInput} the rest of the system consumes.
+ * `@codepulse/adapters` —— 把到达 `POST /api/events` 的 agent 专有
+ * hook / status-line 载荷翻译为系统其余部分消费的归一化
+ * {@link AgentEventInput}。
  *
  * @module adapters
  */
@@ -14,12 +14,12 @@ export * from './codex/index.js'
 export * from './claude-code/index.js'
 
 /**
- * Dispatches a raw payload to the correct adapter based on its `source` and
- * `channel`. Hook scripts post `{ source, channel?, ...native }`; the Claude
- * status-line collector uses `channel: 'statusline'`.
+ * 根据载荷的 `source` 与 `channel` 派发到正确的适配器。
+ * hook 脚本提交 `{ source, channel?, ...native }`；
+ * Claude status-line 收集器使用 `channel: 'statusline'`。
  *
- * @param raw The parsed request body (untrusted).
- * @returns The normalized event input, or `null` if no adapter recognises it.
+ * @param raw 解析后的请求体（不可信）。
+ * @returns 归一化事件输入；无适配器识别时为 `null`。
  */
 export function normalizeRawEvent(raw: unknown): AgentEventInput | null {
   const r = asRecord(raw)

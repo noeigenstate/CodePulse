@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * CodePulse hook for Claude Code.
+ * 面向 Claude Code 的 CodePulse hook。
  *
- * Wire this to any/all Claude hook events (SessionStart, UserPromptSubmit,
- * PreToolUse, PostToolUse, Notification, Stop, SessionEnd). Claude passes the
- * hook JSON on stdin; we tag it with `source: 'claude_code'` and forward it to
- * the local server. Exits 0 unconditionally so it never blocks Claude.
+ * 可接入任意/全部 Claude hook 事件（SessionStart、UserPromptSubmit、
+ * PreToolUse、PostToolUse、Notification、Stop、SessionEnd）。
+ * Claude 通过 stdin 传入 hook JSON；本脚本打上 `source: 'claude_code'`
+ * 标记后转发给本地服务器。无条件以 0 退出，绝不阻塞 Claude。
  *
  * @module hooks/bin/claude-hook
  */

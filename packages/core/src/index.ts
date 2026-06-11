@@ -1,10 +1,10 @@
 /**
- * `@codepulse/core` — the platform-agnostic engine that turns a stream of
- * normalized events into live status and notifications.
+ * `@codepulse/core` —— 与平台无关的引擎，把归一化事件流转换为
+ * 实时状态与通知。
  *
- * Exposes the event normalizer, the pure state-machine reducer, the rule
- * engine, the aggregation helpers, and the {@link StatusHub} that orchestrates
- * them. No Electron, HTTP, or database dependency lives here.
+ * 暴露事件归一化器、纯状态机 reducer、规则引擎、聚合辅助函数，
+ * 以及编排它们的 {@link StatusHub}。此处不依赖 Electron、HTTP
+ * 或数据库。
  *
  * @module core
  */

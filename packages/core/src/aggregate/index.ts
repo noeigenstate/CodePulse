@@ -1,7 +1,6 @@
 /**
- * Aggregation helpers that collapse per-agent runtime states into the views the
- * UI and hardware consume: the overall tray indicator, the full status
- * snapshot, and the minimal device projection.
+ * 聚合辅助函数：把各 agent 的运行时状态收敛为 UI 与硬件消费的视图 ——
+ * 托盘总体指示、完整状态快照，以及极简设备投影。
  *
  * @module core/aggregate
  */
@@ -14,21 +13,24 @@ import {
 } from '@codepulse/shared'
 
 /**
- * Collapses all agent states into one overall indicator for the tray icon.
+ * 把所有 agent 状态收敛为托盘图标的单一总体指示。
  *
- * Uses the colour priority from requirements §5.6
- * (error > attention > running > done-unread > idle), with an additional
- * "stuck" signal for timed-out turns.
+ * 采用需求 §5.6 的颜色优先级
+ * （error > attention > running > done-unread > idle），
+ * 并对超时轮次额外提供「stuck」信号。
  *
- * @param agents All known per-agent runtime states.
- * @returns The single {@link OverallState} the tray should show.
+ * @param agents 所有已知的 agent 运行时状态。
+ * @returns 托盘应显示的唯一 {@link OverallState}。
  */
 export function deriveOverall(agents: AgentRuntimeState[]): OverallState {
   if (agents.length === 0) return 'idle'
   const states = agents.map((a) => a.state)
   if (states.includes(TurnState.ERROR)) return 'error'
   if (states.includes(TurnState.TIMEOUT)) return 'stuck'
-  if (states.includes(TurnState.WAITING_PERMISSION) || states.includes(TurnState.WAITING_USER_INPUT))
+  if (
+    states.includes(TurnState.WAITING_PERMISSION) ||
+    states.includes(TurnState.WAITING_USER_INPUT)
+  )
     return 'attention'
   if (
     states.includes(TurnState.PROMPT_SUBMITTED) ||
@@ -41,29 +43,26 @@ export function deriveOverall(agents: AgentRuntimeState[]): OverallState {
 }
 
 /**
- * Wraps the per-agent states in a {@link StatusSnapshot}, computing the derived
- * overall indicator and stamping the time.
+ * 把各 agent 状态包装为 {@link StatusSnapshot}：计算推导出的总体指示
+ * 并盖上时间戳。
  *
- * @param agents All known per-agent runtime states.
- * @param now Current time in epoch millis (injectable for testing).
- * @returns The snapshot returned by `GET /api/status` and pushed over the WS.
+ * @param agents 所有已知的 agent 运行时状态。
+ * @param now 当前时间（epoch 毫秒，可注入便于测试）。
+ * @returns `GET /api/status` 返回并经 WebSocket 推送的快照。
  */
-export function buildStatusSnapshot(
-  agents: AgentRuntimeState[],
-  now = Date.now(),
-): StatusSnapshot {
+export function buildStatusSnapshot(agents: AgentRuntimeState[], now = Date.now()): StatusSnapshot {
   return { overall: deriveOverall(agents), agents, updatedAt: now }
 }
 
 /**
- * Projects a full status snapshot down to the minimal hardware view served by
- * `GET /api/device/status` (requirements §5.9).
+ * 把完整状态快照投影为 `GET /api/device/status` 提供的极简硬件视图
+ * （需求 §5.9）。
  *
- * Picks the most action-worthy agent (attention first, then running) as the
- * `activeAgent` and surfaces Claude's context percentage and Codex's state.
+ * 选取最值得关注的 agent（先 attention，再 running）作为 `activeAgent`，
+ * 并暴露 Claude 的上下文百分比与 Codex 的状态。
  *
- * @param snapshot The full status snapshot to project.
- * @returns A flat {@link DeviceStatus} suitable for an ESP32 client.
+ * @param snapshot 待投影的完整状态快照。
+ * @returns 适合 ESP32 客户端的扁平 {@link DeviceStatus}。
  */
 export function toDeviceStatus(snapshot: StatusSnapshot): DeviceStatus {
   const attention = snapshot.agents.find(
@@ -90,11 +89,10 @@ export function toDeviceStatus(snapshot: StatusSnapshot): DeviceStatus {
 }
 
 /**
- * Maps the overall indicator to the compact `mainState` string the device API
- * exposes.
+ * 把总体指示映射为设备 API 暴露的紧凑 `mainState` 字符串。
  *
- * @param overall The aggregated overall state.
- * @returns A lowercase device-friendly state string.
+ * @param overall 聚合后的总体状态。
+ * @returns 小写、设备友好的状态字符串。
  */
 function mapMainState(overall: OverallState): string {
   switch (overall) {
@@ -115,11 +113,10 @@ function mapMainState(overall: OverallState): string {
 }
 
 /**
- * Provides a default Chinese message for the device when no agent activity
- * string is available.
+ * 当没有 agent 活动描述可用时，为设备提供默认中文消息。
  *
- * @param overall The aggregated overall state.
- * @returns A short human-readable status message.
+ * @param overall 聚合后的总体状态。
+ * @returns 简短的人类可读状态消息。
  */
 function overallMessage(overall: OverallState): string {
   switch (overall) {

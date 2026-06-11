@@ -11,12 +11,13 @@ await build({
   bundle: true,
   platform: 'node',
   format: 'esm',
-  external: ['fastify', '@fastify/websocket'],
+  external: ['fastify', '@fastify/websocket', 'better-sqlite3'],
   alias: {
     '@codepulse/shared': './packages/shared/src/index.ts',
     '@codepulse/core': './packages/core/src/index.ts',
     '@codepulse/adapters': './packages/adapters/src/index.ts',
     '@codepulse/local-server': './packages/local-server/src/index.ts',
+    '@codepulse/storage': './packages/storage/src/index.ts',
   },
   outfile: out,
 })

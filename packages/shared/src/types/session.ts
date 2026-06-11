@@ -1,6 +1,6 @@
 /**
- * Session and turn types. A session is one agent conversation; a turn is one
- * user-prompt → AI-response cycle within it (requirements §7.3–§7.4).
+ * 会话（session）与轮次（turn）类型。一个会话是一次 agent 对话；
+ * 一个轮次是其中一次「用户提示 → AI 回复」的循环（需求 §7.3–§7.4）。
  *
  * @module shared/types/session
  */
@@ -8,65 +8,65 @@ import type { AgentType } from './agent.js'
 import type { TurnState } from './state.js'
 
 /**
- * Coarse session lifecycle state, persisted on the session row.
+ * 粗粒度的会话生命周期状态，持久化在会话行上。
  *
- * This is intentionally simpler than {@link TurnState}: it summarises the whole
- * conversation rather than the fine-grained activity of a single turn.
+ * 刻意比 {@link TurnState} 简单：它概括整个对话，
+ * 而不是单个轮次的细粒度活动。
  */
 export type SessionState = 'idle' | 'running' | 'waiting' | 'done' | 'error'
 
 /**
- * One AI agent conversation, possibly spanning many turns.
+ * 一次 AI agent 对话，可能跨越多个轮次。
  *
- * Identified externally by `externalSessionId` (the id the agent itself
- * assigns) and internally by `id`.
+ * 对外以 `externalSessionId`（agent 自己分配的 id）标识，
+ * 对内以 `id` 标识。
  */
 export interface Session {
-  /** Stable internal identifier. */
+  /** 稳定的内部标识符。 */
   id: string
-  /** Which agent owns the session. */
+  /** 会话所属的 agent。 */
   agentType: AgentType
-  /** The session id assigned by the agent itself. */
+  /** agent 自己分配的会话 id。 */
   externalSessionId: string
-  /** The workspace the session is running in. */
+  /** 会话所在的工作区。 */
   workspaceId: string
-  /** Model in use, when known. */
+  /** 使用的模型（如已知）。 */
   model?: string
-  /** Coarse lifecycle state. */
+  /** 粗粒度生命周期状态。 */
   state: SessionState
-  /** Epoch millis the session started. */
+  /** 会话开始时间（epoch 毫秒）。 */
   startedAt: number
-  /** Epoch millis the session ended, when finished. */
+  /** 会话结束时间（epoch 毫秒，结束后存在）。 */
   endedAt?: number
 }
 
 /**
- * A single user-prompt → AI-response cycle (requirements §7.4).
+ * 一次「用户提示 → AI 回复」的循环（需求 §7.4）。
  *
- * Turns are the unit CodePulse notifies on: a turn completing, needing
- * permission, or needing input each map to a notification.
+ * 轮次是 CodePulse 发送通知的基本单位：轮次完成、等待授权、
+ * 等待输入均各自映射为一条通知。
  */
 export interface Turn {
-  /** Stable internal identifier. */
+  /** 稳定的内部标识符。 */
   id: string
-  /** The owning session. */
+  /** 所属会话。 */
   sessionId: string
-  /** The turn id assigned by the agent, when available. */
+  /** agent 分配的轮次 id（如有）。 */
   externalTurnId?: string
-  /** Fine-grained current state. */
+  /** 当前的细粒度状态。 */
   state: TurnState
-  /** Privacy-limited preview of the user's prompt. */
+  /** 用户提示词的隐私受限预览。 */
   promptPreview?: string
-  /** Epoch millis the turn started. */
+  /** 轮次开始时间（epoch 毫秒）。 */
   startedAt: number
-  /** Epoch millis the turn ended, when finished. */
+  /** 轮次结束时间（epoch 毫秒，结束后存在）。 */
   endedAt?: number
-  /** Number of tool calls observed during the turn. */
+  /** 轮次内观察到的工具调用次数。 */
   toolCallCount: number
-  /** Whether the turn paused for permission. */
+  /** 轮次是否曾因等待授权而暂停。 */
   needPermission: boolean
-  /** Whether the turn paused for user input. */
+  /** 轮次是否曾因等待用户输入而暂停。 */
   needUserInput: boolean
-  /** Summary of the AI's final message, when captured. */
+  /** AI 最终消息的摘要（如有捕获）。 */
   lastAssistantMessage?: string
 }

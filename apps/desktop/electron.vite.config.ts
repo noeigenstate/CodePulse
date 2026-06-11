@@ -2,10 +2,10 @@ import { resolve } from 'node:path'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 
-// Workspace packages are written in TypeScript and consumed from source, so we
-// must let the bundler include them rather than externalize them. Real runtime
-// dependencies (fastify, better-sqlite3, drizzle-orm) stay external and load
-// from node_modules at runtime — better-sqlite3 in particular is a native addon.
+// workspace 包以 TypeScript 源码形式被消费，因此必须让打包器把它们
+// 打进产物，而不是 externalize。真正的运行时依赖（fastify、
+// better-sqlite3、drizzle-orm）保持 external，在运行时从 node_modules
+// 加载 —— 尤其 better-sqlite3 是原生扩展。
 const bundledWorkspacePackages = [
   '@codepulse/shared',
   '@codepulse/core',

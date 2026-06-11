@@ -1,7 +1,6 @@
 /**
- * The WebSocket push channel: `GET /ws`. Streams status snapshots and
- * notifications to connected clients (the renderer Dashboard today, an ESP32
- * bridge tomorrow).
+ * WebSocket 推送通道：`GET /ws`。向已连接客户端流式推送状态快照与
+ * 通知（今天是渲染端 Dashboard，将来是 ESP32 桥接）。
  *
  * @module local-server/websocket
  */
@@ -11,15 +10,14 @@ import type { NotificationRequest, ServerPushMessage, StatusSnapshot } from '@co
 import type { StatusHub } from '@codepulse/core'
 
 /**
- * Registers the `GET /ws` WebSocket route and bridges hub events to it.
+ * 注册 `GET /ws` WebSocket 路由，并把 hub 事件桥接过去。
  *
- * Subscribes to the hub's `status` and `notification` events and fans them out
- * to every connected socket. On connect, the current snapshot is sent
- * immediately so a late client is never blank. Hub listeners and sockets are
- * cleaned up on server close.
+ * 订阅 hub 的 `status` 与 `notification` 事件并扇出到每个已连接
+ * socket。连接建立时立即发送当前快照，保证晚到的客户端不会空白。
+ * 服务器关闭时清理 hub 监听器与 socket。
  *
- * @param app The Fastify instance (must have `@fastify/websocket` registered).
- * @param hub The status hub to relay events from.
+ * @param app Fastify 实例（必须已注册 `@fastify/websocket`）。
+ * @param hub 事件来源的状态 hub。
  */
 export function registerWebSocket(app: FastifyInstance, hub: StatusHub): void {
   const clients = new Set<WebSocket>()
@@ -49,10 +47,10 @@ export function registerWebSocket(app: FastifyInstance, hub: StatusHub): void {
 }
 
 /**
- * Sends a message to every open client socket.
+ * 向每个打开的客户端 socket 发送消息。
  *
- * @param clients The set of connected sockets.
- * @param message The push message to serialize and send.
+ * @param clients 已连接 socket 的集合。
+ * @param message 待序列化并发送的推送消息。
  */
 function broadcast(clients: Set<WebSocket>, message: ServerPushMessage): void {
   const data = JSON.stringify(message)
@@ -62,10 +60,10 @@ function broadcast(clients: Set<WebSocket>, message: ServerPushMessage): void {
 }
 
 /**
- * Sends a single message to one socket if it is open.
+ * 若 socket 处于打开状态，向其发送单条消息。
  *
- * @param socket The target socket.
- * @param message The push message to serialize and send.
+ * @param socket 目标 socket。
+ * @param message 待序列化并发送的推送消息。
  */
 function send(socket: WebSocket, message: ServerPushMessage): void {
   if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message))

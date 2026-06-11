@@ -1,66 +1,64 @@
 /**
- * Token / context usage types. CodePulse records how much of an agent's
- * context window and budget a turn has consumed, tagged with how trustworthy
- * the measurement is (requirements §5.4).
+ * Token / 上下文用量类型。CodePulse 记录每个轮次消耗了多少上下文窗口
+ * 与预算，并标注测量值的可信程度（需求 §5.4）。
  *
  * @module shared/types/token
  */
 import type { AgentType } from './agent.js'
 
 /**
- * How trustworthy a token/context measurement is.
+ * token/上下文测量值的可信程度。
  *
- * - `exact` — read from a stable structured source (e.g. Claude's status line).
- * - `estimated` — inferred from a transcript or other heuristic.
- * - `unknown` — currently unavailable.
+ * - `exact` —— 来自稳定的结构化来源（如 Claude 的 status line）。
+ * - `estimated` —— 由 transcript 或其他启发式方法推断。
+ * - `unknown` —— 当前不可用。
  */
 export type TokenAccuracy = 'exact' | 'estimated' | 'unknown'
 
 /**
- * A point-in-time snapshot of token / context usage, persisted to the database
- * so usage can be charted over a session's lifetime.
+ * token / 上下文用量的时间点快照，持久化到数据库，
+ * 以便绘制会话生命周期内的用量曲线。
  */
 export interface TokenSnapshot {
-  /** Stable internal identifier. */
+  /** 稳定的内部标识符。 */
   id: string
-  /** The owning session. */
+  /** 所属会话。 */
   sessionId: string
-  /** The turn this snapshot belongs to, when known. */
+  /** 所属轮次（如已知）。 */
   turnId?: string
-  /** Which agent produced the measurement. */
+  /** 产生该测量值的 agent。 */
   agentType: AgentType
-  /** Prompt/input tokens, when reported. */
+  /** 提示词/输入 token 数（如有上报）。 */
   inputTokens?: number
-  /** Completion/output tokens, when reported. */
+  /** 补全/输出 token 数（如有上报）。 */
   outputTokens?: number
-  /** Total tokens, when reported. */
+  /** 总 token 数（如有上报）。 */
   totalTokens?: number
-  /** Percentage of the context window used (0–100), when reported. */
+  /** 上下文窗口已用百分比（0–100，如有上报）。 */
   contextUsedPercent?: number
-  /** Spend in USD, when reported. */
+  /** 花费（美元，如有上报）。 */
   costUsd?: number
-  /** Confidence in the above figures. */
+  /** 上述数字的可信度。 */
   accuracy: TokenAccuracy
-  /** Epoch millis the snapshot was captured. */
+  /** 快照采集时间（epoch 毫秒）。 */
   capturedAt: number
 }
 
 /**
- * Compact token payload carried inline on an {@link AgentEvent} and surfaced on
- * {@link AgentRuntimeState}. A trimmed-down {@link TokenSnapshot} without the
- * storage identifiers.
+ * 内联在 {@link AgentEvent} 上、并展示在 {@link AgentRuntimeState} 上的
+ * 紧凑 token 载荷。是去掉存储标识符后的精简版 {@link TokenSnapshot}。
  */
 export interface TokenPayload {
-  /** Prompt/input tokens. */
+  /** 提示词/输入 token 数。 */
   input?: number
-  /** Completion/output tokens. */
+  /** 补全/输出 token 数。 */
   output?: number
-  /** Total tokens. */
+  /** 总 token 数。 */
   total?: number
-  /** Percentage of the context window used (0–100). */
+  /** 上下文窗口已用百分比（0–100）。 */
   contextUsedPercent?: number
-  /** Spend in USD. */
+  /** 花费（美元）。 */
   costUsd?: number
-  /** Confidence in the figures. */
+  /** 数字的可信度。 */
   accuracy: TokenAccuracy
 }

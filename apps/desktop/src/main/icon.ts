@@ -1,7 +1,7 @@
 /**
- * Generates the system-tray icons at runtime. To avoid shipping binary image
- * assets, a tiny PNG encoder draws a solid-colour circle whose colour reflects
- * the aggregated {@link OverallState} (requirements §5.6).
+ * 在运行时生成系统托盘图标。为避免随包分发二进制图片资源，
+ * 一个微型 PNG 编码器绘制纯色圆点，颜色对应聚合后的
+ * {@link OverallState}（需求 §5.6）。
  *
  * @module main/icon
  */
@@ -9,27 +9,27 @@ import { deflateSync } from 'node:zlib'
 import { nativeImage, type NativeImage } from 'electron'
 import type { OverallState } from '@codepulse/shared'
 
-/** Tray colour (RGB) per overall state (requirements §5.6). */
+/** 每个总体状态对应的托盘颜色（RGB，需求 §5.6）。 */
 const STATE_COLORS: Record<OverallState, [number, number, number]> = {
-  idle: [156, 163, 175], // gray
-  running: [59, 130, 246], // blue
-  attention: [234, 179, 8], // yellow
-  done_unread: [34, 197, 94], // green
-  error: [239, 68, 68], // red
-  stuck: [249, 115, 18], // orange
+  idle: [156, 163, 175], // 灰
+  running: [59, 130, 246], // 蓝
+  attention: [234, 179, 8], // 黄
+  done_unread: [34, 197, 94], // 绿
+  error: [239, 68, 68], // 红
+  stuck: [249, 115, 18], // 橙
 }
 
-/** CRC-32 lookup table, built once for PNG chunk checksums. */
+/** CRC-32 查找表，构建一次用于 PNG 块校验和。 */
 const crcTable = buildCrcTable()
-/** Cache of generated icons so each colour is encoded at most once. */
+/** 已生成图标的缓存，每种颜色至多编码一次。 */
 const iconCache = new Map<OverallState, NativeImage>()
 
 /**
- * Returns a 16×16 solid-colour tray icon for the given overall state, encoding
- * (and caching) it on first use.
+ * 返回给定总体状态对应的 16×16 纯色托盘图标，
+ * 首次使用时编码（并缓存）。
  *
- * @param state The aggregated overall state to represent.
- * @returns An Electron {@link NativeImage} for the tray.
+ * @param state 要表示的聚合总体状态。
+ * @returns 用于托盘的 Electron {@link NativeImage}。
  */
 export function trayIconFor(state: OverallState): NativeImage {
   const cached = iconCache.get(state)
@@ -41,14 +41,14 @@ export function trayIconFor(state: OverallState): NativeImage {
 }
 
 /**
- * Encodes a `size`×`size` RGBA PNG containing a filled circle in `(r,g,b)` on a
- * transparent background.
+ * 编码一张 `size`×`size` 的 RGBA PNG：透明背景上以 `(r,g,b)`
+ * 填充的实心圆。
  *
- * @param size Image width/height in pixels.
- * @param r Red channel (0–255).
- * @param g Green channel (0–255).
- * @param b Blue channel (0–255).
- * @returns The encoded PNG bytes.
+ * @param size 图片宽/高（像素）。
+ * @param r 红色通道（0–255）。
+ * @param g 绿色通道（0–255）。
+ * @param b 蓝色通道（0–255）。
+ * @returns 编码后的 PNG 字节。
  */
 function solidRoundedPng(size: number, r: number, g: number, b: number): Buffer {
   const raw = Buffer.alloc(size * (size * 4 + 1))
@@ -57,7 +57,7 @@ function solidRoundedPng(size: number, r: number, g: number, b: number): Buffer 
   const radius = size / 2 - 0.5
   let p = 0
   for (let y = 0; y < size; y++) {
-    raw[p++] = 0 // filter: none
+    raw[p++] = 0 // 滤波器：无
     for (let x = 0; x < size; x++) {
       const dist = Math.hypot(x - cx, y - cy)
       const inside = dist <= radius
@@ -71,23 +71,23 @@ function solidRoundedPng(size: number, r: number, g: number, b: number): Buffer 
 }
 
 /**
- * Assembles a complete PNG file from already-filtered raw scanline data.
+ * 由已滤波的原始扫描线数据组装完整的 PNG 文件。
  *
- * @param width Image width in pixels.
- * @param height Image height in pixels.
- * @param raw Filtered scanlines (each row prefixed with a filter byte).
- * @returns The encoded PNG bytes (signature + IHDR + IDAT + IEND).
+ * @param width 图片宽度（像素）。
+ * @param height 图片高度（像素）。
+ * @param raw 已滤波的扫描线（每行以滤波字节开头）。
+ * @returns 编码后的 PNG 字节（签名 + IHDR + IDAT + IEND）。
  */
 function buildPng(width: number, height: number, raw: Buffer): Buffer {
   const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
   const ihdr = Buffer.alloc(13)
   ihdr.writeUInt32BE(width, 0)
   ihdr.writeUInt32BE(height, 4)
-  ihdr[8] = 8 // bit depth
-  ihdr[9] = 6 // colour type: RGBA
-  ihdr[10] = 0 // compression
-  ihdr[11] = 0 // filter
-  ihdr[12] = 0 // interlace
+  ihdr[8] = 8 // 位深
+  ihdr[9] = 6 // 颜色类型：RGBA
+  ihdr[10] = 0 // 压缩
+  ihdr[11] = 0 // 滤波
+  ihdr[12] = 0 // 隔行
   return Buffer.concat([
     signature,
     chunk('IHDR', ihdr),
@@ -97,11 +97,11 @@ function buildPng(width: number, height: number, raw: Buffer): Buffer {
 }
 
 /**
- * Wraps chunk data in the PNG length/type/data/CRC framing.
+ * 把块数据包入 PNG 的 length/type/data/CRC 框架。
  *
- * @param type The 4-character chunk type (e.g. `"IHDR"`).
- * @param data The chunk payload.
- * @returns The framed chunk bytes.
+ * @param type 4 字符块类型（如 `"IHDR"`）。
+ * @param data 块载荷。
+ * @returns 加框后的块字节。
  */
 function chunk(type: string, data: Buffer): Buffer {
   const length = Buffer.alloc(4)
@@ -113,9 +113,9 @@ function chunk(type: string, data: Buffer): Buffer {
 }
 
 /**
- * Builds the standard CRC-32 lookup table.
+ * 构建标准 CRC-32 查找表。
  *
- * @returns A 256-entry table of precomputed CRC values.
+ * @returns 256 项预计算 CRC 值的表。
  */
 function buildCrcTable(): Uint32Array {
   const table = new Uint32Array(256)
@@ -128,10 +128,10 @@ function buildCrcTable(): Uint32Array {
 }
 
 /**
- * Computes the CRC-32 of a buffer using {@link crcTable}.
+ * 使用 {@link crcTable} 计算缓冲区的 CRC-32。
  *
- * @param buf The bytes to checksum.
- * @returns The unsigned 32-bit CRC.
+ * @param buf 要校验的字节。
+ * @returns 无符号 32 位 CRC。
  */
 function crc32(buf: Buffer): number {
   let c = 0xffffffff

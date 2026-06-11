@@ -1,6 +1,6 @@
 /**
- * The system-tray controller: owns the tray icon, tooltip, and context menu and
- * keeps them in sync with the latest status (requirements §5.6).
+ * 系统托盘控制器：持有托盘图标、提示文本与右键菜单，
+ * 并使它们与最新状态保持同步（需求 §5.6）。
  *
  * @module main/tray
  */
@@ -14,37 +14,37 @@ import {
 import { trayIconFor } from './icon.js'
 
 /**
- * Callbacks invoked by the tray menu items. Supplied by the main process.
+ * 托盘菜单项触发的回调，由主进程提供。
  */
 export interface TrayCallbacks {
-  /** Open / focus the main window. */
+  /** 打开/聚焦主窗口。 */
   onOpen: () => void
-  /** Toggle the 30-minute mute; receives the new muted state. */
+  /** 切换 30 分钟静音；接收新的静音状态。 */
   onToggleMute: (muted: boolean) => void
-  /** Acknowledge all agents' unread results. */
+  /** 确认所有 agent 的未读结果。 */
   onClearAlerts: () => void
-  /** Open the window and navigate to settings. */
+  /** 打开窗口并导航到设置页。 */
   onOpenSettings: () => void
-  /** Quit the application. */
+  /** 退出应用。 */
   onQuit: () => void
 }
 
 /**
- * Owns the system-tray icon, tooltip, and context menu.
+ * 持有系统托盘图标、提示文本与右键菜单。
  *
- * Call {@link update} whenever the status changes to refresh the icon colour,
- * tooltip, and per-agent menu lines.
+ * 状态变化时调用 {@link update}，刷新图标颜色、提示文本
+ * 与各 agent 的菜单行。
  */
 export class TrayController {
-  /** The Electron tray handle. */
+  /** Electron 托盘句柄。 */
   private tray: Tray
-  /** Local mirror of the mute state, shown in the menu label. */
+  /** 静音状态的本地镜像，用于菜单文案。 */
   private muted = false
 
   /**
-   * Creates the tray (initially idle) and wires the click handler.
+   * 创建托盘（初始为空闲）并接线点击处理器。
    *
-   * @param callbacks Menu-item handlers supplied by the main process.
+   * @param callbacks 主进程提供的菜单项处理器。
    */
   constructor(private callbacks: TrayCallbacks) {
     this.tray = new Tray(trayIconFor('idle'))
@@ -54,9 +54,9 @@ export class TrayController {
   }
 
   /**
-   * Refreshes the icon, tooltip, and context menu from a status snapshot.
+   * 根据状态快照刷新图标、提示文本与右键菜单。
    *
-   * @param snapshot The latest aggregated status.
+   * @param snapshot 最新的聚合状态。
    */
   update(snapshot: StatusSnapshot): void {
     this.tray.setImage(trayIconFor(snapshot.overall))
@@ -65,25 +65,25 @@ export class TrayController {
   }
 
   /**
-   * Updates the muted flag shown on the menu (does not itself mute anything).
+   * 更新菜单上显示的静音标志（本身不执行静音）。
    *
-   * @param muted The new muted state.
+   * @param muted 新的静音状态。
    */
   setMuted(muted: boolean): void {
     this.muted = muted
   }
 
-  /** Destroys the underlying tray icon. */
+  /** 销毁底层托盘图标。 */
   destroy(): void {
     this.tray.destroy()
   }
 
   /**
-   * Builds the context menu for a given snapshot: a header, one disabled line
-   * per agent, then the actions (open, mute, clear, settings, quit).
+   * 为给定快照构建右键菜单：标题、每个 agent 一行禁用状态行，
+   * 然后是动作项（打开、静音、清除、设置、退出）。
    *
-   * @param snapshot The latest aggregated status.
-   * @returns The constructed Electron menu.
+   * @param snapshot 最新的聚合状态。
+   * @returns 构建好的 Electron 菜单。
    */
   private buildMenu(snapshot: StatusSnapshot): Menu {
     const agentItems: MenuItemConstructorOptions[] =
@@ -113,10 +113,10 @@ export class TrayController {
 }
 
 /**
- * Formats a single agent's menu line, e.g. `"Claude Code: 执行工具"`.
+ * 格式化单个 agent 的菜单行，例如 `"Claude Code: 执行工具"`。
  *
- * @param agent The agent's runtime state.
- * @returns The menu line string.
+ * @param agent agent 的运行时状态。
+ * @returns 菜单行字符串。
  */
 function agentLine(agent: AgentRuntimeState): string {
   const name = agent.agentType === 'codex' ? 'Codex' : 'Claude Code'
@@ -124,10 +124,10 @@ function agentLine(agent: AgentRuntimeState): string {
 }
 
 /**
- * Maps a turn state to a short Chinese label for the tray menu.
+ * 把轮次状态映射为托盘菜单使用的简短中文标签。
  *
- * @param state The turn state.
- * @returns The label.
+ * @param state 轮次状态。
+ * @returns 标签。
  */
 function stateLabel(state: TurnState): string {
   switch (state) {
@@ -156,10 +156,10 @@ function stateLabel(state: TurnState): string {
 }
 
 /**
- * Maps the overall state to a short Chinese label for the tooltip.
+ * 把总体状态映射为提示文本使用的简短中文标签。
  *
- * @param overall The aggregated overall state.
- * @returns The label.
+ * @param overall 聚合后的总体状态。
+ * @returns 标签。
  */
 function overallLabel(overall: OverallState): string {
   switch (overall) {

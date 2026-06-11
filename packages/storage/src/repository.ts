@@ -1,27 +1,25 @@
 /**
- * Persistence repository. Translates normalized events into inserts/updates
- * across the `events`, `sessions`, `turns`, and `token_snapshots` tables, and
- * provides the read/maintenance queries the app needs.
+ * 持久化仓储。把归一化事件翻译为对 `events`、`sessions`、`turns`、
+ * `token_snapshots` 各表的插入/更新，并提供应用所需的读取/维护查询。
  *
  * @module storage/repository
  */
 import { randomUUID } from 'node:crypto'
 import { and, desc, eq, lt } from 'drizzle-orm'
-import type { AgentEvent } from '@codepulse/shared'
+import { TurnState, isActiveState, type AgentEvent } from '@codepulse/shared'
 import type { DB } from './sqlite/db.js'
 import { events, sessions, tokenSnapshots, turns } from './sqlite/schema.js'
 
 /**
- * Persists a normalized event and advances the derived session/turn/token rows.
+ * 持久化一个归一化事件，并推进派生的会话/轮次/token 行。
  *
- * Runs in a single transaction so the append-only event log and the derived
- * aggregates can never diverge. Specifically it: always inserts the event;
- * ensures a session row exists; opens a turn on `prompt_submit`; closes the
- * latest turn on `turn_stop`/`turn_error`; and records a token snapshot when the
- * event carries token data.
+ * 在单个事务内运行，使只追加事件日志与派生聚合永不分叉。
+ * 具体地：总是插入事件；确保会话行存在；在 `prompt_submit` 时开启轮次；
+ * 在 `turn_stop`/`turn_error` 时关闭最近的轮次；事件携带 token 数据时
+ * 记录一条 token 快照。
  *
- * @param db The Drizzle database handle.
- * @param event The normalized event to persist.
+ * @param db Drizzle 数据库句柄。
+ * @param event 待持久化的归一化事件。
  */
 export function persistEvent(db: DB, event: AgentEvent): void {
   db.transaction((tx) => {
@@ -60,16 +58,21 @@ export function persistEvent(db: DB, event: AgentEvent): void {
         .run()
     }
 
-    if (event.eventType === 'turn_stop' || event.eventType === 'turn_error') {
+    if (
+      event.eventType === 'turn_stop' ||
+      event.eventType === 'turn_error' ||
+      event.eventType === 'turn_cancelled'
+    ) {
       closeLatestTurn(tx, sessionId, event)
     }
 
     if (event.token) {
+      const turnId = findLatestTurnId(tx, sessionId, event.externalTurnId)
       tx.insert(tokenSnapshots)
         .values({
           id: randomUUID(),
           sessionId,
-          turnId: event.externalTurnId,
+          turnId,
           agentType: event.source,
           inputTokens: event.token.input,
           outputTokens: event.token.output,
@@ -85,22 +88,20 @@ export function persistEvent(db: DB, event: AgentEvent): void {
 }
 
 /**
- * Finds the session for an event, creating one if it does not exist yet.
+ * 查找事件对应的会话，不存在时创建一个。
  *
- * Also refreshes the model and closes the session on `session_end`.
+ * 还会刷新模型字段，并在 `session_end` 时关闭会话。
  *
- * @param tx The active transaction handle.
- * @param event The event being persisted.
- * @returns The internal session id.
+ * @param tx 活动事务句柄。
+ * @param event 正在持久化的事件。
+ * @returns 内部会话 id。
  */
 function ensureSession(tx: DB, event: AgentEvent): string {
   const externalId = event.externalSessionId ?? `${event.source}:unknown`
   const existing = tx
     .select({ id: sessions.id })
     .from(sessions)
-    .where(
-      and(eq(sessions.agentType, event.source), eq(sessions.externalSessionId, externalId)),
-    )
+    .where(and(eq(sessions.agentType, event.source), eq(sessions.externalSessionId, externalId)))
     .limit(1)
     .all()
 
@@ -132,59 +133,87 @@ function ensureSession(tx: DB, event: AgentEvent): string {
 }
 
 /**
- * Closes the most recently started turn in a session, marking it DONE or ERROR.
+ * 关闭会话中最近开始的轮次，标记为 DONE 或 ERROR。
  *
- * @param tx The active transaction handle.
- * @param sessionId The session whose latest turn should be closed.
- * @param event The terminating event (`turn_stop` or `turn_error`).
+ * @param tx 活动事务句柄。
+ * @param sessionId 需要关闭最近轮次的会话。
+ * @param event 终结事件（`turn_stop` 或 `turn_error`）。
  */
 function closeLatestTurn(tx: DB, sessionId: string, event: AgentEvent): void {
   const latest = tx
-    .select({ id: turns.id })
+    .select({ id: turns.id, state: turns.state })
     .from(turns)
     .where(eq(turns.sessionId, sessionId))
     .orderBy(desc(turns.startedAt))
-    .limit(1)
     .all()
-  if (latest.length === 0) return
+  const openTurn = latest.find((turn) => isOpenTurnState(turn.state))
+  if (!openTurn) return
   tx.update(turns)
     .set({
-      state: event.eventType === 'turn_error' ? 'ERROR' : 'DONE',
+      state: closeTurnState(event),
       endedAt: event.timestamp,
       lastAssistantMessage: event.message,
     })
-    .where(eq(turns.id, latest[0]!.id))
+    .where(eq(turns.id, openTurn.id))
     .run()
 }
 
+function closeTurnState(event: AgentEvent): string {
+  if (event.eventType === 'turn_error') return TurnState.ERROR
+  if (event.eventType === 'turn_cancelled') return TurnState.CANCELLED
+  return TurnState.DONE
+}
+
+function findLatestTurnId(
+  tx: DB,
+  sessionId: string,
+  externalTurnId: string | undefined,
+): string | undefined {
+  const latest = tx
+    .select({ id: turns.id, externalTurnId: turns.externalTurnId, state: turns.state })
+    .from(turns)
+    .where(eq(turns.sessionId, sessionId))
+    .orderBy(desc(turns.startedAt))
+    .all()
+  if (externalTurnId) {
+    const matching = latest.find((turn) => turn.externalTurnId === externalTurnId)
+    if (matching) return matching.id
+  }
+  return latest.find((turn) => isOpenTurnState(turn.state))?.id ?? latest[0]?.id
+}
+
+function isOpenTurnState(state: string): boolean {
+  return isActiveState(state as TurnState)
+}
+
 /**
- * Returns the most recent sessions, newest first.
+ * 返回最近的会话，按时间倒序。
  *
- * @param db The Drizzle database handle.
- * @param limit Maximum number of rows (default 50).
- * @returns Session rows ordered by start time descending.
+ * @param db Drizzle 数据库句柄。
+ * @param limit 最大行数（默认 50）。
+ * @returns 按开始时间降序排列的会话行。
  */
 export function recentSessions(db: DB, limit = 50) {
   return db.select().from(sessions).orderBy(desc(sessions.startedAt)).limit(limit).all()
 }
 
 /**
- * Returns the most recent raw events, newest first.
+ * 返回最近的原始事件，按时间倒序。
  *
- * @param db The Drizzle database handle.
- * @param limit Maximum number of rows (default 100).
- * @returns Event rows ordered by timestamp descending.
+ * @param db Drizzle 数据库句柄。
+ * @param limit 最大行数（默认 100）。
+ * @returns 按时间戳降序排列的事件行。
  */
 export function recentEvents(db: DB, limit = 100) {
   return db.select().from(events).orderBy(desc(events.timestamp)).limit(limit).all()
 }
 
 /**
- * Deletes events and token snapshots older than a cutoff — the data-retention
- * policy (requirements §9, "数据保留天数").
+ * 删除早于截止时间的事件与 token 快照 —— 数据保留策略
+ * （需求 §9，「数据保留天数」）。
  *
- * @param db The Drizzle database handle.
- * @param cutoff Epoch millis; rows strictly older than this are removed.
+ * @param db Drizzle 数据库句柄。
+ * @param cutoff epoch 毫秒；严格早于该时间的行被删除。
  */
 export function pruneEventsBefore(db: DB, cutoff: number): void {
   db.delete(events).where(lt(events.timestamp, cutoff)).run()

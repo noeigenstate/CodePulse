@@ -1,5 +1,7 @@
 # CodePulse Desktop / 码脉桌面端
 
+中文文档：[README.zh-CN.md](./README.zh-CN.md)
+
 A local AI coding-agent **status hub**. CodePulse watches Codex and Claude Code
 through their hook / status-line mechanisms and tells you — without staring at a
 terminal — whether the agent is still working, has finished a turn, is waiting
@@ -126,18 +128,60 @@ Add this to **`~/.claude/settings.json`** (merge with anything already there):
 ```jsonc
 {
   "hooks": {
-    "SessionStart":     [{ "hooks": [{ "type": "command", "command": "node <REPO>/packages/hooks/bin/claude-hook.js" }] }],
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "node <REPO>/packages/hooks/bin/claude-hook.js" }] }],
-    "PreToolUse":       [{ "hooks": [{ "type": "command", "command": "node <REPO>/packages/hooks/bin/claude-hook.js" }] }],
-    "PostToolUse":      [{ "hooks": [{ "type": "command", "command": "node <REPO>/packages/hooks/bin/claude-hook.js" }] }],
-    "Notification":     [{ "hooks": [{ "type": "command", "command": "node <REPO>/packages/hooks/bin/claude-hook.js" }] }],
-    "Stop":             [{ "hooks": [{ "type": "command", "command": "node <REPO>/packages/hooks/bin/claude-hook.js" }] }],
-    "SessionEnd":       [{ "hooks": [{ "type": "command", "command": "node <REPO>/packages/hooks/bin/claude-hook.js" }] }]
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node <REPO>/packages/hooks/bin/claude-hook.js" },
+        ],
+      },
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node <REPO>/packages/hooks/bin/claude-hook.js" },
+        ],
+      },
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node <REPO>/packages/hooks/bin/claude-hook.js" },
+        ],
+      },
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node <REPO>/packages/hooks/bin/claude-hook.js" },
+        ],
+      },
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node <REPO>/packages/hooks/bin/claude-hook.js" },
+        ],
+      },
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node <REPO>/packages/hooks/bin/claude-hook.js" },
+        ],
+      },
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node <REPO>/packages/hooks/bin/claude-hook.js" },
+        ],
+      },
+    ],
   },
   "statusLine": {
     "type": "command",
-    "command": "node <REPO>/packages/hooks/bin/claude-statusline.js"
-  }
+    "command": "node <REPO>/packages/hooks/bin/claude-statusline.js",
+  },
 }
 ```
 
@@ -150,12 +194,72 @@ Add this to **`~/.claude/settings.json`** (merge with anything already there):
 
 ### 4. Connect Codex
 
-Point Codex's lifecycle hooks (`SessionStart`, `UserPromptSubmit`, `PreToolUse`,
-`PermissionRequest`, `PostToolUse`, `Stop`) at:
+Yes. Codex also needs lifecycle hooks configured. Without hooks, CodePulse can
+only show the default idle Codex slot and local CLI detection; it will not
+receive Codex task state changes.
 
+Codex discovers hooks next to active config layers. The simplest user-level
+setup is **`~/.codex/hooks.json`**. Replace `<REPO>` with the absolute path to
+this repository:
+
+```jsonc
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [{ "type": "command", "command": "node <REPO>/packages/hooks/bin/codex-hook.js" }],
+      },
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [{ "type": "command", "command": "node <REPO>/packages/hooks/bin/codex-hook.js" }],
+      },
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [{ "type": "command", "command": "node <REPO>/packages/hooks/bin/codex-hook.js" }],
+      },
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [{ "type": "command", "command": "node <REPO>/packages/hooks/bin/codex-hook.js" }],
+      },
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [{ "type": "command", "command": "node <REPO>/packages/hooks/bin/codex-hook.js" }],
+      },
+    ],
+    "Stop": [
+      {
+        "hooks": [{ "type": "command", "command": "node <REPO>/packages/hooks/bin/codex-hook.js" }],
+      },
+    ],
+  },
+}
 ```
-node <REPO>/packages/hooks/bin/codex-hook.js
+
+Codex hooks are enabled by default in current Codex builds. If you previously
+disabled them, re-enable them in **`~/.codex/config.toml`**:
+
+```toml
+[features]
+hooks = true
 ```
+
+After adding or changing a Codex hook, open Codex and run `/hooks` to review and
+trust the command hook. Codex records trust against the hook definition; changed
+paths or commands may need review again.
+
+> On Windows, use double backslashes in the path, e.g.
+> `node E:\\proj\\codepulse\\packages\\hooks\\bin\\codex-hook.js`.
+
+> Codex does not currently have a CodePulse status-line collector like Claude.
+> Token/context usage is shown when the Codex hook payload includes `usage` /
+> `context_used_percent`; otherwise the Codex token section remains empty.
 
 > The Codex adapter maps the event names in requirements §6.1 and reads field
 > names defensively, so adjust the hook payload keys if your Codex build differs.
@@ -188,17 +292,17 @@ pnpm smoke
 
 Each agent gets a card showing:
 
-| Field | Meaning |
-| --- | --- |
-| **State badge** | Idle / 处理中 / 执行工具 / 等待授权 / 等待输入 / 已完成 / 出错 / 疑似卡住 |
-| **项目 (Project)** | Final segment of the workspace path |
-| **模型 (Model)** | Model in use (from Claude's status line) |
-| **本轮耗时 (Elapsed)** | Time since the current turn started (live) |
-| **工具调用 (Tool calls)** | Tool-call count in the current turn |
-| **当前 (Activity)** | What the agent is doing right now, e.g. `正在执行 npm test` |
-| **Context bar** | Context-window usage — blue, yellow ≥80%, red ≥95% — plus cost |
-| **Last message** | Summary of the AI's final reply |
-| **标记已读** | Acknowledge a finished/errored result (clears the tray badge) |
+| Field                     | Meaning                                                                   |
+| ------------------------- | ------------------------------------------------------------------------- |
+| **State badge**           | Idle / 处理中 / 执行工具 / 等待授权 / 等待输入 / 已完成 / 出错 / 疑似卡住 |
+| **项目 (Project)**        | Final segment of the workspace path                                       |
+| **模型 (Model)**          | Model in use (from Claude's status line)                                  |
+| **本轮耗时 (Elapsed)**    | Time since the current turn started (live)                                |
+| **工具调用 (Tool calls)** | Tool-call count in the current turn                                       |
+| **当前 (Activity)**       | What the agent is doing right now, e.g. `正在执行 npm test`               |
+| **Context bar**           | Context-window usage — blue, yellow ≥80%, red ≥95% — plus cost            |
+| **Last message**          | Summary of the AI's final reply                                           |
+| **标记已读**              | Acknowledge a finished/errored result (clears the tray badge)             |
 
 The right-hand rail lists recent **notifications**, colour-coded by severity and
 individually dismissible.
@@ -207,14 +311,14 @@ individually dismissible.
 
 The tray icon colour is the **overall** state across all agents:
 
-| Colour | Meaning |
-| --- | --- |
-| ⚪ Grey | All idle |
-| 🔵 Blue | A task is running |
+| Colour    | Meaning                                     |
+| --------- | ------------------------------------------- |
+| ⚪ Grey   | All idle                                    |
+| 🔵 Blue   | A task is running                           |
 | 🟡 Yellow | Waiting for permission or input — needs you |
-| 🟢 Green | A turn finished, unread |
-| 🔴 Red | An error |
-| 🟠 Orange | Suspected stuck |
+| 🟢 Green  | A turn finished, unread                     |
+| 🔴 Red    | An error                                    |
+| 🟠 Orange | Suspected stuck                             |
 
 The tray menu shows each agent's current state and offers: **打开面板 (Open)**,
 **静音 30 分钟 (Mute 30 min)**, **清除提醒 (Clear alerts)**, **设置 (Settings)**,
@@ -224,11 +328,11 @@ and **退出 (Quit)**.
 
 Notifications come in three levels:
 
-| Level | Sound | When |
-| --- | --- | --- |
-| **strong** | yes | Needs permission, needs input, error, context ≥ 95% |
-| **normal** | yes | A turn completed |
-| **soft** | no | Context ≥ 80%; first signs of being stuck |
+| Level      | Sound | When                                                |
+| ---------- | ----- | --------------------------------------------------- |
+| **strong** | yes   | Needs permission, needs input, error, context ≥ 95% |
+| **normal** | yes   | A turn completed                                    |
+| **soft**   | no    | Context ≥ 80%; first signs of being stuck           |
 
 To avoid nagging, the rule engine throttles repeats: at most one notification per
 agent every **30 s**, permission reminders no more than once every **60 s**, and
@@ -257,15 +361,16 @@ full. Delete the file to reset all history.
 The server binds to loopback only (`127.0.0.1:17888`), so it is never exposed to
 the network.
 
-| Method | Path | Purpose |
-| ------ | --------------------- | -------------------------------------------------- |
-| POST   | `/api/events`         | Ingest a raw hook payload (or an array of them)     |
-| GET    | `/api/status`         | Full `StatusSnapshot` for the Dashboard             |
-| GET    | `/api/device/status`  | Minimal status for the future ESP32 hardware end    |
-| POST   | `/api/ack/:agent`     | Mark an agent's terminal result as read             |
-| POST   | `/api/mute`           | `{ "muted": true }` to silence notification sound   |
-| GET    | `/api/health`         | Liveness probe                                      |
-| WS     | `/ws`                 | Push channel: `status` + `notification` messages    |
+| Method | Path                 | Purpose                                           |
+| ------ | -------------------- | ------------------------------------------------- |
+| POST   | `/api/events`        | Ingest a raw hook payload (or an array of them)   |
+| GET    | `/api/status`        | Full `StatusSnapshot` for the Dashboard           |
+| GET    | `/api/device/status` | Minimal status for the future ESP32 hardware end  |
+| GET    | `/api/agents/detect` | Detect local Codex / Claude CLI and hook setup    |
+| POST   | `/api/ack/:agent`    | Mark an agent's terminal result as read           |
+| POST   | `/api/mute`          | `{ "muted": true }` to silence notification sound |
+| GET    | `/api/health`        | Liveness probe                                    |
+| WS     | `/ws`                | Push channel: `status` + `notification` messages  |
 
 `:agent` is `codex` or `claude_code`. Override the server URL the hooks target
 with the `CODEPULSE_URL` environment variable.

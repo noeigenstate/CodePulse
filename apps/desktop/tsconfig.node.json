@@ -8,9 +8,5 @@
     "types": ["node"],
     "lib": ["ES2023"]
   },
-  "include": [
-    "src/main/**/*.ts",
-    "src/preload/**/*.ts",
-    "electron.vite.config.ts"
-  ]
+  "include": ["src/main/**/*.ts", "src/preload/**/*.ts", "electron.vite.config.ts"]
 }

@@ -1,6 +1,6 @@
 /**
- * Codex adapter. Maps Codex's lifecycle hook payloads onto the normalized
- * {@link AgentEventInput} shape (requirements §6.1).
+ * Codex 适配器。把 Codex 的生命周期 hook 载荷映射到归一化的
+ * {@link AgentEventInput} 形态（需求 §6.1）。
  *
  * @module adapters/codex
  */
@@ -8,14 +8,14 @@ import type { AgentEventInput, AgentEventType } from '@codepulse/shared'
 import { asRecord, pickNumber, pickString, preview } from '../util.js'
 
 /**
- * Maps a Codex hook payload into an {@link AgentEventInput}.
+ * 把 Codex 的 hook 载荷映射为 {@link AgentEventInput}。
  *
- * Token data is treated as best-effort (`accuracy: 'estimated'`) since Codex
- * token accounting is not a V0.1 guarantee. Field names are read defensively to
- * tolerate differences between Codex builds.
+ * token 数据按尽力而为处理（`accuracy: 'estimated'`），因为 Codex 的
+ * token 统计不是 V0.1 的保证项。字段名采用防御式读取，
+ * 以容忍不同 Codex 构建之间的差异。
  *
- * @param raw The parsed hook payload (untrusted).
- * @returns The normalized event input, or `null` if unrecognised.
+ * @param raw 解析后的 hook 载荷（不可信）。
+ * @returns 归一化事件输入；无法识别时为 `null`。
  */
 export function fromCodexHook(raw: unknown): AgentEventInput | null {
   const r = asRecord(raw)
@@ -53,6 +53,7 @@ export function fromCodexHook(raw: unknown): AgentEventInput | null {
       event.message = preview(pickString(r, 'prompt', 'user_prompt'))
       break
     case 'turn_stop':
+    case 'turn_cancelled':
       event.message = preview(pickString(r, 'last_message', 'assistant_message', 'message'))
       break
   }
@@ -64,10 +65,10 @@ export function fromCodexHook(raw: unknown): AgentEventInput | null {
 }
 
 /**
- * Maps a native Codex hook event name onto the normalized event vocabulary.
+ * 把 Codex 原生 hook 事件名映射到归一化事件词汇表。
  *
- * @param hookEvent The hook event name from the payload.
- * @returns The mapped event type, or `null` for unrecognised events.
+ * @param hookEvent 载荷中的 hook 事件名。
+ * @returns 映射后的事件类型；无法识别时为 `null`。
  */
 function mapCodexEvent(hookEvent: string): AgentEventType | null {
   switch (hookEvent) {
@@ -83,6 +84,13 @@ function mapCodexEvent(hookEvent: string): AgentEventType | null {
       return 'permission_request'
     case 'Stop':
       return 'turn_stop'
+    case 'Cancel':
+    case 'Cancelled':
+    case 'Canceled':
+    case 'Abort':
+    case 'Aborted':
+    case 'Interrupted':
+      return 'turn_cancelled'
     case 'Error':
       return 'turn_error'
     case 'SessionEnd':
@@ -93,23 +101,29 @@ function mapCodexEvent(hookEvent: string): AgentEventType | null {
 }
 
 /**
- * Extracts best-effort token usage from a Codex payload.
+ * 从 Codex 载荷中尽力提取 token 用量。
  *
- * @param raw The hook payload.
- * @returns An estimated token payload, or `undefined` if no usage is present.
+ * @param raw hook 载荷。
+ * @returns 估算的 token 载荷；无任何用量数据时为 `undefined`。
  */
 function extractCodexToken(raw: Record<string, unknown>): AgentEventInput['token'] | undefined {
   const usage = asRecord(raw.usage ?? raw.token) ?? raw
   const input = pickNumber(usage, 'input_tokens', 'inputTokens')
   const output = pickNumber(usage, 'output_tokens', 'outputTokens')
   const total = pickNumber(usage, 'total_tokens', 'totalTokens')
-  const pct = pickNumber(raw, 'context_used_percent', 'contextUsedPercent')
-  if (input == null && output == null && total == null && pct == null) return undefined
+  const pct =
+    pickNumber(raw, 'context_used_percent', 'contextUsedPercent') ??
+    pickNumber(usage, 'context_used_percent', 'contextUsedPercent')
+  const costUsd = pickNumber(raw, 'cost_usd', 'costUsd') ?? pickNumber(usage, 'cost_usd', 'costUsd')
+  if (input == null && output == null && total == null && pct == null && costUsd == null) {
+    return undefined
+  }
   return {
     input,
     output,
     total,
     contextUsedPercent: pct,
+    costUsd,
     accuracy: 'estimated',
   }
 }

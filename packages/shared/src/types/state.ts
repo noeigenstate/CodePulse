@@ -1,45 +1,43 @@
 /**
- * The unified turn/agent state machine shared across the whole system. Events
- * from Codex and Claude Code are normalized into transitions between these
- * states (requirements §8).
+ * 全系统共享的统一轮次/agent 状态机。来自 Codex 与 Claude Code 的事件
+ * 被归一化为这些状态之间的迁移（需求 §8）。
  *
  * @module shared/types/state
  */
 
 /**
- * Enumerates every state a turn (one prompt → response cycle) can be in.
+ * 枚举一个轮次（一次「提示 → 回复」循环）可能处于的所有状态。
  *
- * Implemented as a frozen object plus a same-named type so the values can be
- * referenced at runtime (e.g. `TurnState.DONE`) while still being used as a
- * string-literal union in type positions.
+ * 实现为冻结对象加同名类型，使得这些值既可在运行时引用
+ * （如 `TurnState.DONE`），又可在类型位置作为字符串字面量联合使用。
  */
 export const TurnState = {
-  /** No AI task is running. */
+  /** 没有 AI 任务在运行。 */
   IDLE: 'IDLE',
-  /** The user submitted a prompt; the turn has started. */
+  /** 用户提交了提示词，轮次已开始。 */
   PROMPT_SUBMITTED: 'PROMPT_SUBMITTED',
-  /** The AI is generating a response or planning. */
+  /** AI 正在生成回复或进行规划。 */
   THINKING: 'THINKING',
-  /** The AI is executing a tool (read/edit file, run command, …). */
+  /** AI 正在执行工具（读/改文件、运行命令等）。 */
   TOOL_RUNNING: 'TOOL_RUNNING',
-  /** The AI is waiting for the user to approve an action. */
+  /** AI 正在等待用户批准某个操作。 */
   WAITING_PERMISSION: 'WAITING_PERMISSION',
-  /** The AI is waiting for the user to continue/clarify. */
+  /** AI 正在等待用户继续/澄清。 */
   WAITING_USER_INPUT: 'WAITING_USER_INPUT',
-  /** The current turn finished successfully. */
+  /** 当前轮次成功完成。 */
   DONE: 'DONE',
-  /** The current turn ended in an error. */
+  /** 当前轮次以错误告终。 */
   ERROR: 'ERROR',
-  /** No new events for a long time — suspected stuck. */
+  /** 长时间无新事件 —— 疑似卡住。 */
   TIMEOUT: 'TIMEOUT',
-  /** The user cancelled the turn. */
+  /** 用户取消了该轮次。 */
   CANCELLED: 'CANCELLED',
 } as const
 
-/** String-literal union of every {@link TurnState} value. */
+/** 由所有 {@link TurnState} 值组成的字符串字面量联合。 */
 export type TurnState = (typeof TurnState)[keyof typeof TurnState]
 
-/** States in which a turn is still active (not a terminal outcome). */
+/** 轮次仍处于活动中的状态（非终结结果）。 */
 export const ACTIVE_STATES: readonly TurnState[] = [
   TurnState.PROMPT_SUBMITTED,
   TurnState.THINKING,
@@ -48,7 +46,7 @@ export const ACTIVE_STATES: readonly TurnState[] = [
   TurnState.WAITING_USER_INPUT,
 ]
 
-/** Terminal states — a turn ends when it reaches one of these. */
+/** 终结状态 —— 轮次到达其中之一即结束。 */
 export const TERMINAL_STATES: readonly TurnState[] = [
   TurnState.DONE,
   TurnState.ERROR,
@@ -57,32 +55,32 @@ export const TERMINAL_STATES: readonly TurnState[] = [
 ]
 
 /**
- * Reports whether a turn is still in progress.
+ * 判断轮次是否仍在进行中。
  *
- * @param state The state to test.
- * @returns `true` if `state` is one of {@link ACTIVE_STATES}.
+ * @param state 待测试的状态。
+ * @returns 若 `state` 属于 {@link ACTIVE_STATES} 则为 `true`。
  */
 export function isActiveState(state: TurnState): boolean {
   return ACTIVE_STATES.includes(state)
 }
 
 /**
- * Reports whether a turn has reached a terminal outcome.
+ * 判断轮次是否已到达终结结果。
  *
- * @param state The state to test.
- * @returns `true` if `state` is one of {@link TERMINAL_STATES}.
+ * @param state 待测试的状态。
+ * @returns 若 `state` 属于 {@link TERMINAL_STATES} 则为 `true`。
  */
 export function isTerminalState(state: TurnState): boolean {
   return TERMINAL_STATES.includes(state)
 }
 
 /**
- * Reports whether a state requires the user to step in.
+ * 判断某状态是否需要用户介入。
  *
- * Drives the "attention" tray colour and strong notifications.
+ * 驱动托盘的「attention」颜色与强提醒通知。
  *
- * @param state The state to test.
- * @returns `true` for `WAITING_PERMISSION` or `WAITING_USER_INPUT`.
+ * @param state 待测试的状态。
+ * @returns 对 `WAITING_PERMISSION` 或 `WAITING_USER_INPUT` 返回 `true`。
  */
 export function needsUserAttention(state: TurnState): boolean {
   return state === TurnState.WAITING_PERMISSION || state === TurnState.WAITING_USER_INPUT

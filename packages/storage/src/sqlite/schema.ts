@@ -1,15 +1,15 @@
 /**
- * Drizzle ORM schema — the single source of truth for the SQLite tables and the
- * input for `drizzle-kit generate`. Mirrors the data model in requirements §7
- * (agents, workspaces, sessions, turns, token snapshots) plus a raw `events`
- * audit log.
+ * Drizzle ORM schema —— SQLite 表结构的唯一可信来源，也是
+ * `drizzle-kit generate` 的输入。对应需求 §7 的数据模型
+ * （agents、workspaces、sessions、turns、token 快照），
+ * 外加一个原始 `events` 审计日志。
  *
  * @module storage/sqlite/schema
  */
 import { sql } from 'drizzle-orm'
 import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 
-/** Monitored agents and their install/configuration status (requirements §7.1). */
+/** 被监控的 agent 及其安装/配置状态（需求 §7.1）。 */
 export const agents = sqliteTable('agents', {
   id: text('id').primaryKey(),
   type: text('type').notNull(),
@@ -20,7 +20,7 @@ export const agents = sqliteTable('agents', {
   lastSeenAt: integer('last_seen_at'),
 })
 
-/** Project directories agents work in (requirements §7.2). */
+/** agent 工作所在的项目目录（需求 §7.2）。 */
 export const workspaces = sqliteTable('workspaces', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
@@ -29,7 +29,7 @@ export const workspaces = sqliteTable('workspaces', {
   lastActiveAt: integer('last_active_at').notNull(),
 })
 
-/** Agent conversations, keyed externally by `(agent_type, external_session_id)`. */
+/** agent 对话，对外以 `(agent_type, external_session_id)` 为键。 */
 export const sessions = sqliteTable(
   'sessions',
   {
@@ -47,7 +47,7 @@ export const sessions = sqliteTable(
   }),
 )
 
-/** One prompt → response cycle within a session (requirements §7.4). */
+/** 会话内一次「提示 → 回复」循环（需求 §7.4）。 */
 export const turns = sqliteTable(
   'turns',
   {
@@ -68,7 +68,7 @@ export const turns = sqliteTable(
   }),
 )
 
-/** Point-in-time token/context usage measurements (requirements §7.5). */
+/** token/上下文用量的时间点测量（需求 §7.5）。 */
 export const tokenSnapshots = sqliteTable(
   'token_snapshots',
   {
@@ -89,7 +89,7 @@ export const tokenSnapshots = sqliteTable(
   }),
 )
 
-/** Append-only log of every normalized event, for replay and debugging. */
+/** 所有归一化事件的只追加日志，用于回放与调试。 */
 export const events = sqliteTable(
   'events',
   {
@@ -115,13 +115,13 @@ export const events = sqliteTable(
   }),
 )
 
-/** Row type inferred from the {@link agents} table. */
+/** 由 {@link agents} 表推断出的行类型。 */
 export type AgentRow = typeof agents.$inferSelect
-/** Row type inferred from the {@link sessions} table. */
+/** 由 {@link sessions} 表推断出的行类型。 */
 export type SessionRow = typeof sessions.$inferSelect
-/** Row type inferred from the {@link turns} table. */
+/** 由 {@link turns} 表推断出的行类型。 */
 export type TurnRow = typeof turns.$inferSelect
-/** Row type inferred from the {@link events} table. */
+/** 由 {@link events} 表推断出的行类型。 */
 export type EventRow = typeof events.$inferSelect
-/** Row type inferred from the {@link tokenSnapshots} table. */
+/** 由 {@link tokenSnapshots} 表推断出的行类型。 */
 export type TokenSnapshotRow = typeof tokenSnapshots.$inferSelect

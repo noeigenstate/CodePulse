@@ -1,28 +1,33 @@
 /**
- * Presentation helpers for the renderer: maps states to labels + Tailwind
- * colour classes and formats durations, paths, and relative times.
+ * 渲染端展示辅助函数：把状态映射为标签 + Tailwind 颜色类，
+ * 并格式化时长、路径与相对时间。
  *
  * @module renderer/lib/format
  */
-import { type OverallState, TurnState } from '@codepulse/shared'
+import {
+  formatTokenCount,
+  formatTokenPercent,
+  type OverallState,
+  TurnState,
+} from '@codepulse/shared'
 
 /**
- * A display label paired with the Tailwind classes for its status dot and text.
+ * 显示标签及其状态圆点与文字的 Tailwind 类。
  */
 export interface StateStyle {
-  /** Human-readable Chinese label. */
+  /** 人类可读的中文标签。 */
   label: string
-  /** Tailwind classes for the coloured status dot. */
+  /** 彩色状态圆点的 Tailwind 类。 */
   dot: string
-  /** Tailwind class for the label text colour. */
+  /** 标签文字颜色的 Tailwind 类。 */
   text: string
 }
 
 /**
- * Returns the label + colour classes for a per-turn state.
+ * 返回某轮次状态的标签 + 颜色类。
  *
- * @param state The turn state to style.
- * @returns The matching {@link StateStyle}.
+ * @param state 要设置样式的轮次状态。
+ * @returns 匹配的 {@link StateStyle}。
  */
 export function turnStateStyle(state: TurnState): StateStyle {
   switch (state) {
@@ -51,10 +56,10 @@ export function turnStateStyle(state: TurnState): StateStyle {
 }
 
 /**
- * Returns the label + colour classes for the aggregated overall state.
+ * 返回聚合总体状态的标签 + 颜色类。
  *
- * @param overall The overall state to style.
- * @returns The matching {@link StateStyle}.
+ * @param overall 要设置样式的总体状态。
+ * @returns 匹配的 {@link StateStyle}。
  */
 export function overallStyle(overall: OverallState): StateStyle {
   switch (overall) {
@@ -74,20 +79,20 @@ export function overallStyle(overall: OverallState): StateStyle {
 }
 
 /**
- * Maps an agent type to its display name.
+ * 把 agent 类型映射为显示名称。
  *
- * @param type The agent type string.
- * @returns `"Codex"` or `"Claude Code"`.
+ * @param type agent 类型字符串。
+ * @returns `"Codex"` 或 `"Claude Code"`。
  */
 export function agentName(type: string): string {
   return type === 'codex' ? 'Codex' : 'Claude Code'
 }
 
 /**
- * Formats an elapsed duration compactly, e.g. `"3m 12s"` or `"1h 4m"`.
+ * 紧凑格式化已用时长，例如 `"3m 12s"` 或 `"1h 4m"`。
  *
- * @param ms Duration in milliseconds (negative values are clamped to 0).
- * @returns The formatted string.
+ * @param ms 时长（毫秒，负值按 0 处理）。
+ * @returns 格式化后的字符串。
  */
 export function formatDuration(ms: number): string {
   if (ms < 0) ms = 0
@@ -101,22 +106,48 @@ export function formatDuration(ms: number): string {
 }
 
 /**
- * Returns the final segment of a path (handles both `/` and `\`).
+ * 返回路径的最后一段（同时处理 `/` 与 `\`）。
  *
- * @param path The path, possibly `undefined`.
- * @returns The basename, or `"—"` when no path is given.
+ * @param path 路径，可能为 `undefined`。
+ * @returns 最后一段；未提供路径时返回 `"—"`。
  */
 export function basename(path: string | undefined): string {
   if (!path) return '—'
-  return path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path
+  return (
+    path
+      .replace(/[\\/]+$/, '')
+      .split(/[\\/]/)
+      .pop() || path
+  )
 }
 
 /**
- * Formats a timestamp relative to now, e.g. `"刚刚"`, `"12s ago"`, `"3m ago"`.
+ * 紧凑格式化 token 数，例如 `512` → `"512"`、`66899` → `"66.9k"`、
+ * `1_250_000` → `"1.25M"`。
  *
- * @param ts The event time in epoch millis.
- * @param now The current time in epoch millis.
- * @returns A short relative-time string.
+ * @param n token 数，可能为 `undefined`。
+ * @returns 紧凑字符串；无值时返回 `"—"`。
+ */
+export function formatTokens(n: number | undefined): string {
+  return formatTokenCount(n)
+}
+
+/**
+ * 格式化 token/上下文百分比，例如 `83.4` → `"83%"`。
+ *
+ * @param pct 百分比，可能为 `undefined`。
+ * @returns 格式化后的百分比；无值时返回 `"—"`。
+ */
+export function formatPercent(pct: number | undefined): string {
+  return formatTokenPercent(pct)
+}
+
+/**
+ * 把时间戳格式化为相对当前的时间，例如 `"刚刚"`、`"12s ago"`、`"3m ago"`。
+ *
+ * @param ts 事件时间（epoch 毫秒）。
+ * @param now 当前时间（epoch 毫秒）。
+ * @returns 简短的相对时间字符串。
  */
 export function formatRelative(ts: number, now: number): string {
   const diff = now - ts

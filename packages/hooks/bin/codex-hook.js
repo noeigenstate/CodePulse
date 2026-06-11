@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * CodePulse hook for Codex CLI.
+ * 面向 Codex CLI 的 CodePulse hook。
  *
- * Wire this to the Codex lifecycle hooks (SessionStart, UserPromptSubmit,
- * PreToolUse, PermissionRequest, PostToolUse, Stop). Codex passes the hook JSON
- * on stdin; we tag it with `source: 'codex'` and forward it to the local
- * server. Exits 0 unconditionally so it never blocks Codex.
+ * 可接入 Codex 生命周期 hook（SessionStart、UserPromptSubmit、
+ * PreToolUse、PermissionRequest、PostToolUse、Stop）。
+ * Codex 通过 stdin 传入 hook JSON；本脚本打上 `source: 'codex'`
+ * 标记后转发给本地服务器。无条件以 0 退出，绝不阻塞 Codex。
  *
  * @module hooks/bin/codex-hook
  */

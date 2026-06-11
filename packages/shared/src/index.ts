@@ -1,10 +1,10 @@
 /**
- * `@codepulse/shared` — the framework-agnostic domain model shared by every
- * other package: agents, sessions, turns, events, token usage, runtime views,
- * and the local-server defaults.
+ * `@codepulse/shared` —— 与框架无关的领域模型，被其他所有包共享：
+ * agent、会话（session）、轮次（turn）、事件、token 用量、运行时视图
+ * 以及本地服务器默认配置。
  *
- * This package has no runtime dependencies and is safe to import from the main
- * process, the renderer, the server, and the hook scripts alike.
+ * 本包没有任何运行时依赖，可以安全地被主进程、渲染进程、服务器
+ * 以及 hook 脚本引用。
  *
  * @module shared
  */
@@ -14,9 +14,10 @@ export * from './types/token.js'
 export * from './types/session.js'
 export * from './types/event.js'
 export * from './types/runtime.js'
+export * from './token-format.js'
 
-/** Default host the local HTTP/WebSocket server binds to (loopback only). */
+/** 本地 HTTP/WebSocket 服务器绑定的默认主机（仅回环地址）。 */
 export const DEFAULT_SERVER_HOST = '127.0.0.1'
 
-/** Default port for the local HTTP/WebSocket server (requirements §5.9). */
+/** 本地 HTTP/WebSocket 服务器的默认端口（需求 §5.9）。 */
 export const DEFAULT_SERVER_PORT = 17888

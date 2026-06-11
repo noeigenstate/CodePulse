@@ -1,6 +1,6 @@
 /**
- * Desktop notification presentation. Maps a rule-engine
- * {@link NotificationRequest} onto an OS notification.
+ * 桌面通知展示层。把规则引擎的 {@link NotificationRequest}
+ * 映射为操作系统通知。
  *
  * @module main/notifications
  */
@@ -8,15 +8,14 @@ import { Notification } from 'electron'
 import type { NotificationRequest } from '@codepulse/shared'
 
 /**
- * Shows a desktop notification for a rule-engine request.
+ * 为规则引擎请求显示一条桌面通知。
  *
- * Throttling, dedup, and the sound decision have already been made by the rule
- * engine, so this layer only maps `level` → presentation and wires the click
- * handler. No-op on platforms where notifications are unsupported.
+ * 节流、去重与声音决策已由规则引擎完成，本层只负责把
+ * `level` 映射为展示形式并接线点击处理器。
+ * 在不支持通知的平台上为空操作。
  *
- * @param request The notification to display.
- * @param onClick Invoked when the user clicks the notification (e.g. to focus
- *   the window).
+ * @param request 要显示的通知。
+ * @param onClick 用户点击通知时调用（例如聚焦窗口）。
  */
 export function showNotification(request: NotificationRequest, onClick: () => void): void {
   if (!Notification.isSupported()) return

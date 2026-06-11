@@ -1,7 +1,7 @@
 /**
- * The notification rule engine. It turns state transitions and inactivity ticks
- * into {@link NotificationRequest}s, and enforces the anti-disturbance rules
- * from requirements §5.3 / §5.7 (dedup, per-key throttling, mute).
+ * 通知规则引擎。把状态迁移与无活动定时检查转换为
+ * {@link NotificationRequest}，并执行需求 §5.3 / §5.7 中的防打扰规则
+ * （去重、按键节流、静音）。
  *
  * @module core/rule-engine
  */
@@ -10,89 +10,94 @@ import {
   type NotificationRequest,
   type NotificationLevel,
   TurnState,
+  formatTokenQuotaNotice,
+  isActiveState,
 } from '@codepulse/shared'
 import type { TransitionResult } from '../state-machine/index.js'
 
-/** Inactivity threshold for the first soft "long time no response" nudge. */
+/** 触发首次「长时间无响应」软提醒的无活动阈值。 */
 export const STUCK_SOFT_MS = 2 * 60_000
-/** Inactivity threshold at which the UI shows "suspected stuck". */
+/** UI 显示「可能卡住」的无活动阈值。 */
 export const STUCK_VISIBLE_MS = 5 * 60_000
-/** Inactivity threshold for the strong "suspected stuck" alert. */
+/** 触发「疑似卡住」强提醒的无活动阈值。 */
 export const STUCK_STRONG_MS = 10 * 60_000
 
-/** Context usage (%) at which a soft warning fires. */
+/** 触发软警告的上下文使用率（%）。 */
 export const CONTEXT_SOFT_PERCENT = 80
-/** Context usage (%) at which a strong warning fires. */
+/** 触发强警告的上下文使用率（%）。 */
 export const CONTEXT_STRONG_PERCENT = 95
 
 /**
- * Tuning options for the {@link RuleEngine}.
+ * {@link RuleEngine} 的调优选项。
  */
 export interface RuleEngineOptions {
-  /** Global mute — when true, notifications still emit but request no sound. */
+  /** 全局静音 —— 为 true 时通知仍会发出，但不请求声音。 */
   muted?: boolean
-  /** Minimum gap between any two notifications for one agent (ms). */
+  /** 同一 agent 任意两条通知之间的最小间隔（毫秒）。 */
   sessionThrottleMs?: number
-  /** Minimum gap between permission reminders (ms). */
+  /** 授权提醒之间的最小间隔（毫秒）。 */
   permissionThrottleMs?: number
 }
 
-/** Built-in throttle defaults (requirements §5.7). */
+/** 内置节流默认值（需求 §5.7）。 */
 const DEFAULTS = {
   sessionThrottleMs: 30_000,
   permissionThrottleMs: 60_000,
 }
 
+const FIRED_KEY_RETENTION_MS = 10 * 60_000
+
 /**
- * Decides which notifications to fire and enforces the anti-disturbance rules.
+ * 决定发出哪些通知并执行防打扰规则。
  *
- * The engine is stateful: it remembers per-key fire times and the highest
- * context/stuck level already announced, so it must be kept as a single
- * long-lived instance per process (the {@link StatusHub} owns one).
+ * 引擎是有状态的：它记录每个去重键的触发时间，以及已经播报过的
+ * 最高上下文/卡住级别，因此每个进程必须保持单个长生命周期实例
+ * （由 {@link StatusHub} 持有）。
  */
 export class RuleEngine {
-  /** Last fire time per dedupe key, for throttling. */
+  /** 每个去重键的最近触发时间，用于节流。 */
   private lastFiredAt = new Map<string, number>()
-  /** Highest context-usage level already announced, per agent. */
+  /** 每个 agent 已播报过的最高上下文使用级别。 */
   private contextLevelFired = new Map<string, NotificationLevel>()
-  /** Highest stuck level already announced, per agent. */
+  /** 每个 agent 已播报过的最高卡住级别。 */
   private stuckLevelFired = new Map<string, 'soft' | 'visible' | 'strong'>()
 
   /**
-   * @param options Throttling and mute configuration; sensible defaults apply.
+   * @param options 节流与静音配置；有合理的默认值。
    */
   constructor(private options: RuleEngineOptions = {}) {}
 
   /**
-   * Enables or disables sound on subsequently-emitted notifications.
+   * 启用或关闭后续通知的声音。
    *
-   * @param muted `true` to suppress sound (notifications still display).
+   * @param muted `true` 表示抑制声音（通知仍会展示）。
    */
   setMuted(muted: boolean): void {
     this.options.muted = muted
   }
 
   /**
-   * Computes the notifications triggered by a single state transition.
+   * 计算单次状态迁移触发的通知。
    *
-   * Lifecycle changes (done / permission / input / error) each map to a
-   * notification; context-threshold warnings are also checked. All results are
-   * already deduped/throttled.
+   * 生命周期变化（完成 / 授权 / 输入 / 错误）各映射一条通知；
+   * 同时检查上下文阈值警告。所有结果均已去重/节流。
    *
-   * @param result The transition produced by the state machine.
-   * @param now Current time in epoch millis (injectable for testing).
-   * @returns Zero or more notifications to display.
+   * @param result 状态机产生的迁移结果。
+   * @param now 当前时间（epoch 毫秒，可注入便于测试）。
+   * @returns 零条或多条待展示通知。
    */
   onTransition(result: TransitionResult, now = Date.now()): NotificationRequest[] {
-    const { next, previousState } = result
+    const { next, previous, previousState } = result
     const agent = next.agentType
     const out: NotificationRequest[] = []
 
     if (next.state === previousState) {
-      // Only context thresholds can fire without a lifecycle change.
+      // 没有生命周期变化时，只有上下文阈值可能触发。
       this.collectContextNotifications(next, out, now)
       return out
     }
+
+    this.stuckLevelFired.delete(agent)
 
     switch (next.state) {
       case TurnState.DONE:
@@ -100,7 +105,9 @@ export class RuleEngine {
           level: 'normal',
           title: `${agentLabel(agent)} 完成一轮任务`,
           body: next.lastAssistantMessage ?? '当前一轮任务已完成',
-          dedupeKey: `done:${agent}:${next.externalTurnId ?? next.turnStartedAt ?? now}`,
+          dedupeKey: `done:${agent}:${
+            next.externalTurnId ?? previous.externalTurnId ?? previous.turnStartedAt ?? now
+          }`,
         })
         break
       case TurnState.WAITING_PERMISSION:
@@ -120,6 +127,16 @@ export class RuleEngine {
           dedupeKey: `input:${agent}:${next.externalTurnId ?? ''}`,
         })
         break
+      case TurnState.CANCELLED:
+        this.push(out, now, {
+          level: 'normal',
+          title: `${agentLabel(agent)} 任务已取消`,
+          body: next.activity ?? '当前一轮任务已取消',
+          dedupeKey: `cancelled:${agent}:${
+            next.externalTurnId ?? previous.externalTurnId ?? previous.turnStartedAt ?? now
+          }`,
+        })
+        break
       case TurnState.ERROR:
         this.push(out, now, {
           level: 'strong',
@@ -135,22 +152,19 @@ export class RuleEngine {
   }
 
   /**
-   * Inactivity ("疑似卡住") check, intended to run on a timer for every active
-   * agent. Escalates through soft → visible → strong as time without events
-   * grows, firing each level at most once until the agent moves again.
+   * 无活动（「疑似卡住」）检查，应由定时器对每个活动 agent 周期执行。
+   * 随无事件时间增长按 soft → visible → strong 逐级升级，
+   * 每级最多触发一次，直到该 agent 再次活动。
    *
-   * @param agent The agent's current runtime state.
-   * @param now Current time in epoch millis (injectable for testing).
-   * @returns Zero or one stuck notification.
+   * @param agent agent 的当前运行时状态。
+   * @param now 当前时间（epoch 毫秒，可注入便于测试）。
+   * @returns 零条或一条卡住通知。
    */
   onTick(agent: AgentRuntimeState, now = Date.now()): NotificationRequest[] {
     const out: NotificationRequest[] = []
     const inactiveFor = now - agent.lastEventAt
-    const isActive =
-      agent.state !== TurnState.IDLE &&
-      agent.state !== TurnState.DONE &&
-      agent.state !== TurnState.ERROR
-    if (!isActive || agent.lastEventAt === 0) {
+    const canCheckStuck = isActiveState(agent.state) || agent.state === TurnState.TIMEOUT
+    if (!canCheckStuck || agent.lastEventAt === 0) {
       this.stuckLevelFired.delete(agent.agentType)
       return out
     }
@@ -185,28 +199,28 @@ export class RuleEngine {
   }
 
   /**
-   * Appends context-usage warnings for an agent if its context crossed the soft
-   * or strong threshold since the last announcement. Resets once usage drops
-   * back below the soft threshold (e.g. after a compaction).
+   * 当 agent 的上下文使用率自上次播报后越过软/强阈值时，
+   * 追加上下文用量警告。用量回落到软阈值以下（如压缩后）时重置。
    *
-   * @param agent The agent's current runtime state.
-   * @param out The output array to append to.
-   * @param now Current time in epoch millis.
+   * @param agent agent 的当前运行时状态。
+   * @param out 追加结果的输出数组。
+   * @param now 当前时间（epoch 毫秒）。
    */
   private collectContextNotifications(
     agent: AgentRuntimeState,
     out: NotificationRequest[],
     now: number,
   ): void {
-    const pct = agent.token?.contextUsedPercent
-    if (pct == null) return
+    const token = agent.token
+    const pct = token?.contextUsedPercent
+    if (pct == null || !token) return
     const already = this.contextLevelFired.get(agent.agentType)
     if (pct >= CONTEXT_STRONG_PERCENT && already !== 'strong') {
       this.contextLevelFired.set(agent.agentType, 'strong')
       this.push(out, now, {
         level: 'strong',
         title: `${agentLabel(agent.agentType)} 上下文即将耗尽`,
-        body: `Context 已使用 ${Math.round(pct)}%`,
+        body: formatTokenQuotaNotice(agent.agentType, token),
         dedupeKey: `ctx:${agent.agentType}:strong`,
       })
     } else if (pct >= CONTEXT_SOFT_PERCENT && already === undefined) {
@@ -214,7 +228,7 @@ export class RuleEngine {
       this.push(out, now, {
         level: 'soft',
         title: `${agentLabel(agent.agentType)} 上下文偏高`,
-        body: `Context 已使用 ${Math.round(pct)}%`,
+        body: formatTokenQuotaNotice(agent.agentType, token),
         dedupeKey: `ctx:${agent.agentType}:soft`,
       })
     } else if (pct < CONTEXT_SOFT_PERCENT) {
@@ -223,13 +237,12 @@ export class RuleEngine {
   }
 
   /**
-   * Emits a notification unless an identical `dedupeKey` fired within its
-   * throttle window. Records the fire time and resolves the `sound` flag from
-   * the level and mute state.
+   * 发出一条通知，除非相同 `dedupeKey` 在其节流窗口内已触发过。
+   * 记录触发时间，并根据级别与静音状态解析 `sound` 标志。
    *
-   * @param out The output array to append to.
-   * @param now Current time in epoch millis.
-   * @param spec The notification specification (level, text, key, throttle).
+   * @param out 追加结果的输出数组。
+   * @param now 当前时间（epoch 毫秒）。
+   * @param spec 通知规格（级别、文案、键、节流）。
    */
   private push(
     out: NotificationRequest[],
@@ -242,6 +255,7 @@ export class RuleEngine {
       throttleMs?: number
     },
   ): void {
+    this.pruneFiredKeys(now)
     const throttle = spec.throttleMs ?? this.options.sessionThrottleMs ?? DEFAULTS.sessionThrottleMs
     const last = this.lastFiredAt.get(spec.dedupeKey)
     if (last != null && now - last < throttle) return
@@ -255,13 +269,19 @@ export class RuleEngine {
       createdAt: now,
     })
   }
+
+  private pruneFiredKeys(now: number): void {
+    for (const [key, firedAt] of this.lastFiredAt) {
+      if (now - firedAt > FIRED_KEY_RETENTION_MS) this.lastFiredAt.delete(key)
+    }
+  }
 }
 
 /**
- * Maps an agent type to its display label.
+ * 把 agent 类型映射为显示标签。
  *
- * @param agent The agent type string.
- * @returns `"Codex"` or `"Claude Code"`.
+ * @param agent agent 类型字符串。
+ * @returns `"Codex"` 或 `"Claude Code"`。
  */
 function agentLabel(agent: string): string {
   return agent === 'codex' ? 'Codex' : 'Claude Code'

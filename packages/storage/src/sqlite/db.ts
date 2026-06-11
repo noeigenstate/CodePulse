@@ -1,6 +1,6 @@
 /**
- * Database connection helpers. Opens a `better-sqlite3` database wrapped by
- * Drizzle and ensures the schema exists via idempotent bootstrap DDL.
+ * 数据库连接辅助函数。打开由 Drizzle 包装的 `better-sqlite3` 数据库，
+ * 并通过幂等的引导 DDL 确保 schema 存在。
  *
  * @module storage/sqlite/db
  */
@@ -10,30 +10,28 @@ import Database from 'better-sqlite3'
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import * as schema from './schema.js'
 
-/** The Drizzle database handle, typed with the full {@link schema}. */
+/** 携带完整 {@link schema} 类型信息的 Drizzle 数据库句柄。 */
 export type DB = BetterSQLite3Database<typeof schema>
 
-/** The result of {@link openDb}: the Drizzle handle and the raw driver. */
+/** {@link openDb} 的结果：Drizzle 句柄与原始驱动。 */
 export interface OpenDbResult {
-  /** The Drizzle query interface used by the repository. */
+  /** 仓储使用的 Drizzle 查询接口。 */
   db: DB
-  /** The underlying `better-sqlite3` connection (for pragmas/maintenance). */
+  /** 底层 `better-sqlite3` 连接（用于 pragma/维护）。 */
   sqlite: Database.Database
 }
 
 /**
- * Opens (creating if needed) the SQLite database at `file` and ensures the
- * schema exists.
+ * 打开（必要时创建）位于 `file` 的 SQLite 数据库并确保 schema 存在。
  *
- * Tables are bootstrapped with idempotent `CREATE TABLE IF NOT EXISTS` DDL so
- * the app runs without a separate `drizzle-kit migrate` step for the MVP; the
- * Drizzle {@link schema} remains the source of truth for generated migrations.
- * Enables WAL journaling and foreign keys.
+ * 表通过幂等的 `CREATE TABLE IF NOT EXISTS` DDL 引导创建，使 MVP
+ * 无需单独的 `drizzle-kit migrate` 步骤；Drizzle {@link schema}
+ * 仍是生成迁移的唯一可信来源。同时启用 WAL 日志与外键。
  *
- * @param file Absolute path to the SQLite file (parent dirs are created).
- * @returns The Drizzle handle and the raw driver.
- * @throws If the native `better-sqlite3` addon cannot be loaded (ABI mismatch);
- *   callers in the Electron main process catch this and run without persistence.
+ * @param file SQLite 文件的绝对路径（父目录会被创建）。
+ * @returns Drizzle 句柄与原始驱动。
+ * @throws 当原生 `better-sqlite3` 扩展无法加载（ABI 不匹配）时抛出；
+ *   Electron 主进程的调用方会捕获并在无持久化模式下运行。
  */
 export function openDb(file: string): OpenDbResult {
   mkdirSync(dirname(file), { recursive: true })
@@ -46,9 +44,9 @@ export function openDb(file: string): OpenDbResult {
 }
 
 /**
- * Creates every table and index if it does not already exist.
+ * 创建所有不存在的表与索引。
  *
- * @param sqlite The raw `better-sqlite3` connection to run DDL against.
+ * @param sqlite 执行 DDL 的原始 `better-sqlite3` 连接。
  */
 function ensureSchema(sqlite: Database.Database): void {
   sqlite.exec(`

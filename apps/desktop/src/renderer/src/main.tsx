@@ -1,5 +1,5 @@
 /**
- * Renderer entry point. Mounts the React {@link App} into the page.
+ * 渲染端入口。把 React {@link App} 挂载到页面上。
  *
  * @module renderer/main
  */

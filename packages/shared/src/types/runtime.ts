@@ -1,7 +1,6 @@
 /**
- * Live runtime view types: the in-memory state the Dashboard renders, the
- * aggregated tray indicator, the minimal hardware projection, and the
- * server→client push/notification payloads.
+ * 实时运行时视图类型：Dashboard 渲染的内存态、聚合后的托盘指示、
+ * 极简硬件投影，以及服务器→客户端的推送/通知载荷。
  *
  * @module shared/types/runtime
  */
@@ -10,132 +9,126 @@ import type { TurnState } from './state.js'
 import type { TokenPayload } from './token.js'
 
 /**
- * Live, in-memory view of a single agent's current activity.
+ * 单个 agent 当前活动的实时内存视图。
  *
- * This is what the Dashboard renders and what `/api/status` returns per agent.
- * Unlike the persisted {@link Session}/{@link Turn} rows, it is rebuilt from
- * events on every transition and never written to disk directly.
+ * 这是 Dashboard 渲染、`/api/status` 按 agent 返回的内容。
+ * 与持久化的 {@link Session}/{@link Turn} 行不同，它在每次状态迁移时
+ * 由事件重建，从不直接写入磁盘。
  */
 export interface AgentRuntimeState {
-  /** Which agent this state describes. */
+  /** 该状态描述的 agent。 */
   agentType: AgentType
-  /** Current fine-grained state. */
+  /** 当前的细粒度状态。 */
   state: TurnState
-  /** Agent-assigned session id, when known. */
+  /** agent 分配的会话 id（如已知）。 */
   externalSessionId?: string
-  /** Agent-assigned turn id, when known. */
+  /** agent 分配的轮次 id（如已知）。 */
   externalTurnId?: string
-  /** Workspace path the agent is working in. */
+  /** agent 正在工作的工作区路径。 */
   workspacePath?: string
-  /** Model in use, when known. */
+  /** 使用的模型（如已知）。 */
   model?: string
-  /** Short human description of the current activity, e.g. `"正在执行 npm test"`. */
+  /** 当前活动的简短人类可读描述，例如 `"正在执行 npm test"`。 */
   activity?: string
-  /** Name of the tool currently running, when applicable. */
+  /** 当前正在运行的工具名（如适用）。 */
   toolName?: string
-  /** Number of tool calls in the current turn. */
+  /** 当前轮次内的工具调用次数。 */
   toolCallCount: number
-  /** Whether the agent is waiting for permission. */
+  /** agent 是否在等待授权。 */
   needPermission: boolean
-  /** Whether the agent is waiting for user input. */
+  /** agent 是否在等待用户输入。 */
   needUserInput: boolean
-  /** Summary of the AI's last message, when captured. */
+  /** AI 最后一条消息的摘要（如有捕获）。 */
   lastAssistantMessage?: string
-  /** Latest token/context usage, when known. */
+  /** 最新的 token/上下文用量（如已知）。 */
   token?: TokenPayload
-  /** Epoch millis the current turn started, if a turn is active. */
+  /** 当前轮次开始时间（epoch 毫秒，有活动轮次时存在）。 */
   turnStartedAt?: number
-  /** Epoch millis of the most recent event for this agent. */
+  /** 该 agent 最近一次事件的时间（epoch 毫秒）。 */
   lastEventAt: number
-  /** Whether the latest terminal result is still unacknowledged by the user. */
+  /** 最近的终结结果是否仍未被用户确认（未读）。 */
   unread: boolean
 }
 
 /**
- * Aggregated tray/overview state derived from all agents (requirements §5.6).
+ * 由所有 agent 推导出的聚合托盘/总览状态（需求 §5.6）。
  *
- * Maps directly to a tray icon colour.
+ * 直接映射为托盘图标颜色。
  */
-export type OverallState =
-  | 'idle'
-  | 'running'
-  | 'attention'
-  | 'done_unread'
-  | 'error'
-  | 'stuck'
+export type OverallState = 'idle' | 'running' | 'attention' | 'done_unread' | 'error' | 'stuck'
 
 /**
- * Snapshot returned by `GET /api/status` and broadcast over the WebSocket.
+ * `GET /api/status` 返回并经 WebSocket 广播的快照。
  *
- * Contains the per-agent states plus the derived {@link OverallState}.
+ * 包含各 agent 状态以及推导出的 {@link OverallState}。
  */
 export interface StatusSnapshot {
-  /** The aggregated indicator for the tray. */
+  /** 提供给托盘的聚合指示。 */
   overall: OverallState
-  /** One entry per agent that has reported activity. */
+  /** 每个曾上报活动的 agent 各一条。 */
   agents: AgentRuntimeState[]
-  /** Epoch millis the snapshot was built. */
+  /** 快照构建时间（epoch 毫秒）。 */
   updatedAt: number
 }
 
 /**
- * Minimal status for the future ESP32 / hardware endpoint
- * (`GET /api/device/status`, requirements §5.9). Deliberately flat and small so
- * a microcontroller can parse it cheaply.
+ * 面向未来 ESP32 / 硬件端点的极简状态
+ * （`GET /api/device/status`，需求 §5.9）。刻意保持扁平、小巧，
+ * 便于微控制器低成本解析。
  */
 export interface DeviceStatus {
-  /** Coarse overall state string (e.g. `"waiting_permission"`). */
+  /** 粗粒度总体状态字符串（如 `"waiting_permission"`）。 */
   mainState: string
-  /** The agent currently most relevant, or `null` if idle. */
+  /** 当前最相关的 agent；空闲时为 `null`。 */
   activeAgent: AgentType | null
-  /** Short message to display on the device. */
+  /** 显示在设备上的简短消息。 */
   message: string
-  /** Claude Code context-used percentage, or `null` if unknown. */
+  /** Claude Code 的上下文已用百分比；未知时为 `null`。 */
   claudeContext: number | null
-  /** Codex's current state string, or `null` if Codex is absent. */
+  /** Codex 的当前状态字符串；Codex 不存在时为 `null`。 */
   codexState: string | null
-  /** Epoch millis the projection was built. */
+  /** 投影构建时间（epoch 毫秒）。 */
   updatedAt: number
 }
 
 /**
- * A message pushed to renderer / hardware clients over the WebSocket channel.
+ * 通过 WebSocket 通道推送给渲染端/硬件客户端的消息。
  *
- * A discriminated union on `type`: either a fresh status snapshot or a
- * notification request.
+ * 以 `type` 为判别字段的可辨识联合：要么是新的状态快照，
+ * 要么是一条通知请求。
  */
 export type ServerPushMessage =
   | { type: 'status'; payload: StatusSnapshot }
   | { type: 'notification'; payload: NotificationRequest }
 
 /**
- * Severity levels for desktop notifications (requirements §5.7).
+ * 桌面通知的严重级别（需求 §5.7）。
  *
- * - `soft` — silent, informational (e.g. context above 80%).
- * - `normal` — a turn completed.
- * - `strong` — needs the user now (permission/input/error), plays a sound.
+ * - `soft` —— 静默、信息性（如上下文超过 80%）。
+ * - `normal` —— 某轮次已完成。
+ * - `strong` —— 需要用户立刻处理（授权/输入/错误），带提示音。
  */
 export type NotificationLevel = 'soft' | 'normal' | 'strong'
 
 /**
- * A request, produced by the rule engine, to show one notification.
+ * 由规则引擎产生的、展示一条通知的请求。
  *
- * The rule engine has already applied throttling/dedup before emitting this;
- * the presentation layer only maps it to the OS notification.
+ * 规则引擎在发出前已完成节流/去重；
+ * 展示层只负责把它映射为操作系统通知。
  */
 export interface NotificationRequest {
-  /** Severity, controlling presentation and sound. */
+  /** 严重级别，控制展示方式与声音。 */
   level: NotificationLevel
-  /** Notification title. */
+  /** 通知标题。 */
   title: string
-  /** Notification body. */
+  /** 通知正文。 */
   body: string
-  /** The agent the notification concerns, when applicable. */
+  /** 通知涉及的 agent（如适用）。 */
   agentType?: AgentType
-  /** Stable key the rule engine uses to throttle repeats. */
+  /** 规则引擎用于节流重复通知的稳定键。 */
   dedupeKey: string
-  /** Whether a sound should accompany the notification. */
+  /** 是否伴随提示音。 */
   sound: boolean
-  /** Epoch millis the notification was created. */
+  /** 通知创建时间（epoch 毫秒）。 */
   createdAt: number
 }

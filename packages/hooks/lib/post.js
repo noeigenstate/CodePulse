@@ -1,20 +1,20 @@
 /**
- * Shared helpers for the CodePulse hook scripts.
+ * CodePulse hook 脚本的共享辅助函数。
  *
- * Dependency-free and defensive: a hook must NEVER block or crash the host
- * agent, so everything here swallows errors and bounds its own runtime.
+ * 零依赖且防御式：hook 绝不能阻塞或搞崩宿主 agent，
+ * 因此这里的所有函数都吞掉错误并限定自身运行时长。
  *
  * @module hooks/lib/post
  */
 
-/** Default base URL of the local CodePulse server. */
+/** 本地 CodePulse 服务器的默认基础 URL。 */
 const DEFAULT_URL = 'http://127.0.0.1:17888'
 
 /**
- * Reads all of stdin and parses it as JSON.
+ * 读取全部 stdin 并解析为 JSON。
  *
- * @returns {Promise<object>} The parsed object, `{}` if stdin was empty, or
- *   `{ _rawText }` if the input was not valid JSON. Never throws.
+ * @returns {Promise<object>} 解析后的对象；stdin 为空时为 `{}`；
+ *   输入不是合法 JSON 时为 `{ _rawText }`。从不抛出。
  */
 export async function readStdinJson() {
   const chunks = []
@@ -29,24 +29,23 @@ export async function readStdinJson() {
 }
 
 /**
- * Resolves the base URL of the local CodePulse server.
+ * 解析本地 CodePulse 服务器的基础 URL。
  *
- * @returns {string} The value of the `CODEPULSE_URL` env var, or the default
- *   loopback URL.
+ * @returns {string} `CODEPULSE_URL` 环境变量的值，或默认回环 URL。
  */
 export function serverUrl() {
   return process.env.CODEPULSE_URL || DEFAULT_URL
 }
 
 /**
- * Fire-and-forget POST to `/api/events` with a hard timeout.
+ * 向 `/api/events` 发起带硬超时的「发后即忘」POST。
  *
- * Callers ignore the result and exit 0 regardless, so a stopped or unreachable
- * server never affects the host agent.
+ * 调用方忽略结果并无条件以 0 退出，因此服务器停止或不可达
+ * 绝不影响宿主 agent。
  *
- * @param {unknown} payload The JSON body to send.
- * @param {{ timeoutMs?: number }} [options] Abort timeout in ms (default 1500).
- * @returns {Promise<boolean>} `true` on a 2xx response, `false` on any failure.
+ * @param {unknown} payload 要发送的 JSON 体。
+ * @param {{ timeoutMs?: number }} [options] 中止超时（毫秒，默认 1500）。
+ * @returns {Promise<boolean>} 2xx 响应为 `true`，任何失败为 `false`。
  */
 export async function postEvent(payload, { timeoutMs = 1500 } = {}) {
   const controller = new AbortController()

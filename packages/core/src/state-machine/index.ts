@@ -1,10 +1,9 @@
 /**
- * The pure reducer at the heart of CodePulse. Given an agent's current runtime
- * state and one normalized event, it computes the next runtime state, following
- * the transition table in requirements §8.
+ * CodePulse 核心的纯 reducer。给定某 agent 的当前运行时状态与一个
+ * 归一化事件，按需求 §8 的迁移表计算下一个运行时状态。
  *
- * The reducer is deliberately side-effect-free so it is trivial to unit-test and
- * so the same logic can run in any context (main process, server, tests).
+ * reducer 刻意保持无副作用，因而易于单元测试，
+ * 同一逻辑也可运行在任何上下文（主进程、服务器、测试）。
  *
  * @module core/state-machine
  */
@@ -17,10 +16,10 @@ import {
 } from '@codepulse/shared'
 
 /**
- * Builds the initial idle runtime state for an agent that has not reported yet.
+ * 为尚未上报过的 agent 构建初始空闲运行时状态。
  *
- * @param agentType The agent to create a state slot for.
- * @returns A fresh {@link AgentRuntimeState} in the `IDLE` state.
+ * @param agentType 要创建状态槽位的 agent。
+ * @returns 处于 `IDLE` 状态的全新 {@link AgentRuntimeState}。
  */
 export function createInitialRuntimeState(agentType: AgentType): AgentRuntimeState {
   return {
@@ -35,30 +34,32 @@ export function createInitialRuntimeState(agentType: AgentType): AgentRuntimeSta
 }
 
 /**
- * The outcome of feeding one event through {@link reduce}.
+ * 通过 {@link reduce} 投喂一个事件后的结果。
  */
 export interface TransitionResult {
-  /** The new runtime state after applying the event. */
+  /** Event-time runtime state before applying the reducer. */
+  previous: AgentRuntimeState
+  /** 应用事件后的新运行时状态。 */
   next: AgentRuntimeState
-  /** Whether this event moved the turn into a terminal state for the first time. */
+  /** 该事件是否首次把轮次带入终结状态。 */
   turnEnded: boolean
-  /** The state the agent was in before the event. */
+  /** 事件发生前 agent 所处的状态。 */
   previousState: TurnState
 }
 
 /**
- * Applies one event to an agent's runtime state.
+ * 把一个事件应用到 agent 的运行时状态上。
  *
- * Pure function: it never mutates `current` and produces no side effects. The
- * returned {@link TransitionResult} also reports the previous state and whether
- * the turn just ended, which the rule engine uses to decide notifications.
+ * 纯函数：从不修改 `current`，也不产生副作用。返回的
+ * {@link TransitionResult} 还会报告之前的状态以及轮次是否刚刚结束，
+ * 供规则引擎决定通知。
  *
- * Common context fields (session/turn ids, workspace, model, token usage) are
- * carried forward from the event when present, regardless of event kind.
+ * 公共上下文字段（会话/轮次 id、工作区、模型、token 用量）
+ * 不论事件种类，只要事件携带就会被继承更新。
  *
- * @param current The agent's existing runtime state.
- * @param event The normalized event to apply.
- * @returns The next state plus transition metadata.
+ * @param current agent 现有的运行时状态。
+ * @param event 待应用的归一化事件。
+ * @returns 下一个状态及迁移元数据。
  */
 export function reduce(current: AgentRuntimeState, event: AgentEvent): TransitionResult {
   const previousState = current.state
@@ -67,7 +68,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
     lastEventAt: event.timestamp,
   }
 
-  // Carry forward context that events commonly refresh.
+  // 继承事件经常刷新的上下文字段。
   if (event.externalSessionId) next.externalSessionId = event.externalSessionId
   if (event.externalTurnId) next.externalTurnId = event.externalTurnId
   if (event.workspacePath ?? event.cwd) next.workspacePath = event.workspacePath ?? event.cwd
@@ -99,7 +100,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       break
 
     case 'tool_end':
-      // Back to thinking until the next signal; keep the turn alive.
+      // 回到思考状态，直到下一个信号；保持轮次存活。
       next.state = TurnState.THINKING
       next.toolName = undefined
       next.activity = 'AI 正在生成响应'
@@ -135,8 +136,18 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       next.unread = true
       break
 
+    case 'turn_cancelled':
+      next.state = TurnState.CANCELLED
+      next.turnStartedAt = undefined
+      next.needPermission = false
+      next.needUserInput = false
+      next.toolName = undefined
+      next.activity = event.message ?? '任务已取消'
+      next.unread = true
+      break
+
     case 'token_snapshot':
-      // Token data only; do not alter the lifecycle state.
+      // 仅携带 token 数据；不改变生命周期状态。
       break
 
     case 'session_end':
@@ -152,14 +163,19 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       assertNever(event.eventType)
   }
 
-  return { next, turnEnded: isTerminalState(next.state) && !isTerminalState(previousState), previousState }
+  return {
+    previous: current,
+    next,
+    turnEnded: isTerminalState(next.state) && !isTerminalState(previousState),
+    previousState,
+  }
 }
 
 /**
- * Produces a short, human-readable description of the tool an event refers to.
+ * 为事件涉及的工具生成简短的人类可读描述。
  *
- * @param event The event carrying tool/command context.
- * @returns A Chinese activity string, or `undefined` if nothing to describe.
+ * @param event 携带工具/命令上下文的事件。
+ * @returns 中文活动描述；无可描述内容时为 `undefined`。
  */
 function describeTool(event: AgentEvent): string | undefined {
   if (event.command) return `正在执行 ${event.command}`
@@ -168,11 +184,11 @@ function describeTool(event: AgentEvent): string | undefined {
 }
 
 /**
- * Exhaustiveness helper: forces a compile-time error if a new event type is
- * added without a corresponding `case`, and throws if reached at runtime.
+ * 穷尽性辅助函数：若新增事件类型而未补 `case`，则触发编译期错误；
+ * 运行时到达此处则抛出异常。
  *
- * @param value A value the type system has narrowed to `never`.
- * @returns Never returns.
+ * @param value 已被类型系统收窄为 `never` 的值。
+ * @returns 永不返回。
  */
 function assertNever(value: never): never {
   throw new Error(`Unhandled event type: ${String(value)}`)

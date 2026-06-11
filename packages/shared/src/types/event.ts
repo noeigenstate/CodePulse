@@ -1,8 +1,7 @@
 /**
- * The normalized internal event vocabulary. Hook scripts POST raw agent-specific
- * payloads; adapters convert them into the {@link AgentEvent} shape defined here,
- * which is the single event type the rest of the system understands
- * (requirements §7.6).
+ * 归一化后的内部事件词汇表。hook 脚本 POST 原始的 agent 专有载荷；
+ * 适配器把它们转换为此处定义的 {@link AgentEvent} 形态，
+ * 这是系统其余部分理解的唯一事件类型（需求 §7.6）。
  *
  * @module shared/types/event
  */
@@ -10,9 +9,9 @@ import type { AgentType } from './agent.js'
 import type { TokenPayload } from './token.js'
 
 /**
- * The closed set of event kinds CodePulse reacts to.
+ * CodePulse 响应的封闭事件种类集合。
  *
- * Adapters map each agent's native hook events onto one of these.
+ * 适配器把每个 agent 的原生 hook 事件映射到其中之一。
  */
 export type AgentEventType =
   | 'session_start'
@@ -23,54 +22,53 @@ export type AgentEventType =
   | 'user_input_required'
   | 'turn_stop'
   | 'turn_error'
+  | 'turn_cancelled'
   | 'token_snapshot'
   | 'session_end'
 
 /**
- * The single internal event shape every adapter normalizes into.
+ * 所有适配器统一归一化到的内部事件形态。
  *
- * Most fields are optional because different event kinds carry different
- * context; the state machine reads whichever fields are relevant to the
- * `eventType`.
+ * 多数字段是可选的，因为不同事件种类携带不同上下文；
+ * 状态机按 `eventType` 读取相关字段。
  */
 export interface AgentEvent {
-  /** Unique event id (assigned during normalization if absent). */
+  /** 唯一事件 id（缺失时在归一化阶段分配）。 */
   id: string
-  /** Which agent emitted the event. */
+  /** 发出事件的 agent。 */
   source: AgentType
-  /** What kind of event this is. */
+  /** 事件种类。 */
   eventType: AgentEventType
 
-  /** The agent-assigned session id, when present. */
+  /** agent 分配的会话 id（如有）。 */
   externalSessionId?: string
-  /** The agent-assigned turn id, when present. */
+  /** agent 分配的轮次 id（如有）。 */
   externalTurnId?: string
-  /** Workspace path reported by the agent. */
+  /** agent 上报的工作区路径。 */
   workspacePath?: string
-  /** Current working directory reported by the agent. */
+  /** agent 上报的当前工作目录。 */
   cwd?: string
-  /** Model in use, when reported. */
+  /** 使用的模型（如有上报）。 */
   model?: string
-  /** Tool name for `tool_start`/`tool_end`/`permission_request`. */
+  /** `tool_start`/`tool_end`/`permission_request` 的工具名。 */
   toolName?: string
-  /** Command line for shell-style tool calls. */
+  /** shell 类工具调用的命令行。 */
   command?: string
-  /** Free-text message (notification text, last assistant message, …). */
+  /** 自由文本消息（通知文本、最后一条助手消息等）。 */
   message?: string
 
-  /** Inline token/context usage for `token_snapshot` events. */
+  /** `token_snapshot` 事件内联的 token/上下文用量。 */
   token?: TokenPayload
 
-  /** The original, unmodified payload, retained for debugging/persistence. */
+  /** 原始未修改的载荷，保留用于调试/持久化。 */
   raw?: unknown
-  /** Epoch millis the event occurred (assigned during normalization if absent). */
+  /** 事件发生时间（epoch 毫秒，缺失时在归一化阶段分配）。 */
   timestamp: number
 }
 
 /**
- * The shape accepted by `POST /api/events`: an {@link AgentEvent} whose `id` and
- * `timestamp` may be omitted and are filled in by
- * {@link normalizeEvent | the normalizer}.
+ * `POST /api/events` 接受的形态：`id` 与 `timestamp` 可省略的
+ * {@link AgentEvent}，由 {@link normalizeEvent | 归一化器} 补全。
  */
 export type AgentEventInput = Omit<AgentEvent, 'id' | 'timestamp'> & {
   id?: string

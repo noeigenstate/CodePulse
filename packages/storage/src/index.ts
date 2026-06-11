@@ -1,10 +1,11 @@
 /**
- * `@codepulse/storage` — SQLite persistence via `better-sqlite3` + Drizzle ORM.
+ * `@codepulse/storage` —— 通过 `better-sqlite3` + Drizzle ORM 实现的
+ * SQLite 持久化。
  *
- * Exposes {@link openDb} to obtain a database handle, the Drizzle table
- * {@link schema}, and the {@link persistEvent} repository plus its read/prune
- * helpers. `better-sqlite3` is a native addon and must be built for the host
- * runtime's ABI (Node for tests, Electron for the app).
+ * 暴露 {@link openDb} 获取数据库句柄、Drizzle 表 {@link schema}，
+ * 以及 {@link persistEvent} 仓储与读取/清理辅助函数。
+ * `better-sqlite3` 是原生扩展，必须针对宿主运行时的 ABI 构建
+ * （测试用 Node，应用用 Electron）。
  *
  * @module storage
  */

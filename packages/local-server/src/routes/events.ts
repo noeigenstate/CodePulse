@@ -1,6 +1,6 @@
 /**
- * The event-ingestion route: `POST /api/events`. This is the entry point hook
- * scripts call to report agent activity.
+ * 事件接收路由：`POST /api/events`。这是 hook 脚本上报 agent 活动
+ * 的入口。
  *
  * @module local-server/routes/events
  */
@@ -9,16 +9,15 @@ import { normalizeEvent, type StatusHub } from '@codepulse/core'
 import { normalizeRawEvent } from '@codepulse/adapters'
 
 /**
- * Registers `POST /api/events`.
+ * 注册 `POST /api/events`。
  *
- * Accepts either a single raw hook payload or an array of them. Each item is
- * run through the adapters (`normalizeRawEvent`) and the normalizer
- * (`normalizeEvent`) and fed to the hub. Unrecognised items are counted and
- * ignored rather than failing the whole request. Responds `202` if at least one
- * event was accepted, otherwise `400`.
+ * 接受单个原始 hook 载荷或其数组。每一项先经适配器
+ * （`normalizeRawEvent`）再经归一化器（`normalizeEvent`）处理后
+ * 投喂给 hub。无法识别的项被计数并忽略，而不是让整个请求失败。
+ * 至少接受一个事件时返回 `202`，否则返回 `400`。
  *
- * @param app The Fastify instance to register the route on.
- * @param hub The status hub to feed accepted events into.
+ * @param app 注册路由的 Fastify 实例。
+ * @param hub 接收已接受事件的状态 hub。
  */
 export function registerEventRoutes(app: FastifyInstance, hub: StatusHub): void {
   app.post('/api/events', async (request, reply) => {

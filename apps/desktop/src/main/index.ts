@@ -1,7 +1,7 @@
 /**
- * Electron main process entry point. Wires together the storage layer, the
- * {@link StatusHub}, the local server, the system tray, desktop notifications,
- * and the Dashboard window, and exposes everything to the renderer over IPC.
+ * Electron 主进程入口。把存储层、{@link StatusHub}、本地服务器、
+ * 系统托盘、桌面通知与 Dashboard 窗口串联起来，
+ * 并通过 IPC 全部暴露给渲染进程。
  *
  * @module main
  */
@@ -16,12 +16,11 @@ import {
 } from '@codepulse/shared'
 import { StatusHub } from '@codepulse/core'
 import { openDb, persistEvent, type DB } from '@codepulse/storage'
-import { startLocalServer, type LocalServer } from '@codepulse/local-server'
-import { trayIconFor } from './icon.js'
+import { detectAgents, startLocalServer, type LocalServer } from '@codepulse/local-server'
 import { TrayController } from './tray.js'
 import { showNotification } from './notifications.js'
 
-/** How long the "static mute" lasts before auto-unmuting (requirements §5.6). */
+/** 「静音」持续多久后自动取消（需求 §5.6）。 */
 const MUTE_DURATION_MS = 30 * 60_000
 
 let mainWindow: BrowserWindow | null = null
@@ -30,21 +29,21 @@ let server: LocalServer | null = null
 let db: DB | null = null
 let muteTimer: NodeJS.Timeout | null = null
 
-/** The single, process-wide status hub. */
+/** 进程级唯一的状态 hub。 */
 const hub = new StatusHub()
 
 /**
- * Sends an IPC message to the renderer, if a window exists.
+ * 若窗口存在，向渲染进程发送 IPC 消息。
  *
- * @param channel The IPC channel name.
- * @param payload The serializable payload.
+ * @param channel IPC 通道名。
+ * @param payload 可序列化的载荷。
  */
 function broadcast(channel: string, payload: unknown): void {
   mainWindow?.webContents.send(channel, payload)
 }
 
 /**
- * Shows and focuses the main window, creating it if it has been closed.
+ * 显示并聚焦主窗口；若已关闭则重新创建。
  */
 function showWindow(): void {
   if (!mainWindow) {
@@ -57,8 +56,18 @@ function showWindow(): void {
 }
 
 /**
- * Creates the Dashboard window and loads the renderer (the electron-vite dev
- * server URL in development, the bundled `index.html` in production).
+ * 解析 BrowserWindow 外观使用的应用图标。同一图片也在
+ * electron-builder 中配置为打包后的应用图标。
+ *
+ * @returns 图标图片的绝对路径。
+ */
+function appIconPath(): string {
+  return join(app.getAppPath(), 'build/icon.png')
+}
+
+/**
+ * 创建 Dashboard 窗口并加载渲染端（开发环境为 electron-vite
+ * 开发服务器 URL，生产环境为打包的 `index.html`）。
  */
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -69,7 +78,7 @@ function createWindow(): void {
     show: false,
     title: 'CodePulse',
     backgroundColor: '#0b0f17',
-    icon: trayIconFor('idle'),
+    icon: appIconPath(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -92,8 +101,7 @@ function createWindow(): void {
 }
 
 /**
- * Subscribes the side-effecting layers (storage, tray, notifications, renderer)
- * to the hub's events.
+ * 把产生副作用的各层（存储、托盘、通知、渲染端）订阅到 hub 的事件上。
  */
 function wireHub(): void {
   hub.on('event', (event) => {
@@ -118,10 +126,10 @@ function wireHub(): void {
 }
 
 /**
- * Sets the mute state, manages the 30-minute auto-unmute timer, and notifies the
- * tray and renderer.
+ * 设置静音状态，管理 30 分钟自动取消静音的定时器，
+ * 并通知托盘与渲染端。
  *
- * @param muted `true` to mute notification sound, `false` to unmute.
+ * @param muted `true` 静音通知声音，`false` 取消静音。
  */
 function setMuted(muted: boolean): void {
   hub.setMuted(muted)
@@ -138,8 +146,8 @@ function setMuted(muted: boolean): void {
 }
 
 /**
- * Registers the IPC handlers the preload bridge exposes to the renderer
- * (get status, acknowledge, mute, clear alerts, server info).
+ * 注册 preload 桥暴露给渲染端的 IPC 处理器
+ * （获取状态、确认、静音、清除提醒、服务器信息）。
  */
 function registerIpc(): void {
   ipcMain.handle('codepulse:get-status', () => hub.snapshot())
@@ -160,23 +168,23 @@ function registerIpc(): void {
     host: DEFAULT_SERVER_HOST,
     port: DEFAULT_SERVER_PORT,
   }))
+  ipcMain.handle('codepulse:detect-agents', () => detectAgents())
 }
 
 /**
- * Application bootstrap, run once Electron is ready.
+ * 应用引导逻辑，在 Electron 就绪后执行一次。
  *
- * Opens the database (degrading gracefully if the native module is missing),
- * wires the hub, registers IPC, starts the local server and inactivity
- * watchdog, creates the tray, and opens the window.
+ * 打开数据库（原生模块缺失时优雅降级）、接线 hub、注册 IPC、
+ * 启动本地服务器与无活动看门狗、创建托盘并打开窗口。
  */
 async function bootstrap(): Promise<void> {
   const dbPath = join(app.getPath('userData'), 'codepulse.sqlite')
   try {
     db = openDb(dbPath).db
   } catch (err) {
-    // The native better-sqlite3 addon may be missing/ABI-mismatched (e.g. the
-    // Electron rebuild step did not run). Degrade gracefully: the live status
-    // hub still works, only session history persistence is disabled.
+    // 原生 better-sqlite3 扩展可能缺失或 ABI 不匹配（例如未执行
+    // Electron rebuild）。优雅降级：实时状态 hub 仍然工作，
+    // 只是会话历史持久化被禁用。
     db = null
     console.error('[codepulse] SQLite unavailable — running without persistence', err)
   }
@@ -212,24 +220,27 @@ async function bootstrap(): Promise<void> {
   createWindow()
 }
 
-// Pin the app name so the userData directory (where the SQLite DB lives) is
-// stable across dev and packaged builds: %APPDATA%\CodePulse on Windows.
+// 固定应用名，使 userData 目录（SQLite 数据库所在地）在开发与
+// 打包构建之间保持稳定：Windows 上为 %APPDATA%\CodePulse。
 app.setName('CodePulse')
 
-// Enforce a single instance: a second launch focuses the existing window.
+// 强制单实例：第二次启动会聚焦现有窗口。
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
 } else {
   app.on('second-instance', showWindow)
 
-  app.whenReady().then(bootstrap).catch((err) => {
-    console.error('[codepulse] bootstrap failed', err)
-  })
+  app
+    .whenReady()
+    .then(bootstrap)
+    .catch((err) => {
+      console.error('[codepulse] bootstrap failed', err)
+    })
 
-  // Keep running in the tray when all windows are closed.
+  // 所有窗口关闭后继续在托盘中运行。
   app.on('window-all-closed', () => {
-    // Intentionally do not quit — CodePulse lives in the tray.
+    // 故意不退出 —— CodePulse 常驻托盘。
   })
 
   app.on('activate', () => {

@@ -1,0 +1,68 @@
+/**
+ * Token/上下文用量的共享展示辅助函数。放在与框架无关的包中，
+ * 以保证后端通知与渲染端 UI 使用一致的措辞和舍入规则。
+ *
+ * @module shared/token-format
+ */
+import type { AgentType } from './types/agent.js'
+import type { TokenPayload } from './types/token.js'
+
+/** AI CLI 滚动配额窗口的用户可见标签。 */
+export const TOKEN_QUOTA_WINDOW_LABEL = '5 小时额度'
+
+/**
+ * 紧凑格式化 token 数量，例如 `512`、`66.9k`、`1.25M`。
+ *
+ * @param n token 数量（可能未知）。
+ * @returns 紧凑的数量字符串；未知时返回 `—`。
+ */
+export function formatTokenCount(n: number | undefined): string {
+  if (n == null) return '—'
+  if (n < 1000) return String(n)
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`
+  return `${(n / 1_000_000).toFixed(2).replace(/\.?0+$/, '')}M`
+}
+
+/**
+ * 格式化上下文/token 使用百分比。
+ *
+ * @param pct 百分比值（可能未知）。
+ * @returns 四舍五入后的百分比；未知时返回 `—`。
+ */
+export function formatTokenPercent(pct: number | undefined): string {
+  if (pct == null || !Number.isFinite(pct)) return '—'
+  return `${Math.round(pct)}%`
+}
+
+/**
+ * 把已知的 token 计数格式化为一行紧凑文本。
+ *
+ * @param token token 载荷（可能不存在）。
+ * @returns 紧凑的用量摘要；无数据时返回 `Token 暂无数据`。
+ */
+export function formatTokenUsage(token: TokenPayload | undefined): string {
+  if (!token) return 'Token 暂无数据'
+  const parts: string[] = []
+  if (token.input != null) parts.push(`输入 ${formatTokenCount(token.input)}`)
+  if (token.output != null) parts.push(`输出 ${formatTokenCount(token.output)}`)
+  if (token.total != null) parts.push(`总计 ${formatTokenCount(token.total)}`)
+  return parts.length > 0 ? parts.join(' / ') : 'Token 暂无数据'
+}
+
+/**
+ * 构造高用量通知中使用的标准配额/上下文提示文案。
+ *
+ * @param agent 产生该测量值的 agent。
+ * @param token 最新的 token 载荷。
+ * @returns 简短的通知正文。
+ */
+export function formatTokenQuotaNotice(agent: AgentType, token: TokenPayload): string {
+  const pct = formatTokenPercent(token.contextUsedPercent)
+  const sourceNote =
+    agent === 'codex'
+      ? 'Codex token 为估算值'
+      : token.accuracy === 'estimated'
+        ? 'Claude token 为估算值'
+        : 'Claude token 来自 status line'
+  return `Token/context 已使用 ${pct}；${formatTokenUsage(token)}。${TOKEN_QUOTA_WINDOW_LABEL}窗口以对应 CLI 的官方重置时间为准，${sourceNote}。`
+}

@@ -5,19 +5,23 @@ directories:
   buildResources: build
 files:
   - out/**
+  - build/icon.png
   - package.json
 # Native addon must stay unpacked from the asar archive so it can be dlopen'd.
 asarUnpack:
-  - "**/*.node"
-  - "**/better-sqlite3/**"
+  - '**/*.node'
+  - '**/better-sqlite3/**'
 win:
+  icon: build/icon.png
   target:
     - nsis
 mac:
+  icon: build/icon.png
   target:
     - dmg
   category: public.app-category.developer-tools
 linux:
+  icon: build/icon.png
   target:
     - AppImage
   category: Development

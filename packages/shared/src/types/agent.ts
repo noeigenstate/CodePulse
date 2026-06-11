@@ -1,57 +1,54 @@
 /**
- * Domain types describing the AI coding agents CodePulse monitors and the
- * project directories they work in.
+ * 描述 CodePulse 所监控的 AI 编程 agent 及其工作目录的领域类型。
  *
  * @module shared/types/agent
  */
 
 /**
- * Discriminator for the kinds of AI coding agents CodePulse can monitor.
+ * CodePulse 可监控的 AI 编程 agent 种类判别符。
  *
- * Used throughout the codebase as the `source` of an event and the key that
- * identifies a runtime state slot.
+ * 在整个代码库中用作事件的 `source`，也是定位运行时状态槽位的键。
  */
 export type AgentType = 'codex' | 'claude_code'
 
 /**
- * A monitored AI coding agent and what CodePulse knows about its installation.
+ * 一个被监控的 AI agent 及 CodePulse 掌握的安装信息。
  *
- * This is the persistent description of an agent (is it installed? are its
- * hooks configured?), as opposed to {@link AgentRuntimeState}, which is the
- * live activity of a running session.
+ * 这是 agent 的持久化描述（是否安装？hook 是否已配置？），
+ * 与 {@link AgentRuntimeState}（运行中会话的实时活动）相区分。
  */
 export interface Agent {
-  /** Stable internal identifier. */
+  /** 稳定的内部标识符。 */
   id: string
-  /** Which agent this is. */
+  /** agent 类型。 */
   type: AgentType
-  /** Human-readable display name, e.g. `"Claude Code"`. */
+  /** 人类可读的显示名称，例如 `"Claude Code"`。 */
   name: string
-  /** Whether the agent's CLI was detected on this machine. */
+  /** 是否在本机检测到该 agent 的 CLI。 */
   installed: boolean
-  /** Whether CodePulse's hooks are wired into the agent. */
+  /** CodePulse 的 hook 是否已接入该 agent。 */
   configured: boolean
-  /** Detected CLI version string, when known. */
+  /** 检测到的 CLI 版本字符串（如已知）。 */
   version?: string
-  /** Epoch millis of the last event received from this agent. */
+  /** 最后一次收到该 agent 事件的时间（epoch 毫秒）。 */
   lastSeenAt?: number
 }
 
 /**
- * A project directory (workspace) an agent is operating in.
+ * agent 正在操作的项目目录（工作区）。
  *
- * Workspaces are derived from the `cwd` / workspace path carried on incoming
- * events and are used to group sessions and label the Dashboard.
+ * 工作区由事件携带的 `cwd` / workspace 路径推导而来，
+ * 用于聚合会话并标注 Dashboard。
  */
 export interface Workspace {
-  /** Stable internal identifier. */
+  /** 稳定的内部标识符。 */
   id: string
-  /** Display name, typically the final path segment. */
+  /** 显示名称，通常是路径的最后一段。 */
   name: string
-  /** Absolute path to the project directory. */
+  /** 项目目录的绝对路径。 */
   path: string
-  /** Current git branch, when reported by the status line. */
+  /** 当前 git 分支（由 status line 上报时存在）。 */
   gitBranch?: string
-  /** Epoch millis the workspace was last active. */
+  /** 工作区最近活跃时间（epoch 毫秒）。 */
   lastActiveAt: number
 }

@@ -16,11 +16,45 @@ export interface WorkspaceAgentGroup {
   agents: AgentRuntimeState[]
 }
 
+export interface AgentWorkspaceItem {
+  id: string
+  name: string
+  workspacePath?: string
+  updatedAt: number
+  agent: AgentRuntimeState
+}
+
+export interface AgentPanel {
+  agentType: AgentType
+  name: string
+  updatedAt: number
+  workspaces: AgentWorkspaceItem[]
+}
+
 export function buildDisplayAgents(agents: AgentRuntimeState[]): AgentRuntimeState[] {
   return (
     buildWorkspaceAgentGroups(agents)[0]?.agents ??
     DISPLAY_AGENT_ORDER.map((type) => idleAgent(type))
   )
+}
+
+export function buildAgentPanels(agents: AgentRuntimeState[]): AgentPanel[] {
+  return DISPLAY_AGENT_ORDER.map((agentType) => {
+    const typeAgents = agents.filter((agent) => agent.agentType === agentType)
+    const workspaces = buildAgentWorkspaceItems(agentType, typeAgents)
+    return {
+      agentType,
+      name: agentType === 'codex' ? 'Codex' : 'Claude Code',
+      updatedAt: Math.max(0, ...workspaces.map((workspace) => workspace.updatedAt)),
+      workspaces,
+    }
+  })
+}
+
+export function latestQuotaToken(agents: AgentRuntimeState[]): TokenPayload | undefined {
+  return agents
+    .filter((agent) => agent.token?.rateLimits?.fiveHour ?? agent.token?.rateLimits?.sevenDay)
+    .sort((a, b) => b.lastEventAt - a.lastEventAt)[0]?.token
 }
 
 export function buildWorkspaceAgentGroups(agents: AgentRuntimeState[]): WorkspaceAgentGroup[] {
@@ -51,6 +85,37 @@ export function buildWorkspaceAgentGroups(agents: AgentRuntimeState[]): Workspac
         updatedAt,
         token: latestToken(groupAgents),
         agents: ordered,
+      }
+    })
+    .sort((a, b) => b.updatedAt - a.updatedAt || a.name.localeCompare(b.name))
+}
+
+function buildAgentWorkspaceItems(
+  agentType: AgentType,
+  agents: AgentRuntimeState[],
+): AgentWorkspaceItem[] {
+  const grouped = new Map<string, AgentRuntimeState[]>()
+
+  for (const agent of agents) {
+    const key = workspaceKey(agent.workspacePath)
+    grouped.set(key, [...(grouped.get(key) ?? []), agent])
+  }
+
+  if (grouped.size === 0) grouped.set('', [idleAgent(agentType)])
+
+  return [...grouped.entries()]
+    .map(([key, groupAgents]) => {
+      const latest =
+        [...groupAgents].sort((a, b) => b.lastEventAt - a.lastEventAt)[0] ?? idleAgent(agentType)
+      const workspacePath =
+        latest.workspacePath ?? groupAgents.find((agent) => agent.workspacePath)?.workspacePath
+
+      return {
+        id: `${agentType}:${key || 'unknown'}`,
+        name: workspacePath ? workspaceName(workspacePath) : '未识别项目',
+        workspacePath,
+        updatedAt: latest.lastEventAt,
+        agent: workspacePath && !latest.workspacePath ? { ...latest, workspacePath } : latest,
       }
     })
     .sort((a, b) => b.updatedAt - a.updatedAt || a.name.localeCompare(b.name))

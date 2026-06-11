@@ -7,6 +7,8 @@
 import type { AgentEventInput, AgentEventType } from '@codepulse/shared'
 import { asRecord, pickNumber, pickRateLimits, pickString, preview } from '../util.js'
 
+const DEFAULT_CODEX_CONTEXT_WINDOW = 256_000
+
 /**
  * 把 Codex 的 hook 载荷映射为 {@link AgentEventInput}。
  *
@@ -117,7 +119,8 @@ function extractCodexToken(raw: Record<string, unknown>): AgentEventInput['token
   const total = pickNumber(usage, 'total_tokens', 'totalTokens')
   const contextWindow =
     pickNumber(raw, 'context_window_size', 'contextWindowSize') ??
-    pickNumber(info ?? {}, 'model_context_window', 'modelContextWindow')
+    pickNumber(info ?? {}, 'model_context_window', 'modelContextWindow') ??
+    DEFAULT_CODEX_CONTEXT_WINDOW
   const contextInput = sumKnown(
     pickNumber(contextUsage ?? usage, 'input_tokens', 'inputTokens'),
     pickNumber(contextUsage ?? usage, 'cached_input_tokens', 'cachedInputTokens'),

@@ -2,7 +2,11 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { StatusHub } from '@codepulse/core'
 import { TurnState } from '@codepulse/shared'
-import { buildWorkspaceAgentGroups } from '../apps/desktop/src/renderer/src/lib/displayAgents.js'
+import {
+  buildAgentPanels,
+  buildWorkspaceAgentGroups,
+  latestQuotaToken,
+} from '../apps/desktop/src/renderer/src/lib/displayAgents.js'
 
 test('StatusHub keeps the same agent separated by workspace', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
@@ -135,4 +139,84 @@ test('display agents are grouped by workspace with a shared token', () => {
     ],
   )
   assert.equal(groups.find((group) => group.workspacePath === 'E:/project/a')?.token?.total, 1200)
+})
+
+test('display panels keep Codex projects inside one panel', () => {
+  const panels = buildAgentPanels([
+    {
+      agentType: 'codex',
+      state: TurnState.DONE,
+      toolCallCount: 0,
+      needPermission: false,
+      needUserInput: false,
+      activity: 'done',
+      lastEventAt: 200,
+      unread: true,
+      workspacePath: 'E:/project/a',
+      token: { total: 1200, contextUsedPercent: 12, accuracy: 'estimated' },
+    },
+    {
+      agentType: 'codex',
+      state: TurnState.THINKING,
+      toolCallCount: 1,
+      needPermission: false,
+      needUserInput: false,
+      activity: 'thinking',
+      lastEventAt: 300,
+      unread: false,
+      workspacePath: 'E:/project/b',
+      token: {
+        total: 800,
+        contextUsedPercent: 8,
+        rateLimits: { fiveHour: { usedPercent: 42 } },
+        accuracy: 'estimated',
+      },
+    },
+  ])
+
+  const codexPanel = panels.find((panel) => panel.agentType === 'codex')
+  assert.equal(codexPanel?.workspaces.length, 2)
+  assert.deepEqual(codexPanel?.workspaces.map((item) => item.workspacePath).sort(), [
+    'E:/project/a',
+    'E:/project/b',
+  ])
+})
+
+test('latest quota token uses the newest rate-limit payload', () => {
+  const quota = latestQuotaToken([
+    {
+      agentType: 'codex',
+      state: TurnState.DONE,
+      toolCallCount: 0,
+      needPermission: false,
+      needUserInput: false,
+      activity: 'done',
+      lastEventAt: 100,
+      unread: false,
+      workspacePath: 'E:/project/a',
+      token: {
+        contextUsedPercent: 12,
+        rateLimits: { fiveHour: { usedPercent: 12 } },
+        accuracy: 'estimated',
+      },
+    },
+    {
+      agentType: 'claude_code',
+      state: TurnState.DONE,
+      toolCallCount: 0,
+      needPermission: false,
+      needUserInput: false,
+      activity: 'done',
+      lastEventAt: 300,
+      unread: false,
+      workspacePath: 'E:/project/b',
+      token: {
+        contextUsedPercent: 8,
+        rateLimits: { fiveHour: { usedPercent: 36 } },
+        accuracy: 'exact',
+      },
+    },
+  ])
+
+  assert.equal(quota?.rateLimits?.fiveHour?.usedPercent, 36)
 })

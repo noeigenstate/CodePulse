@@ -10,6 +10,7 @@ import { basename, join } from 'node:path'
 
 const TAIL_BYTES = 1024 * 1024
 const MAX_ROLLOUT_FILES = 500
+const DEFAULT_CODEX_CONTEXT_WINDOW = Number(process.env.CODEPULSE_CODEX_CONTEXT_WINDOW) || 256000
 
 export async function readLatestCodexUsage(raw, options = {}) {
   try {
@@ -144,7 +145,9 @@ function toUsagePatch(tokenCount, taskStarted) {
   const usage = info.total_token_usage ?? info.last_token_usage
   const contextUsage = info.last_token_usage ?? usage
   const contextWindow =
-    numberValue(info.model_context_window) ?? numberValue(taskStarted?.model_context_window)
+    optionalNumber(info.model_context_window) ??
+    optionalNumber(taskStarted?.model_context_window) ??
+    DEFAULT_CODEX_CONTEXT_WINDOW
   const contextInput =
     numberValue(contextUsage?.input_tokens) + numberValue(contextUsage?.cached_input_tokens)
   const pct =
@@ -197,4 +200,8 @@ function normalizePath(value) {
 
 function numberValue(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function optionalNumber(value) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }

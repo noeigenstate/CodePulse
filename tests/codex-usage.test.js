@@ -145,3 +145,42 @@ test('Codex usage reader prefers the rollout matching current cwd', async () => 
     await rm(home, { recursive: true, force: true })
   }
 })
+
+test('Codex usage reader falls back to 256k context window', async () => {
+  const home = join(tmpdir(), `codepulse-codex-window-${Date.now()}`)
+  const sessions = join(home, 'sessions', '2026', '06', '11')
+  const rollout = join(sessions, 'rollout-2026-06-11T10-00-00-default-window.jsonl')
+
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    rollout,
+    [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: 'default-window', cwd: 'E:/project/default-window' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: { input_tokens: 2000, output_tokens: 100, total_tokens: 2100 },
+            last_token_usage: { input_tokens: 2560, output_tokens: 100, total_tokens: 2660 },
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  try {
+    const usage = await readLatestCodexUsage(
+      { cwd: 'E:/project/default-window' },
+      { codexHome: home },
+    )
+    assert.equal(usage.context_window_size, 256000)
+    assert.equal(usage.context_used_percent, 1)
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})

@@ -7,15 +7,24 @@
 import { useEffect, useState } from 'react'
 import {
   TOKEN_QUOTA_WINDOW_LABEL,
+  formatTokenCount,
   formatTokenPercent,
   formatTokenUsage,
+  type AgentRuntimeState,
+  type AgentType,
   type TokenPayload,
+  TurnState,
 } from '@codepulse/shared'
 import { useStore } from './store.js'
 import { Header } from './components/Header.js'
-import { AgentCard } from './components/AgentCard.js'
 import { NotificationsRail } from './components/NotificationsRail.js'
-import { buildWorkspaceAgentGroups } from './lib/displayAgents.js'
+import {
+  buildAgentPanels,
+  latestQuotaToken,
+  type AgentPanel,
+  type AgentWorkspaceItem,
+} from './lib/displayAgents.js'
+import { formatDuration, formatRelative, turnStateStyle } from './lib/format.js'
 
 /**
  * 应用外壳 Dashboard。
@@ -35,7 +44,8 @@ export function App(): JSX.Element {
     dismissNotification,
   } = useStore()
   const [now, setNow] = useState(() => Date.now())
-  const workspaceGroups = buildWorkspaceAgentGroups(snapshot.agents)
+  const panels = buildAgentPanels(snapshot.agents)
+  const quotaToken = latestQuotaToken(snapshot.agents)
 
   useEffect(() => init(), [init])
 
@@ -45,42 +55,24 @@ export function App(): JSX.Element {
   }, [])
 
   return (
-    <div className="app-shell flex h-full flex-col text-gray-200">
+    <div className="app-shell flex h-full flex-col text-slate-950">
       <Header
         overall={snapshot.overall}
         muted={muted}
         onToggleMute={toggleMute}
         onClearAlerts={clearAlerts}
       />
-      <div className="flex flex-1 gap-5 overflow-hidden p-5 pt-0">
-        <main className="min-w-0 flex-1 overflow-y-auto pt-5">
-          <div className="space-y-5">
-            {workspaceGroups.map((group) => (
-              <section key={group.id} className="space-y-3">
-                <div className="liquid-glass rounded-2xl p-4">
-                  <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                    <div className="min-w-0">
-                      <p className="hud-label">Workspace</p>
-                      <h2 className="truncate text-xl font-semibold text-gray-50">{group.name}</h2>
-                      <p className="mt-1 truncate text-xs text-gray-500">
-                        {group.workspacePath ?? '等待 hook 上报项目路径'}
-                      </p>
-                    </div>
-                    <WorkspaceTokenBar token={group.token} />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 gap-5 2xl:grid-cols-2">
-                  {group.agents.map((agent) => (
-                    <AgentCard
-                      key={`${group.id}-${agent.agentType}`}
-                      agent={agent}
-                      now={now}
-                      onAck={() => ack(agent.agentType, group.workspacePath)}
-                      showToken={false}
-                    />
-                  ))}
-                </div>
-              </section>
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-hidden px-6 pb-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
+        <main className="min-w-0 overflow-y-auto pr-1">
+          <GlobalQuotaBar token={quotaToken} />
+          <div className="mt-5 space-y-5">
+            {panels.map((panel) => (
+              <AgentPanelView
+                key={panel.agentType}
+                panel={panel}
+                now={now}
+                onAck={(agentType, workspacePath) => ack(agentType, workspacePath)}
+              />
             ))}
           </div>
         </main>
@@ -96,19 +88,168 @@ export function App(): JSX.Element {
   )
 }
 
-function WorkspaceTokenBar({ token }: { token: TokenPayload | undefined }): JSX.Element {
-  const contextPct = token?.contextUsedPercent
-  const quotaPct = token?.rateLimits?.fiveHour?.usedPercent
+function GlobalQuotaBar({ token }: { token: TokenPayload | undefined }): JSX.Element {
+  const fiveHour = token?.rateLimits?.fiveHour
+  const sevenDay = token?.rateLimits?.sevenDay
+  const pct = fiveHour?.usedPercent
 
   return (
-    <div className="grid min-w-0 gap-3 xl:w-[32rem] xl:grid-cols-2">
-      <TokenMeter label="Context" percent={contextPct} detail={formatTokenUsage(token)} />
-      <TokenMeter
-        label={TOKEN_QUOTA_WINDOW_LABEL}
-        percent={quotaPct}
-        detail={formatReset(token?.rateLimits?.fiveHour?.resetsAt)}
-      />
-    </div>
+    <section className="liquid-glass rounded-2xl p-4">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_16rem] lg:items-center">
+        <div className="min-w-0">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-amber-300/40 bg-amber-200/30 text-lg text-amber-700">
+              ≋
+            </span>
+            <div className="min-w-0">
+              <p className="hud-label">Quota</p>
+              <h2 className="truncate text-lg font-semibold text-slate-950">
+                {TOKEN_QUOTA_WINDOW_LABEL}
+              </h2>
+            </div>
+          </div>
+          <p className="mt-3 truncate text-xs text-slate-500">
+            Context 按项目分别显示；额度为账号/CLI 共享窗口，取最近一次 /status 上报。
+          </p>
+        </div>
+        <TokenMeter
+          label={TOKEN_QUOTA_WINDOW_LABEL}
+          percent={pct}
+          detail={`${formatReset(fiveHour?.resetsAt)} · 7 天 ${formatTokenPercent(
+            sevenDay?.usedPercent,
+          )}`}
+        />
+      </div>
+    </section>
+  )
+}
+
+function AgentPanelView({
+  panel,
+  now,
+  onAck,
+}: {
+  panel: AgentPanel
+  now: number
+  onAck: (agentType: AgentType, workspacePath?: string) => void
+}): JSX.Element {
+  const latest = panel.workspaces[0]?.agent
+  const style = turnStateStyle(latest?.state ?? TurnState.IDLE)
+  const projectCount = panel.workspaces.filter((item) => item.agent.lastEventAt > 0).length
+  const isCodex = panel.agentType === 'codex'
+
+  return (
+    <section className="liquid-glass rounded-2xl p-5">
+      <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex min-w-0 items-center gap-4">
+          <span className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-amber-300/30 bg-white/55 shadow-[0_18px_42px_rgb(61_80_111_/_0.12)]">
+            <span className={`h-4 w-4 rounded-full ${style.dot}`} />
+            <span className="absolute inset-3 rounded-full border border-amber-400/30" />
+          </span>
+          <div className="min-w-0">
+            <p className="hud-label">Agent</p>
+            <div className="flex min-w-0 items-center gap-3">
+              <h2 className="truncate text-2xl font-semibold text-slate-950">{panel.name}</h2>
+              <span className={`text-sm ${style.text}`}>{style.label}</span>
+            </div>
+            <p className="mt-1 truncate text-sm text-slate-500">
+              {isCodex ? 'Codex 项目集中视图' : 'Claude Code 项目状态'}
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-sm md:w-64">
+          <Metric label="项目" value={String(projectCount || panel.workspaces.length)} />
+          <Metric
+            label="最近事件"
+            value={latest?.lastEventAt ? formatRelative(latest.lastEventAt, now) : '—'}
+          />
+        </div>
+      </div>
+      <div
+        className={`grid gap-3 ${
+          isCodex ? 'grid-cols-1 2xl:grid-cols-2' : 'grid-cols-1 xl:grid-cols-2'
+        }`}
+      >
+        {panel.workspaces.map((item) => (
+          <ProjectTile
+            key={item.id}
+            item={item}
+            now={now}
+            onAck={() => onAck(panel.agentType, item.workspacePath)}
+          />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function ProjectTile({
+  item,
+  now,
+  onAck,
+}: {
+  item: AgentWorkspaceItem
+  now: number
+  onAck: () => void
+}): JSX.Element {
+  const agent = item.agent
+  const style = turnStateStyle(agent.state)
+  const token = agent.token
+  const contextWindow = effectiveContextWindow(agent)
+  const contextPct = token?.contextUsedPercent
+  const elapsed = agent.turnStartedAt ? formatDuration(now - agent.turnStartedAt) : '—'
+
+  return (
+    <article className="glass-subtle rounded-xl p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${style.dot}`} />
+            <h3 className="truncate text-lg font-semibold text-slate-950">{item.name}</h3>
+          </div>
+          <p className="mt-1 truncate text-xs text-slate-500">
+            {item.workspacePath ?? '等待项目路径'}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className={`rounded-full px-2 py-1 text-xs ${stateChipClass(agent.state)}`}>
+            {style.label}
+          </span>
+          {agent.unread && (
+            <button
+              onClick={onAck}
+              className="rounded-full border border-emerald-300/50 bg-emerald-50/80 px-2.5 py-1 text-xs text-emerald-700 transition hover:bg-emerald-100 active:translate-y-px"
+            >
+              已读
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-2 text-sm xl:grid-cols-5">
+        <Metric label="模型" value={agent.model ?? '—'} className="xl:col-span-2" />
+        <Metric label="耗时" value={elapsed} />
+        <Metric label="工具" value={String(agent.toolCallCount)} />
+        <Metric label="Token" value={formatTokenCount(token?.total)} />
+      </div>
+
+      <div className="mt-4">
+        <TokenMeter
+          label="Context"
+          percent={contextPct}
+          detail={formatContextDetail(token, contextWindow)}
+        />
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-3 text-xs">
+        <p className="min-w-0 truncate text-slate-600">
+          <span className="text-amber-700">当前</span> {agent.activity ?? '等待事件'}
+        </p>
+        <span className="shrink-0 text-slate-400">
+          {agent.lastEventAt ? formatRelative(agent.lastEventAt, now) : '—'}
+        </span>
+      </div>
+    </article>
   )
 }
 
@@ -125,22 +266,20 @@ function TokenMeter({
   const width = hasPercent ? `${Math.min(100, Math.max(2, percent))}%` : '0%'
 
   return (
-    <div className="glass-subtle rounded-xl px-3 py-2">
+    <div className="rounded-xl border border-white/70 bg-white/45 px-3 py-2 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.7)]">
       <div className="mb-1 flex items-center justify-between gap-2 text-xs">
-        <span className="text-gray-400">{label}</span>
-        <span className={hasPercent ? tokenTextColor(percent) : 'text-gray-500'}>
+        <span className="text-slate-500">{label}</span>
+        <span className={hasPercent ? tokenTextColor(percent) : 'text-slate-400'}>
           {formatTokenPercent(percent)}
         </span>
       </div>
-      <div className="h-2 overflow-hidden rounded-full bg-slate-950/70 ring-1 ring-white/10">
+      <div className="h-2 overflow-hidden rounded-full bg-slate-200/80 ring-1 ring-white/80">
         <div
-          className={`neon-progress h-full rounded-full ${
-            hasPercent ? tokenBarColor(percent) : 'bg-slate-700'
-          }`}
+          className={`neon-progress h-full rounded-full ${hasPercent ? tokenBarColor(percent) : 'bg-slate-300'}`}
           style={{ width }}
         />
       </div>
-      <p className="mt-2 truncate text-[11px] text-gray-500">{detail}</p>
+      <p className="mt-2 truncate text-[11px] text-slate-500">{detail}</p>
     </div>
   )
 }
@@ -153,14 +292,63 @@ function formatReset(resetsAt: number | undefined): string {
   })}`
 }
 
+function Metric({
+  label,
+  value,
+  className = '',
+}: {
+  label: string
+  value: string
+  className?: string
+}): JSX.Element {
+  return (
+    <div className={`min-w-0 rounded-xl border border-white/70 bg-white/40 px-3 py-2 ${className}`}>
+      <p className="text-[10px] text-slate-500">{label}</p>
+      <p className="mt-1 truncate text-sm font-semibold text-slate-950">{value}</p>
+    </div>
+  )
+}
+
+function formatContextDetail(
+  token: TokenPayload | undefined,
+  contextWindow: number | undefined,
+): string {
+  const windowText = contextWindow ? `窗口 ${formatTokenCount(contextWindow)}` : '窗口 —'
+  return `${formatTokenUsage(token)} · ${windowText}`
+}
+
+function effectiveContextWindow(agent: AgentRuntimeState): number | undefined {
+  return agent.token?.contextWindow ?? (agent.agentType === 'codex' ? 256_000 : undefined)
+}
+
+function stateChipClass(state: AgentRuntimeState['state']): string {
+  switch (state) {
+    case TurnState.DONE:
+      return 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
+    case TurnState.ERROR:
+      return 'bg-red-50 text-red-700 ring-1 ring-red-200'
+    case TurnState.WAITING_PERMISSION:
+    case TurnState.WAITING_USER_INPUT:
+      return 'bg-amber-50 text-amber-700 ring-1 ring-amber-200'
+    case TurnState.TIMEOUT:
+      return 'bg-orange-50 text-orange-700 ring-1 ring-orange-200'
+    case TurnState.THINKING:
+    case TurnState.TOOL_RUNNING:
+    case TurnState.PROMPT_SUBMITTED:
+      return 'bg-blue-50 text-blue-700 ring-1 ring-blue-200'
+    default:
+      return 'bg-slate-100 text-slate-600 ring-1 ring-slate-200'
+  }
+}
+
 function tokenBarColor(pct: number): string {
-  if (pct >= 95) return 'bg-red-500'
-  if (pct >= 80) return 'bg-yellow-400'
-  return 'bg-blue-400'
+  if (pct >= 95) return 'bg-red-500 text-red-500'
+  if (pct >= 80) return 'bg-amber-400 text-amber-400'
+  return 'bg-amber-500 text-amber-500'
 }
 
 function tokenTextColor(pct: number): string {
-  if (pct >= 95) return 'text-red-300'
-  if (pct >= 80) return 'text-yellow-300'
-  return 'text-blue-300'
+  if (pct >= 95) return 'text-red-600'
+  if (pct >= 80) return 'text-amber-700'
+  return 'text-amber-700'
 }

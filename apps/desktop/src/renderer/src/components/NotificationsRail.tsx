@@ -33,9 +33,9 @@ interface Props {
 
 /** 每个通知级别对应的左边框颜色。 */
 const LEVEL_STYLE: Record<NotificationRequest['level'], string> = {
-  soft: 'border-l-gray-500',
-  normal: 'border-l-green-400',
-  strong: 'border-l-yellow-400',
+  soft: 'border-l-slate-400',
+  normal: 'border-l-emerald-500',
+  strong: 'border-l-amber-500',
 }
 
 const AGENT_ORDER: readonly AgentType[] = ['claude_code', 'codex']
@@ -54,11 +54,11 @@ export function NotificationsRail({
   onDismiss,
 }: Props): JSX.Element {
   return (
-    <aside className="liquid-glass hidden w-[22rem] shrink-0 overflow-y-auto rounded-2xl p-4 lg:block xl:w-96">
+    <aside className="liquid-glass hidden min-h-0 w-[22rem] shrink-0 overflow-y-auto rounded-2xl p-4 lg:block xl:w-96">
       <section className="mb-5">
         <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-100">本机侦测</h3>
-          <span className="text-[10px] text-gray-500">CLI / Hook</span>
+          <h3 className="text-sm font-semibold text-slate-950">本机侦测</h3>
+          <span className="text-[10px] text-slate-500">CLI / Hook</span>
         </div>
         <ul className="space-y-2">
           {AGENT_ORDER.map((agentType) => (
@@ -73,8 +73,8 @@ export function NotificationsRail({
 
       <section className="mb-5">
         <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-100">Token 消耗</h3>
-          <span className="rounded-full border border-cyan-200/10 bg-cyan-300/10 px-2 py-0.5 text-[10px] text-cyan-100/70">
+          <h3 className="text-sm font-semibold text-slate-950">Token 消耗</h3>
+          <span className="rounded-full border border-amber-300/40 bg-amber-100/60 px-2 py-0.5 text-[10px] text-amber-800">
             {TOKEN_QUOTA_WINDOW_LABEL}
           </span>
         </div>
@@ -87,14 +87,14 @@ export function NotificationsRail({
             />
           ))}
         </ul>
-        <p className="mt-2 text-[10px] leading-4 text-gray-500">
+        <p className="mt-2 text-[10px] leading-4 text-slate-500">
           百分比为 context 使用率；{TOKEN_QUOTA_WINDOW_LABEL}窗口以对应 CLI 的官方重置时间为准。
         </p>
       </section>
 
-      <h3 className="mb-3 text-sm font-semibold text-gray-100">任务提醒</h3>
+      <h3 className="mb-3 text-sm font-semibold text-slate-950">任务提醒</h3>
       {notifications.length === 0 ? (
-        <div className="glass-subtle rounded-xl px-3 py-4 text-sm text-gray-500">暂无提醒</div>
+        <div className="glass-subtle rounded-xl px-3 py-4 text-sm text-slate-500">暂无提醒</div>
       ) : (
         <ul className="space-y-2">
           {notifications.map((note) => (
@@ -103,17 +103,17 @@ export function NotificationsRail({
               className={`glass-subtle rounded-xl border-l-2 p-3 ${LEVEL_STYLE[note.level]}`}
             >
               <div className="flex items-start justify-between gap-2">
-                <span className="text-sm font-medium text-gray-200">{note.title}</span>
+                <span className="text-sm font-medium text-slate-900">{note.title}</span>
                 <button
                   onClick={() => onDismiss(note.dedupeKey, note.createdAt)}
-                  className="rounded-md px-1 text-xs text-gray-500 transition hover:bg-white/10 hover:text-gray-300"
+                  className="rounded-md px-1 text-xs text-slate-400 transition hover:bg-white/60 hover:text-slate-700"
                   aria-label="dismiss"
                 >
                   ✕
                 </button>
               </div>
-              <p className="mt-1 line-clamp-3 text-xs leading-5 text-gray-400">{note.body}</p>
-              <p className="mt-1 text-[10px] text-gray-600">
+              <p className="mt-1 line-clamp-3 text-xs leading-5 text-slate-600">{note.body}</p>
+              <p className="mt-1 text-[10px] text-slate-400">
                 {formatRelative(note.createdAt, now)}
               </p>
             </li>
@@ -138,8 +138,8 @@ function DetectItem({
   return (
     <li className="glass-subtle rounded-xl p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="text-xs font-medium text-gray-200">{name}</span>
-        <span className="truncate text-[10px] text-gray-500">
+        <span className="text-xs font-medium text-slate-900">{name}</span>
+        <span className="truncate text-[10px] text-slate-500">
           {agent?.version ?? '未检测到版本'}
         </span>
       </div>
@@ -157,8 +157,8 @@ function DetectPill({ label, ok }: { label: string; ok: boolean }): JSX.Element 
     <span
       className={`rounded-lg border px-2 py-1 ${
         ok
-          ? 'border-emerald-200/20 bg-emerald-300/10 text-emerald-200'
-          : 'border-slate-200/10 bg-white/5 text-gray-500'
+          ? 'border-emerald-300/60 bg-emerald-50/80 text-emerald-700'
+          : 'border-slate-200/80 bg-white/45 text-slate-500'
       }`}
     >
       {label} {ok ? '已启用' : '未启用'}
@@ -187,40 +187,40 @@ function UsageItem({
   return (
     <li className="glass-subtle rounded-xl p-3">
       <div className="mb-1 flex items-center justify-between gap-2">
-        <span className="text-xs font-medium text-gray-200">
+        <span className="text-xs font-medium text-slate-900">
           {agentType === 'codex' ? 'Codex' : 'Claude Code'}
         </span>
-        <span className={`text-xs ${hasPct ? quotaTextColor(pct) : 'text-gray-500'}`}>
+        <span className={`text-xs ${hasPct ? quotaTextColor(pct) : 'text-slate-400'}`}>
           {formatTokenPercent(pct)}
         </span>
       </div>
-      <div className="mb-1 flex items-center justify-between text-[10px] text-gray-500">
+      <div className="mb-1 flex items-center justify-between text-[10px] text-slate-500">
         <span>{TOKEN_QUOTA_WINDOW_LABEL}</span>
         <span>{formatTokenPercent(quotaPct)}</span>
       </div>
-      <div className="h-2 overflow-hidden rounded-full bg-slate-950/70 ring-1 ring-white/10">
+      <div className="h-2 overflow-hidden rounded-full bg-slate-200/80 ring-1 ring-white/80">
         <div
-          className={`neon-progress h-full rounded-full ${hasPct ? quotaBarColor(pct) : 'bg-slate-700'}`}
+          className={`neon-progress h-full rounded-full ${hasPct ? quotaBarColor(pct) : 'bg-slate-300'}`}
           style={{ width: hasPct ? `${Math.min(100, Math.max(2, pct))}%` : '0%' }}
         />
       </div>
-      <p className="mt-2 truncate text-[11px] text-gray-400">{formatTokenUsage(agent?.token)}</p>
+      <p className="mt-2 truncate text-[11px] text-slate-500">{formatTokenUsage(agent?.token)}</p>
     </li>
   )
 }
 
 /** 按使用率选择配额进度条颜色：≥95% 红、≥80% 黄、其余蓝。 */
 function quotaBarColor(pct: number): string {
-  if (pct >= 95) return 'bg-red-500'
-  if (pct >= 80) return 'bg-yellow-400'
-  return 'bg-blue-400'
+  if (pct >= 95) return 'bg-red-500 text-red-500'
+  if (pct >= 80) return 'bg-amber-400 text-amber-400'
+  return 'bg-amber-500 text-amber-500'
 }
 
 /** 按使用率选择配额百分比文字颜色。 */
 function quotaTextColor(pct: number): string {
-  if (pct >= 95) return 'text-red-300'
-  if (pct >= 80) return 'text-yellow-300'
-  return 'text-blue-300'
+  if (pct >= 95) return 'text-red-600'
+  if (pct >= 80) return 'text-amber-700'
+  return 'text-amber-700'
 }
 
 function latestAgentOfType(

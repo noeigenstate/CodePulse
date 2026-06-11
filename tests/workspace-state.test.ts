@@ -94,6 +94,49 @@ test('StatusHub can acknowledge one workspace without clearing another', () => {
   assert.equal(byWorkspace.get('E:/project/b'), true)
 })
 
+test('StatusHub keeps Claude and Codex token snapshots separate in the same workspace', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+
+  hub.ingest({
+    id: 'claude-token',
+    source: 'claude_code',
+    eventType: 'token_snapshot',
+    cwd: 'E:/project/a',
+    timestamp: 100,
+    token: {
+      total: 10_000,
+      contextUsedPercent: 40,
+      rateLimits: { fiveHour: { usedPercent: 24 } },
+      accuracy: 'exact',
+    },
+  })
+  hub.ingest({
+    id: 'codex-token',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    cwd: 'E:/project/a',
+    timestamp: 200,
+    token: {
+      total: 20_000,
+      contextUsedPercent: 12,
+      rateLimits: { fiveHour: { usedPercent: 61 } },
+      accuracy: 'estimated',
+    },
+  })
+
+  const agents = hub.snapshot().agents
+  const claude = agents.find((agent) => agent.agentType === 'claude_code')
+  const codex = agents.find((agent) => agent.agentType === 'codex')
+
+  assert.equal(agents.length, 2)
+  assert.equal(claude?.workspacePath, 'E:/project/a')
+  assert.equal(codex?.workspacePath, 'E:/project/a')
+  assert.equal(claude?.token?.contextUsedPercent, 40)
+  assert.equal(claude?.token?.rateLimits?.fiveHour?.usedPercent, 24)
+  assert.equal(codex?.token?.contextUsedPercent, 12)
+  assert.equal(codex?.token?.rateLimits?.fiveHour?.usedPercent, 61)
+})
+
 test('display agents are grouped by workspace with a shared token', () => {
   const groups = buildWorkspaceAgentGroups([
     {
@@ -180,6 +223,57 @@ test('display panels keep Codex projects inside one panel', () => {
     'E:/project/a',
     'E:/project/b',
   ])
+})
+
+test('display panels keep Claude and Codex five-hour quotas separate', () => {
+  const panels = buildAgentPanels([
+    {
+      agentType: 'claude_code',
+      state: TurnState.DONE,
+      toolCallCount: 0,
+      needPermission: false,
+      needUserInput: false,
+      activity: 'done',
+      lastEventAt: 500,
+      unread: false,
+      workspacePath: 'E:/project/a',
+      token: {
+        contextUsedPercent: 40,
+        rateLimits: {
+          fiveHour: { usedPercent: 24, resetsAt: 1_000 },
+          sevenDay: { usedPercent: 11 },
+        },
+        accuracy: 'exact',
+      },
+    },
+    {
+      agentType: 'codex',
+      state: TurnState.THINKING,
+      toolCallCount: 1,
+      needPermission: false,
+      needUserInput: false,
+      activity: 'thinking',
+      lastEventAt: 600,
+      unread: true,
+      workspacePath: 'E:/project/b',
+      token: {
+        contextUsedPercent: 12,
+        rateLimits: {
+          fiveHour: { usedPercent: 61, resetsAt: 2_000 },
+          sevenDay: { usedPercent: 18 },
+        },
+        accuracy: 'estimated',
+      },
+    },
+  ])
+
+  const claudePanel = panels.find((panel) => panel.agentType === 'claude_code')
+  const codexPanel = panels.find((panel) => panel.agentType === 'codex')
+
+  assert.equal(claudePanel?.quotaToken?.rateLimits?.fiveHour?.usedPercent, 24)
+  assert.equal(claudePanel?.quotaToken?.rateLimits?.fiveHour?.resetsAt, 1_000)
+  assert.equal(codexPanel?.quotaToken?.rateLimits?.fiveHour?.usedPercent, 61)
+  assert.equal(codexPanel?.quotaToken?.rateLimits?.fiveHour?.resetsAt, 2_000)
 })
 
 test('latest quota token uses the newest rate-limit payload', () => {

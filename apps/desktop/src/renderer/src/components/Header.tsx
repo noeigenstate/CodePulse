@@ -4,12 +4,7 @@
  *
  * @module renderer/components/Header
  */
-import {
-  TOKEN_QUOTA_WINDOW_LABEL,
-  formatTokenPercent,
-  type OverallState,
-  type TokenPayload,
-} from '@codepulse/shared'
+import { type OverallState } from '@codepulse/shared'
 import { overallStyle } from '../lib/format.js'
 import codePulseIcon from '../assets/codepulse-icon.png'
 
@@ -19,8 +14,6 @@ import codePulseIcon from '../assets/codepulse-icon.png'
 interface Props {
   /** 要指示的聚合总体状态。 */
   overall: OverallState
-  /** 最近一次同步到的 CLI 共享额度。 */
-  quotaToken?: TokenPayload
   /** 通知声音当前是否静音。 */
   muted: boolean
   /** 切换静音。 */
@@ -35,15 +28,8 @@ interface Props {
  * @param props 见 {@link Props}。
  * @returns 头部元素。
  */
-export function Header({
-  overall,
-  quotaToken,
-  muted,
-  onToggleMute,
-  onClearAlerts,
-}: Props): JSX.Element {
+export function Header({ overall, muted, onToggleMute, onClearAlerts }: Props): JSX.Element {
   const style = overallStyle(overall)
-  const quota = quotaToken?.rateLimits?.fiveHour
   return (
     <header className="px-6 py-5">
       <div className="flex items-center justify-between gap-5">
@@ -67,25 +53,6 @@ export function Header({
           <div className="control-glass flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-medium">
             <span className={`inline-block h-2.5 w-2.5 rounded-full ${style.dot}`} />
             <span className={style.text}>{style.label}</span>
-          </div>
-          <div className="control-glass min-w-44 rounded-xl px-4 py-2.5">
-            <div className="flex items-center justify-between gap-3 text-xs">
-              <span className="text-slate-500">{TOKEN_QUOTA_WINDOW_LABEL}</span>
-              <span className="font-semibold text-amber-700">
-                {formatTokenPercent(quota?.usedPercent)}
-              </span>
-            </div>
-            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-200/80">
-              <div
-                className="h-full rounded-full bg-amber-500"
-                style={{
-                  width:
-                    typeof quota?.usedPercent === 'number'
-                      ? `${Math.min(100, Math.max(2, quota.usedPercent))}%`
-                      : '0%',
-                }}
-              />
-            </div>
           </div>
           <button
             onClick={onClearAlerts}

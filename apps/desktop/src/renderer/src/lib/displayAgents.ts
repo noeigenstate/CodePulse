@@ -28,6 +28,7 @@ export interface AgentPanel {
   agentType: AgentType
   name: string
   updatedAt: number
+  quotaToken?: TokenPayload
   workspaces: AgentWorkspaceItem[]
 }
 
@@ -46,6 +47,7 @@ export function buildAgentPanels(agents: AgentRuntimeState[]): AgentPanel[] {
       agentType,
       name: agentType === 'codex' ? 'Codex' : 'Claude Code',
       updatedAt: Math.max(0, ...workspaces.map((workspace) => workspace.updatedAt)),
+      quotaToken: latestQuotaToken(workspaces.map((workspace) => workspace.agent)),
       workspaces,
     }
   })

@@ -6,6 +6,7 @@
  */
 import { useEffect, useState } from 'react'
 import {
+  TOKEN_QUOTA_WINDOW_LABEL,
   formatTokenCount,
   formatTokenPercent,
   formatTokenUsage,
@@ -17,12 +18,7 @@ import {
 import { useStore } from './store.js'
 import { Header } from './components/Header.js'
 import { NotificationsRail } from './components/NotificationsRail.js'
-import {
-  buildAgentPanels,
-  latestQuotaToken,
-  type AgentPanel,
-  type AgentWorkspaceItem,
-} from './lib/displayAgents.js'
+import { buildAgentPanels, type AgentPanel, type AgentWorkspaceItem } from './lib/displayAgents.js'
 import { formatDuration, formatRelative, turnStateStyle } from './lib/format.js'
 
 /**
@@ -44,7 +40,6 @@ export function App(): JSX.Element {
   } = useStore()
   const [now, setNow] = useState(() => Date.now())
   const panels = buildAgentPanels(snapshot.agents)
-  const quotaToken = latestQuotaToken(snapshot.agents)
 
   useEffect(() => init(), [init])
 
@@ -57,7 +52,6 @@ export function App(): JSX.Element {
     <div className="app-shell flex h-full flex-col text-slate-950">
       <Header
         overall={snapshot.overall}
-        quotaToken={quotaToken}
         muted={muted}
         onToggleMute={toggleMute}
         onClearAlerts={clearAlerts}
@@ -120,12 +114,15 @@ function AgentPanelView({
             </p>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-2 text-sm md:w-64">
+        <div className="grid grid-cols-2 gap-2 text-sm md:w-[30rem] md:grid-cols-[6.5rem_7.5rem_minmax(0,1fr)]">
           <Metric label="项目" value={String(projectCount || panel.workspaces.length)} />
           <Metric
             label="最近事件"
             value={latest?.lastEventAt ? formatRelative(latest.lastEventAt, now) : '—'}
           />
+          <div className="col-span-2 md:col-span-1">
+            <PanelQuotaMeter token={panel.quotaToken} now={now} />
+          </div>
         </div>
       </div>
       <div
@@ -216,6 +213,27 @@ function ProjectTile({
   )
 }
 
+function PanelQuotaMeter({
+  token,
+  now,
+}: {
+  token: TokenPayload | undefined
+  now: number
+}): JSX.Element {
+  const fiveHour = token?.rateLimits?.fiveHour
+  const sevenDay = token?.rateLimits?.sevenDay
+  const detail =
+    fiveHour || sevenDay
+      ? `${formatQuotaReset(fiveHour?.resetsAt, now)} · 7 天 ${formatTokenPercent(
+          sevenDay?.usedPercent,
+        )}`
+      : '等待 CLI 同步额度'
+
+  return (
+    <TokenMeter label={TOKEN_QUOTA_WINDOW_LABEL} percent={fiveHour?.usedPercent} detail={detail} />
+  )
+}
+
 function TokenMeter({
   label,
   percent,
@@ -270,6 +288,13 @@ function formatContextDetail(
 ): string {
   const windowText = contextWindow ? `窗口 ${formatTokenCount(contextWindow)}` : '窗口 —'
   return `${formatTokenUsage(token)} · ${windowText}`
+}
+
+function formatQuotaReset(resetsAt: number | undefined, now: number): string {
+  if (!resetsAt) return '重置 —'
+  const remaining = resetsAt - now
+  if (remaining <= 0) return '可刷新'
+  return `重置 ${formatDuration(remaining)}`
 }
 
 function effectiveContextWindow(agent: AgentRuntimeState): number | undefined {

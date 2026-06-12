@@ -17,6 +17,7 @@ import { parseTokenCount, type AgentEventInput, type TokenPayload } from '@codep
 const TAIL_BYTES = 1024 * 1024
 const HEAD_BYTES = 64 * 1024
 const MAX_ROLLOUT_FILES = 300
+const MAX_CODEX_SNAPSHOTS = 20
 const DEFAULT_CODEX_CONTEXT_WINDOW =
   parseTokenCount(process.env.CODEPULSE_CODEX_CONTEXT_WINDOW) ?? 256_000
 export const CODEX_USAGE_POLL_INTERVAL_MS =
@@ -45,20 +46,28 @@ export function startCodexUsagePoller(
   intervalMs = CODEX_USAGE_POLL_INTERVAL_MS,
 ): () => void {
   let stopped = false
-  let lastSignature = ''
+  const lastSignatures = new Map<string, string>()
 
   async function poll(): Promise<void> {
     if (stopped) return
-    const input = await readLatestCodexTokenSnapshot()
-    if (!input?.token) return
-    const signature = JSON.stringify({
-      session: input.externalSessionId,
-      workspace: input.workspacePath ?? input.cwd,
-      token: input.token,
-    })
-    if (signature === lastSignature) return
-    lastSignature = signature
-    hub.ingest(normalizeEvent(input))
+    try {
+      const inputs = await readRecentCodexTokenSnapshots()
+      for (const input of inputs) {
+        if (!input.token) continue
+        const key = snapshotKey(input)
+        const signature = JSON.stringify({
+          session: input.externalSessionId,
+          workspace: input.workspacePath ?? input.cwd,
+          model: input.model,
+          token: input.token,
+        })
+        if (signature === lastSignatures.get(key)) continue
+        lastSignatures.set(key, signature)
+        hub.ingest(normalizeEvent(input))
+      }
+    } catch (err) {
+      console.error('[codepulse] failed to poll Codex usage', err)
+    }
   }
 
   const timer = setInterval(() => void poll(), intervalMs)
@@ -80,17 +89,33 @@ export function startCodexUsagePoller(
 export async function readLatestCodexTokenSnapshot(
   codexHome = process.env.CODEX_HOME ?? join(homedir(), '.codex'),
 ): Promise<AgentEventInput | undefined> {
+  return (await readRecentCodexTokenSnapshots(codexHome, 1))[0]
+}
+
+/**
+ * Read recent Codex token_count events as token_snapshot inputs.
+ *
+ * @param codexHome optional CODEX_HOME override for tests.
+ * @param maxSnapshots maximum number of distinct session/workspace snapshots.
+ * @returns token snapshot inputs ordered by rollout mtime descending.
+ */
+export async function readRecentCodexTokenSnapshots(
+  codexHome = process.env.CODEX_HOME ?? join(homedir(), '.codex'),
+  maxSnapshots = MAX_CODEX_SNAPSHOTS,
+): Promise<AgentEventInput[]> {
   const files: RolloutFile[] = []
   await collectRolloutFiles(join(codexHome, 'sessions'), files)
   files.sort((a, b) => b.mtimeMs - a.mtimeMs)
 
+  const events: AgentEventInput[] = []
+  const seen = new Set<string>()
   for (const file of files) {
     const tokenCount = await readLatestTokenCount(file.path)
     if (!tokenCount) continue
     const meta = await readRolloutMeta(file.path)
     const token = tokenFromTokenCount(tokenCount)
     if (!token) continue
-    return {
+    const event: AgentEventInput = {
       source: 'codex',
       eventType: 'token_snapshot',
       externalSessionId: meta?.id ?? sessionIdFromFile(file.path),
@@ -100,9 +125,14 @@ export async function readLatestCodexTokenSnapshot(
       token,
       raw: { source: 'codex', channel: 'rollout-poll', file: basename(file.path) },
     }
+    const key = snapshotKey(event)
+    if (seen.has(key)) continue
+    seen.add(key)
+    events.push(event)
+    if (events.length >= maxSnapshots) break
   }
 
-  return undefined
+  return events
 }
 
 async function collectRolloutFiles(dir: string, out: RolloutFile[]): Promise<void> {
@@ -249,6 +279,15 @@ function normalizeWindow(raw: unknown): NonNullable<TokenPayload['rateLimits']>[
 function sessionIdFromFile(path: string): string | undefined {
   const match = basename(path).match(/rollout-.+?-([0-9a-f-]{36})\.jsonl$/i)
   return match?.[1]
+}
+
+function snapshotKey(input: AgentEventInput): string {
+  return [
+    input.source,
+    input.externalSessionId ?? '',
+    input.workspacePath ?? input.cwd ?? '',
+    input.model ?? '',
+  ].join('\0')
 }
 
 function recordValue(value: unknown): Record<string, unknown> | undefined {

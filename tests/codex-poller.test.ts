@@ -6,6 +6,7 @@ import { test } from 'node:test'
 import {
   CODEX_USAGE_POLL_INTERVAL_MS,
   readLatestCodexTokenSnapshot,
+  readRecentCodexTokenSnapshots,
 } from '../apps/desktop/src/main/codex-usage-poller.js'
 
 test('Codex usage poller defaults to a responsive quota sync interval', () => {
@@ -65,6 +66,78 @@ test('Codex usage poller reads latest rollout rate limits', async () => {
     assert.equal(event?.token?.rateLimits?.sevenDay?.usedPercent, 12)
     assert.equal(event?.token?.contextWindow, 256000)
     assert.equal(event?.token?.contextUsedPercent, 1.953125)
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('Codex usage poller reads recent token snapshots for multiple workspaces', async () => {
+  const home = join(tmpdir(), `codepulse-codex-poller-multi-${Date.now()}`)
+  const firstSessions = join(home, 'sessions', '2026', '06', '11')
+  const secondSessions = join(home, 'sessions', '2026', '06', '12')
+  const first = join(firstSessions, 'rollout-2026-06-11T10-00-00-first.jsonl')
+  const second = join(secondSessions, 'rollout-2026-06-12T10-00-00-second.jsonl')
+
+  await mkdir(firstSessions, { recursive: true })
+  await mkdir(secondSessions, { recursive: true })
+  await writeFile(
+    first,
+    [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: 'first-session', cwd: 'E:/project/first', model: 'gpt-5-codex' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 256000,
+            total_token_usage: { input_tokens: 12000, output_tokens: 800, total_tokens: 12800 },
+            last_token_usage: { input_tokens: 12000, output_tokens: 800, total_tokens: 12800 },
+          },
+          rate_limits: { primary: { used_percent: 44 }, secondary: { used_percent: 18 } },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+  await writeFile(
+    second,
+    [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: 'second-session', cwd: 'E:/project/second', model: 'gpt-5.5' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 258000,
+            total_token_usage: { input_tokens: 54000, output_tokens: 900, total_tokens: 54900 },
+            last_token_usage: { input_tokens: 54000, output_tokens: 900, total_tokens: 54900 },
+          },
+          rate_limits: { primary: { used_percent: 67 }, secondary: { used_percent: 23 } },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  try {
+    const events = await readRecentCodexTokenSnapshots(home)
+    const byWorkspace = new Map(events.map((event) => [event.workspacePath, event]))
+
+    assert.equal(events.length, 2)
+    assert.equal(byWorkspace.get('E:/project/first')?.externalSessionId, 'first-session')
+    assert.equal(byWorkspace.get('E:/project/first')?.token?.rateLimits?.fiveHour?.usedPercent, 44)
+    assert.equal(byWorkspace.get('E:/project/second')?.externalSessionId, 'second-session')
+    assert.equal(
+      byWorkspace.get('E:/project/second')?.token?.contextUsedPercent,
+      20.930232558139537,
+    )
+    assert.equal(byWorkspace.get('E:/project/second')?.token?.rateLimits?.sevenDay?.usedPercent, 23)
   } finally {
     await rm(home, { recursive: true, force: true })
   }

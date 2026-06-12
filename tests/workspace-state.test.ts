@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { STUCK_STRONG_MS, STUCK_VISIBLE_MS, StatusHub } from '@codepulse/core'
-import { type AgentEvent, TurnState } from '@codepulse/shared'
+import { type AgentEvent, type NotificationRequest, TurnState } from '@codepulse/shared'
 import {
   buildAgentPanels,
   buildWorkspaceAgentGroups,
@@ -160,6 +160,56 @@ test('StatusHub does not mark long-running tools as TIMEOUT at the visible thres
   ;(hub as unknown as { tick(now?: number): void }).tick(startedAt + STUCK_STRONG_MS + 2_000)
   codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
   assert.equal(codex?.state, TurnState.TIMEOUT)
+})
+
+test('StatusHub keeps permission waits from being marked TIMEOUT by the watchdog', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0, permissionThrottleMs: 0 })
+  const notifications: NotificationRequest[] = []
+  hub.on('notification', (notification) => notifications.push(notification))
+  const startedAt = 1_000_000
+
+  hub.ingest({
+    id: 'permission',
+    source: 'claude_code',
+    eventType: 'permission_request',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    message: 'waiting for permission',
+    timestamp: startedAt,
+  })
+  ;(hub as unknown as { tick(now?: number): void }).tick(startedAt + STUCK_STRONG_MS + 1)
+
+  const claude = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
+  assert.equal(claude?.state, TurnState.WAITING_PERMISSION)
+  assert.equal(
+    notifications.some((notification) => notification.dedupeKey.startsWith('stuck:')),
+    false,
+  )
+})
+
+test('StatusHub keeps user-input waits from being marked TIMEOUT by the watchdog', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const notifications: NotificationRequest[] = []
+  hub.on('notification', (notification) => notifications.push(notification))
+  const startedAt = 1_000_000
+
+  hub.ingest({
+    id: 'input',
+    source: 'claude_code',
+    eventType: 'user_input_required',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    message: 'waiting for user input',
+    timestamp: startedAt,
+  })
+  ;(hub as unknown as { tick(now?: number): void }).tick(startedAt + STUCK_STRONG_MS + 1)
+
+  const claude = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
+  assert.equal(claude?.state, TurnState.WAITING_USER_INPUT)
+  assert.equal(
+    notifications.some((notification) => notification.dedupeKey.startsWith('stuck:')),
+    false,
+  )
 })
 
 test('StatusHub keeps concurrent sessions in the same workspace separate', () => {
@@ -354,8 +404,8 @@ test('StatusHub preserves quota windows when a zero-only token snapshot arrives'
     token: {
       contextUsedPercent: 26,
       rateLimits: {
-        fiveHour: { usedPercent: 0, resetsAt: 3_000 },
-        sevenDay: { usedPercent: 0, resetsAt: 10_000 },
+        fiveHour: { usedPercent: 0 },
+        sevenDay: { usedPercent: 0 },
       },
       accuracy: 'estimated',
     },
@@ -367,6 +417,48 @@ test('StatusHub preserves quota windows when a zero-only token snapshot arrives'
   assert.equal(codex?.token?.rateLimits?.fiveHour?.resetsAt, 2_000)
   assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 7)
   assert.equal(codex?.token?.rateLimits?.sevenDay?.resetsAt, 9_000)
+})
+
+test('StatusHub accepts zero quota windows when reset metadata is present', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+
+  hub.ingest({
+    id: 'quota-token',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    cwd: 'E:/project/a',
+    timestamp: 100,
+    token: {
+      contextUsedPercent: 24,
+      rateLimits: {
+        fiveHour: { usedPercent: 33, resetsAt: 2_000 },
+        sevenDay: { usedPercent: 7, resetsAt: 9_000 },
+      },
+      accuracy: 'estimated',
+    },
+  })
+  hub.ingest({
+    id: 'zero-quota-token',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    cwd: 'E:/project/a',
+    timestamp: 200,
+    token: {
+      contextUsedPercent: 26,
+      rateLimits: {
+        fiveHour: { usedPercent: 0, resetsAt: 3_000, windowMinutes: 300 },
+        sevenDay: { usedPercent: 0, resetsAt: 10_000, windowMinutes: 10_080 },
+      },
+      accuracy: 'estimated',
+    },
+  })
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.token?.contextUsedPercent, 26)
+  assert.equal(codex?.token?.rateLimits?.fiveHour?.usedPercent, 0)
+  assert.equal(codex?.token?.rateLimits?.fiveHour?.resetsAt, 3_000)
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 0)
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.resetsAt, 10_000)
 })
 
 test('StatusHub keeps previous token data at session boundaries until a new snapshot arrives', () => {
@@ -648,8 +740,8 @@ test('latest quota token skips empty zero-only rate-limit payloads', () => {
       token: {
         contextUsedPercent: 8,
         rateLimits: {
-          fiveHour: { usedPercent: 0, resetsAt: 3_000 },
-          sevenDay: { usedPercent: 0, resetsAt: 4_000 },
+          fiveHour: { usedPercent: 0 },
+          sevenDay: { usedPercent: 0 },
         },
         accuracy: 'estimated',
       },

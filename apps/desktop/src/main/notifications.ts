@@ -4,8 +4,11 @@
  *
  * @module main/notifications
  */
-import { Notification } from 'electron'
+import { join } from 'node:path'
+import { app, Notification } from 'electron'
 import type { NotificationRequest } from '@codepulse/shared'
+
+const APP_NAME = 'CodePulse'
 
 /**
  * 为规则引擎请求显示一条桌面通知。
@@ -21,14 +24,19 @@ export function showNotification(request: NotificationRequest, onClick: () => vo
   if (!Notification.isSupported()) return
 
   const notification = new Notification({
-    title: compactText(request.title, 36),
+    title: `${APP_NAME} - ${compactText(request.title, 28)}`,
     body: compactNotificationBody(request.body),
+    icon: notificationIconPath(),
     silent: !request.sound,
     urgency: request.level === 'strong' ? 'critical' : 'normal',
   })
 
   notification.on('click', onClick)
   notification.show()
+}
+
+function notificationIconPath(): string {
+  return join(app.getAppPath(), 'build/icon.png')
 }
 
 function compactNotificationBody(body: string): string {

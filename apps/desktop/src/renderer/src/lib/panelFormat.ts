@@ -35,11 +35,11 @@ export function visibleRateLimitWindows(token: TokenPayload | undefined): {
   const windows = [rateLimits.fiveHour, rateLimits.sevenDay].filter(Boolean)
   if (windows.length === 0) return {}
 
-  const hasNonZeroUsage = windows.some((window) => {
+  const hasDisplayableUsage = windows.some((window) => {
     const pct = normalizedPercent(window?.usedPercent)
-    return pct !== undefined && pct > 0
+    return pct !== undefined && (pct > 0 || hasRateLimitMetadata(window))
   })
-  if (!hasNonZeroUsage) return {}
+  if (!hasDisplayableUsage) return {}
 
   return rateLimits
 }
@@ -64,6 +64,10 @@ function normalizedPercent(value: number | undefined): number | undefined {
 
 function positiveNumber(value: number | undefined): number | undefined {
   return value != null && Number.isFinite(value) && value > 0 ? value : undefined
+}
+
+function hasRateLimitMetadata(window: TokenRateLimitWindow | undefined): boolean {
+  return window?.resetsAt !== undefined || window?.windowMinutes !== undefined
 }
 
 function formatContextUsedCount(value: number): string {

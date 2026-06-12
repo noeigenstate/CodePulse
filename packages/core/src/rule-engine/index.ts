@@ -11,7 +11,6 @@ import {
   type NotificationLevel,
   TurnState,
   formatTokenQuotaNotice,
-  isActiveState,
   workspaceKey,
 } from '@codepulse/shared'
 import type { TransitionResult } from '../state-machine/index.js'
@@ -165,7 +164,7 @@ export class RuleEngine {
   onTick(agent: AgentRuntimeState, now = Date.now()): NotificationRequest[] {
     const out: NotificationRequest[] = []
     const inactiveFor = now - agent.lastEventAt
-    const canCheckStuck = isActiveState(agent.state) || agent.state === TurnState.TIMEOUT
+    const canCheckStuck = canCheckStuckState(agent.state)
     const scope = agentScope(agent)
     if (!canCheckStuck || agent.lastEventAt === 0) {
       this.stuckLevelFired.delete(scope)
@@ -293,4 +292,13 @@ function agentLabel(agent: string): string {
 
 function agentScope(agent: AgentRuntimeState): string {
   return `${agent.agentType}:${workspaceKey(agent.workspacePath)}`
+}
+
+function canCheckStuckState(state: TurnState): boolean {
+  return (
+    state === TurnState.PROMPT_SUBMITTED ||
+    state === TurnState.THINKING ||
+    state === TurnState.TOOL_RUNNING ||
+    state === TurnState.TIMEOUT
+  )
 }

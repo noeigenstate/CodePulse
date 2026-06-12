@@ -229,6 +229,9 @@ async function bootstrap(): Promise<void> {
 // 固定应用名，使 userData 目录（SQLite 数据库所在地）在开发与
 // 打包构建之间保持稳定：Windows 上为 %APPDATA%\CodePulse。
 app.setName('CodePulse')
+if (process.platform === 'win32') {
+  app.setAppUserModelId('dev.codepulse.desktop')
+}
 
 // 强制单实例：第二次启动会聚焦现有窗口。
 const gotLock = app.requestSingleInstanceLock()

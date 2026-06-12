@@ -13,7 +13,6 @@ import {
   type NotificationRequest,
   type StatusSnapshot,
   TurnState,
-  isActiveState,
   workspaceKey,
 } from '@codepulse/shared'
 import { buildStatusSnapshot } from '../aggregate/index.js'
@@ -174,7 +173,7 @@ export class StatusHub extends EventEmitter {
   }
 
   private timeoutEventFor(agent: AgentRuntimeState, now: number): AgentEvent | undefined {
-    if (agent.lastEventAt === 0 || !isActiveState(agent.state)) return undefined
+    if (agent.lastEventAt === 0 || !canTimeoutState(agent.state)) return undefined
     const threshold = agent.state === TurnState.TOOL_RUNNING ? STUCK_STRONG_MS : STUCK_VISIBLE_MS
     if (now - agent.lastEventAt < threshold) return undefined
 
@@ -245,6 +244,14 @@ function runtimeKey(
 ): string {
   const sessionScope = externalSessionId ? `\0${externalSessionId}` : ''
   return `${agentType}\0${workspaceKey(workspacePath)}${sessionScope}`
+}
+
+function canTimeoutState(state: TurnState): boolean {
+  return (
+    state === TurnState.PROMPT_SUBMITTED ||
+    state === TurnState.THINKING ||
+    state === TurnState.TOOL_RUNNING
+  )
 }
 
 function sessionKey(agentType: AgentType, sessionId: string): string {

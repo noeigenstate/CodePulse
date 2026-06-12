@@ -25,6 +25,7 @@ import {
 } from './lib/panelFormat.js'
 import { formatQuotaReset } from './lib/quotaFormat.js'
 import { useNow } from './lib/useNow.js'
+import codePulseIcon from './assets/codepulse-icon.png'
 
 const NOTIFICATION_TOAST_VISIBLE_MS = 2_000
 
@@ -103,13 +104,15 @@ const NotificationToasts = memo(function NotificationToasts({
           key={`${note.dedupeKey}-${note.createdAt}`}
           className={`notification-toast ${notificationToneClass(note.level)}`}
         >
+          <img className="notification-logo" src={codePulseIcon} alt="" aria-hidden="true" />
           <div className="min-w-0">
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="notification-meta">
+              <span className="notification-app-name">CodePulse</span>
               <span className="notification-dot" />
-              <h3 className="truncate text-sm font-semibold text-slate-950">
-                {compactNotificationTitle(note.title)}
-              </h3>
             </div>
+            <h3 className="mt-0.5 truncate text-sm font-semibold text-slate-950">
+              {compactNotificationTitle(note.title)}
+            </h3>
             <p className="mt-1 truncate text-xs font-medium text-slate-600">
               {compactNotificationBody(note.body)}
             </p>

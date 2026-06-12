@@ -267,7 +267,8 @@ test('StatusHub only emits notifications for completed turns', () => {
   assert.equal(notifications.length, 1)
   assert.equal(notifications[0]?.level, 'normal')
   assert.equal(notifications[0]?.dedupeKey.startsWith('done:'), true)
-  assert.equal(notifications[0]?.body, 'a 一轮任务已完成')
+  assert.equal(notifications[0]?.title, 'a 一轮任务已完成')
+  assert.equal(notifications[0]?.body, 'Codex')
 })
 
 test('StatusHub keeps concurrent sessions in the same workspace separate', () => {
@@ -517,7 +518,7 @@ test('StatusHub preserves quota windows when a zero-only token snapshot arrives'
   assert.equal(codex?.token?.rateLimits?.sevenDay?.resetsAt, 9_000)
 })
 
-test('StatusHub accepts zero quota windows when reset metadata is present', () => {
+test('StatusHub preserves quota windows when a zero token snapshot has reset metadata', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
 
   hub.ingest({
@@ -553,10 +554,10 @@ test('StatusHub accepts zero quota windows when reset metadata is present', () =
 
   const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
   assert.equal(codex?.token?.contextUsedPercent, 26)
-  assert.equal(codex?.token?.rateLimits?.fiveHour?.usedPercent, 0)
-  assert.equal(codex?.token?.rateLimits?.fiveHour?.resetsAt, 3_000)
-  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 0)
-  assert.equal(codex?.token?.rateLimits?.sevenDay?.resetsAt, 10_000)
+  assert.equal(codex?.token?.rateLimits?.fiveHour?.usedPercent, 33)
+  assert.equal(codex?.token?.rateLimits?.fiveHour?.resetsAt, 2_000)
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 7)
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.resetsAt, 9_000)
 })
 
 test('StatusHub keeps previous token data at session boundaries until a new snapshot arrives', () => {
@@ -850,7 +851,7 @@ test('latest quota token prefers the most constrained recent payload', () => {
   assert.equal(quota?.rateLimits?.sevenDay?.usedPercent, 28)
 })
 
-test('latest quota token ignores stale constrained payloads', () => {
+test('latest quota token falls back to stale constrained payloads when fresh quota is zero-only', () => {
   const quota = latestQuotaToken([
     {
       agentType: 'codex',
@@ -892,8 +893,8 @@ test('latest quota token ignores stale constrained payloads', () => {
     },
   ])
 
-  assert.equal(quota?.rateLimits?.fiveHour?.usedPercent, 0)
-  assert.equal(quota?.rateLimits?.sevenDay?.usedPercent, 0)
+  assert.equal(quota?.rateLimits?.fiveHour?.usedPercent, 78)
+  assert.equal(quota?.rateLimits?.sevenDay?.usedPercent, 28)
 })
 
 test('latest quota token skips empty zero-only rate-limit payloads', () => {

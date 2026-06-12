@@ -95,7 +95,7 @@ test('zero-only quota snapshots are treated as unavailable display data', () => 
   assert.equal(windows.sevenDay, undefined)
 })
 
-test('zero quota snapshots with reset metadata are visible', () => {
+test('zero quota snapshots with reset metadata are treated as unavailable display data', () => {
   const windows = visibleRateLimitWindows({
     accuracy: 'estimated',
     rateLimits: {
@@ -104,10 +104,8 @@ test('zero quota snapshots with reset metadata are visible', () => {
     },
   })
 
-  assert.equal(windows.fiveHour?.usedPercent, 0)
-  assert.equal(windows.fiveHour?.resetsAt, 1_000_000)
-  assert.equal(windows.sevenDay?.usedPercent, 0)
-  assert.equal(windows.sevenDay?.resetsAt, 2_000_000)
+  assert.equal(windows.fiveHour, undefined)
+  assert.equal(windows.sevenDay, undefined)
 })
 
 test('workspace paths are shortened for project rows', () => {

@@ -14,6 +14,11 @@ test('header copy omits the old Chinese brand tag', () => {
   assert.equal(headerCopy('en').brandTag, '')
 })
 
+test('header copy does not expose a clear alerts action', () => {
+  assert.equal('clearAlerts' in headerCopy('zh'), false)
+  assert.equal('clearAlerts' in headerCopy('en'), false)
+})
+
 test('locale toggle switches between Chinese and English labels', () => {
   assert.equal(nextLocale('zh'), 'en')
   assert.equal(nextLocale('en'), 'zh')

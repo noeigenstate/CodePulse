@@ -41,16 +41,7 @@ import codePulseIcon from './assets/codepulse-icon.png'
  * @returns 渲染后的 Dashboard。
  */
 export function App(): JSX.Element {
-  const {
-    snapshot,
-    muted,
-    notifications,
-    init,
-    ack,
-    clearAlerts,
-    toggleMute,
-    dismissNotification,
-  } = useStore()
+  const { snapshot, muted, notifications, init, ack, toggleMute, dismissNotification } = useStore()
   const [locale, setLocale] = useState<Locale>(() => readStoredLocale(window.localStorage))
   const panels = useMemo(() => buildAgentPanels(snapshot.agents), [snapshot.agents])
   const copy = useMemo(() => uiCopy(locale), [locale])
@@ -73,7 +64,6 @@ export function App(): JSX.Element {
         muted={muted}
         onToggleLocale={toggleLocale}
         onToggleMute={toggleMute}
-        onClearAlerts={clearAlerts}
       />
       <div className="min-h-0 flex-1 overflow-hidden px-4 pb-4">
         <main className="h-full min-w-0 overflow-x-auto overflow-y-hidden pr-1">

@@ -6,7 +6,6 @@ export type Locale = 'zh' | 'en'
 export interface HeaderCopy {
   brandTag: string
   subtitle: string
-  clearAlerts: string
   mute: string
   muted: string
   languageToggle: string
@@ -32,7 +31,6 @@ const HEADER_COPY: Record<Locale, HeaderCopy> = {
   zh: {
     brandTag: '',
     subtitle: 'AI coding-agent live console',
-    clearAlerts: '清除提醒',
     mute: '静音 30 分钟',
     muted: '已静音',
     languageToggle: 'EN',
@@ -40,7 +38,6 @@ const HEADER_COPY: Record<Locale, HeaderCopy> = {
   en: {
     brandTag: '',
     subtitle: 'AI coding-agent live console',
-    clearAlerts: 'Clear alerts',
     mute: 'Mute 30 min',
     muted: 'Muted',
     languageToggle: '中',

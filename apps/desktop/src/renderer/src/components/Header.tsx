@@ -9,7 +9,6 @@ interface Props {
   muted: boolean
   onToggleLocale: () => void
   onToggleMute: () => void
-  onClearAlerts: () => void
 }
 
 export function Header({
@@ -18,7 +17,6 @@ export function Header({
   muted,
   onToggleLocale,
   onToggleMute,
-  onClearAlerts,
 }: Props): JSX.Element {
   const style = overallStyle(overall)
   const copy = headerCopy(locale)
@@ -52,12 +50,6 @@ export function Header({
             className="control-glass h-11 min-w-11 rounded-xl px-3.5 text-sm font-semibold text-slate-800 transition hover:bg-white/75 active:translate-y-px"
           >
             {copy.languageToggle}
-          </button>
-          <button
-            onClick={onClearAlerts}
-            className="control-glass h-11 rounded-xl px-3.5 text-sm font-medium text-slate-800 transition hover:bg-white/75 active:translate-y-px"
-          >
-            {copy.clearAlerts}
           </button>
           <button
             onClick={onToggleMute}

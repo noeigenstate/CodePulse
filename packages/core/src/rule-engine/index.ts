@@ -48,8 +48,8 @@ export class RuleEngine {
     const scope = agentScope(next)
     this.push(out, now, {
       level: 'normal',
-      title: `${agentLabel(next.agentType)} 完成一轮任务`,
-      body: `${projectLabel(next.workspacePath)} 一轮任务已完成`,
+      title: `${projectLabel(next.workspacePath)} 一轮任务已完成`,
+      body: agentLabel(next.agentType),
       dedupeKey: `done:${scope}:${
         next.externalTurnId ?? previous.externalTurnId ?? previous.turnStartedAt ?? now
       }`,

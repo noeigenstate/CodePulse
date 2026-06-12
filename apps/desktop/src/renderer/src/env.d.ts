@@ -7,14 +7,11 @@ type Unsubscribe = () => void
 export interface CodePulseApi {
   getStatus: () => Promise<StatusSnapshot>
   ack: (agent: AgentType, workspacePath?: string) => Promise<boolean>
-  clearAlerts: () => Promise<boolean>
   setMute: (muted: boolean) => Promise<boolean>
-  serverInfo: () => Promise<{ host: string; port: number }>
   detectAgents: () => Promise<Agent[]>
   onStatus: (cb: (snapshot: StatusSnapshot) => void) => Unsubscribe
   onNotification: (cb: (note: NotificationRequest) => void) => Unsubscribe
   onMute: (cb: (muted: boolean) => void) => Unsubscribe
-  onNavigate: (cb: (route: string) => void) => Unsubscribe
 }
 
 declare global {

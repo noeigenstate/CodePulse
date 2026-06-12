@@ -158,7 +158,7 @@ function hasVisibleRateLimits(token: TokenPayload | undefined): boolean {
 }
 
 function compareQuotaCandidates(a: AgentRuntimeState, b: AgentRuntimeState): number {
-  return quotaPressure(b.token) - quotaPressure(a.token) || b.lastEventAt - a.lastEventAt
+  return b.lastEventAt - a.lastEventAt || quotaPressure(b.token) - quotaPressure(a.token)
 }
 
 function quotaPressure(token: TokenPayload | undefined): number {

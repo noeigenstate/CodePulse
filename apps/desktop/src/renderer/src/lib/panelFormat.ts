@@ -37,7 +37,10 @@ export function visibleRateLimitWindows(token: TokenPayload | undefined): {
 
   const hasDisplayableUsage = windows.some((window) => {
     const pct = normalizedPercent(window?.usedPercent)
-    return pct !== undefined && pct > 0
+    return (
+      pct !== undefined &&
+      (pct > 0 || window?.resetsAt !== undefined || window?.windowMinutes !== undefined)
+    )
   })
   if (!hasDisplayableUsage) return {}
 

@@ -37,6 +37,15 @@ export function fromCodexHook(raw: unknown): AgentEventInput | null {
     cwd: pickString(r, 'cwd'),
     workspacePath: pickString(r, 'workspace', 'cwd', 'project_dir'),
     model: pickString(r, 'model'),
+    tokenSourcePath: pickString(
+      r,
+      'token_source_path',
+      'tokenSourcePath',
+      'usage_source_path',
+      'usageSourcePath',
+      'rollout_path',
+      'transcript_path',
+    ),
     raw,
   }
 

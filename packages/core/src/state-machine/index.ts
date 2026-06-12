@@ -230,7 +230,14 @@ function isZeroOnlyRateLimits(rateLimits: TokenPayload['rateLimits']): boolean {
   const windows = [rateLimits?.fiveHour, rateLimits?.sevenDay].filter(Boolean)
   if (windows.length === 0) return false
   const hasUsagePercent = windows.some((window) => window?.usedPercent !== undefined)
-  return hasUsagePercent && windows.every((window) => (window?.usedPercent ?? 0) === 0)
+  const hasResetMetadata = windows.some(
+    (window) => window?.resetsAt !== undefined || window?.windowMinutes !== undefined,
+  )
+  return (
+    hasUsagePercent &&
+    !hasResetMetadata &&
+    windows.every((window) => (window?.usedPercent ?? 0) === 0)
+  )
 }
 
 function mergeRateLimitWindow(

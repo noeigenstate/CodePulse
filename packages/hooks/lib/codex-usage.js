@@ -35,7 +35,7 @@ export async function readLatestCodexUsage(raw, options = {}) {
       if (tokenCount && taskStarted) break
     }
 
-    return tokenCount ? toUsagePatch(tokenCount, taskStarted) : {}
+    return tokenCount ? { ...toUsagePatch(tokenCount, taskStarted), usage_source_path: file } : {}
   } catch {
     return {}
   }

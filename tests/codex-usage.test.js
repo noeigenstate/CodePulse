@@ -58,6 +58,7 @@ test('Codex usage reader extracts latest token_count from rollout JSONL', async 
 
   try {
     const usage = await readLatestCodexUsage({ session_id: sessionId }, { codexHome: home })
+    assert.equal(usage.usage_source_path, rollout)
     assert.deepEqual(usage, {
       usage: {
         input_tokens: 12000,
@@ -79,6 +80,7 @@ test('Codex usage reader extracts latest token_count from rollout JSONL', async 
         five_hour: { used_percentage: 34, resets_at: 1781160358, window_minutes: 300 },
         seven_day: { used_percentage: 5, resets_at: 1781747174, window_minutes: 10080 },
       },
+      usage_source_path: rollout,
     })
   } finally {
     await rm(home, { recursive: true, force: true })

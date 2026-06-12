@@ -60,6 +60,8 @@ export interface AgentEvent {
 
   /** `token_snapshot` 事件内联的 token/上下文用量。 */
   token?: TokenPayload
+  /** token 快照来源的本地文件路径，用于服务端做绑定会话的轻量刷新。 */
+  tokenSourcePath?: string
 
   /** 原始未修改的载荷，保留用于调试/持久化。 */
   raw?: unknown

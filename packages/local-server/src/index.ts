@@ -11,6 +11,7 @@ import type { StatusHub } from '@codepulse/core'
 import { registerAgentRoutes } from './routes/agents.js'
 import { registerEventRoutes } from './routes/events.js'
 import { registerStatusRoutes } from './routes/status.js'
+import { QuotaRefreshWatcher } from './quota-watcher.js'
 import { registerWebSocket } from './websocket/index.js'
 
 /**
@@ -55,6 +56,12 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
   const app = Fastify({ logger: options.logger ?? false })
 
   await app.register(websocket)
+  const quotaWatcher = new QuotaRefreshWatcher({ hub: options.hub })
+  const onHubEvent = (event: Parameters<typeof quotaWatcher.observe>[0]): void => {
+    quotaWatcher.observe(event)
+  }
+  options.hub.on('event', onHubEvent)
+
   registerWebSocket(app, options.hub)
   registerAgentRoutes(app)
   registerEventRoutes(app, options.hub)
@@ -65,7 +72,11 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
   return {
     app,
     url: `http://${host}:${port}`,
-    close: () => app.close(),
+    close: async () => {
+      quotaWatcher.stop()
+      options.hub.off('event', onHubEvent)
+      await app.close()
+    },
   }
 }
 
@@ -76,3 +87,4 @@ export {
   type AgentDetectOptions,
 } from './agent-detect.js'
 export { registerAgentRoutes, registerEventRoutes, registerStatusRoutes, registerWebSocket }
+export { QuotaRefreshWatcher, readCodexQuotaTokenFromFile } from './quota-watcher.js'

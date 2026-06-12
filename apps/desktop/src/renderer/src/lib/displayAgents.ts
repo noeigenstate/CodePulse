@@ -8,6 +8,7 @@ import {
 import { visibleRateLimitWindows } from './panelFormat.js'
 
 export const DISPLAY_AGENT_ORDER: readonly AgentType[] = ['claude_code', 'codex']
+const QUOTA_RECENCY_WINDOW_MS = 30 * 60_000
 
 export interface WorkspaceAgentGroup {
   id: string
@@ -56,9 +57,16 @@ export function buildAgentPanels(agents: AgentRuntimeState[]): AgentPanel[] {
 }
 
 export function latestQuotaToken(agents: AgentRuntimeState[]): TokenPayload | undefined {
-  return agents
-    .filter((agent) => hasVisibleRateLimits(agent.token))
-    .sort((a, b) => b.lastEventAt - a.lastEventAt)[0]?.token
+  const candidates = agents.filter((agent) => hasVisibleRateLimits(agent.token))
+  if (candidates.length === 0) return undefined
+
+  const freshestAt = Math.max(...candidates.map((agent) => agent.lastEventAt))
+  const recent = candidates.filter(
+    (agent) => freshestAt - agent.lastEventAt <= QUOTA_RECENCY_WINDOW_MS,
+  )
+  const pool = recent.length > 0 ? recent : candidates
+
+  return [...pool].sort(compareQuotaCandidates)[0]?.token
 }
 
 export function buildWorkspaceAgentGroups(agents: AgentRuntimeState[]): WorkspaceAgentGroup[] {
@@ -147,6 +155,22 @@ function latestToken(agents: AgentRuntimeState[]): TokenPayload | undefined {
 function hasVisibleRateLimits(token: TokenPayload | undefined): boolean {
   const windows = visibleRateLimitWindows(token)
   return Boolean(windows.fiveHour ?? windows.sevenDay)
+}
+
+function compareQuotaCandidates(a: AgentRuntimeState, b: AgentRuntimeState): number {
+  return quotaPressure(b.token) - quotaPressure(a.token) || b.lastEventAt - a.lastEventAt
+}
+
+function quotaPressure(token: TokenPayload | undefined): number {
+  const windows = visibleRateLimitWindows(token)
+  return Math.max(
+    normalizedPercent(windows.fiveHour?.usedPercent),
+    normalizedPercent(windows.sevenDay?.usedPercent),
+  )
+}
+
+function normalizedPercent(value: number | undefined): number {
+  return value != null && Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : -1
 }
 
 function workspaceName(path: string): string {

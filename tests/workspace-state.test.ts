@@ -706,6 +706,98 @@ test('latest quota token uses the newest rate-limit payload', () => {
   assert.equal(quota?.rateLimits?.fiveHour?.usedPercent, 36)
 })
 
+test('latest quota token prefers the most constrained recent payload', () => {
+  const quota = latestQuotaToken([
+    {
+      agentType: 'codex',
+      state: TurnState.DONE,
+      toolCallCount: 0,
+      needPermission: false,
+      needUserInput: false,
+      activity: 'done',
+      lastEventAt: 100,
+      unread: false,
+      workspacePath: 'E:/project/high',
+      token: {
+        contextUsedPercent: 12,
+        rateLimits: {
+          fiveHour: { usedPercent: 78, resetsAt: 1_000, windowMinutes: 300 },
+          sevenDay: { usedPercent: 28, resetsAt: 2_000, windowMinutes: 10_080 },
+        },
+        accuracy: 'estimated',
+      },
+    },
+    {
+      agentType: 'codex',
+      state: TurnState.DONE,
+      toolCallCount: 0,
+      needPermission: false,
+      needUserInput: false,
+      activity: 'done',
+      lastEventAt: 200,
+      unread: false,
+      workspacePath: 'E:/project/zero',
+      token: {
+        contextUsedPercent: 8,
+        rateLimits: {
+          fiveHour: { usedPercent: 0, resetsAt: 3_000, windowMinutes: 300 },
+          sevenDay: { usedPercent: 0, resetsAt: 4_000, windowMinutes: 10_080 },
+        },
+        accuracy: 'estimated',
+      },
+    },
+  ])
+
+  assert.equal(quota?.rateLimits?.fiveHour?.usedPercent, 78)
+  assert.equal(quota?.rateLimits?.sevenDay?.usedPercent, 28)
+})
+
+test('latest quota token ignores stale constrained payloads', () => {
+  const quota = latestQuotaToken([
+    {
+      agentType: 'codex',
+      state: TurnState.DONE,
+      toolCallCount: 0,
+      needPermission: false,
+      needUserInput: false,
+      activity: 'done',
+      lastEventAt: 100,
+      unread: false,
+      workspacePath: 'E:/project/stale',
+      token: {
+        contextUsedPercent: 12,
+        rateLimits: {
+          fiveHour: { usedPercent: 78, resetsAt: 1_000, windowMinutes: 300 },
+          sevenDay: { usedPercent: 28, resetsAt: 2_000, windowMinutes: 10_080 },
+        },
+        accuracy: 'estimated',
+      },
+    },
+    {
+      agentType: 'codex',
+      state: TurnState.DONE,
+      toolCallCount: 0,
+      needPermission: false,
+      needUserInput: false,
+      activity: 'done',
+      lastEventAt: 100 + 31 * 60_000,
+      unread: false,
+      workspacePath: 'E:/project/fresh',
+      token: {
+        contextUsedPercent: 8,
+        rateLimits: {
+          fiveHour: { usedPercent: 0, resetsAt: 3_000, windowMinutes: 300 },
+          sevenDay: { usedPercent: 0, resetsAt: 4_000, windowMinutes: 10_080 },
+        },
+        accuracy: 'estimated',
+      },
+    },
+  ])
+
+  assert.equal(quota?.rateLimits?.fiveHour?.usedPercent, 0)
+  assert.equal(quota?.rateLimits?.sevenDay?.usedPercent, 0)
+})
+
 test('latest quota token skips empty zero-only rate-limit payloads', () => {
   const quota = latestQuotaToken([
     {

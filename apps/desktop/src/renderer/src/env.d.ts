@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { Agent, AgentType, NotificationRequest, StatusSnapshot } from '@codepulse/shared'
+import type { Agent, AgentType, StatusSnapshot } from '@codepulse/shared'
 
 type Unsubscribe = () => void
 
@@ -10,7 +10,6 @@ export interface CodePulseApi {
   setMute: (muted: boolean) => Promise<boolean>
   detectAgents: () => Promise<Agent[]>
   onStatus: (cb: (snapshot: StatusSnapshot) => void) => Unsubscribe
-  onNotification: (cb: (note: NotificationRequest) => void) => Unsubscribe
   onMute: (cb: (muted: boolean) => void) => Unsubscribe
 }
 

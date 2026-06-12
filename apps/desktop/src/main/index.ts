@@ -84,7 +84,6 @@ function wireHub(): void {
 
   hub.on('notification', (note: NotificationRequest) => {
     showNotification(note, showWindow)
-    broadcast('codepulse:notification', note)
   })
 }
 

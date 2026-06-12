@@ -72,6 +72,11 @@ export class QuotaRefreshWatcher {
       const delay = runAt - this.now()
       if (delay < 0 || delay > MAX_TIMEOUT_MS) continue
 
+      if (delay === 0) {
+        void this.refresh(binding)
+        continue
+      }
+
       const key = `${binding.source}\0${binding.sourcePath}\0${resetAt}\0${offset}`
       if (this.timers.has(key)) continue
 
@@ -148,7 +153,10 @@ function toCodexToken(
   const info = isRecord(tokenCount.info) ? tokenCount.info : {}
   const usage = readUsage(info.total_token_usage) ?? readUsage(info.last_token_usage)
   const contextUsage = readUsage(info.last_token_usage) ?? usage
-  const rateLimits = normalizeRateLimits(tokenCount.rate_limits ?? info.rate_limits)
+  const rawRateLimits = tokenCount.rate_limits ?? info.rate_limits
+  const rateLimits = normalizeRateLimits(rawRateLimits)
+  const rateLimitId = readRateLimitString(rawRateLimits, 'limit_id', 'limitId')
+  const rateLimitName = readRateLimitString(rawRateLimits, 'limit_name', 'limitName')
   const contextWindow =
     optionalNumber(info.model_context_window) ??
     optionalNumber(taskStarted?.model_context_window) ??
@@ -169,6 +177,8 @@ function toCodexToken(
     contextUsedPercent,
     contextWindow,
     rateLimits,
+    rateLimitId,
+    rateLimitName,
     accuracy: 'estimated',
   }
 }
@@ -196,6 +206,16 @@ function normalizeWindow(value: unknown): NonNullable<TokenPayload['rateLimits']
     return undefined
   }
   return { usedPercent, resetsAt, windowMinutes }
+}
+
+function readRateLimitString(value: unknown, ...keys: string[]): string | undefined {
+  const raw = isRecord(value) ? value : undefined
+  if (!raw) return undefined
+  for (const key of keys) {
+    const item = raw[key]
+    if (typeof item === 'string' && item.length > 0) return item
+  }
+  return undefined
 }
 
 function resetTimes(token: TokenPayload): number[] {

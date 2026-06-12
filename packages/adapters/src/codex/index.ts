@@ -5,7 +5,15 @@
  * @module adapters/codex
  */
 import type { AgentEventInput, AgentEventType } from '@codepulse/shared'
-import { asRecord, pickNumber, pickRateLimits, pickString, preview } from '../util.js'
+import {
+  asRecord,
+  pickNumber,
+  pickRateLimitId,
+  pickRateLimitName,
+  pickRateLimits,
+  pickString,
+  preview,
+} from '../util.js'
 
 const DEFAULT_CODEX_CONTEXT_WINDOW = 256_000
 
@@ -140,6 +148,8 @@ function extractCodexToken(raw: Record<string, unknown>): AgentEventInput['token
     percentOf(contextInput, contextWindow)
   const costUsd = pickNumber(raw, 'cost_usd', 'costUsd') ?? pickNumber(usage, 'cost_usd', 'costUsd')
   const rateLimits = pickRateLimits(raw)
+  const rateLimitId = pickRateLimitId(raw)
+  const rateLimitName = pickRateLimitName(raw)
   if (
     input == null &&
     cachedInput == null &&
@@ -161,6 +171,8 @@ function extractCodexToken(raw: Record<string, unknown>): AgentEventInput['token
     contextUsedPercent: pct,
     contextWindow,
     rateLimits,
+    rateLimitId,
+    rateLimitName,
     costUsd,
     accuracy: 'estimated',
   }

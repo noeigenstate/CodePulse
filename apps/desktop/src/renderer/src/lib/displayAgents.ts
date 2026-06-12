@@ -68,10 +68,15 @@ export function latestQuotaToken(
     (agent) => freshestAt - agent.lastEventAt <= QUOTA_RECENCY_WINDOW_MS,
   )
   const timePool = recent.length > 0 ? recent : candidates
+  const compatiblePool = preferredModel
+    ? timePool.filter((agent) => quotaMatchesPreferredModel(agent.token, preferredModel))
+    : timePool
+  if (compatiblePool.length === 0) return undefined
+
   const modelPool = preferredModel
-    ? timePool.filter((agent) => sameModel(agent.model, preferredModel))
+    ? compatiblePool.filter((agent) => sameModel(agent.model, preferredModel))
     : []
-  const pool = modelPool.length > 0 ? modelPool : timePool
+  const pool = modelPool.length > 0 ? modelPool : compatiblePool
 
   return [...pool].sort(compareQuotaCandidates)[0]?.token
 }
@@ -198,6 +203,35 @@ function isActiveState(state: TurnState): boolean {
 
 function sameModel(a: string | undefined, b: string): boolean {
   return normalizeModel(a) === normalizeModel(b)
+}
+
+function quotaMatchesPreferredModel(
+  token: TokenPayload | undefined,
+  preferredModel: string,
+): boolean {
+  const bucket = normalizeModel(`${token?.rateLimitId ?? ''} ${token?.rateLimitName ?? ''}`)
+  if (!bucket) return true
+
+  const preferred = normalizeModel(preferredModel)
+  const quotaVersion = extractGptVersion(bucket)
+  const preferredVersion = extractGptVersion(preferred)
+  if (quotaVersion && preferredVersion && quotaVersion !== preferredVersion) return false
+
+  if (isSparkQuota(bucket) && !isSparkModel(preferred)) return false
+
+  return true
+}
+
+function isSparkQuota(value: string): boolean {
+  return value.includes('spark') || value.includes('bengalfox')
+}
+
+function isSparkModel(value: string): boolean {
+  return value.includes('spark') || value.includes('5.3')
+}
+
+function extractGptVersion(value: string): string | undefined {
+  return value.match(/gpt[-_\s]*(\d+(?:\.\d+)?)/)?.[1]
 }
 
 function normalizeModel(value: string | undefined): string {

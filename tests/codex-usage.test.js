@@ -472,3 +472,50 @@ test('Codex usage reader accepts rate limits under info', async () => {
     await rm(home, { recursive: true, force: true })
   }
 })
+
+test('Codex usage reader exposes quota bucket identity from rollout rate limits', async () => {
+  const home = join(tmpdir(), `codepulse-codex-rate-identity-${Date.now()}`)
+  const sessions = join(home, 'sessions', '2026', '06', '11')
+  const rollout = join(sessions, 'rollout-2026-06-11T10-00-00-rate-identity.jsonl')
+
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    rollout,
+    [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: 'rate-identity', cwd: 'E:/project/rate-identity' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 256000,
+            total_token_usage: { input_tokens: 2000, output_tokens: 100, total_tokens: 2100 },
+            last_token_usage: { input_tokens: 2000, output_tokens: 100, total_tokens: 2100 },
+          },
+          rate_limits: {
+            limit_id: 'codex_bengalfox',
+            limit_name: 'GPT-5.3-Codex-Spark',
+            primary: { used_percent: 2, window_minutes: 300, resets_at: 1781160358 },
+            secondary: { used_percent: 1, window_minutes: 10080, resets_at: 1781747174 },
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  try {
+    const usage = await readLatestCodexUsage(
+      { cwd: 'E:/project/rate-identity' },
+      { codexHome: home },
+    )
+    assert.equal(usage.rate_limit_id, 'codex_bengalfox')
+    assert.equal(usage.rate_limit_name, 'GPT-5.3-Codex-Spark')
+    assert.equal(usage.rate_limits.five_hour.used_percentage, 2)
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})

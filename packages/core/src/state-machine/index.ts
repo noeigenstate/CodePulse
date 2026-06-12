@@ -200,7 +200,14 @@ function mergeToken(current: TokenPayload | undefined, patch: TokenPayload): Tok
   if (patch.contextWindow !== undefined && !keepExactContext)
     next.contextWindow = patch.contextWindow
   if (patch.costUsd !== undefined) next.costUsd = patch.costUsd
-  if (patch.rateLimits) next.rateLimits = mergeRateLimits(current?.rateLimits, patch.rateLimits)
+  if (patch.rateLimits) {
+    const shouldKeepRateLimitMetadata = isZeroOnlyRateLimits(patch.rateLimits)
+    next.rateLimits = mergeRateLimits(current?.rateLimits, patch.rateLimits)
+    if (!shouldKeepRateLimitMetadata) {
+      next.rateLimitId = patch.rateLimitId
+      next.rateLimitName = patch.rateLimitName
+    }
+  }
 
   return next
 }

@@ -850,6 +850,63 @@ test('latest quota token prefers the active model quota when model sessions over
   assert.equal(quota?.rateLimits?.sevenDay?.usedPercent, 12)
 })
 
+test('latest quota token rejects Spark quota when the active Codex model is GPT-5.5', () => {
+  const quota = latestQuotaToken(
+    [
+      {
+        agentType: 'codex',
+        state: TurnState.PROMPT_SUBMITTED,
+        toolCallCount: 0,
+        needPermission: false,
+        needUserInput: false,
+        activity: 'running',
+        lastEventAt: 300,
+        unread: false,
+        workspacePath: 'E:/project/a',
+        model: 'gpt-5.5',
+        token: {
+          rateLimitId: 'codex_bengalfox',
+          rateLimitName: 'GPT-5.3-Codex-Spark',
+          rateLimits: { fiveHour: { usedPercent: 2 }, sevenDay: { usedPercent: 1 } },
+          accuracy: 'estimated',
+        },
+      },
+    ],
+    'gpt-5.5',
+  )
+
+  assert.equal(quota, undefined)
+})
+
+test('latest quota token accepts Spark quota when the active Codex model is Spark', () => {
+  const quota = latestQuotaToken(
+    [
+      {
+        agentType: 'codex',
+        state: TurnState.PROMPT_SUBMITTED,
+        toolCallCount: 0,
+        needPermission: false,
+        needUserInput: false,
+        activity: 'running',
+        lastEventAt: 300,
+        unread: false,
+        workspacePath: 'E:/project/a',
+        model: 'gpt-5.3-spark',
+        token: {
+          rateLimitId: 'codex_bengalfox',
+          rateLimitName: 'GPT-5.3-Codex-Spark',
+          rateLimits: { fiveHour: { usedPercent: 2 }, sevenDay: { usedPercent: 1 } },
+          accuracy: 'estimated',
+        },
+      },
+    ],
+    'gpt-5.3-spark',
+  )
+
+  assert.equal(quota?.rateLimits?.fiveHour?.usedPercent, 2)
+  assert.equal(quota?.rateLimits?.sevenDay?.usedPercent, 1)
+})
+
 test('latest quota token prefers the freshest recent payload', () => {
   const quota = latestQuotaToken([
     {

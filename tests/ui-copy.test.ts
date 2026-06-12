@@ -7,7 +7,6 @@ import {
   overallLabel,
   turnStateLabel,
 } from '../apps/desktop/src/renderer/src/lib/i18n.js'
-import { NOTIFICATION_TOAST_VISIBLE_MS } from '../apps/desktop/src/renderer/src/lib/notificationTiming.js'
 
 test('header copy omits the old Chinese brand tag', () => {
   assert.equal(headerCopy('zh').brandTag, '')
@@ -24,8 +23,4 @@ test('locale toggle switches between Chinese and English labels', () => {
   assert.equal(nextLocale('en'), 'zh')
   assert.equal(overallLabel('running', 'en'), 'Running')
   assert.equal(turnStateLabel(TurnState.DONE, 'en'), 'Done')
-})
-
-test('notification toast stays visible for five seconds', () => {
-  assert.equal(NOTIFICATION_TOAST_VISIBLE_MS, 5_000)
 })

@@ -68,6 +68,10 @@ export interface TokenPayload {
     fiveHour?: TokenRateLimitWindow
     sevenDay?: TokenRateLimitWindow
   }
+  /** CLI quota bucket identifier, when the source exposes one. */
+  rateLimitId?: string
+  /** CLI quota bucket display name, when the source exposes one. */
+  rateLimitName?: string
   /** 花费（美元）。 */
   costUsd?: number
   /** 数字的可信度。 */

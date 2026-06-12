@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Agent, AgentType, NotificationRequest, StatusSnapshot } from '@codepulse/shared'
+import type { Agent, AgentType, StatusSnapshot } from '@codepulse/shared'
 import { sameSnapshotData } from './lib/snapshotKey.js'
 
 const EMPTY_SNAPSHOT: StatusSnapshot = { overall: 'idle', agents: [], updatedAt: Date.now() }
@@ -9,11 +9,9 @@ interface CodePulseStore {
   snapshot: StatusSnapshot
   muted: boolean
   agents: Agent[]
-  notifications: NotificationRequest[]
   init: () => () => void
   ack: (agent: AgentType, workspacePath?: string) => void
   toggleMute: () => void
-  dismissNotification: (dedupeKey: string, createdAt: number) => void
 }
 
 export const useStore = create<CodePulseStore>((set, get) => ({
@@ -21,7 +19,6 @@ export const useStore = create<CodePulseStore>((set, get) => ({
   snapshot: EMPTY_SNAPSHOT,
   muted: false,
   agents: [],
-  notifications: [],
 
   init: () => {
     const api = window.codepulse
@@ -45,19 +42,10 @@ export const useStore = create<CodePulseStore>((set, get) => ({
 
     const offStatus = api.onStatus((snapshot) => applySnapshot(snapshot))
     const offMute = api.onMute((muted) => set({ muted }))
-    const offNote = api.onNotification((note) =>
-      set((state) => {
-        const key = `${note.dedupeKey}-${note.createdAt}`
-        const existing = new Set(state.notifications.map((n) => `${n.dedupeKey}-${n.createdAt}`))
-        if (existing.has(key)) return state
-        return { notifications: [note, ...state.notifications].slice(0, 30) }
-      }),
-    )
 
     return () => {
       offStatus()
       offMute()
-      offNote()
     }
   },
 
@@ -70,11 +58,4 @@ export const useStore = create<CodePulseStore>((set, get) => ({
     set({ muted: next })
     void window.codepulse.setMute(next)
   },
-
-  dismissNotification: (dedupeKey, createdAt) =>
-    set((state) => ({
-      notifications: state.notifications.filter(
-        (note) => note.dedupeKey !== dedupeKey || note.createdAt !== createdAt,
-      ),
-    })),
 }))

@@ -100,3 +100,19 @@ test('Codex hook parses 1M context window strings as one million tokens', () => 
   assert.equal(event?.token?.contextWindow, 1_000_000)
   assert.equal(event?.token?.contextUsedPercent, 25)
 })
+
+test('Codex hook carries quota bucket identity from rate limits', () => {
+  const event = fromCodexHook({
+    hook_event_name: 'UserPromptSubmit',
+    rate_limits: {
+      limit_id: 'codex_bengalfox',
+      limit_name: 'GPT-5.3-Codex-Spark',
+      primary: { used_percent: 2, resets_at: 2_000, window_minutes: 300 },
+      secondary: { used_percent: 1, resets_at: 9_000, window_minutes: 10_080 },
+    },
+  })
+
+  assert.equal(event?.token?.rateLimitId, 'codex_bengalfox')
+  assert.equal(event?.token?.rateLimitName, 'GPT-5.3-Codex-Spark')
+  assert.equal(event?.token?.rateLimits?.fiveHour?.usedPercent, 2)
+})

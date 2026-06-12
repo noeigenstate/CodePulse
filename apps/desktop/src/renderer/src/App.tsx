@@ -9,7 +9,6 @@ import {
   formatTokenPercent,
   type AgentRuntimeState,
   type AgentType,
-  type NotificationRequest,
   type TokenPayload,
   TurnState,
 } from '@codepulse/shared'
@@ -24,7 +23,6 @@ import {
 } from './lib/panelFormat.js'
 import { formatQuotaReset } from './lib/quotaFormat.js'
 import { useNow } from './lib/useNow.js'
-import { NOTIFICATION_TOAST_VISIBLE_MS } from './lib/notificationTiming.js'
 import {
   nextLocale,
   readStoredLocale,
@@ -33,7 +31,6 @@ import {
   type Locale,
   type UiCopy,
 } from './lib/i18n.js'
-import codePulseIcon from './assets/codepulse-icon.png'
 
 /**
  * 应用外壳 Dashboard。
@@ -41,7 +38,7 @@ import codePulseIcon from './assets/codepulse-icon.png'
  * @returns 渲染后的 Dashboard。
  */
 export function App(): JSX.Element {
-  const { snapshot, muted, notifications, init, ack, toggleMute, dismissNotification } = useStore()
+  const { snapshot, muted, init, ack, toggleMute } = useStore()
   const [locale, setLocale] = useState<Locale>(() => readStoredLocale(window.localStorage))
   const panels = useMemo(() => buildAgentPanels(snapshot.agents), [snapshot.agents])
   const copy = useMemo(() => uiCopy(locale), [locale])
@@ -80,62 +77,9 @@ export function App(): JSX.Element {
           </div>
         </main>
       </div>
-      <NotificationToasts notifications={notifications} onDismiss={dismissNotification} />
     </div>
   )
 }
-
-const NotificationToasts = memo(function NotificationToasts({
-  notifications,
-  onDismiss,
-}: {
-  notifications: NotificationRequest[]
-  onDismiss: (dedupeKey: string, createdAt: number) => void
-}): JSX.Element | null {
-  const visible = notifications.slice(0, 3)
-  const visibleKey = visible.map((note) => `${note.dedupeKey}-${note.createdAt}`).join('|')
-
-  useEffect(() => {
-    const timers = visible.map((note) =>
-      window.setTimeout(
-        () => onDismiss(note.dedupeKey, note.createdAt),
-        Math.max(0, note.createdAt + NOTIFICATION_TOAST_VISIBLE_MS - Date.now()),
-      ),
-    )
-    return () => timers.forEach((timer) => window.clearTimeout(timer))
-  }, [visibleKey, onDismiss])
-
-  if (visible.length === 0) return null
-
-  return (
-    <aside className="notification-layer" aria-label="最新提醒">
-      {visible.map((note) => (
-        <article
-          key={`${note.dedupeKey}-${note.createdAt}`}
-          className={`notification-toast ${notificationToneClass(note.level)}`}
-        >
-          <img className="notification-logo" src={codePulseIcon} alt="" aria-hidden="true" />
-          <div className="min-w-0">
-            <h3 className="truncate text-sm font-semibold text-slate-950">
-              {compactNotificationTitle(note.title)}
-            </h3>
-            <p className="mt-1 truncate text-xs font-medium text-slate-600">
-              {compactNotificationBody(note.body)}
-            </p>
-          </div>
-          <button
-            type="button"
-            className="notification-close"
-            aria-label="关闭提醒"
-            onClick={() => onDismiss(note.dedupeKey, note.createdAt)}
-          >
-            ×
-          </button>
-        </article>
-      ))}
-    </aside>
-  )
-})
 
 const AgentPanelView = memo(function AgentPanelView({
   panel,
@@ -383,21 +327,6 @@ function Metric({
   )
 }
 
-function compactNotificationTitle(title: string): string {
-  return compactText(title, 30)
-}
-
-function compactNotificationBody(body: string): string {
-  const firstSentence = body.split(/[。.!?；;]/)[0]?.trim()
-  return compactText(firstSentence || body, 56)
-}
-
-function compactText(text: string, maxLength: number): string {
-  const normalized = text.replace(/\s+/g, ' ').trim()
-  if (normalized.length <= maxLength) return normalized
-  return `${normalized.slice(0, maxLength - 1)}…`
-}
-
 function effectiveContextWindow(agent: AgentRuntimeState): number | undefined {
   return agent.token?.contextWindow ?? (agent.agentType === 'codex' ? 256_000 : undefined)
 }
@@ -432,15 +361,4 @@ function tokenTextColor(pct: number): string {
   if (pct >= 95) return 'text-red-600'
   if (pct >= 80) return 'text-amber-700'
   return 'text-amber-700'
-}
-
-function notificationToneClass(level: NotificationRequest['level']): string {
-  switch (level) {
-    case 'strong':
-      return 'notification-toast-strong'
-    case 'normal':
-      return 'notification-toast-normal'
-    default:
-      return 'notification-toast-soft'
-  }
 }

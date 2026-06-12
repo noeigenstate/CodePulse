@@ -81,6 +81,28 @@ export function pickRateLimits(raw: Record<string, unknown>): TokenPayload['rate
   return { fiveHour, sevenDay }
 }
 
+/** Read a quota bucket id from a hook payload or nested rate limit payload. */
+export function pickRateLimitId(raw: Record<string, unknown>): string | undefined {
+  const rateLimits = asRecord(raw.rate_limits ?? raw.rateLimits)
+  return (
+    pickString(raw, 'rate_limit_id', 'rateLimitId', 'limit_id', 'limitId') ??
+    (rateLimits
+      ? pickString(rateLimits, 'rate_limit_id', 'rateLimitId', 'limit_id', 'limitId')
+      : undefined)
+  )
+}
+
+/** Read a quota bucket display name from a hook payload or nested rate limit payload. */
+export function pickRateLimitName(raw: Record<string, unknown>): string | undefined {
+  const rateLimits = asRecord(raw.rate_limits ?? raw.rateLimits)
+  return (
+    pickString(raw, 'rate_limit_name', 'rateLimitName', 'limit_name', 'limitName') ??
+    (rateLimits
+      ? pickString(rateLimits, 'rate_limit_name', 'rateLimitName', 'limit_name', 'limitName')
+      : undefined)
+  )
+}
+
 function readRateLimitWindow(value: unknown): RateLimitWindowPayload {
   const record = asRecord(value)
   if (!record) return undefined

@@ -155,7 +155,10 @@ function toUsagePatch(tokenCount, taskStarted) {
     contextWindow && contextInput > 0
       ? Math.min(100, (contextInput / contextWindow) * 100)
       : undefined
-  const rateLimits = normalizeRateLimits(tokenCount.rate_limits ?? info.rate_limits)
+  const rawRateLimits = tokenCount.rate_limits ?? info.rate_limits
+  const rateLimits = normalizeRateLimits(rawRateLimits)
+  const rateLimitId = rateLimitString(rawRateLimits, 'limit_id', 'limitId')
+  const rateLimitName = rateLimitString(rawRateLimits, 'limit_name', 'limitName')
 
   return {
     ...(usage ? { usage } : {}),
@@ -163,6 +166,8 @@ function toUsagePatch(tokenCount, taskStarted) {
     ...(contextWindow ? { context_window_size: contextWindow } : {}),
     ...(pct != null ? { context_used_percent: pct } : {}),
     ...(rateLimits ? { rate_limits: rateLimits } : {}),
+    ...(rateLimitId ? { rate_limit_id: rateLimitId } : {}),
+    ...(rateLimitName ? { rate_limit_name: rateLimitName } : {}),
   }
 }
 
@@ -191,6 +196,15 @@ function normalizeWindow(raw) {
     ...(typeof resetsAt === 'number' ? { resets_at: resetsAt } : {}),
     ...(typeof windowMinutes === 'number' ? { window_minutes: windowMinutes } : {}),
   }
+}
+
+function rateLimitString(raw, ...keys) {
+  if (!raw || typeof raw !== 'object') return undefined
+  for (const key of keys) {
+    const value = raw[key]
+    if (typeof value === 'string' && value.length > 0) return value
+  }
+  return undefined
 }
 
 function stringValue(value) {

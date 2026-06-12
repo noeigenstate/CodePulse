@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import type { Agent, AgentType, NotificationRequest, StatusSnapshot } from '@codepulse/shared'
+import type { Agent, AgentType, StatusSnapshot } from '@codepulse/shared'
 
 type Unsubscribe = () => void
 
@@ -17,8 +17,6 @@ const api = {
   detectAgents: (): Promise<Agent[]> => ipcRenderer.invoke('codepulse:detect-agents'),
   onStatus: (cb: (snapshot: StatusSnapshot) => void): Unsubscribe =>
     subscribe('codepulse:status', cb),
-  onNotification: (cb: (note: NotificationRequest) => void): Unsubscribe =>
-    subscribe('codepulse:notification', cb),
   onMute: (cb: (muted: boolean) => void): Unsubscribe => subscribe('codepulse:mute', cb),
 }
 

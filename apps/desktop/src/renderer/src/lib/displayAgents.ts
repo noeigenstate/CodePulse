@@ -5,6 +5,7 @@ import {
   type TokenPayload,
   workspaceKey,
 } from '@codepulse/shared'
+import { visibleRateLimitWindows } from './panelFormat.js'
 
 export const DISPLAY_AGENT_ORDER: readonly AgentType[] = ['claude_code', 'codex']
 
@@ -56,7 +57,7 @@ export function buildAgentPanels(agents: AgentRuntimeState[]): AgentPanel[] {
 
 export function latestQuotaToken(agents: AgentRuntimeState[]): TokenPayload | undefined {
   return agents
-    .filter((agent) => agent.token?.rateLimits?.fiveHour ?? agent.token?.rateLimits?.sevenDay)
+    .filter((agent) => hasVisibleRateLimits(agent.token))
     .sort((a, b) => b.lastEventAt - a.lastEventAt)[0]?.token
 }
 
@@ -141,6 +142,11 @@ function idleAgent(agentType: AgentType, workspacePath?: string): AgentRuntimeSt
 function latestToken(agents: AgentRuntimeState[]): TokenPayload | undefined {
   return agents.filter((agent) => agent.token).sort((a, b) => b.lastEventAt - a.lastEventAt)[0]
     ?.token
+}
+
+function hasVisibleRateLimits(token: TokenPayload | undefined): boolean {
+  const windows = visibleRateLimitWindows(token)
+  return Boolean(windows.fiveHour ?? windows.sevenDay)
 }
 
 function workspaceName(path: string): string {

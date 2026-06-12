@@ -133,5 +133,5 @@ export function formatTokenQuotaNotice(
       : token.accuracy === 'estimated'
         ? 'Claude token 为估算值'
         : 'Claude token 来自 status line'
-  return `Token/context 已使用 ${pct}；${formatTokenUsage(token)}。${quotaText}，窗口以对应 CLI 的官方重置时间为准，${sourceNote}。`
+  return `Token/context 已使用 ${pct}。${quotaText}，窗口以对应 CLI 的官方重置时间为准，${sourceNote}。`
 }

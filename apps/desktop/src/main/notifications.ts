@@ -21,12 +21,23 @@ export function showNotification(request: NotificationRequest, onClick: () => vo
   if (!Notification.isSupported()) return
 
   const notification = new Notification({
-    title: request.title,
-    body: request.body,
+    title: compactText(request.title, 36),
+    body: compactNotificationBody(request.body),
     silent: !request.sound,
     urgency: request.level === 'strong' ? 'critical' : 'normal',
   })
 
   notification.on('click', onClick)
   notification.show()
+}
+
+function compactNotificationBody(body: string): string {
+  const firstSentence = body.split(/[。.!?；;]/)[0]?.trim()
+  return compactText(firstSentence || body, 72)
+}
+
+function compactText(text: string, maxLength: number): string {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  if (normalized.length <= maxLength) return normalized
+  return `${normalized.slice(0, maxLength - 1)}…`
 }

@@ -225,7 +225,49 @@ test('StatusHub merges partial token snapshots instead of dropping previous fiel
   assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 18)
 })
 
-test('StatusHub clears stale token data at session boundaries', () => {
+test('StatusHub preserves quota windows when a zero-only token snapshot arrives', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+
+  hub.ingest({
+    id: 'quota-token',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    cwd: 'E:/project/a',
+    timestamp: 100,
+    token: {
+      contextUsedPercent: 24,
+      rateLimits: {
+        fiveHour: { usedPercent: 33, resetsAt: 2_000 },
+        sevenDay: { usedPercent: 7, resetsAt: 9_000 },
+      },
+      accuracy: 'estimated',
+    },
+  })
+  hub.ingest({
+    id: 'empty-quota-token',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    cwd: 'E:/project/a',
+    timestamp: 200,
+    token: {
+      contextUsedPercent: 26,
+      rateLimits: {
+        fiveHour: { usedPercent: 0, resetsAt: 3_000 },
+        sevenDay: { usedPercent: 0, resetsAt: 10_000 },
+      },
+      accuracy: 'estimated',
+    },
+  })
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.token?.contextUsedPercent, 26)
+  assert.equal(codex?.token?.rateLimits?.fiveHour?.usedPercent, 33)
+  assert.equal(codex?.token?.rateLimits?.fiveHour?.resetsAt, 2_000)
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 7)
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.resetsAt, 9_000)
+})
+
+test('StatusHub keeps previous token data at session boundaries until a new snapshot arrives', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
 
   hub.ingest({
@@ -245,7 +287,19 @@ test('StatusHub clears stale token data at session boundaries', () => {
   })
 
   const claude = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
-  assert.equal(claude?.token, undefined)
+  assert.equal(claude?.token?.contextUsedPercent, 88)
+
+  hub.ingest({
+    id: 'new-token',
+    source: 'claude_code',
+    eventType: 'token_snapshot',
+    cwd: 'E:/project/a',
+    timestamp: 300,
+    token: { contextUsedPercent: 12, accuracy: 'exact' },
+  })
+
+  const updated = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
+  assert.equal(updated?.token?.contextUsedPercent, 12)
 })
 
 test('display agents are grouped by workspace with a shared token', () => {
@@ -456,4 +510,50 @@ test('latest quota token uses the newest rate-limit payload', () => {
   ])
 
   assert.equal(quota?.rateLimits?.fiveHour?.usedPercent, 36)
+})
+
+test('latest quota token skips empty zero-only rate-limit payloads', () => {
+  const quota = latestQuotaToken([
+    {
+      agentType: 'codex',
+      state: TurnState.DONE,
+      toolCallCount: 0,
+      needPermission: false,
+      needUserInput: false,
+      activity: 'done',
+      lastEventAt: 100,
+      unread: false,
+      workspacePath: 'E:/project/a',
+      token: {
+        contextUsedPercent: 12,
+        rateLimits: {
+          fiveHour: { usedPercent: 33, resetsAt: 1_000 },
+          sevenDay: { usedPercent: 7, resetsAt: 2_000 },
+        },
+        accuracy: 'estimated',
+      },
+    },
+    {
+      agentType: 'codex',
+      state: TurnState.DONE,
+      toolCallCount: 0,
+      needPermission: false,
+      needUserInput: false,
+      activity: 'done',
+      lastEventAt: 300,
+      unread: false,
+      workspacePath: 'E:/project/b',
+      token: {
+        contextUsedPercent: 8,
+        rateLimits: {
+          fiveHour: { usedPercent: 0, resetsAt: 3_000 },
+          sevenDay: { usedPercent: 0, resetsAt: 4_000 },
+        },
+        accuracy: 'estimated',
+      },
+    },
+  ])
+
+  assert.equal(quota?.rateLimits?.fiveHour?.usedPercent, 33)
+  assert.equal(quota?.rateLimits?.sevenDay?.usedPercent, 7)
 })

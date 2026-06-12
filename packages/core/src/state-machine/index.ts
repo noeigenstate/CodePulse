@@ -81,7 +81,6 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
     case 'session_start':
       next.state = TurnState.IDLE
       next.unread = false
-      next.token = undefined
       break
 
     case 'prompt_submit':
@@ -160,7 +159,6 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       next.needUserInput = false
       next.toolName = undefined
       next.activity = undefined
-      next.token = undefined
       break
 
     default:
@@ -199,10 +197,18 @@ function mergeRateLimits(
   patch: TokenPayload['rateLimits'],
 ): TokenPayload['rateLimits'] {
   if (!patch) return current
+  if (isZeroOnlyRateLimits(patch)) return current
   return {
     fiveHour: mergeRateLimitWindow(current?.fiveHour, patch.fiveHour),
     sevenDay: mergeRateLimitWindow(current?.sevenDay, patch.sevenDay),
   }
+}
+
+function isZeroOnlyRateLimits(rateLimits: TokenPayload['rateLimits']): boolean {
+  const windows = [rateLimits?.fiveHour, rateLimits?.sevenDay].filter(Boolean)
+  if (windows.length === 0) return false
+  const hasUsagePercent = windows.some((window) => window?.usedPercent !== undefined)
+  return hasUsagePercent && windows.every((window) => (window?.usedPercent ?? 0) === 0)
 }
 
 function mergeRateLimitWindow(

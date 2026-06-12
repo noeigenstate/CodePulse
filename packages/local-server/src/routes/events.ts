@@ -8,6 +8,8 @@ import type { FastifyInstance } from 'fastify'
 import { normalizeEvent, type StatusHub } from '@codepulse/core'
 import { normalizeRawEvent } from '@codepulse/adapters'
 
+const MAX_EVENT_BATCH = 1000
+
 /**
  * 注册 `POST /api/events`。
  *
@@ -23,6 +25,11 @@ export function registerEventRoutes(app: FastifyInstance, hub: StatusHub): void 
   app.post('/api/events', async (request, reply) => {
     const body = request.body
     const items = Array.isArray(body) ? body : [body]
+    if (items.length > MAX_EVENT_BATCH) {
+      reply.code(413)
+      return { error: 'too_many_events', max: MAX_EVENT_BATCH }
+    }
+
     let accepted = 0
     const ignored: unknown[] = []
 

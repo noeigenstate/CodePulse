@@ -8,6 +8,8 @@ import type { FastifyInstance } from 'fastify'
 import { toDeviceStatus, type StatusHub } from '@codepulse/core'
 import type { AgentType } from '@codepulse/shared'
 
+const AGENT_TYPES: readonly AgentType[] = ['codex', 'claude_code']
+
 /**
  * 注册读取/控制路由：
  *
@@ -29,7 +31,12 @@ export function registerStatusRoutes(app: FastifyInstance, hub: StatusHub): void
     Params: { agent: AgentType }
     Body: { workspacePath?: string }
     Querystring: { workspacePath?: string }
-  }>('/api/ack/:agent', async (request) => {
+  }>('/api/ack/:agent', async (request, reply) => {
+    if (!AGENT_TYPES.includes(request.params.agent)) {
+      reply.code(400)
+      return { error: 'invalid_agent' }
+    }
+
     hub.acknowledge(
       request.params.agent,
       request.body?.workspacePath ?? request.query.workspacePath,

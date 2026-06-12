@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { STUCK_VISIBLE_MS, StatusHub } from '@codepulse/core'
-import { TurnState } from '@codepulse/shared'
+import { STUCK_STRONG_MS, STUCK_VISIBLE_MS, StatusHub } from '@codepulse/core'
+import { type AgentEvent, TurnState } from '@codepulse/shared'
 import {
   buildAgentPanels,
   buildWorkspaceAgentGroups,
@@ -106,6 +106,108 @@ test('StatusHub keeps turn start time when watchdog marks TIMEOUT', () => {
   const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
   assert.equal(codex?.state, TurnState.TIMEOUT)
   assert.equal(codex?.turnStartedAt, startedAt)
+})
+
+test('StatusHub emits a synthetic timeout event through the normal pipeline', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const events: AgentEvent[] = []
+  hub.on('event', (event) => events.push(event))
+  const startedAt = 1_000_000
+
+  hub.ingest({
+    id: 'prompt',
+    source: 'codex',
+    eventType: 'prompt_submit',
+    externalSessionId: 'session-a',
+    externalTurnId: 'turn-a',
+    cwd: 'E:/project/a',
+    timestamp: startedAt,
+  })
+  ;(hub as unknown as { tick(now?: number): void }).tick(startedAt + STUCK_VISIBLE_MS + 1)
+
+  const timeout = events.find((event) => event.eventType === 'turn_timeout')
+  assert.equal(timeout?.source, 'codex')
+  assert.equal(timeout?.externalSessionId, 'session-a')
+  assert.equal(timeout?.externalTurnId, 'turn-a')
+  assert.equal(timeout?.cwd, 'E:/project/a')
+})
+
+test('StatusHub does not mark long-running tools as TIMEOUT at the visible threshold', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const startedAt = 1_000_000
+
+  hub.ingest({
+    id: 'prompt',
+    source: 'codex',
+    eventType: 'prompt_submit',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    timestamp: startedAt,
+  })
+  hub.ingest({
+    id: 'tool',
+    source: 'codex',
+    eventType: 'tool_start',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    toolName: 'shell',
+    command: 'pnpm test',
+    timestamp: startedAt + 1_000,
+  })
+  ;(hub as unknown as { tick(now?: number): void }).tick(startedAt + STUCK_VISIBLE_MS + 2_000)
+  let codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.state, TurnState.TOOL_RUNNING)
+  ;(hub as unknown as { tick(now?: number): void }).tick(startedAt + STUCK_STRONG_MS + 2_000)
+  codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.state, TurnState.TIMEOUT)
+})
+
+test('StatusHub keeps concurrent sessions in the same workspace separate', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+
+  hub.ingest({
+    id: 'session-a-prompt',
+    source: 'claude_code',
+    eventType: 'prompt_submit',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    timestamp: 100,
+  })
+  hub.ingest({
+    id: 'session-b-prompt',
+    source: 'claude_code',
+    eventType: 'prompt_submit',
+    externalSessionId: 'session-b',
+    cwd: 'E:/project/a',
+    timestamp: 200,
+  })
+  hub.ingest({
+    id: 'session-a-tool',
+    source: 'claude_code',
+    eventType: 'tool_start',
+    externalSessionId: 'session-a',
+    toolName: 'Bash',
+    timestamp: 300,
+  })
+  hub.ingest({
+    id: 'session-b-stop',
+    source: 'claude_code',
+    eventType: 'turn_stop',
+    externalSessionId: 'session-b',
+    timestamp: 400,
+  })
+
+  const claudeAgents = hub.snapshot().agents.filter((agent) => agent.agentType === 'claude_code')
+  assert.equal(claudeAgents.length, 2)
+  assert.equal(claudeAgents[0]?.externalSessionId, 'session-b')
+  assert.deepEqual(
+    claudeAgents.map((agent) => `${agent.externalSessionId}:${agent.state}`).sort(),
+    ['session-a:TOOL_RUNNING', 'session-b:DONE'],
+  )
+  assert.deepEqual(claudeAgents.map((agent) => agent.workspacePath).sort(), [
+    'E:/project/a',
+    'E:/project/a',
+  ])
 })
 
 test('StatusHub can acknowledge one workspace without clearing another', () => {

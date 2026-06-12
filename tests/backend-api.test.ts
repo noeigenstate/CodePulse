@@ -109,6 +109,20 @@ test('POST /api/events rejects completely unrecognized payloads', async () => {
   assert.deepEqual(bad.body, { accepted: 0, ignored: 1 })
 })
 
+test('POST /api/events rejects oversized batches', async () => {
+  const { base } = await createApi()
+  const oversized = Array.from({ length: 1001 }, (_, index) => ({
+    source: 'codex',
+    hook_event_name: 'UserPromptSubmit',
+    session_id: `batch-${index}`,
+  }))
+
+  const response = await postJson<{ error: string; max: number }>(base, '/api/events', oversized)
+
+  assert.equal(response.response.status, 413)
+  assert.deepEqual(response.body, { error: 'too_many_events', max: 1000 })
+})
+
 test('POST /api/ack/:agent clears unread terminal results', async () => {
   const { base } = await createApi()
 
@@ -166,6 +180,15 @@ test('POST /api/ack/:agent can clear only one workspace', async () => {
   const byWorkspace = new Map(status.agents.map((agent) => [agent.workspacePath, agent.unread]))
   assert.equal(byWorkspace.get('E:/project/a'), false)
   assert.equal(byWorkspace.get('E:/project/b'), true)
+})
+
+test('POST /api/ack/:agent rejects unknown agent names', async () => {
+  const { base } = await createApi()
+
+  const response = await postJson<{ error: string }>(base, '/api/ack/not-an-agent')
+
+  assert.equal(response.response.status, 400)
+  assert.deepEqual(response.body, { error: 'invalid_agent' })
 })
 
 test('POST /api/mute toggles notification sound behavior', async () => {

@@ -18,7 +18,12 @@ import {
 } from '@codepulse/shared'
 import { buildStatusSnapshot } from '../aggregate/index.js'
 import { createInitialRuntimeState, reduce } from '../state-machine/index.js'
-import { RuleEngine, STUCK_VISIBLE_MS, type RuleEngineOptions } from '../rule-engine/index.js'
+import {
+  RuleEngine,
+  STUCK_STRONG_MS,
+  STUCK_VISIBLE_MS,
+  type RuleEngineOptions,
+} from '../rule-engine/index.js'
 
 /**
  * {@link StatusHub} 发出的强类型事件。
@@ -67,6 +72,10 @@ export class StatusHub extends EventEmitter {
    * @param event 待应用的归一化事件。
    */
   ingest(event: AgentEvent): void {
+    this.applyEvent(event)
+  }
+
+  private applyEvent(event: AgentEvent, emitStatus = true): void {
     const key = this.keyForEvent(event)
     const current = this.agents.get(key) ?? createInitialRuntimeState(event.source)
     const result = reduce(current, event)
@@ -74,7 +83,7 @@ export class StatusHub extends EventEmitter {
     this.rememberEventKey(event, key)
 
     this.emit('event', event)
-    this.emit('status', this.snapshot())
+    if (emitStatus) this.emit('status', this.snapshot())
 
     for (const note of this.rules.onTransition(result, event.timestamp)) {
       this.emit('notification', note)
@@ -115,7 +124,7 @@ export class StatusHub extends EventEmitter {
    * @returns 包含所有 agent 与总体指示的快照。
    */
   snapshot(now = Date.now()): StatusSnapshot {
-    return buildStatusSnapshot([...this.agents.values()], now)
+    return buildStatusSnapshot([...this.agents.values()].sort(compareRuntimeState), now)
   }
 
   /**
@@ -144,26 +153,45 @@ export class StatusHub extends EventEmitter {
    */
   private tick(now = Date.now()): void {
     let changed = false
-    for (const [key, agent] of this.agents) {
-      for (const note of this.rules.onTick(agent, now)) {
+    for (const [key, agent] of [...this.agents.entries()]) {
+      const timeoutEvent = this.timeoutEventFor(agent, now)
+      const current = timeoutEvent ? this.applyTimeoutEvent(timeoutEvent, key) : agent
+
+      for (const note of this.rules.onTick(current, now)) {
         this.emit('notification', note)
         changed = true
       }
-      if (
-        agent.lastEventAt !== 0 &&
-        isActiveState(agent.state) &&
-        now - agent.lastEventAt >= STUCK_VISIBLE_MS
-      ) {
-        this.agents.set(key, {
-          ...agent,
-          state: TurnState.TIMEOUT,
-          toolName: undefined,
-          activity: '疑似卡住',
-        })
+      if (timeoutEvent) {
         changed = true
       }
     }
     if (changed) this.emit('status', this.snapshot(now))
+  }
+
+  private applyTimeoutEvent(event: AgentEvent, key: string): AgentRuntimeState {
+    this.applyEvent(event, false)
+    return this.agents.get(key) ?? createInitialRuntimeState(event.source)
+  }
+
+  private timeoutEventFor(agent: AgentRuntimeState, now: number): AgentEvent | undefined {
+    if (agent.lastEventAt === 0 || !isActiveState(agent.state)) return undefined
+    const threshold = agent.state === TurnState.TOOL_RUNNING ? STUCK_STRONG_MS : STUCK_VISIBLE_MS
+    if (now - agent.lastEventAt < threshold) return undefined
+
+    const scope = agent.externalSessionId ?? workspaceKey(agent.workspacePath)
+    const turn = agent.externalTurnId ?? String(agent.turnStartedAt ?? agent.lastEventAt)
+    return {
+      id: `timeout:${agent.agentType}:${scope}:${turn}:${now}`,
+      source: agent.agentType,
+      eventType: 'turn_timeout',
+      externalSessionId: agent.externalSessionId,
+      externalTurnId: agent.externalTurnId,
+      workspacePath: agent.workspacePath,
+      cwd: agent.workspacePath,
+      model: agent.model,
+      message: '疑似卡住',
+      timestamp: now,
+    }
   }
 
   // 强类型事件辅助方法 --------------------------------------------------------
@@ -195,7 +223,7 @@ export class StatusHub extends EventEmitter {
 
   private keyForEvent(event: AgentEvent): string {
     const workspace = event.workspacePath ?? event.cwd
-    if (workspace) return runtimeKey(event.source, workspace)
+    if (workspace) return runtimeKey(event.source, workspace, event.externalSessionId)
     if (event.externalSessionId) {
       const known = this.sessionKeys.get(sessionKey(event.source, event.externalSessionId))
       if (known) return known
@@ -210,10 +238,24 @@ export class StatusHub extends EventEmitter {
   }
 }
 
-function runtimeKey(agentType: AgentType, workspacePath: string): string {
-  return `${agentType}\0${workspaceKey(workspacePath)}`
+function runtimeKey(
+  agentType: AgentType,
+  workspacePath: string,
+  externalSessionId?: string,
+): string {
+  const sessionScope = externalSessionId ? `\0${externalSessionId}` : ''
+  return `${agentType}\0${workspaceKey(workspacePath)}${sessionScope}`
 }
 
 function sessionKey(agentType: AgentType, sessionId: string): string {
   return `${agentType}\0${sessionId}`
+}
+
+function compareRuntimeState(a: AgentRuntimeState, b: AgentRuntimeState): number {
+  return (
+    b.lastEventAt - a.lastEventAt ||
+    a.agentType.localeCompare(b.agentType) ||
+    workspaceKey(a.workspacePath).localeCompare(workspaceKey(b.workspacePath)) ||
+    (a.externalSessionId ?? '').localeCompare(b.externalSessionId ?? '')
+  )
 }

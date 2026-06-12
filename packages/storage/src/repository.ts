@@ -61,7 +61,8 @@ export function persistEvent(db: DB, event: AgentEvent): void {
     if (
       event.eventType === 'turn_stop' ||
       event.eventType === 'turn_error' ||
-      event.eventType === 'turn_cancelled'
+      event.eventType === 'turn_cancelled' ||
+      event.eventType === 'turn_timeout'
     ) {
       closeLatestTurn(tx, sessionId, event)
     }
@@ -145,6 +146,7 @@ function closeLatestTurn(tx: DB, sessionId: string, event: AgentEvent): void {
     .from(turns)
     .where(eq(turns.sessionId, sessionId))
     .orderBy(desc(turns.startedAt))
+    .limit(20)
     .all()
   const openTurn = latest.find((turn) => isOpenTurnState(turn.state))
   if (!openTurn) return
@@ -161,6 +163,7 @@ function closeLatestTurn(tx: DB, sessionId: string, event: AgentEvent): void {
 function closeTurnState(event: AgentEvent): string {
   if (event.eventType === 'turn_error') return TurnState.ERROR
   if (event.eventType === 'turn_cancelled') return TurnState.CANCELLED
+  if (event.eventType === 'turn_timeout') return TurnState.TIMEOUT
   return TurnState.DONE
 }
 
@@ -174,6 +177,7 @@ function findLatestTurnId(
     .from(turns)
     .where(eq(turns.sessionId, sessionId))
     .orderBy(desc(turns.startedAt))
+    .limit(20)
     .all()
   if (externalTurnId) {
     const matching = latest.find((turn) => turn.externalTurnId === externalTurnId)

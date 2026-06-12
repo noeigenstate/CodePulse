@@ -67,7 +67,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
   const previousState = current.state
   const next: AgentRuntimeState = {
     ...current,
-    lastEventAt: event.timestamp,
+    lastEventAt: event.eventType === 'turn_timeout' ? current.lastEventAt : event.timestamp,
   }
 
   // 继承事件经常刷新的上下文字段。
@@ -145,6 +145,15 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       next.needUserInput = false
       next.toolName = undefined
       next.activity = event.message ?? '任务已取消'
+      next.unread = true
+      break
+
+    case 'turn_timeout':
+      next.state = TurnState.TIMEOUT
+      next.needPermission = false
+      next.needUserInput = false
+      next.toolName = undefined
+      next.activity = event.message ?? '疑似卡住'
       next.unread = true
       break
 

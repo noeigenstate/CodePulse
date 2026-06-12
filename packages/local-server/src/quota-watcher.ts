@@ -73,7 +73,7 @@ export class QuotaRefreshWatcher {
       if (delay < 0 || delay > MAX_TIMEOUT_MS) continue
 
       if (delay === 0) {
-        void this.refresh(binding)
+        void this.refresh(binding, runAt)
         continue
       }
 
@@ -82,16 +82,17 @@ export class QuotaRefreshWatcher {
 
       const timer = setTimeout(() => {
         this.timers.delete(key)
-        void this.refresh(binding)
+        void this.refresh(binding, runAt)
       }, delay)
       timer.unref?.()
       this.timers.set(key, timer)
     }
   }
 
-  private async refresh(binding: BoundQuotaSource): Promise<void> {
+  private async refresh(binding: BoundQuotaSource, scheduledResetAt: number): Promise<void> {
     const token = await this.readToken(binding.sourcePath)
     if (!token?.rateLimits) return
+    if (hasExpiredResetTimestamp(token, scheduledResetAt)) return
 
     this.hub.ingest({
       id: `quota-refresh:${binding.source}:${workspaceKey(binding.workspacePath ?? binding.cwd)}:${this.now()}`,
@@ -222,6 +223,11 @@ function resetTimes(token: TokenPayload): number[] {
   return [token.rateLimits?.fiveHour?.resetsAt, token.rateLimits?.sevenDay?.resetsAt].filter(
     (value): value is number => value !== undefined && Number.isFinite(value),
   )
+}
+
+function hasExpiredResetTimestamp(token: TokenPayload, scheduledResetAt: number): boolean {
+  const times = resetTimes(token).map(normalizeResetAt)
+  return times.some((resetAt) => resetAt <= scheduledResetAt)
 }
 
 function normalizeResetAt(value: number): number {

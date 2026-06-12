@@ -560,6 +560,51 @@ test('StatusHub accepts zero quota windows when reset metadata is present', () =
   assert.equal(codex?.token?.rateLimits?.sevenDay?.resetsAt, 10_000)
 })
 
+test('StatusHub keeps Codex quota buckets separated by limit id', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+
+  hub.ingest({
+    id: 'default-quota',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    model: 'gpt-5.5',
+    timestamp: 100,
+    token: {
+      rateLimitId: 'codex',
+      rateLimits: {
+        fiveHour: { usedPercent: 78, resetsAt: 2_000 },
+        sevenDay: { usedPercent: 11, resetsAt: 9_000 },
+      },
+      accuracy: 'estimated',
+    },
+  })
+  hub.ingest({
+    id: 'spark-quota',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    model: 'gpt-5.3-spark',
+    timestamp: 200,
+    token: {
+      rateLimitId: 'codex_bengalfox',
+      rateLimitName: 'GPT-5.3-Codex-Spark',
+      rateLimits: {
+        fiveHour: { usedPercent: 2, resetsAt: 3_000 },
+        sevenDay: { usedPercent: 1, resetsAt: 10_000 },
+      },
+      accuracy: 'estimated',
+    },
+  })
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.token?.rateLimits?.fiveHour?.usedPercent, 2)
+  assert.equal(codex?.token?.quotaBuckets?.codex?.rateLimits?.fiveHour?.usedPercent, 78)
+  assert.equal(codex?.token?.quotaBuckets?.codex_bengalfox?.rateLimits?.fiveHour?.usedPercent, 2)
+})
+
 test('StatusHub keeps previous token data at session boundaries until a new snapshot arrives', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
 
@@ -850,7 +895,50 @@ test('latest quota token prefers the active model quota when model sessions over
   assert.equal(quota?.rateLimits?.sevenDay?.usedPercent, 12)
 })
 
-test('latest quota token rejects Spark quota when the active Codex model is GPT-5.5', () => {
+test('latest quota token selects the matching bucket when one token carries multiple Codex buckets', () => {
+  const quota = latestQuotaToken(
+    [
+      {
+        agentType: 'codex',
+        state: TurnState.PROMPT_SUBMITTED,
+        toolCallCount: 0,
+        needPermission: false,
+        needUserInput: false,
+        activity: 'running',
+        lastEventAt: 300,
+        unread: false,
+        workspacePath: 'E:/project/a',
+        model: 'gpt-5.5',
+        token: {
+          rateLimitId: 'codex_bengalfox',
+          rateLimitName: 'GPT-5.3-Codex-Spark',
+          rateLimits: { fiveHour: { usedPercent: 2 }, sevenDay: { usedPercent: 1 } },
+          quotaBuckets: {
+            codex: {
+              rateLimitId: 'codex',
+              rateLimits: { fiveHour: { usedPercent: 78 }, sevenDay: { usedPercent: 16 } },
+              updatedAt: 100,
+            },
+            codex_bengalfox: {
+              rateLimitId: 'codex_bengalfox',
+              rateLimitName: 'GPT-5.3-Codex-Spark',
+              rateLimits: { fiveHour: { usedPercent: 2 }, sevenDay: { usedPercent: 1 } },
+              updatedAt: 300,
+            },
+          },
+          accuracy: 'estimated',
+        },
+      },
+    ],
+    'gpt-5.5',
+  )
+
+  assert.equal(quota?.rateLimitId, 'codex')
+  assert.equal(quota?.rateLimits?.fiveHour?.usedPercent, 78)
+  assert.equal(quota?.rateLimits?.sevenDay?.usedPercent, 16)
+})
+
+test('latest quota token falls back to the newest visible bucket when no bucket matches the active model', () => {
   const quota = latestQuotaToken(
     [
       {
@@ -875,7 +963,8 @@ test('latest quota token rejects Spark quota when the active Codex model is GPT-
     'gpt-5.5',
   )
 
-  assert.equal(quota, undefined)
+  assert.equal(quota?.rateLimitId, 'codex_bengalfox')
+  assert.equal(quota?.rateLimits?.fiveHour?.usedPercent, 2)
 })
 
 test('latest quota token accepts Spark quota when the active Codex model is Spark', () => {

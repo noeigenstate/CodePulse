@@ -75,7 +75,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
   if (event.externalTurnId) next.externalTurnId = event.externalTurnId
   if (event.workspacePath ?? event.cwd) next.workspacePath = event.workspacePath ?? event.cwd
   if (event.model) next.model = event.model
-  if (event.token) next.token = mergeToken(current.token, event.token)
+  if (event.token) next.token = mergeToken(current.token, event.token, event.timestamp)
 
   switch (event.eventType) {
     case 'session_start':
@@ -182,11 +182,19 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
   }
 }
 
-function mergeToken(current: TokenPayload | undefined, patch: TokenPayload): TokenPayload {
+function mergeToken(
+  current: TokenPayload | undefined,
+  patch: TokenPayload,
+  capturedAt: number,
+): TokenPayload {
   const keepExactContext = current?.accuracy === 'exact' && patch.accuracy !== 'exact'
   const next: TokenPayload = {
     ...current,
     accuracy: bestTokenAccuracy(current?.accuracy, patch.accuracy),
+  }
+
+  if (patch.quotaBuckets) {
+    next.quotaBuckets = mergeQuotaBuckets(current?.quotaBuckets, patch.quotaBuckets, capturedAt)
   }
 
   if (patch.input !== undefined) next.input = patch.input
@@ -206,10 +214,59 @@ function mergeToken(current: TokenPayload | undefined, patch: TokenPayload): Tok
     if (!shouldKeepRateLimitMetadata) {
       next.rateLimitId = patch.rateLimitId
       next.rateLimitName = patch.rateLimitName
+      next.quotaBuckets = mergeQuotaBucket(next.quotaBuckets, patch, capturedAt)
     }
   }
 
   return next
+}
+
+function mergeQuotaBuckets(
+  current: TokenPayload['quotaBuckets'],
+  patch: TokenPayload['quotaBuckets'],
+  capturedAt: number,
+): TokenPayload['quotaBuckets'] {
+  if (!patch) return current
+  return Object.values(patch).reduce(
+    (next, bucket) =>
+      mergeQuotaBucket(
+        next,
+        {
+          rateLimitId: bucket.rateLimitId,
+          rateLimitName: bucket.rateLimitName,
+          rateLimits: bucket.rateLimits,
+        },
+        bucket.updatedAt ?? capturedAt,
+      ),
+    current,
+  )
+}
+
+function mergeQuotaBucket(
+  current: TokenPayload['quotaBuckets'],
+  patch: Pick<TokenPayload, 'rateLimitId' | 'rateLimitName' | 'rateLimits'>,
+  capturedAt: number,
+): TokenPayload['quotaBuckets'] {
+  if (!patch.rateLimits || isZeroOnlyRateLimits(patch.rateLimits)) return current
+
+  const key = quotaBucketKey(patch.rateLimitId, patch.rateLimitName)
+  const existing = current?.[key]
+  return {
+    ...current,
+    [key]: {
+      rateLimitId: patch.rateLimitId,
+      rateLimitName: patch.rateLimitName,
+      rateLimits: mergeRateLimits(existing?.rateLimits, patch.rateLimits),
+      updatedAt: capturedAt,
+    },
+  }
+}
+
+function quotaBucketKey(
+  rateLimitId: string | undefined,
+  rateLimitName: string | undefined,
+): string {
+  return rateLimitId?.trim() || rateLimitName?.trim() || 'default'
 }
 
 function bestTokenAccuracy(

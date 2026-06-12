@@ -68,6 +68,8 @@ export interface TokenPayload {
     fiveHour?: TokenRateLimitWindow
     sevenDay?: TokenRateLimitWindow
   }
+  /** CLI quota buckets keyed by limit id/name when one account exposes multiple buckets. */
+  quotaBuckets?: Record<string, TokenQuotaBucket>
   /** CLI quota bucket identifier, when the source exposes one. */
   rateLimitId?: string
   /** CLI quota bucket display name, when the source exposes one. */
@@ -76,6 +78,18 @@ export interface TokenPayload {
   costUsd?: number
   /** 数字的可信度。 */
   accuracy: TokenAccuracy
+}
+
+/** One CLI quota bucket, for example Codex default or Codex Spark. */
+export interface TokenQuotaBucket {
+  /** CLI quota bucket identifier, when the source exposes one. */
+  rateLimitId?: string
+  /** CLI quota bucket display name, when the source exposes one. */
+  rateLimitName?: string
+  /** CLI rate-limit windows for this bucket. */
+  rateLimits?: TokenPayload['rateLimits']
+  /** Last event timestamp that refreshed this bucket. */
+  updatedAt?: number
 }
 
 /** CLI 上报的滚动额度窗口。 */

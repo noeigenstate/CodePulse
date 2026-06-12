@@ -102,3 +102,54 @@ test('QuotaRefreshWatcher refreshes only the bound Codex quota source', async ()
     watcher.stop()
   }
 })
+
+test('QuotaRefreshWatcher skips stale reset reads from unchanged rollout data', async () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  let quotaRefreshEvents = 0
+  const watcher = new QuotaRefreshWatcher({
+    hub,
+    now: () => 1_000_000,
+    scheduleOffsetsMs: [0],
+    readToken: async () => ({
+      contextUsedPercent: 90,
+      rateLimits: {
+        fiveHour: { usedPercent: 99, resetsAt: 1_000, windowMinutes: 300 },
+        sevenDay: { usedPercent: 8, resetsAt: 9_000, windowMinutes: 10_080 },
+      },
+      accuracy: 'estimated',
+    }),
+  })
+
+  try {
+    hub.on('event', (event) => {
+      watcher.observe(event)
+      if (event.id.startsWith('quota-refresh:')) quotaRefreshEvents += 1
+    })
+    hub.ingest({
+      id: 'quota',
+      source: 'codex',
+      eventType: 'token_snapshot',
+      externalSessionId: 'session-a',
+      cwd: 'E:/project/a',
+      tokenSourcePath: 'E:/codex/session-a.jsonl',
+      timestamp: 1_000_000,
+      token: {
+        contextUsedPercent: 90,
+        rateLimits: {
+          fiveHour: { usedPercent: 99, resetsAt: 1_000, windowMinutes: 300 },
+          sevenDay: { usedPercent: 8, resetsAt: 9_000, windowMinutes: 10_080 },
+        },
+        accuracy: 'estimated',
+      },
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.equal(quotaRefreshEvents, 0)
+    assert.equal(codex?.token?.rateLimits?.fiveHour?.usedPercent, 99)
+    assert.equal(codex?.token?.rateLimits?.fiveHour?.resetsAt, 1_000)
+  } finally {
+    watcher.stop()
+  }
+})

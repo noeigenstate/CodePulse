@@ -3,6 +3,7 @@ import {
   type AgentRuntimeState,
   type AgentType,
   type TokenPayload,
+  type TokenQuotaBucket,
   workspaceKey,
 } from '@codepulse/shared'
 import { visibleRateLimitWindows } from './panelFormat.js'
@@ -35,6 +36,12 @@ export interface AgentPanel {
   workspaces: AgentWorkspaceItem[]
 }
 
+interface QuotaCandidate {
+  agent: AgentRuntimeState
+  token: TokenPayload
+  updatedAt: number
+}
+
 export function buildDisplayAgents(agents: AgentRuntimeState[]): AgentRuntimeState[] {
   return (
     buildWorkspaceAgentGroups(agents)[0]?.agents ??
@@ -60,23 +67,23 @@ export function latestQuotaToken(
   agents: AgentRuntimeState[],
   preferredModel?: string,
 ): TokenPayload | undefined {
-  const candidates = agents.filter((agent) => hasVisibleRateLimits(agent.token))
+  const candidates = agents.flatMap(quotaCandidatesForAgent)
   if (candidates.length === 0) return undefined
 
-  const freshestAt = Math.max(...candidates.map((agent) => agent.lastEventAt))
-  const recent = candidates.filter(
-    (agent) => freshestAt - agent.lastEventAt <= QUOTA_RECENCY_WINDOW_MS,
-  )
-  const timePool = recent.length > 0 ? recent : candidates
   const compatiblePool = preferredModel
-    ? timePool.filter((agent) => quotaMatchesPreferredModel(agent.token, preferredModel))
-    : timePool
-  if (compatiblePool.length === 0) return undefined
+    ? candidates.filter((candidate) => quotaMatchesPreferredModel(candidate.token, preferredModel))
+    : candidates
+  const selectionBase = compatiblePool.length > 0 ? compatiblePool : candidates
 
   const modelPool = preferredModel
-    ? compatiblePool.filter((agent) => sameModel(agent.model, preferredModel))
+    ? selectionBase.filter((candidate) => sameModel(candidate.agent.model, preferredModel))
     : []
-  const pool = modelPool.length > 0 ? modelPool : compatiblePool
+  const modelBase = modelPool.length > 0 ? modelPool : selectionBase
+  const freshestAt = Math.max(...modelBase.map((candidate) => candidate.updatedAt))
+  const recent = modelBase.filter(
+    (candidate) => freshestAt - candidate.updatedAt <= QUOTA_RECENCY_WINDOW_MS,
+  )
+  const pool = recent.length > 0 ? recent : modelBase
 
   return [...pool].sort(compareQuotaCandidates)[0]?.token
 }
@@ -169,8 +176,35 @@ function hasVisibleRateLimits(token: TokenPayload | undefined): boolean {
   return Boolean(windows.fiveHour ?? windows.sevenDay)
 }
 
-function compareQuotaCandidates(a: AgentRuntimeState, b: AgentRuntimeState): number {
-  return b.lastEventAt - a.lastEventAt || quotaPressure(b.token) - quotaPressure(a.token)
+function quotaCandidatesForAgent(agent: AgentRuntimeState): QuotaCandidate[] {
+  const token = agent.token
+  if (!token) return []
+
+  const bucketCandidates = Object.entries(token.quotaBuckets ?? {})
+    .map(([, bucket]) => quotaCandidateFromBucket(agent, token, bucket))
+    .filter((candidate): candidate is QuotaCandidate => Boolean(candidate))
+
+  if (bucketCandidates.length > 0) return bucketCandidates
+  return hasVisibleRateLimits(token) ? [{ agent, token, updatedAt: agent.lastEventAt }] : []
+}
+
+function quotaCandidateFromBucket(
+  agent: AgentRuntimeState,
+  baseToken: TokenPayload,
+  bucket: TokenQuotaBucket,
+): QuotaCandidate | undefined {
+  const token: TokenPayload = {
+    ...baseToken,
+    rateLimitId: bucket.rateLimitId,
+    rateLimitName: bucket.rateLimitName,
+    rateLimits: bucket.rateLimits,
+  }
+  if (!hasVisibleRateLimits(token)) return undefined
+  return { agent, token, updatedAt: bucket.updatedAt ?? agent.lastEventAt }
+}
+
+function compareQuotaCandidates(a: QuotaCandidate, b: QuotaCandidate): number {
+  return b.updatedAt - a.updatedAt || quotaPressure(b.token) - quotaPressure(a.token)
 }
 
 function quotaPressure(token: TokenPayload | undefined): number {
@@ -213,13 +247,19 @@ function quotaMatchesPreferredModel(
   if (!bucket) return true
 
   const preferred = normalizeModel(preferredModel)
+  const preferredSpark = isSparkModel(preferred)
+  const bucketSpark = isSparkQuota(bucket)
+  if (bucketSpark !== preferredSpark && (bucketSpark || isDefaultCodexQuota(bucket))) return false
+
   const quotaVersion = extractGptVersion(bucket)
   const preferredVersion = extractGptVersion(preferred)
   if (quotaVersion && preferredVersion && quotaVersion !== preferredVersion) return false
 
-  if (isSparkQuota(bucket) && !isSparkModel(preferred)) return false
-
   return true
+}
+
+function isDefaultCodexQuota(value: string): boolean {
+  return value.split(/\s+/).includes('codex')
 }
 
 function isSparkQuota(value: string): boolean {

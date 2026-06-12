@@ -50,13 +50,16 @@ export function buildAgentPanels(agents: AgentRuntimeState[]): AgentPanel[] {
       agentType,
       name: agentType === 'codex' ? 'Codex' : 'Claude Code',
       updatedAt: Math.max(0, ...workspaces.map((workspace) => workspace.updatedAt)),
-      quotaToken: latestQuotaToken(workspaces.map((workspace) => workspace.agent)),
+      quotaToken: latestQuotaToken(typeAgents, preferredQuotaModel(typeAgents)),
       workspaces,
     }
   })
 }
 
-export function latestQuotaToken(agents: AgentRuntimeState[]): TokenPayload | undefined {
+export function latestQuotaToken(
+  agents: AgentRuntimeState[],
+  preferredModel?: string,
+): TokenPayload | undefined {
   const candidates = agents.filter((agent) => hasVisibleRateLimits(agent.token))
   if (candidates.length === 0) return undefined
 
@@ -64,7 +67,11 @@ export function latestQuotaToken(agents: AgentRuntimeState[]): TokenPayload | un
   const recent = candidates.filter(
     (agent) => freshestAt - agent.lastEventAt <= QUOTA_RECENCY_WINDOW_MS,
   )
-  const pool = recent.length > 0 ? recent : candidates
+  const timePool = recent.length > 0 ? recent : candidates
+  const modelPool = preferredModel
+    ? timePool.filter((agent) => sameModel(agent.model, preferredModel))
+    : []
+  const pool = modelPool.length > 0 ? modelPool : timePool
 
   return [...pool].sort(compareQuotaCandidates)[0]?.token
 }
@@ -167,6 +174,34 @@ function quotaPressure(token: TokenPayload | undefined): number {
     normalizedPercent(windows.fiveHour?.usedPercent),
     normalizedPercent(windows.sevenDay?.usedPercent),
   )
+}
+
+function preferredQuotaModel(agents: AgentRuntimeState[]): string | undefined {
+  const latestActive = agents
+    .filter((agent) => isActiveState(agent.state) && agent.model)
+    .sort((a, b) => b.lastEventAt - a.lastEventAt)[0]
+  const latest = [...agents]
+    .filter((agent) => agent.model)
+    .sort((a, b) => b.lastEventAt - a.lastEventAt)[0]
+  return latestActive?.model ?? latest?.model
+}
+
+function isActiveState(state: TurnState): boolean {
+  return (
+    state === TurnState.PROMPT_SUBMITTED ||
+    state === TurnState.THINKING ||
+    state === TurnState.TOOL_RUNNING ||
+    state === TurnState.WAITING_PERMISSION ||
+    state === TurnState.WAITING_USER_INPUT
+  )
+}
+
+function sameModel(a: string | undefined, b: string): boolean {
+  return normalizeModel(a) === normalizeModel(b)
+}
+
+function normalizeModel(value: string | undefined): string {
+  return value?.trim().toLowerCase() ?? ''
 }
 
 function normalizedPercent(value: number | undefined): number {

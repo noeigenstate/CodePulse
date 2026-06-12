@@ -805,6 +805,51 @@ test('latest quota token uses the newest rate-limit payload', () => {
   assert.equal(quota?.rateLimits?.fiveHour?.usedPercent, 36)
 })
 
+test('latest quota token prefers the active model quota when model sessions overlap', () => {
+  const quota = latestQuotaToken(
+    [
+      {
+        agentType: 'codex',
+        state: TurnState.PROMPT_SUBMITTED,
+        toolCallCount: 0,
+        needPermission: false,
+        needUserInput: false,
+        activity: 'running',
+        lastEventAt: 200,
+        unread: false,
+        workspacePath: 'E:/project/a',
+        model: 'gpt-5.5',
+        token: {
+          contextUsedPercent: 12,
+          rateLimits: { fiveHour: { usedPercent: 82 }, sevenDay: { usedPercent: 12 } },
+          accuracy: 'estimated',
+        },
+      },
+      {
+        agentType: 'codex',
+        state: TurnState.DONE,
+        toolCallCount: 0,
+        needPermission: false,
+        needUserInput: false,
+        activity: 'done',
+        lastEventAt: 300,
+        unread: false,
+        workspacePath: 'E:/project/a',
+        model: 'gpt-5.3-spark',
+        token: {
+          contextUsedPercent: 8,
+          rateLimits: { fiveHour: { usedPercent: 2 }, sevenDay: { usedPercent: 1 } },
+          accuracy: 'estimated',
+        },
+      },
+    ],
+    'gpt-5.5',
+  )
+
+  assert.equal(quota?.rateLimits?.fiveHour?.usedPercent, 82)
+  assert.equal(quota?.rateLimits?.sevenDay?.usedPercent, 12)
+})
+
 test('latest quota token prefers the freshest recent payload', () => {
   const quota = latestQuotaToken([
     {

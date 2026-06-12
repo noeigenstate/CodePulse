@@ -54,13 +54,13 @@ async function findRolloutFile(raw, options) {
   await collectRolloutFiles(sessionsDir, files)
   files.sort((a, b) => b.mtimeMs - a.mtimeMs)
 
-  if (cwd) {
-    const matched = await findByCwd(files, cwd)
-    if (matched) return matched
-  }
   if (sessionId) {
     const matched = files.find((file) => basename(file.path).includes(sessionId))
     if (matched) return matched.path
+  }
+  if (cwd) {
+    const matched = await findByCwd(files, cwd)
+    if (matched) return matched
   }
   if (cwd || sessionId) return undefined
   return files[0]?.path

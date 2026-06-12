@@ -148,6 +148,77 @@ test('Codex usage reader prefers the rollout matching current cwd', async () => 
   }
 })
 
+test('Codex usage reader prefers session id over cwd when model sessions share a project', async () => {
+  const home = join(tmpdir(), `codepulse-codex-session-first-${Date.now()}`)
+  const sessions = join(home, 'sessions', '2026', '06', '11')
+  const current = join(sessions, 'rollout-2026-06-11T10-00-00-session-gpt55.jsonl')
+  const other = join(sessions, 'rollout-2026-06-11T10-01-00-session-spark.jsonl')
+
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    current,
+    [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: 'session-gpt55', cwd: 'E:/project/shared' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 100000,
+            total_token_usage: { input_tokens: 5500, output_tokens: 500, total_tokens: 6000 },
+            last_token_usage: { input_tokens: 3000, output_tokens: 250, total_tokens: 3250 },
+          },
+          rate_limits: {
+            primary: { used_percent: 55, window_minutes: 300, resets_at: 1781160358 },
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+  await writeFile(
+    other,
+    [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: 'session-spark', cwd: 'E:/project/shared' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 100000,
+            total_token_usage: { input_tokens: 5300, output_tokens: 400, total_tokens: 5700 },
+            last_token_usage: { input_tokens: 2000, output_tokens: 150, total_tokens: 2150 },
+          },
+          rate_limits: {
+            primary: { used_percent: 3, window_minutes: 300, resets_at: 1781160358 },
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+  await utimes(current, new Date('2026-06-11T02:00:00Z'), new Date('2026-06-11T02:00:00Z'))
+  await utimes(other, new Date('2026-06-11T02:05:00Z'), new Date('2026-06-11T02:05:00Z'))
+
+  try {
+    const usage = await readLatestCodexUsage(
+      { session_id: 'session-gpt55', cwd: 'E:/project/shared' },
+      { codexHome: home },
+    )
+    assert.equal(usage.usage.total_tokens, 6000)
+    assert.equal(usage.rate_limits.five_hour.used_percentage, 55)
+    assert.equal(usage.usage_source_path, current)
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
 test('Codex usage reader does not double count cached input for context percent', async () => {
   const home = join(tmpdir(), `codepulse-codex-context-${Date.now()}`)
   const sessions = join(home, 'sessions', '2026', '06', '11')

@@ -295,49 +295,6 @@ body {
     filter: drop-shadow(0 8px 14px rgb(16 24 40 / 0.08));
   }
 
-  .notification-meta {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: 0.45rem;
-  }
-
-  .notification-app-name {
-    overflow: hidden;
-    color: rgb(71 85 105);
-    font-size: 0.7rem;
-    font-weight: 700;
-    letter-spacing: 0;
-    line-height: 1;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .notification-dot {
-    display: inline-block;
-    width: 0.45rem;
-    height: 0.45rem;
-    flex: 0 0 auto;
-    border-radius: 999px;
-    background: rgb(59 130 246);
-    box-shadow: 0 0 0 3px rgb(59 130 246 / 0.12);
-  }
-
-  .notification-toast-soft .notification-dot {
-    background: rgb(217 143 0);
-    box-shadow: 0 0 0 3px rgb(217 143 0 / 0.13);
-  }
-
-  .notification-toast-normal .notification-dot {
-    background: rgb(16 185 129);
-    box-shadow: 0 0 0 3px rgb(16 185 129 / 0.13);
-  }
-
-  .notification-toast-strong .notification-dot {
-    background: rgb(239 68 68);
-    box-shadow: 0 0 0 3px rgb(239 68 68 / 0.13);
-  }
-
   .notification-close {
     display: inline-flex;
     width: 1.55rem;

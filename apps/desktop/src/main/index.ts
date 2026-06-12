@@ -19,8 +19,6 @@ import { openDb, persistEvent, type DB } from '@codepulse/storage'
 import { detectAgents, startLocalServer, type LocalServer } from '@codepulse/local-server'
 import { TrayController } from './tray.js'
 import { showNotification } from './notifications.js'
-import { startClaudeUsagePoller } from './claude-usage-poller.js'
-import { startCodexUsagePoller } from './codex-usage-poller.js'
 
 /** 「静音」持续多久后自动取消（需求 §5.6）。 */
 const MUTE_DURATION_MS = 30 * 60_000
@@ -30,8 +28,6 @@ let tray: TrayController | null = null
 let server: LocalServer | null = null
 let db: DB | null = null
 let muteTimer: NodeJS.Timeout | null = null
-let stopClaudeUsagePoller: (() => void) | null = null
-let stopCodexUsagePoller: (() => void) | null = null
 
 /** 进程级唯一的状态 hub。 */
 const hub = new StatusHub()
@@ -207,8 +203,6 @@ async function bootstrap(): Promise<void> {
   }
 
   hub.startWatchdog()
-  stopClaudeUsagePoller = startClaudeUsagePoller(hub)
-  stopCodexUsagePoller = startCodexUsagePoller(hub)
 
   tray = new TrayController({
     onOpen: showWindow,
@@ -261,8 +255,6 @@ if (!gotLock) {
 
   app.on('before-quit', () => {
     hub.stopWatchdog()
-    stopClaudeUsagePoller?.()
-    stopCodexUsagePoller?.()
     tray?.destroy()
     void server?.close()
   })

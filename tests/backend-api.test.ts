@@ -204,19 +204,40 @@ test('POST /api/mute toggles notification sound behavior', async () => {
 
   await postJson(base, '/api/events', {
     source: 'codex',
-    hook_event_name: 'PermissionRequest',
+    hook_event_name: 'UserPromptSubmit',
     session_id: 'mute-api',
     turn_id: 'mute-turn',
-    tool_name: 'shell',
-    message: 'approve command',
   })
-  assert.equal(notifications.at(-1)?.level, 'strong')
+  await postJson(base, '/api/events', {
+    source: 'codex',
+    hook_event_name: 'Stop',
+    session_id: 'mute-api',
+    turn_id: 'mute-turn',
+    last_message: 'done',
+  })
+  assert.equal(notifications.at(-1)?.level, 'normal')
   assert.equal(notifications.at(-1)?.sound, false)
 
   const unmuted = await postJson<{ ok: boolean; muted: boolean }>(base, '/api/mute', {
     muted: false,
   })
   assert.deepEqual(unmuted.body, { ok: true, muted: false })
+
+  await postJson(base, '/api/events', {
+    source: 'codex',
+    hook_event_name: 'UserPromptSubmit',
+    session_id: 'unmute-api',
+    turn_id: 'unmute-turn',
+  })
+  await postJson(base, '/api/events', {
+    source: 'codex',
+    hook_event_name: 'Stop',
+    session_id: 'unmute-api',
+    turn_id: 'unmute-turn',
+    last_message: 'done',
+  })
+  assert.equal(notifications.at(-1)?.level, 'normal')
+  assert.equal(notifications.at(-1)?.sound, true)
 })
 
 test('GET /api/agents/detect returns supported agent detection records', async () => {

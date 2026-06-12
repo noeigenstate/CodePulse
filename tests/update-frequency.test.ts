@@ -1,11 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import {
-  STATUS_REFRESH_INTERVAL_MS,
-  UI_REFRESH_INTERVAL_MS,
-} from '../apps/desktop/src/renderer/src/lib/timing.js'
+import { UI_REFRESH_INTERVAL_MS } from '../apps/desktop/src/renderer/src/lib/timing.js'
 
-test('renderer refresh intervals keep the dashboard close to realtime', () => {
+test('renderer keeps derived realtime labels responsive', () => {
   assert.equal(UI_REFRESH_INTERVAL_MS, 500)
-  assert.equal(STATUS_REFRESH_INTERVAL_MS, 1_000)
 })

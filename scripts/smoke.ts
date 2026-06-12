@@ -202,14 +202,9 @@ try {
     unread: false,
   }
   const timeoutStrongNotes = terminalRuleEngine.onTick(timeoutAgent, stuckAt + STUCK_STRONG_MS + 1)
+  check('rule engine suppresses stuck notifications', timeoutStrongNotes.length === 0)
   check(
-    'rule engine escalates TIMEOUT agents to strong stuck notification',
-    timeoutStrongNotes.some(
-      (note) => note.level === 'strong' && note.dedupeKey.endsWith(':strong'),
-    ),
-  )
-  check(
-    'rule engine does not repeat strong stuck notification',
+    'rule engine keeps repeated stuck checks silent',
     terminalRuleEngine.onTick(timeoutAgent, stuckAt + STUCK_STRONG_MS + 2).length === 0,
   )
 
@@ -352,8 +347,8 @@ try {
   )
   check('overall = attention', snap.overall === 'attention')
   check(
-    'permission notification fired (strong)',
-    notifications.some((n) => n.level === 'strong' && n.dedupeKey.startsWith('perm:')),
+    'permission notification suppressed',
+    !notifications.some((n) => n.dedupeKey.startsWith('perm:')),
   )
 
   // --- Claude status line：token 快照 -------------------------------------
@@ -375,20 +370,19 @@ try {
   check('context % captured = 83', claudeTok?.token?.contextUsedPercent === 83)
   check('model captured', claudeTok?.model === 'Claude Sonnet')
   check(
-    'context>80 soft notification fired',
-    notifications.some(
+    'claude context quota notification suppressed',
+    !notifications.some(
       (n) => n.dedupeKey.startsWith('ctx:claude_code:') && n.dedupeKey.endsWith(':soft'),
     ),
   )
   const claudeCtxNote = notifications.find(
     (n) => n.dedupeKey.startsWith('ctx:claude_code:') && n.dedupeKey.endsWith(':soft'),
   )
-  check('claude token notification shows percentage', claudeCtxNote?.body.includes('83%') === true)
+  check('claude token notification absent', claudeCtxNote === undefined)
   check(
-    'claude token notification mentions 5h and weekly reset',
-    claudeCtxNote?.body.includes('5h') === true &&
-      claudeCtxNote.body.includes('每周') &&
-      claudeCtxNote.body.includes('刷新'),
+    'claude token quota notification absent',
+    claudeCtxNote === undefined ||
+      (claudeCtxNote.body.includes('每周') && claudeCtxNote.body.includes('刷新')),
   )
 
   await post({
@@ -448,13 +442,12 @@ try {
   const codexCtxNote = notifications.find(
     (n) => n.dedupeKey.startsWith('ctx:codex:') && n.dedupeKey.endsWith(':strong'),
   )
-  check('codex context>95 strong notification fired', codexCtxNote?.level === 'strong')
-  check('codex token notification shows percentage', codexCtxNote?.body.includes('96%') === true)
+  check('codex context quota notification suppressed', codexCtxNote === undefined)
+  check('codex token notification absent', codexCtxNote === undefined)
   check(
-    'codex token notification mentions 5h and weekly reset',
-    codexCtxNote?.body.includes('5h') === true &&
-      codexCtxNote.body.includes('每周') &&
-      codexCtxNote.body.includes('刷新'),
+    'codex token quota notification absent',
+    codexCtxNote === undefined ||
+      (codexCtxNote.body.includes('每周') && codexCtxNote.body.includes('刷新')),
   )
 
   await post({
@@ -475,8 +468,8 @@ try {
   const cancelledCodex = snap.agents.find((a) => a.agentType === 'codex')
   check('codex cancel maps to CANCELLED', cancelledCodex?.state === 'CANCELLED')
   check(
-    'cancelled notification fired (normal)',
-    notifications.some((n) => n.level === 'normal' && n.dedupeKey.startsWith('cancelled:')),
+    'cancelled notification suppressed',
+    !notifications.some((n) => n.dedupeKey.startsWith('cancelled:')),
   )
 
   // --- 确认操作清除未读 ---------------------------------------------

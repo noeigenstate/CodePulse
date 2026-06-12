@@ -4,9 +4,8 @@
  *
  * @module renderer/App
  */
-import { memo, useEffect, useMemo, type ReactNode } from 'react'
+import { memo, useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
-  TOKEN_QUOTA_WINDOW_LABEL,
   formatTokenPercent,
   type AgentRuntimeState,
   type AgentType,
@@ -25,9 +24,16 @@ import {
 } from './lib/panelFormat.js'
 import { formatQuotaReset } from './lib/quotaFormat.js'
 import { useNow } from './lib/useNow.js'
+import { NOTIFICATION_TOAST_VISIBLE_MS } from './lib/notificationTiming.js'
+import {
+  nextLocale,
+  readStoredLocale,
+  turnStateLabel,
+  uiCopy,
+  type Locale,
+  type UiCopy,
+} from './lib/i18n.js'
 import codePulseIcon from './assets/codepulse-icon.png'
-
-const NOTIFICATION_TOAST_VISIBLE_MS = 2_000
 
 /**
  * 应用外壳 Dashboard。
@@ -45,15 +51,27 @@ export function App(): JSX.Element {
     toggleMute,
     dismissNotification,
   } = useStore()
+  const [locale, setLocale] = useState<Locale>(() => readStoredLocale(window.localStorage))
   const panels = useMemo(() => buildAgentPanels(snapshot.agents), [snapshot.agents])
+  const copy = useMemo(() => uiCopy(locale), [locale])
 
   useEffect(() => init(), [init])
+
+  const toggleLocale = (): void => {
+    setLocale((current) => {
+      const next = nextLocale(current)
+      window.localStorage.setItem('codepulse:locale', next)
+      return next
+    })
+  }
 
   return (
     <div className="app-shell flex h-full flex-col text-slate-950">
       <Header
         overall={snapshot.overall}
+        locale={locale}
         muted={muted}
+        onToggleLocale={toggleLocale}
         onToggleMute={toggleMute}
         onClearAlerts={clearAlerts}
       />
@@ -64,6 +82,8 @@ export function App(): JSX.Element {
               <AgentPanelView
                 key={panel.agentType}
                 panel={panel}
+                locale={locale}
+                copy={copy}
                 onAck={(agentType, workspacePath) => ack(agentType, workspacePath)}
               />
             ))}
@@ -106,11 +126,7 @@ const NotificationToasts = memo(function NotificationToasts({
         >
           <img className="notification-logo" src={codePulseIcon} alt="" aria-hidden="true" />
           <div className="min-w-0">
-            <div className="notification-meta">
-              <span className="notification-app-name">CodePulse</span>
-              <span className="notification-dot" />
-            </div>
-            <h3 className="mt-0.5 truncate text-sm font-semibold text-slate-950">
+            <h3 className="truncate text-sm font-semibold text-slate-950">
               {compactNotificationTitle(note.title)}
             </h3>
             <p className="mt-1 truncate text-xs font-medium text-slate-600">
@@ -133,9 +149,13 @@ const NotificationToasts = memo(function NotificationToasts({
 
 const AgentPanelView = memo(function AgentPanelView({
   panel,
+  locale,
+  copy,
   onAck,
 }: {
   panel: AgentPanel
+  locale: Locale
+  copy: UiCopy
   onAck: (agentType: AgentType, workspacePath?: string) => void
 }): JSX.Element {
   const latest = panel.workspaces[0]?.agent
@@ -156,22 +176,24 @@ const AgentPanelView = memo(function AgentPanelView({
               <span
                 className={`rounded-full px-2 py-0.5 text-xs ${stateChipClass(latest?.state ?? TurnState.IDLE)}`}
               >
-                {style.label}
+                {turnStateLabel(latest?.state ?? TurnState.IDLE, locale)}
               </span>
             </div>
           </div>
           <div className="grid shrink-0 grid-cols-[4.4rem_5.7rem] gap-2 text-sm">
-            <Metric label="项目" value={String(projectCount || panel.workspaces.length)} />
-            <Metric label="最近" value={<RelativeTime timestamp={latest?.lastEventAt} />} />
+            <Metric label={copy.project} value={String(projectCount || panel.workspaces.length)} />
+            <Metric label={copy.recent} value={<RelativeTime timestamp={latest?.lastEventAt} />} />
           </div>
         </div>
-        <PanelQuotaMeter token={panel.quotaToken} />
+        <PanelQuotaMeter token={panel.quotaToken} copy={copy} />
       </div>
       <div className="agent-project-list grid min-h-0 flex-1 content-start gap-2 overflow-y-auto pr-1">
         {panel.workspaces.map((item) => (
           <ProjectTile
             key={item.id}
             item={item}
+            locale={locale}
+            copy={copy}
             onAck={() => onAck(panel.agentType, item.workspacePath)}
           />
         ))}
@@ -182,9 +204,13 @@ const AgentPanelView = memo(function AgentPanelView({
 
 const ProjectTile = memo(function ProjectTile({
   item,
+  locale,
+  copy,
   onAck,
 }: {
   item: AgentWorkspaceItem
+  locale: Locale
+  copy: UiCopy
   onAck: () => void
 }): JSX.Element {
   const agent = item.agent
@@ -207,31 +233,37 @@ const ProjectTile = memo(function ProjectTile({
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             <span className={`rounded-full px-2 py-1 text-xs ${stateChipClass(agent.state)}`}>
-              {style.label}
+              {turnStateLabel(agent.state, locale)}
             </span>
             {agent.unread && (
               <button
                 onClick={onAck}
                 className="rounded-full border border-emerald-300/50 bg-emerald-50/80 px-2 py-1 text-xs text-emerald-700 transition hover:bg-emerald-100 active:translate-y-px"
               >
-                已读
+                {copy.read}
               </button>
             )}
           </div>
         </div>
 
         <div className="grid grid-cols-[minmax(7rem,1fr)_minmax(5.5rem,0.7fr)] gap-2">
-          <InlineMetric label="模型" value={agent.model ?? '—'} />
-          <InlineMetric label="耗时" value={<ElapsedTime since={agent.turnStartedAt} />} />
+          <InlineMetric label={copy.model} value={agent.model ?? '—'} />
+          <InlineMetric label={copy.elapsed} value={<ElapsedTime since={agent.turnStartedAt} />} />
         </div>
 
-        <ContextMeter token={token} contextWindow={contextWindow} />
+        <ContextMeter token={token} contextWindow={contextWindow} copy={copy} />
       </div>
     </article>
   )
 })
 
-function PanelQuotaMeter({ token }: { token: TokenPayload | undefined }): JSX.Element {
+function PanelQuotaMeter({
+  token,
+  copy,
+}: {
+  token: TokenPayload | undefined
+  copy: UiCopy
+}): JSX.Element {
   const now = useNow()
   const { fiveHour, sevenDay } = visibleRateLimitWindows(token)
   const hasQuota = Boolean(fiveHour ?? sevenDay)
@@ -239,14 +271,14 @@ function PanelQuotaMeter({ token }: { token: TokenPayload | undefined }): JSX.El
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
       <TokenMeter
-        label={TOKEN_QUOTA_WINDOW_LABEL}
+        label={copy.fiveHourQuota}
         percent={fiveHour?.usedPercent}
-        detail={hasQuota ? formatQuotaReset(fiveHour?.resetsAt, now) : '等待 CLI 同步额度'}
+        detail={hasQuota ? formatQuotaReset(fiveHour?.resetsAt, now) : copy.waitingQuota}
       />
       <TokenMeter
-        label="每周额度"
+        label={copy.weeklyQuota}
         percent={sevenDay?.usedPercent}
-        detail={hasQuota ? formatQuotaReset(sevenDay?.resetsAt, now) : '等待 CLI 同步额度'}
+        detail={hasQuota ? formatQuotaReset(sevenDay?.resetsAt, now) : copy.waitingQuota}
       />
     </div>
   )
@@ -265,9 +297,11 @@ function ElapsedTime({ since }: { since: number | undefined }): JSX.Element {
 function ContextMeter({
   token,
   contextWindow,
+  copy,
 }: {
   token: TokenPayload | undefined
   contextWindow: number | undefined
+  copy: UiCopy
 }): JSX.Element {
   const status = formatContextWindowStatus(token, contextWindow)
   const usedPercent = status.usedPercent
@@ -277,7 +311,7 @@ function ContextMeter({
   return (
     <div className="rounded-xl border border-white/70 bg-white/45 px-3 py-2 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.7)]">
       <div className="mb-1.5 flex min-w-0 items-center justify-between gap-2 text-xs">
-        <span className="shrink-0 font-medium text-slate-500">Context window:</span>
+        <span className="shrink-0 font-medium text-slate-500">{copy.contextWindow}</span>
         <span className="truncate font-semibold text-slate-900">{status.text}</span>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-slate-200/80 ring-1 ring-white/80">

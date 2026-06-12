@@ -183,9 +183,10 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
 }
 
 function mergeToken(current: TokenPayload | undefined, patch: TokenPayload): TokenPayload {
+  const keepExactContext = current?.accuracy === 'exact' && patch.accuracy !== 'exact'
   const next: TokenPayload = {
     ...current,
-    accuracy: patch.accuracy ?? current?.accuracy ?? 'unknown',
+    accuracy: bestTokenAccuracy(current?.accuracy, patch.accuracy),
   }
 
   if (patch.input !== undefined) next.input = patch.input
@@ -193,12 +194,24 @@ function mergeToken(current: TokenPayload | undefined, patch: TokenPayload): Tok
   if (patch.output !== undefined) next.output = patch.output
   if (patch.reasoningOutput !== undefined) next.reasoningOutput = patch.reasoningOutput
   if (patch.total !== undefined) next.total = patch.total
-  if (patch.contextUsedPercent !== undefined) next.contextUsedPercent = patch.contextUsedPercent
-  if (patch.contextWindow !== undefined) next.contextWindow = patch.contextWindow
+  if (patch.contextUsedPercent !== undefined && !keepExactContext) {
+    next.contextUsedPercent = patch.contextUsedPercent
+  }
+  if (patch.contextWindow !== undefined && !keepExactContext)
+    next.contextWindow = patch.contextWindow
   if (patch.costUsd !== undefined) next.costUsd = patch.costUsd
   if (patch.rateLimits) next.rateLimits = mergeRateLimits(current?.rateLimits, patch.rateLimits)
 
   return next
+}
+
+function bestTokenAccuracy(
+  current: TokenPayload['accuracy'] | undefined,
+  patch: TokenPayload['accuracy'] | undefined,
+): TokenPayload['accuracy'] {
+  if (current === 'exact' || patch === 'exact') return 'exact'
+  if (current === 'estimated' || patch === 'estimated') return 'estimated'
+  return patch ?? current ?? 'unknown'
 }
 
 function mergeRateLimits(

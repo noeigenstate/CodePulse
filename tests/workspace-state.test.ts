@@ -212,6 +212,64 @@ test('StatusHub keeps user-input waits from being marked TIMEOUT by the watchdog
   )
 })
 
+test('StatusHub only emits notifications for completed turns', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0, permissionThrottleMs: 0 })
+  const notifications: NotificationRequest[] = []
+  hub.on('notification', (notification) => notifications.push(notification))
+  const startedAt = 1_000_000
+
+  hub.ingest({
+    id: 'high-context',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'context-session',
+    cwd: 'E:/project/a',
+    timestamp: startedAt,
+    token: {
+      contextUsedPercent: 99,
+      rateLimits: { fiveHour: { usedPercent: 98 }, sevenDay: { usedPercent: 90 } },
+      accuracy: 'estimated',
+    },
+  })
+  hub.ingest({
+    id: 'permission',
+    source: 'claude_code',
+    eventType: 'permission_request',
+    externalSessionId: 'permission-session',
+    cwd: 'E:/project/a',
+    message: 'waiting for permission',
+    timestamp: startedAt + 1,
+  })
+  hub.ingest({
+    id: 'prompt',
+    source: 'codex',
+    eventType: 'prompt_submit',
+    externalSessionId: 'running-session',
+    externalTurnId: 'turn-a',
+    cwd: 'E:/project/a',
+    timestamp: startedAt + 2,
+  })
+  ;(hub as unknown as { tick(now?: number): void }).tick(startedAt + STUCK_VISIBLE_MS + 3)
+
+  assert.equal(notifications.length, 0)
+
+  hub.ingest({
+    id: 'stop',
+    source: 'codex',
+    eventType: 'turn_stop',
+    externalSessionId: 'running-session',
+    externalTurnId: 'turn-a',
+    cwd: 'E:/project/a',
+    message: 'done',
+    timestamp: startedAt + STUCK_VISIBLE_MS + 4,
+  })
+
+  assert.equal(notifications.length, 1)
+  assert.equal(notifications[0]?.level, 'normal')
+  assert.equal(notifications[0]?.dedupeKey.startsWith('done:'), true)
+  assert.equal(notifications[0]?.body, 'a 一轮任务已完成')
+})
+
 test('StatusHub keeps concurrent sessions in the same workspace separate', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
 
@@ -375,6 +433,46 @@ test('StatusHub merges partial token snapshots instead of dropping previous fiel
   assert.equal(codex?.token?.rateLimits?.fiveHour?.usedPercent, 61)
   assert.equal(codex?.token?.rateLimits?.fiveHour?.resetsAt, 2_000)
   assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 18)
+})
+
+test('StatusHub keeps exact context data when later estimated token snapshots arrive', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+
+  hub.ingest({
+    id: 'official-token',
+    source: 'claude_code',
+    eventType: 'token_snapshot',
+    cwd: 'E:/project/a',
+    timestamp: 100,
+    token: {
+      input: 210_000,
+      total: 212_000,
+      contextUsedPercent: 21,
+      contextWindow: 1_000_000,
+      accuracy: 'exact',
+    },
+  })
+  hub.ingest({
+    id: 'transcript-token',
+    source: 'claude_code',
+    eventType: 'token_snapshot',
+    cwd: 'E:/project/a',
+    timestamp: 200,
+    token: {
+      input: 50_000,
+      total: 51_000,
+      contextUsedPercent: 25,
+      contextWindow: 200_000,
+      accuracy: 'estimated',
+    },
+  })
+
+  const claude = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
+  assert.equal(claude?.token?.input, 50_000)
+  assert.equal(claude?.token?.total, 51_000)
+  assert.equal(claude?.token?.contextUsedPercent, 21)
+  assert.equal(claude?.token?.contextWindow, 1_000_000)
+  assert.equal(claude?.token?.accuracy, 'exact')
 })
 
 test('StatusHub preserves quota windows when a zero-only token snapshot arrives', () => {

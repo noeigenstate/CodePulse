@@ -1,0 +1,1 @@
+export const NOTIFICATION_TOAST_VISIBLE_MS = 5_000

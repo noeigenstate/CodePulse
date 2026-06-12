@@ -57,6 +57,28 @@ export function formatWorkspaceLocation(path: string | undefined): string {
   return parts.length > 2 ? `... / ${tail}` : tail
 }
 
+export function formatProjectDirectoryBadge(
+  path: string | undefined,
+  projectName: string | undefined,
+): string {
+  if (!path) return 'waiting for directory'
+
+  const parts = path
+    .replace(/[\\/]+$/, '')
+    .split(/[\\/]/)
+    .filter(Boolean)
+
+  if (parts.length === 0) return path
+
+  const name = projectName?.toLowerCase()
+  const directoryParts = name && parts.at(-1)?.toLowerCase() === name ? parts.slice(0, -1) : parts
+
+  if (directoryParts.length === 0) return 'project root'
+
+  const tail = directoryParts.slice(-2).join(' / ')
+  return directoryParts.length > 2 ? `... / ${tail}` : tail
+}
+
 function normalizedPercent(value: number | undefined): number | undefined {
   if (value == null || !Number.isFinite(value)) return undefined
   return Math.min(100, Math.max(0, value))

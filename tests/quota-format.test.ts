@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import { formatTokenCount, formatTokenQuotaNotice, formatTokenUsage } from '@codepulse/shared'
 import {
   formatContextWindowStatus,
+  formatProjectDirectoryBadge,
   formatWorkspaceLocation,
   visibleRateLimitWindows,
 } from '../apps/desktop/src/renderer/src/lib/panelFormat.js'
@@ -113,5 +114,12 @@ test('workspace paths are shortened for project rows', () => {
   assert.equal(
     formatWorkspaceLocation('E:\\不负芳华\\CodePulse\\desktop'),
     '... / CodePulse / desktop',
+  )
+})
+
+test('project directory badge omits the duplicated project title segment', () => {
+  assert.equal(
+    formatProjectDirectoryBadge('E:\\不负芳华\\CodePulse\\desktop', 'desktop'),
+    '... / 不负芳华 / CodePulse',
   )
 })

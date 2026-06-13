@@ -118,10 +118,13 @@ const AgentPanelView = memo(function AgentPanelView({
           </div>
           <div className="grid shrink-0 grid-cols-[4.4rem_5.7rem] gap-2 text-sm">
             <Metric label={copy.project} value={String(projectCount || panel.workspaces.length)} />
-            <Metric label={copy.recent} value={<RelativeTime timestamp={latest?.lastEventAt} />} />
+            <Metric
+              label={copy.recent}
+              value={<RelativeTime timestamp={latest?.lastEventAt} locale={locale} />}
+            />
           </div>
         </div>
-        <PanelQuotaMeter token={panel.quotaToken} copy={copy} />
+        <PanelQuotaMeter token={panel.quotaToken} locale={locale} copy={copy} />
       </div>
       <div className="agent-project-list grid min-h-0 flex-1 content-start gap-2 overflow-y-auto pr-1">
         {panel.workspaces.map((item) => (
@@ -205,9 +208,9 @@ const ProjectTile = memo(function ProjectTile({
           <div className="min-w-0">
             <div className="project-title-row">
               <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${style.dot}`} />
-              <h3 className="project-title">{item.name}</h3>
+              <h3 className="project-title">{item.name || copy.unknownProject}</h3>
               <span className="project-directory-badge" title={item.workspacePath}>
-                {formatProjectDirectoryBadge(item.workspacePath, item.name)}
+                {formatProjectDirectoryBadge(item.workspacePath, item.name, copy.pathStatus)}
               </span>
             </div>
           </div>
@@ -228,7 +231,10 @@ const ProjectTile = memo(function ProjectTile({
 
         <div className="grid grid-cols-[minmax(7rem,1fr)_minmax(5.5rem,0.7fr)] gap-2">
           <InlineMetric label={copy.model} value={agent.model ?? '—'} />
-          <InlineMetric label={copy.elapsed} value={<ElapsedTime since={agent.turnStartedAt} />} />
+          <InlineMetric
+            label={copy.elapsed}
+            value={<ElapsedTime since={agent.turnStartedAt} locale={locale} />}
+          />
         </div>
 
         <ContextMeter token={token} contextWindow={contextWindow} copy={copy} />
@@ -239,9 +245,11 @@ const ProjectTile = memo(function ProjectTile({
 
 function PanelQuotaMeter({
   token,
+  locale,
   copy,
 }: {
   token: TokenPayload | undefined
+  locale: Locale
   copy: UiCopy
 }): JSX.Element {
   const now = useNow()
@@ -255,7 +263,7 @@ function PanelQuotaMeter({
         label={copy.fiveHourQuota}
         percent={fiveHour?.usedPercent}
         detail={quotaDetail(
-          hasQuota ? formatQuotaReset(fiveHour?.resetsAt, now) : copy.waitingQuota,
+          hasQuota ? formatQuotaReset(fiveHour?.resetsAt, now, locale) : copy.waitingQuota,
           bucket,
         )}
       />
@@ -263,7 +271,7 @@ function PanelQuotaMeter({
         label={copy.weeklyQuota}
         percent={sevenDay?.usedPercent}
         detail={quotaDetail(
-          hasQuota ? formatQuotaReset(sevenDay?.resetsAt, now) : copy.waitingQuota,
+          hasQuota ? formatQuotaReset(sevenDay?.resetsAt, now, locale) : copy.waitingQuota,
           bucket,
         )}
       />
@@ -281,14 +289,26 @@ function quotaBucketLabel(token: TokenPayload | undefined): string | undefined {
   return label.replace(/^GPT-/i, 'GPT ')
 }
 
-function RelativeTime({ timestamp }: { timestamp: number | undefined }): JSX.Element {
+function RelativeTime({
+  timestamp,
+  locale,
+}: {
+  timestamp: number | undefined
+  locale: Locale
+}): JSX.Element {
   const now = useNow()
-  return <>{timestamp ? formatRelative(timestamp, now) : '—'}</>
+  return <>{timestamp ? formatRelative(timestamp, now, locale) : '—'}</>
 }
 
-function ElapsedTime({ since }: { since: number | undefined }): JSX.Element {
+function ElapsedTime({
+  since,
+  locale,
+}: {
+  since: number | undefined
+  locale: Locale
+}): JSX.Element {
   const now = useNow()
-  return <>{since ? formatDuration(now - since) : '—'}</>
+  return <>{since ? formatDuration(now - since, locale) : '—'}</>
 }
 
 function ContextMeter({
@@ -300,7 +320,7 @@ function ContextMeter({
   contextWindow: number | undefined
   copy: UiCopy
 }): JSX.Element {
-  const status = formatContextWindowStatus(token, contextWindow)
+  const status = formatContextWindowStatus(token, contextWindow, copy.contextStatus)
   const usedPercent = status.usedPercent
   const hasPercent = typeof usedPercent === 'number'
   const width = hasPercent ? `${Math.min(100, Math.max(2, usedPercent))}%` : '0%'

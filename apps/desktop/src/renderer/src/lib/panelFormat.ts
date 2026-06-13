@@ -1,4 +1,5 @@
 import type { TokenPayload, TokenRateLimitWindow } from '@codepulse/shared'
+import type { ContextStatusCopy, PathStatusCopy } from './i18n.js'
 
 export interface ContextWindowStatus {
   usedPercent?: number
@@ -9,12 +10,18 @@ export interface ContextWindowStatus {
 export function formatContextWindowStatus(
   token: TokenPayload | undefined,
   fallbackWindow?: number,
+  copy: ContextStatusCopy = {
+    waiting: 'Waiting for CLI context',
+    lastPrefix: 'last: ',
+    left: 'left',
+    used: 'used',
+  },
 ): ContextWindowStatus {
   const usedPercent = normalizedPercent(token?.contextUsedPercent)
   const contextWindow = positiveNumber(token?.contextWindow ?? fallbackWindow)
 
   if (usedPercent === undefined || contextWindow === undefined) {
-    return { text: 'waiting for CLI status' }
+    return { text: copy.waiting }
   }
 
   const usedTokens = Math.min(contextWindow, (contextWindow * usedPercent) / 100)
@@ -23,7 +30,7 @@ export function formatContextWindowStatus(
   return {
     usedPercent,
     stale: token?.contextStale === true,
-    text: `${token?.contextStale ? 'last: ' : ''}${leftPercent}% left (${formatContextUsedCount(usedTokens)} used / ${formatContextTotalCount(contextWindow)})`,
+    text: `${token?.contextStale ? copy.lastPrefix : ''}${leftPercent}% ${copy.left} (${formatContextUsedCount(usedTokens)} ${copy.used} / ${formatContextTotalCount(contextWindow)})`,
   }
 }
 
@@ -49,8 +56,15 @@ export function visibleRateLimitWindows(token: TokenPayload | undefined): {
   return rateLimits
 }
 
-export function formatWorkspaceLocation(path: string | undefined): string {
-  if (!path) return 'waiting for project path'
+export function formatWorkspaceLocation(
+  path: string | undefined,
+  copy: PathStatusCopy = {
+    waitingProjectPath: 'Waiting for project path',
+    waitingDirectory: 'Waiting for directory',
+    projectRoot: 'Project root',
+  },
+): string {
+  if (!path) return copy.waitingProjectPath
 
   const parts = path
     .replace(/[\\/]+$/, '')
@@ -65,8 +79,13 @@ export function formatWorkspaceLocation(path: string | undefined): string {
 export function formatProjectDirectoryBadge(
   path: string | undefined,
   projectName: string | undefined,
+  copy: PathStatusCopy = {
+    waitingProjectPath: 'Waiting for project path',
+    waitingDirectory: 'Waiting for directory',
+    projectRoot: 'Project root',
+  },
 ): string {
-  if (!path) return 'waiting for directory'
+  if (!path) return copy.waitingDirectory
 
   const parts = path
     .replace(/[\\/]+$/, '')
@@ -78,7 +97,7 @@ export function formatProjectDirectoryBadge(
   const name = projectName?.toLowerCase()
   const directoryParts = name && parts.at(-1)?.toLowerCase() === name ? parts.slice(0, -1) : parts
 
-  if (directoryParts.length === 0) return 'project root'
+  if (directoryParts.length === 0) return copy.projectRoot
 
   const tail = directoryParts.slice(-2).join(' / ')
   return directoryParts.length > 2 ? `... / ${tail}` : tail

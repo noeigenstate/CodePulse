@@ -10,6 +10,7 @@ import {
   type OverallState,
   TurnState,
 } from '@codepulse/shared'
+import type { Locale } from './i18n.js'
 
 /**
  * 显示标签及其状态圆点与文字的 Tailwind 类。
@@ -94,12 +95,17 @@ export function agentName(type: string): string {
  * @param ms 时长（毫秒，负值按 0 处理）。
  * @returns 格式化后的字符串。
  */
-export function formatDuration(ms: number): string {
+export function formatDuration(ms: number, locale: Locale = 'zh'): string {
   if (ms < 0) ms = 0
   const totalSec = Math.floor(ms / 1000)
   const h = Math.floor(totalSec / 3600)
   const m = Math.floor((totalSec % 3600) / 60)
   const s = totalSec % 60
+  if (locale === 'zh') {
+    if (h > 0) return `${h} 小时 ${m} 分`
+    if (m > 0) return `${m} 分 ${s} 秒`
+    return `${s} 秒`
+  }
   if (h > 0) return `${h}h ${m}m`
   if (m > 0) return `${m}m ${s}s`
   return `${s}s`
@@ -149,9 +155,15 @@ export function formatPercent(pct: number | undefined): string {
  * @param now 当前时间（epoch 毫秒）。
  * @returns 简短的相对时间字符串。
  */
-export function formatRelative(ts: number, now: number): string {
+export function formatRelative(ts: number, now: number, locale: Locale = 'zh'): string {
   const diff = now - ts
-  if (diff < 5_000) return '刚刚'
+  if (locale === 'zh') {
+    if (diff < 5_000) return '刚刚'
+    if (diff < 60_000) return `${Math.floor(diff / 1000)} 秒前`
+    if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`
+    return `${Math.floor(diff / 3_600_000)} 小时前`
+  }
+  if (diff < 5_000) return 'just now'
   if (diff < 60_000) return `${Math.floor(diff / 1000)}s ago`
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
   return `${Math.floor(diff / 3_600_000)}h ago`

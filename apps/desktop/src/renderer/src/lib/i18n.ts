@@ -21,6 +21,22 @@ export interface UiCopy {
   waitingQuota: string
   read: string
   contextWindow: string
+  unknownProject: string
+  contextStatus: ContextStatusCopy
+  pathStatus: PathStatusCopy
+}
+
+export interface ContextStatusCopy {
+  waiting: string
+  lastPrefix: string
+  left: string
+  used: string
+}
+
+export interface PathStatusCopy {
+  waitingProjectPath: string
+  waitingDirectory: string
+  projectRoot: string
 }
 
 interface LocaleStorageLike {
@@ -30,17 +46,17 @@ interface LocaleStorageLike {
 const HEADER_COPY: Record<Locale, HeaderCopy> = {
   zh: {
     brandTag: '',
-    subtitle: 'AI coding-agent live console',
+    subtitle: '编程助手实时控制台',
     mute: '静音 30 分钟',
     muted: '已静音',
-    languageToggle: 'EN',
+    languageToggle: '英文',
   },
   en: {
     brandTag: '',
     subtitle: 'AI coding-agent live console',
     mute: 'Mute 30 min',
     muted: 'Muted',
-    languageToggle: '中',
+    languageToggle: 'Chinese',
   },
 }
 
@@ -52,9 +68,21 @@ const UI_COPY: Record<Locale, UiCopy> = {
     elapsed: '耗时',
     fiveHourQuota: '5 小时额度',
     weeklyQuota: '每周额度',
-    waitingQuota: '等待 CLI 同步额度',
+    waitingQuota: '等待命令行同步额度',
     read: '已读',
-    contextWindow: 'Context window:',
+    contextWindow: '上下文窗口：',
+    unknownProject: '未识别项目',
+    contextStatus: {
+      waiting: '等待命令行同步上下文',
+      lastPrefix: '上次：',
+      left: '剩余',
+      used: '已用',
+    },
+    pathStatus: {
+      waitingProjectPath: '等待项目路径',
+      waitingDirectory: '等待目录',
+      projectRoot: '项目根目录',
+    },
   },
   en: {
     project: 'Projects',
@@ -66,6 +94,18 @@ const UI_COPY: Record<Locale, UiCopy> = {
     waitingQuota: 'Waiting for CLI quota sync',
     read: 'Read',
     contextWindow: 'Context window:',
+    unknownProject: 'Unknown project',
+    contextStatus: {
+      waiting: 'Waiting for CLI context',
+      lastPrefix: 'last: ',
+      left: 'left',
+      used: 'used',
+    },
+    pathStatus: {
+      waitingProjectPath: 'Waiting for project path',
+      waitingDirectory: 'Waiting for directory',
+      projectRoot: 'Project root',
+    },
   },
 }
 

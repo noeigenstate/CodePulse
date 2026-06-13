@@ -12,6 +12,7 @@ finished, or stuck — without alt-tabbing back to a terminal.
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#quick-start)
 [![pnpm](https://img.shields.io/badge/pnpm-%E2%89%A59-F69220?logo=pnpm&logoColor=white)](#quick-start)
 [![built with](https://img.shields.io/badge/built%20with-Electron%20%2B%20TypeScript-47848F?logo=electron&logoColor=white)](#how-it-works)
+[![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
 [English](./README.md) · [简体中文](./README.zh-CN.md) · [Product spec](./requirements.md)
 
@@ -34,6 +35,23 @@ and surfaces the result three ways:
 Everything runs **100% locally**. The server binds to loopback only, prompts
 are stored as short previews (never in full), and the hooks fail silently when
 CodePulse isn't running — your agents are never blocked or slowed down.
+
+## Screenshots
+
+![CodePulse dashboard](./docs/screenshots/dashboard.png)
+
+The live dashboard tracks every agent and workspace in real time — state, model,
+elapsed time, context-window usage, and rolling 5-hour / weekly quota. _(Sample
+data shown.)_
+
+### 🚧 CodePulse Deck — hardware companion (in development)
+
+A dedicated E-Ink desk display that mirrors agent status at a glance, no window
+required. The hardware is **currently in development** — here is the concept:
+
+<div align="center">
+<img src="./img/CodePulseDeck.png" width="640" alt="CodePulse Deck — E-Ink hardware companion (in development)" />
+</div>
 
 ## Features
 
@@ -379,6 +397,9 @@ Planned next (see [`requirements.md`](./requirements.md) §12):
 - [ ] Precise Codex token accounting
 - [ ] Cloud sync & accounts
 
+The **CodePulse Deck** E-Ink hardware companion (shown above) is part of this
+roadmap and currently in development.
+
 ## Contributing
 
 Issues and pull requests are welcome. Before submitting:
@@ -390,3 +411,7 @@ Issues and pull requests are welcome. Before submitting:
 For product context, read [`requirements.md`](./requirements.md); the
 state-machine transition table in §8 is the source of truth for lifecycle
 behavior.
+
+## License
+
+Released under the [MIT License](./LICENSE) © 2026 CodePulse Contributors.

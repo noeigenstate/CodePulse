@@ -111,7 +111,7 @@ export function buildWorkspaceAgentGroups(agents: AgentRuntimeState[]): Workspac
 
       return {
         id: key || 'workspace:unknown',
-        name: workspacePath ? workspaceName(workspacePath) : '未识别项目',
+        name: workspacePath ? workspaceName(workspacePath) : '',
         workspacePath,
         updatedAt,
         token: latestToken(groupAgents),
@@ -143,7 +143,7 @@ function buildAgentWorkspaceItems(
 
       return {
         id: `${agentType}:${key || 'unknown'}`,
-        name: workspacePath ? workspaceName(workspacePath) : '未识别项目',
+        name: workspacePath ? workspaceName(workspacePath) : '',
         workspacePath,
         updatedAt: latest.lastEventAt,
         agent: workspacePath && !latest.workspacePath ? { ...latest, workspacePath } : latest,
@@ -159,7 +159,7 @@ function idleAgent(agentType: AgentType, workspacePath?: string): AgentRuntimeSt
     toolCallCount: 0,
     needPermission: false,
     needUserInput: false,
-    activity: '等待事件',
+    activity: undefined,
     lastEventAt: 0,
     unread: false,
     workspacePath,

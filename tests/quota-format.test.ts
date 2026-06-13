@@ -28,13 +28,13 @@ test('quota detail includes five-hour and weekly reset countdowns', () => {
     now,
   )
 
-  assert.equal(detail, '5h 61% · 刷新 1h 30m / 每周 12% · 刷新 6d 12h')
+  assert.equal(detail, '5 小时 61% · 刷新 1 小时 30 分 / 每周 12% · 刷新 6 天 12 小时')
 })
 
 test('quota detail keeps both windows visible when reset data is missing', () => {
   const detail = formatQuotaDetail({ accuracy: 'estimated', contextUsedPercent: 50 }, Date.now())
 
-  assert.equal(detail, '5h — · 刷新 — / 每周 — · 刷新 —')
+  assert.equal(detail, '5 小时 — · 刷新 — / 每周 — · 刷新 —')
 })
 
 test('token quota notice includes five-hour and weekly reset countdowns', () => {
@@ -122,15 +122,12 @@ test('zero quota snapshots with reset metadata are visible as refreshed quota da
 })
 
 test('workspace paths are shortened for project rows', () => {
-  assert.equal(
-    formatWorkspaceLocation('E:\\不负芳华\\CodePulse\\desktop'),
-    '... / CodePulse / desktop',
-  )
+  assert.equal(formatWorkspaceLocation('C:\\code\\CodePulse\\desktop'), '... / CodePulse / desktop')
 })
 
 test('project directory badge omits the duplicated project title segment', () => {
   assert.equal(
-    formatProjectDirectoryBadge('E:\\不负芳华\\CodePulse\\desktop', 'desktop'),
-    '... / 不负芳华 / CodePulse',
+    formatProjectDirectoryBadge('C:\\work\\projects\\CodePulse\\desktop', 'desktop'),
+    '... / projects / CodePulse',
   )
 })

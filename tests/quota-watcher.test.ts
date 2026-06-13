@@ -80,8 +80,9 @@ test('QuotaRefreshWatcher refreshes only the bound Codex quota source', async ()
       eventType: 'token_snapshot',
       externalSessionId: 'session-a',
       cwd: 'E:/project/a',
+      model: 'gpt-5.5',
       tokenSourcePath: 'E:/codex/session-a.jsonl',
-      timestamp: 1_000_000,
+      timestamp: 900_000,
       token: {
         contextUsedPercent: 90,
         rateLimits: {
@@ -96,8 +97,64 @@ test('QuotaRefreshWatcher refreshes only the bound Codex quota source', async ()
 
     const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
     assert.equal(codex?.workspacePath, 'E:/project/a')
+    assert.equal(codex?.lastEventAt, 900_000)
+    assert.equal(codex?.model, 'gpt-5.5')
     assert.equal(codex?.token?.rateLimits?.fiveHour?.usedPercent, 0)
     assert.equal(codex?.token?.rateLimits?.fiveHour?.resetsAt, 2_000)
+  } finally {
+    watcher.stop()
+  }
+})
+
+test('QuotaRefreshWatcher allows weekly refresh when only the five-hour reset is stale', async () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const refreshed = new Promise<void>((resolve) => {
+    hub.on('status', () => {
+      const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+      if (codex?.token?.rateLimits?.sevenDay?.resetsAt === 10_000) resolve()
+    })
+  })
+  const watcher = new QuotaRefreshWatcher({
+    hub,
+    now: () => 9_000_000,
+    scheduleOffsetsMs: [0],
+    readToken: async () => ({
+      contextUsedPercent: 2,
+      rateLimits: {
+        fiveHour: { usedPercent: 99, resetsAt: 1_000, windowMinutes: 300 },
+        sevenDay: { usedPercent: 0, resetsAt: 10_000, windowMinutes: 10_080 },
+      },
+      accuracy: 'estimated',
+    }),
+  })
+
+  try {
+    hub.on('event', (event) => watcher.observe(event))
+    hub.ingest({
+      id: 'quota',
+      source: 'codex',
+      eventType: 'token_snapshot',
+      externalSessionId: 'session-a',
+      cwd: 'E:/project/a',
+      tokenSourcePath: 'E:/codex/session-a.jsonl',
+      timestamp: 8_000_000,
+      token: {
+        contextUsedPercent: 90,
+        rateLimits: {
+          fiveHour: { usedPercent: 99, resetsAt: 1_000, windowMinutes: 300 },
+          sevenDay: { usedPercent: 8, resetsAt: 9_000, windowMinutes: 10_080 },
+        },
+        accuracy: 'estimated',
+      },
+    })
+
+    await refreshed
+
+    const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.equal(codex?.lastEventAt, 8_000_000)
+    assert.equal(codex?.token?.rateLimits?.fiveHour?.resetsAt, 1_000)
+    assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 0)
+    assert.equal(codex?.token?.rateLimits?.sevenDay?.resetsAt, 10_000)
   } finally {
     watcher.stop()
   }

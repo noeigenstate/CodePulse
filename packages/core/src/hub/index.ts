@@ -24,6 +24,8 @@ import {
   type RuleEngineOptions,
 } from '../rule-engine/index.js'
 
+const WAITING_STALE_MS = 30 * 60_000
+
 /**
  * {@link StatusHub} 发出的强类型事件。
  */
@@ -174,7 +176,7 @@ export class StatusHub extends EventEmitter {
 
   private timeoutEventFor(agent: AgentRuntimeState, now: number): AgentEvent | undefined {
     if (agent.lastEventAt === 0 || !canTimeoutState(agent.state)) return undefined
-    const threshold = agent.state === TurnState.TOOL_RUNNING ? STUCK_STRONG_MS : STUCK_VISIBLE_MS
+    const threshold = timeoutThreshold(agent.state)
     if (now - agent.lastEventAt < threshold) return undefined
 
     const scope = agent.externalSessionId ?? workspaceKey(agent.workspacePath)
@@ -250,8 +252,18 @@ function canTimeoutState(state: TurnState): boolean {
   return (
     state === TurnState.PROMPT_SUBMITTED ||
     state === TurnState.THINKING ||
-    state === TurnState.TOOL_RUNNING
+    state === TurnState.TOOL_RUNNING ||
+    state === TurnState.WAITING_PERMISSION ||
+    state === TurnState.WAITING_USER_INPUT
   )
+}
+
+function timeoutThreshold(state: TurnState): number {
+  if (state === TurnState.TOOL_RUNNING) return STUCK_STRONG_MS
+  if (state === TurnState.WAITING_PERMISSION || state === TurnState.WAITING_USER_INPUT) {
+    return WAITING_STALE_MS
+  }
+  return STUCK_VISIBLE_MS
 }
 
 function sessionKey(agentType: AgentType, sessionId: string): string {

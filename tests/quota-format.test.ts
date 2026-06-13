@@ -82,6 +82,19 @@ test('context window status mirrors the compact Codex slash display', () => {
   assert.equal(status.text, '21% left (207K used / 258K)')
 })
 
+test('stale context window status is labelled as last snapshot', () => {
+  const status = formatContextWindowStatus({
+    accuracy: 'exact',
+    contextUsedPercent: 79.85,
+    contextWindow: 258_400,
+    contextStale: true,
+  })
+
+  assert.equal(status.usedPercent, 79.85)
+  assert.equal(status.stale, true)
+  assert.equal(status.text, 'last: 21% left (207K used / 258K)')
+})
+
 test('zero-only quota snapshots are treated as unavailable display data', () => {
   const windows = visibleRateLimitWindows({
     accuracy: 'estimated',

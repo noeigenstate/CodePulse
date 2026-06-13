@@ -47,7 +47,19 @@ export function serverUrl() {
  * @param {{ timeoutMs?: number }} [options] 中止超时（毫秒，默认 1500）。
  * @returns {Promise<boolean>} 2xx 响应为 `true`，任何失败为 `false`。
  */
-export async function postEvent(payload, { timeoutMs = 1500 } = {}) {
+export async function postEvent(
+  payload,
+  { timeoutMs = 1500, retries = 1, retryDelayMs = 200 } = {},
+) {
+  const attempts = Math.max(1, retries + 1)
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (await postEventOnce(payload, timeoutMs)) return true
+    if (attempt < attempts - 1 && retryDelayMs > 0) await delay(retryDelayMs)
+  }
+  return false
+}
+
+async function postEventOnce(payload, timeoutMs) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
@@ -63,4 +75,8 @@ export async function postEvent(payload, { timeoutMs = 1500 } = {}) {
   } finally {
     clearTimeout(timer)
   }
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }

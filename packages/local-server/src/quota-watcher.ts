@@ -11,6 +11,7 @@ const TAIL_BYTES = 1024 * 1024
 const DEFAULT_CODEX_CONTEXT_WINDOW = 256_000
 const DEFAULT_SCHEDULE_OFFSETS_MS = [1_000, 5_000, 15_000, 30_000, 60_000] as const
 const MAX_TIMEOUT_MS = 2_147_483_647
+type QuotaWindowKey = 'fiveHour' | 'sevenDay'
 
 interface BoundQuotaSource {
   sourcePath: string
@@ -19,7 +20,6 @@ interface BoundQuotaSource {
   externalTurnId?: string
   workspacePath?: string
   cwd?: string
-  model?: string
 }
 
 export interface QuotaRefreshWatcherOptions {
@@ -53,11 +53,10 @@ export class QuotaRefreshWatcher {
       externalTurnId: event.externalTurnId,
       workspacePath: event.workspacePath,
       cwd: event.cwd,
-      model: event.model,
     }
 
-    for (const resetAt of resetTimes(event.token)) {
-      this.schedule(binding, resetAt)
+    for (const reset of resetWindows(event.token)) {
+      this.schedule(binding, reset.window, reset.resetAt)
     }
   }
 
@@ -66,33 +65,37 @@ export class QuotaRefreshWatcher {
     this.timers.clear()
   }
 
-  private schedule(binding: BoundQuotaSource, resetAt: number): void {
+  private schedule(binding: BoundQuotaSource, window: QuotaWindowKey, resetAt: number): void {
     for (const offset of this.scheduleOffsetsMs) {
       const runAt = normalizeResetAt(resetAt) + offset
       const delay = runAt - this.now()
       if (delay < 0 || delay > MAX_TIMEOUT_MS) continue
 
       if (delay === 0) {
-        void this.refresh(binding, runAt)
+        void this.refresh(binding, window, runAt)
         continue
       }
 
-      const key = `${binding.source}\0${binding.sourcePath}\0${resetAt}\0${offset}`
+      const key = `${binding.source}\0${binding.sourcePath}\0${window}\0${resetAt}\0${offset}`
       if (this.timers.has(key)) continue
 
       const timer = setTimeout(() => {
         this.timers.delete(key)
-        void this.refresh(binding, runAt)
+        void this.refresh(binding, window, runAt)
       }, delay)
       timer.unref?.()
       this.timers.set(key, timer)
     }
   }
 
-  private async refresh(binding: BoundQuotaSource, scheduledResetAt: number): Promise<void> {
+  private async refresh(
+    binding: BoundQuotaSource,
+    window: QuotaWindowKey,
+    scheduledResetAt: number,
+  ): Promise<void> {
     const token = await this.readToken(binding.sourcePath)
     if (!token?.rateLimits) return
-    if (hasExpiredResetTimestamp(token, scheduledResetAt)) return
+    if (hasExpiredResetTimestamp(token, window, scheduledResetAt)) return
 
     this.hub.ingest({
       id: `quota-refresh:${binding.source}:${workspaceKey(binding.workspacePath ?? binding.cwd)}:${this.now()}`,
@@ -102,9 +105,9 @@ export class QuotaRefreshWatcher {
       externalTurnId: binding.externalTurnId,
       workspacePath: binding.workspacePath,
       cwd: binding.cwd,
-      model: binding.model,
       token,
       tokenSourcePath: binding.sourcePath,
+      internal: { quotaRefresh: true },
       timestamp: this.now(),
     })
   }
@@ -219,15 +222,23 @@ function readRateLimitString(value: unknown, ...keys: string[]): string | undefi
   return undefined
 }
 
-function resetTimes(token: TokenPayload): number[] {
-  return [token.rateLimits?.fiveHour?.resetsAt, token.rateLimits?.sevenDay?.resetsAt].filter(
-    (value): value is number => value !== undefined && Number.isFinite(value),
+function resetWindows(token: TokenPayload): Array<{ window: QuotaWindowKey; resetAt: number }> {
+  return [
+    { window: 'fiveHour' as const, resetAt: token.rateLimits?.fiveHour?.resetsAt },
+    { window: 'sevenDay' as const, resetAt: token.rateLimits?.sevenDay?.resetsAt },
+  ].filter(
+    (item): item is { window: QuotaWindowKey; resetAt: number } =>
+      item.resetAt !== undefined && Number.isFinite(item.resetAt),
   )
 }
 
-function hasExpiredResetTimestamp(token: TokenPayload, scheduledResetAt: number): boolean {
-  const times = resetTimes(token).map(normalizeResetAt)
-  return times.some((resetAt) => resetAt <= scheduledResetAt)
+function hasExpiredResetTimestamp(
+  token: TokenPayload,
+  window: QuotaWindowKey,
+  scheduledResetAt: number,
+): boolean {
+  const resetAt = token.rateLimits?.[window]?.resetsAt
+  return resetAt !== undefined && normalizeResetAt(resetAt) <= scheduledResetAt
 }
 
 function normalizeResetAt(value: number): number {

@@ -65,22 +65,29 @@ export interface TransitionResult {
  */
 export function reduce(current: AgentRuntimeState, event: AgentEvent): TransitionResult {
   const previousState = current.state
+  const tokenOnlyQuotaRefresh = event.internal?.quotaRefresh === true
   const next: AgentRuntimeState = {
     ...current,
-    lastEventAt: event.eventType === 'turn_timeout' ? current.lastEventAt : event.timestamp,
+    lastEventAt:
+      event.eventType === 'turn_timeout' || tokenOnlyQuotaRefresh
+        ? current.lastEventAt
+        : event.timestamp,
   }
 
   // 继承事件经常刷新的上下文字段。
-  if (event.externalSessionId) next.externalSessionId = event.externalSessionId
-  if (event.externalTurnId) next.externalTurnId = event.externalTurnId
-  if (event.workspacePath ?? event.cwd) next.workspacePath = event.workspacePath ?? event.cwd
-  if (event.model) next.model = event.model
+  if (!tokenOnlyQuotaRefresh) {
+    if (event.externalSessionId) next.externalSessionId = event.externalSessionId
+    if (event.externalTurnId) next.externalTurnId = event.externalTurnId
+    if (event.workspacePath ?? event.cwd) next.workspacePath = event.workspacePath ?? event.cwd
+    if (event.model) next.model = event.model
+  }
   if (event.token) next.token = mergeToken(current.token, event.token, event.timestamp)
 
   switch (event.eventType) {
     case 'session_start':
       next.state = TurnState.IDLE
       next.unread = false
+      if (!hasContextSnapshot(event.token)) next.token = markContextStale(next.token)
       break
 
     case 'prompt_submit':
@@ -168,6 +175,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       next.needUserInput = false
       next.toolName = undefined
       next.activity = undefined
+      if (!hasContextSnapshot(event.token)) next.token = markContextStale(next.token)
       break
 
     default:
@@ -207,6 +215,8 @@ function mergeToken(
   }
   if (patch.contextWindow !== undefined && !keepExactContext)
     next.contextWindow = patch.contextWindow
+  if (hasContextSnapshot(patch) && !keepExactContext) next.contextStale = false
+  if (patch.contextStale !== undefined) next.contextStale = patch.contextStale
   if (patch.costUsd !== undefined) next.costUsd = patch.costUsd
   if (patch.rateLimits) {
     const shouldKeepRateLimitMetadata = isZeroOnlyRateLimits(patch.rateLimits)
@@ -219,6 +229,17 @@ function mergeToken(
   }
 
   return next
+}
+
+function hasContextSnapshot(token: TokenPayload | undefined): boolean {
+  return token?.contextUsedPercent !== undefined || token?.contextWindow !== undefined
+}
+
+function markContextStale(token: TokenPayload | undefined): TokenPayload | undefined {
+  if (!token) return token
+  if (!hasContextSnapshot(token)) return token
+  if (token.contextStale) return token
+  return { ...token, contextStale: true }
 }
 
 function mergeQuotaBuckets(

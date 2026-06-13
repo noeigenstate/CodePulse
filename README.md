@@ -1,129 +1,114 @@
-# CodePulse Desktop / 码脉桌面端
+<div align="center">
 
-中文文档：[README.zh-CN.md](./README.zh-CN.md)
+# CodePulse
 
-A local AI coding-agent **status hub**. CodePulse watches Codex and Claude Code
-through their hook / status-line mechanisms and tells you — without staring at a
-terminal — whether the agent is still working, has finished a turn, is waiting
-for your permission/input, errored, or looks stuck. See
-[`requirements.md`](./requirements.md) for the full product spec.
+**A local status hub for your AI coding agents.**
 
-This repository contains the **V0.1 MVP**: a runnable Electron app with the local
-server, state machine, rule engine, SQLite storage, system tray, desktop
-notifications, a live Dashboard, and the Codex / Claude Code hook scripts.
+Know at a glance whether Codex and Claude Code are working, waiting on you,
+finished, or stuck — without alt-tabbing back to a terminal.
 
----
+[![status](https://img.shields.io/badge/status-v0.1%20MVP-orange)](#roadmap)
+[![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#building-a-distributable)
+[![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#quick-start)
+[![pnpm](https://img.shields.io/badge/pnpm-%E2%89%A59-F69220?logo=pnpm&logoColor=white)](#quick-start)
+[![built with](https://img.shields.io/badge/built%20with-Electron%20%2B%20TypeScript-47848F?logo=electron&logoColor=white)](#how-it-works)
 
-## Table of contents
+[English](./README.md) · [简体中文](./README.zh-CN.md) · [Product spec](./requirements.md)
 
-- [What it does](#what-it-does)
-- [Stack](#stack)
-- [Repository layout](#repository-layout)
-- [Prerequisites](#prerequisites)
-- [How to use the software](#how-to-use-the-software)
-  - [1. Install](#1-install)
-  - [2. Launch](#2-launch)
-  - [3. Connect Claude Code](#3-connect-claude-code)
-  - [4. Connect Codex](#4-connect-codex)
-  - [5. Verify it works](#5-verify-it-works)
-  - [6. Read the Dashboard](#6-read-the-dashboard)
-  - [7. Use the tray](#7-use-the-tray)
-  - [8. Notifications & quiet rules](#8-notifications--quiet-rules)
-- [Where your data lives](#where-your-data-lives)
-- [Local API reference](#local-api-reference)
-- [Building a distributable](#building-a-distributable)
-- [Developing](#developing)
-- [Troubleshooting](#troubleshooting)
-- [V0.1 status](#v01-status)
+</div>
 
 ---
 
-## What it does
+AI coding agents are great at working unattended — and terrible at telling you
+when they need you. CodePulse listens to the lifecycle hooks that Codex and
+Claude Code already expose, runs every event through a single state machine,
+and surfaces the result three ways:
 
-CodePulse answers, at a glance, the questions you normally have to switch back to
-the terminal for:
+- 📊 **Live Dashboard** — per-agent, per-workspace cards with state, activity,
+  elapsed time, tool calls, context-window usage, and quota.
+- 🎨 **Color-coded tray icon** — the overall state of every agent, visible at
+  all times.
+- 🔔 **Desktop notifications** — fired only when something actually needs you,
+  with throttling and deduplication built in.
 
-> Is the AI still working? Has it finished? Is it waiting on me? Is it stuck? Is
-> it about to run out of context?
+Everything runs **100% locally**. The server binds to loopback only, prompts
+are stored as short previews (never in full), and the hooks fail silently when
+CodePulse isn't running — your agents are never blocked or slowed down.
 
-It does this by receiving lifecycle events from each agent's hooks, running them
-through a single state machine, and surfacing the result three ways: a **live
-Dashboard**, a **colour-coded tray icon**, and **desktop notifications** that
-fire only when something actually needs you.
+## Features
 
-## Stack
+|                                     |                                                                                                                                         |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| 🚦 **Unified state machine**        | One turn lifecycle for every agent: idle → processing → tool running → waiting for permission/input → done / error / cancelled / stuck. |
+| 🧭 **Multi-agent, multi-workspace** | Concurrent Codex and Claude Code sessions across projects, each tracked separately.                                                     |
+| 📈 **Context & token tracking**     | Context-window usage from Claude's status line (exact) and Codex rollout files (estimated), with cost where available.                  |
+| 🎟️ **Quota awareness**              | 5-hour / weekly rate-limit windows per quota bucket, matched to the model you're actually running.                                      |
+| 🕰️ **Stuck detection**              | A watchdog flags turns with no activity so silent failures don't burn your afternoon.                                                   |
+| 💾 **Local history**                | Events, sessions, turns, and token snapshots persisted to SQLite — yours to query or delete.                                            |
+| 🔌 **Open local API**               | Plain HTTP + WebSocket on `127.0.0.1:17888`; build your own consumers (an ESP32 hardware client is on the roadmap).                     |
 
-`Electron + electron-vite + TypeScript + React + Vite + Tailwind + Zustand`
-on the front, `Fastify + @fastify/websocket + better-sqlite3 + Drizzle ORM` on
-the back — all in a `pnpm` workspace.
-
-## Repository layout
+## How it works
 
 ```
-apps/desktop/            Electron app (main / preload / renderer)
+ Codex / Claude Code
+   │  lifecycle hooks & status line (dependency-free Node scripts)
+   ▼
+ POST /api/events ──► adapters ──► StatusHub (pure reducer + rule engine)
+ (Fastify, loopback)   normalize        │
+                                        ├─► SQLite (events / sessions / turns / tokens)
+                                        ├─► tray icon update
+                                        ├─► desktop notification
+                                        └─► WebSocket / IPC push ──► Dashboard (React)
+```
+
+The repository is a `pnpm` workspace:
+
+```
+apps/desktop/        Electron app (main / preload / renderer)
 packages/
-  shared/                Domain types (Agent, Turn, AgentEvent, …) + constants
-  core/                  State machine, rule engine, aggregation, StatusHub
-  adapters/              Codex / Claude raw-payload → AgentEvent mapping
-  storage/               SQLite schema (Drizzle) + repository
-  local-server/          Fastify HTTP + WebSocket (/api/events, /api/status, …)
-  hooks/                 Standalone hook scripts agents invoke
-scripts/                 Backend smoke test (`pnpm smoke`)
+  shared/            Domain types (Agent, Turn, AgentEvent, …) + constants
+  core/              State machine, rule engine, aggregation, StatusHub
+  adapters/          Codex / Claude raw payload → AgentEvent mapping
+  storage/           SQLite schema (Drizzle ORM) + repository
+  local-server/      Fastify HTTP + WebSocket routes
+  hooks/             Standalone hook scripts the agents invoke
+scripts/             Backend smoke test
+tests/               Unit tests
 ```
 
-Data flow: **hook script → `POST /api/events` → adapter normalizes → `StatusHub`
-(reducer + rule engine) → { SQLite persist, tray update, desktop notification,
-WebSocket / IPC push → Dashboard }**.
+**Stack:** Electron · electron-vite · TypeScript · React · Tailwind · Zustand ·
+Fastify · better-sqlite3 · Drizzle ORM.
 
-## Prerequisites
+## Quick start
+
+### Prerequisites
 
 - **Node.js ≥ 20** (tested on 22.x)
-- **pnpm ≥ 9** (`npm i -g pnpm`)
-- **A C++ build toolchain** for the native `better-sqlite3` module. On Windows
-  that means the **Visual Studio C++ Build Tools**; CodePulse fetches a prebuilt
-  binary when possible, so you usually do not need to compile anything. See
+- **pnpm ≥ 9** — `npm i -g pnpm`
+- Windows users: `better-sqlite3` normally installs a prebuilt binary; see
   [Troubleshooting](#troubleshooting) if the database fails to load.
 
----
-
-## How to use the software
-
-### 1. Install
+### Install & run
 
 ```bash
 pnpm install
-```
-
-This installs all workspace dependencies and builds the native modules. The root
-`package.json` allow-lists `better-sqlite3`, `electron`, and `esbuild` for build
-scripts (pnpm 10 blocks these by default).
-
-### 2. Launch
-
-```bash
 pnpm dev
 ```
 
-On launch you get:
+You get a tray icon (grey = idle), the Dashboard window, and a local server on
+`http://127.0.0.1:17888`. Closing the window keeps CodePulse running in the
+tray; quit from the tray menu.
 
-- a **CodePulse icon in the system tray** (grey = idle),
-- the **Dashboard window**, and
-- a **local server** on `http://127.0.0.1:17888` that the hooks talk to.
+### Connect Claude Code
 
-> CodePulse lives in the tray: closing the window keeps it running in the
-> background. Quit it from the tray menu → **退出 (Quit)**.
+The hook scripts in `packages/hooks/bin/` are dependency-free and always exit
+`0`, so they can never block or break the agent. Replace `<REPO>` with the
+absolute path to this repository (on Windows, use double backslashes).
 
-Until you connect an agent (next steps), the Dashboard shows
-“正在等待 Codex / Claude Code 事件…”. **CodePulse not running does not affect your
-agents** — the hooks fail silently when the server is down.
+Merge the following into `~/.claude/settings.json`:
 
-### 3. Connect Claude Code
-
-The hook scripts live in `packages/hooks/bin/` and are dependency-free; they POST
-to the local server and **exit 0 no matter what**, so they never block or break
-the agent. Replace `<REPO>` below with the absolute path to this repository.
-
-Add this to **`~/.claude/settings.json`** (merge with anything already there):
+<details>
+<summary><code>~/.claude/settings.json</code> (click to expand)</summary>
 
 ```jsonc
 {
@@ -185,22 +170,18 @@ Add this to **`~/.claude/settings.json`** (merge with anything already there):
 }
 ```
 
-- The **hooks** report lifecycle events (start, tool use, permission, stop, …).
-- The **status line** both forwards token/context/cost data **and** prints a
-  compact line for Claude to display (e.g. `⏺ Claude Sonnet · my-project · ctx 68%`).
+</details>
 
-> On Windows, use double backslashes in the path, e.g.
-> `node E:\\proj\\codepulse\\packages\\hooks\\bin\\claude-hook.js`.
+The hooks report lifecycle events; the status line forwards token / context /
+cost data to CodePulse **and** prints a compact line for Claude to display
+(e.g. `⏺ Claude Sonnet · my-project · ctx 68%`).
 
-### 4. Connect Codex
+### Connect Codex
 
-Yes. Codex also needs lifecycle hooks configured. Without hooks, CodePulse can
-only show the default idle Codex slot and local CLI detection; it will not
-receive Codex task state changes.
+Add command hooks to `~/.codex/hooks.json`:
 
-Codex discovers hooks next to active config layers. The simplest user-level
-setup is **`~/.codex/hooks.json`**. Replace `<REPO>` with the absolute path to
-this repository:
+<details>
+<summary><code>~/.codex/hooks.json</code> (click to expand)</summary>
 
 ```jsonc
 {
@@ -242,76 +223,33 @@ this repository:
 }
 ```
 
-Codex hooks are enabled by default in current Codex builds. If you previously
-disabled them, re-enable them in **`~/.codex/config.toml`**:
+</details>
 
-```toml
-[features]
-hooks = true
-```
+Hooks are enabled by default in current Codex builds; if you disabled them,
+re-enable with `hooks = true` under `[features]` in `~/.codex/config.toml`.
+After adding or changing a hook, run `/hooks` inside Codex to review and trust
+it.
 
-After adding or changing a Codex hook, open Codex and run `/hooks` to review and
-trust the command hook. Codex records trust against the hook definition; changed
-paths or commands may need review again.
+> Codex has no status line, so the hook script reads token usage and quota
+> from Codex's local rollout files on a best-effort basis (`accuracy:
+estimated`).
 
-> On Windows, use double backslashes in the path, e.g.
-> `node E:\\proj\\codepulse\\packages\\hooks\\bin\\codex-hook.js`.
+### Verify
 
-> Codex does not currently have a CodePulse status-line collector like Claude.
-> Token/context usage is shown when the Codex hook payload includes `usage` /
-> `context_used_percent`; otherwise the Codex token section remains empty.
-
-> The Codex adapter maps the event names in requirements §6.1 and reads field
-> names defensively, so adjust the hook payload keys if your Codex build differs.
-
-### 5. Verify it works
-
-Run a task in Claude Code or Codex and watch the Dashboard and tray light up.
-
-To verify **without** an agent, send a synthetic event with `curl` (or
-PowerShell) and refresh the Dashboard:
+Run any task in either agent and watch the Dashboard light up — or send a
+synthetic event:
 
 ```bash
-# A Claude "prompt submitted" event
 curl -X POST http://127.0.0.1:17888/api/events \
   -H "content-type: application/json" \
   -d '{"source":"claude_code","hook_event_name":"UserPromptSubmit","session_id":"demo","cwd":"/tmp/demo","prompt":"hello"}'
 
-# Read current status
 curl http://127.0.0.1:17888/api/status
 ```
 
-You can also run the bundled backend integration test, which exercises the whole
-pipeline (no Electron, no agent required):
+## Tray states
 
-```bash
-pnpm smoke
-```
-
-### 6. Read the Dashboard
-
-Each agent gets a card showing:
-
-| Field                     | Meaning                                                                   |
-| ------------------------- | ------------------------------------------------------------------------- |
-| **State badge**           | Idle / 处理中 / 执行工具 / 等待授权 / 等待输入 / 已完成 / 出错 / 疑似卡住 |
-| **项目 (Project)**        | Final segment of the workspace path                                       |
-| **模型 (Model)**          | Model in use (from Claude's status line)                                  |
-| **本轮耗时 (Elapsed)**    | Time since the current turn started (live)                                |
-| **工具调用 (Tool calls)** | Tool-call count in the current turn                                       |
-| **当前 (Activity)**       | What the agent is doing right now, e.g. `正在执行 npm test`               |
-| **Context bar**           | Context-window usage — blue, yellow ≥80%, red ≥95% — plus cost            |
-| **Last message**          | Summary of the AI's final reply                                           |
-| **标记已读**              | Acknowledge a finished/errored result (clears the tray badge)             |
-
-The right-hand rail lists recent **notifications**, colour-coded by severity and
-individually dismissible.
-
-### 7. Use the tray
-
-The tray icon colour is the **overall** state across all agents:
-
-| Colour    | Meaning                                     |
+| Color     | Meaning                                     |
 | --------- | ------------------------------------------- |
 | ⚪ Grey   | All idle                                    |
 | 🔵 Blue   | A task is running                           |
@@ -320,125 +258,135 @@ The tray icon colour is the **overall** state across all agents:
 | 🔴 Red    | An error                                    |
 | 🟠 Orange | Suspected stuck                             |
 
-The tray menu shows each agent's current state and offers: **打开面板 (Open)**,
-**静音 30 分钟 (Mute 30 min)**, **清除提醒 (Clear alerts)**, **设置 (Settings)**,
-and **退出 (Quit)**.
+Notifications are throttled and deduplicated so you're informed, not nagged.
+**Mute** (tray or header button) silences sound for 30 minutes; notifications
+still appear, just silently.
 
-### 8. Notifications & quiet rules
+## Local API
 
-Notifications come in three levels:
-
-| Level      | Sound | When                                                |
-| ---------- | ----- | --------------------------------------------------- |
-| **strong** | yes   | Needs permission, needs input, error, context ≥ 95% |
-| **normal** | yes   | A turn completed                                    |
-| **soft**   | no    | Context ≥ 80%; first signs of being stuck           |
-
-To avoid nagging, the rule engine throttles repeats: at most one notification per
-agent every **30 s**, permission reminders no more than once every **60 s**, and
-stuck alerts escalate at **2 / 5 / 10 minutes** of inactivity. Context warnings
-fire once per threshold crossing and reset after a compaction.
-
-**Mute** (from the tray or the header button) silences sound for **30 minutes**;
-notifications still appear, just without sound.
-
----
-
-## Where your data lives
-
-CodePulse stores its SQLite database in the Electron user-data directory:
-
-- **Windows:** `%APPDATA%\CodePulse\codepulse.sqlite`
-- **macOS:** `~/Library/Application Support/CodePulse/codepulse.sqlite`
-- **Linux:** `~/.config/CodePulse/codepulse.sqlite`
-
-It records events, sessions, turns, and token snapshots. Following the spec's
-privacy principle (§5.8), prompts are stored only as short previews, never in
-full. Delete the file to reset all history.
-
-## Local API reference
-
-The server binds to loopback only (`127.0.0.1:17888`), so it is never exposed to
-the network.
+Loopback-only (`127.0.0.1:17888`) — never exposed to the network. Point the
+hooks elsewhere with the `CODEPULSE_URL` environment variable.
 
 | Method | Path                 | Purpose                                           |
 | ------ | -------------------- | ------------------------------------------------- |
-| POST   | `/api/events`        | Ingest a raw hook payload (or an array of them)   |
-| GET    | `/api/status`        | Full `StatusSnapshot` for the Dashboard           |
-| GET    | `/api/device/status` | Minimal status for the future ESP32 hardware end  |
-| GET    | `/api/agents/detect` | Detect local Codex / Claude CLI and hook setup    |
-| POST   | `/api/ack/:agent`    | Mark an agent's terminal result as read           |
-| POST   | `/api/mute`          | `{ "muted": true }` to silence notification sound |
-| GET    | `/api/health`        | Liveness probe                                    |
-| WS     | `/ws`                | Push channel: `status` + `notification` messages  |
+| `POST` | `/api/events`        | Ingest a raw hook payload (or an array, max 1000) |
+| `GET`  | `/api/status`        | Full `StatusSnapshot` for the Dashboard           |
+| `GET`  | `/api/device/status` | Minimal status for hardware clients               |
+| `GET`  | `/api/agents/detect` | Detect local Codex / Claude CLI and hook setup    |
+| `POST` | `/api/ack/:agent`    | Mark an agent's terminal result as read           |
+| `POST` | `/api/mute`          | `{ "muted": true }` to silence notification sound |
+| `GET`  | `/api/health`        | Liveness probe                                    |
+| `WS`   | `/ws`                | Push channel: `status` + `notification` messages  |
 
-`:agent` is `codex` or `claude_code`. Override the server URL the hooks target
-with the `CODEPULSE_URL` environment variable.
+## Data & privacy
 
-## Building a distributable
+CodePulse stores a single SQLite database in the Electron user-data directory:
 
-```bash
-pnpm build        # type-build packages, then bundle the app into apps/desktop/out
-pnpm dist         # package an installer into apps/desktop/release
-pnpm dist:dir     # unpacked build (faster, for local testing)
-```
+| OS      | Path                                                       |
+| ------- | ---------------------------------------------------------- |
+| Windows | `%APPDATA%\CodePulse\codepulse.sqlite`                     |
+| macOS   | `~/Library/Application Support/CodePulse/codepulse.sqlite` |
+| Linux   | `~/.config/CodePulse/codepulse.sqlite`                     |
 
-Targets are configured in `apps/desktop/electron-builder.yml` (NSIS on Windows,
-DMG on macOS, AppImage on Linux). The native `better-sqlite3` addon is kept
-unpacked from the asar archive so it can be loaded at runtime.
+It records events, sessions, turns, and token snapshots. Prompts are stored
+only as short previews, never in full. Delete the file to reset all history.
 
-## Developing
+## Development
 
 ```bash
 pnpm dev          # app with hot reload (electron-vite)
 pnpm typecheck    # tsc across every package
-pnpm smoke        # backend integration test (no Electron)
+pnpm test         # unit tests
+pnpm smoke        # backend integration test (no Electron, no agent needed)
 pnpm lint         # prettier --check
 pnpm format       # prettier --write
 pnpm db:generate  # generate Drizzle SQL migrations from the schema
 ```
 
 Workspace packages are consumed from TypeScript **source** (each package's
-`exports` points at `src/index.ts`); electron-vite and esbuild bundle the source
-directly, so there is no separate per-package compile step.
+`exports` points at `src/index.ts`); electron-vite and esbuild bundle the
+source directly, so there is no per-package compile step during development.
+
+### Building a distributable
+
+```bash
+pnpm build        # build packages, then bundle the app into apps/desktop/out
+pnpm dist         # package an installer into apps/desktop/release
+pnpm dist:dir     # unpacked build (faster, for local testing)
+```
+
+Targets are configured in `apps/desktop/electron-builder.yml` (NSIS on
+Windows, DMG on macOS, AppImage on Linux). The native `better-sqlite3` addon
+is kept outside the asar archive so it loads at runtime.
 
 ## Troubleshooting
 
-**The Dashboard never leaves “正在等待…”.**
-The agent isn't reaching the server. Check that the hook paths in your settings
-are absolute and correct, that `pnpm dev` is running, and that
+<details>
+<summary><b>The Dashboard never leaves "waiting for events"</b></summary>
+
+The agent isn't reaching the server. Check that the hook paths in your
+settings are absolute and correct, that CodePulse is running, and that
 `curl http://127.0.0.1:17888/api/health` returns `{"ok":true}`. If you changed
 the port, set `CODEPULSE_URL` for the hooks.
 
-**Console logs “SQLite unavailable — running without persistence”.**
+</details>
+
+<details>
+<summary><b>Console logs "SQLite unavailable — running without persistence"</b></summary>
+
 The native `better-sqlite3` build doesn't match your runtime's ABI. The live
-Dashboard still works; only history persistence is off. Rebuild it for Electron:
+Dashboard still works; only history persistence is off. Rebuild for Electron:
 
 ```bash
-# from the repo root, with <ELECTRON_VERSION> = the version in node_modules/electron/package.json
+# <ELECTRON_VERSION> = the version in node_modules/electron/package.json
 cd node_modules/better-sqlite3
 node ../.bin/prebuild-install --runtime electron --target <ELECTRON_VERSION> --arch x64
 ```
 
-(`electron-builder install-app-deps` does not work under pnpm's hoisted layout —
-use the command above.)
+(`electron-builder install-app-deps` does not work under pnpm's hoisted
+layout — use the command above.)
 
-**Port 17888 is already in use.**
-Another instance (or app) holds the port. Quit the other instance from the tray,
-or change the port (and set `CODEPULSE_URL` for the hooks to match).
+</details>
 
-**pnpm install didn't build `better-sqlite3` / `electron`.**
+<details>
+<summary><b>Port 17888 is already in use</b></summary>
+
+Another instance (or app) holds the port. Quit the other instance from the
+tray, or change the port and set `CODEPULSE_URL` for the hooks to match.
+
+</details>
+
+<details>
+<summary><b>pnpm install didn't build better-sqlite3 / electron</b></summary>
+
 pnpm 10 blocks dependency build scripts unless allow-listed. They are listed
 under `pnpm.onlyBuiltDependencies` in the root `package.json`; run
 `pnpm install` again, or `pnpm rebuild`.
 
-## V0.1 status
+</details>
 
-Implemented end-to-end: event ingestion, the unified state machine, the stuck /
-context / permission rule engine with throttling, SQLite persistence (events +
-sessions + turns + token snapshots), the tray with colour states + menu, desktop
-notifications, the live Dashboard, and `/api/device/status`.
+## Roadmap
 
-Intentionally deferred (per spec §12.2): cloud sync, accounts, a Settings UI,
-auto hook installation, the ESP32 hardware client, and precise Codex token
-accounting.
+**v0.1 (current)** ships the full local pipeline end-to-end: event ingestion,
+the unified state machine, the rule engine with throttling, SQLite
+persistence, the tray, desktop notifications, the live Dashboard, and the
+device status API.
+
+Planned next (see [`requirements.md`](./requirements.md) §12):
+
+- [ ] Settings UI & one-click hook installation
+- [ ] ESP32 hardware status display client
+- [ ] Precise Codex token accounting
+- [ ] Cloud sync & accounts
+
+## Contributing
+
+Issues and pull requests are welcome. Before submitting:
+
+1. `pnpm typecheck && pnpm test && pnpm smoke` must pass.
+2. Format with `pnpm format`.
+3. Keep changes focused — one concern per PR.
+
+For product context, read [`requirements.md`](./requirements.md); the
+state-machine transition table in §8 is the source of truth for lifecycle
+behavior.

@@ -63,6 +63,12 @@ export interface AgentEvent {
   /** token 快照来源的本地文件路径，用于服务端做绑定会话的轻量刷新。 */
   tokenSourcePath?: string
 
+  /** Internal metadata produced by CodePulse itself rather than CLI hooks. */
+  internal?: {
+    /** Token-only quota refreshes must not update project recency or runtime model. */
+    quotaRefresh?: boolean
+  }
+
   /** 原始未修改的载荷，保留用于调试/持久化。 */
   raw?: unknown
   /** 事件发生时间（epoch 毫秒，缺失时在归一化阶段分配）。 */

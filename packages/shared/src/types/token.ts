@@ -63,6 +63,8 @@ export interface TokenPayload {
   contextUsedPercent?: number
   /** 上下文窗口大小，如 agent 上报。 */
   contextWindow?: number
+  /** true 表示上下文数值来自上一会话/轮次边界前的最后一次快照。 */
+  contextStale?: boolean
   /** CLI 自身的滚动额度窗口。 */
   rateLimits?: {
     fiveHour?: TokenRateLimitWindow

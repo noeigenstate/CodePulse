@@ -3,6 +3,7 @@ import type { TokenPayload, TokenRateLimitWindow } from '@codepulse/shared'
 export interface ContextWindowStatus {
   usedPercent?: number
   text: string
+  stale?: boolean
 }
 
 export function formatContextWindowStatus(
@@ -21,7 +22,8 @@ export function formatContextWindowStatus(
 
   return {
     usedPercent,
-    text: `${leftPercent}% left (${formatContextUsedCount(usedTokens)} used / ${formatContextTotalCount(contextWindow)})`,
+    stale: token?.contextStale === true,
+    text: `${token?.contextStale ? 'last: ' : ''}${leftPercent}% left (${formatContextUsedCount(usedTokens)} used / ${formatContextTotalCount(contextWindow)})`,
   }
 }
 

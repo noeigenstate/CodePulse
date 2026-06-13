@@ -212,6 +212,74 @@ test('StatusHub keeps user-input waits from being marked TIMEOUT by the watchdog
   )
 })
 
+test('StatusHub expires abandoned permission waits after a long inactivity window', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0, permissionThrottleMs: 0 })
+  const timeoutEvents: AgentEvent[] = []
+  hub.on('event', (event) => {
+    if (event.eventType === 'turn_timeout') timeoutEvents.push(event)
+  })
+  const startedAt = 1_000_000
+
+  hub.ingest({
+    id: 'permission',
+    source: 'claude_code',
+    eventType: 'permission_request',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    message: 'waiting for permission',
+    timestamp: startedAt,
+  })
+  ;(hub as unknown as { tick(now?: number): void }).tick(startedAt + 30 * 60_000 + 1)
+
+  const claude = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
+  assert.equal(claude?.state, TurnState.TIMEOUT)
+  assert.equal(timeoutEvents.length, 1)
+  assert.equal(timeoutEvents[0]?.externalSessionId, 'session-a')
+})
+
+test('StatusHub marks context snapshots stale at session boundaries', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+
+  hub.ingest({
+    id: 'token',
+    source: 'claude_code',
+    eventType: 'token_snapshot',
+    cwd: 'E:/project/a',
+    timestamp: 100,
+    token: {
+      contextUsedPercent: 88,
+      contextWindow: 1_000_000,
+      rateLimits: { fiveHour: { usedPercent: 12, resetsAt: 1_000 } },
+      accuracy: 'exact',
+    },
+  })
+  hub.ingest({
+    id: 'session-end',
+    source: 'claude_code',
+    eventType: 'session_end',
+    cwd: 'E:/project/a',
+    timestamp: 200,
+  })
+
+  const claude = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
+  assert.equal(claude?.token?.contextUsedPercent, 88)
+  assert.equal(claude?.token?.contextWindow, 1_000_000)
+  assert.equal(claude?.token?.contextStale, true)
+  assert.equal(claude?.token?.rateLimits?.fiveHour?.usedPercent, 12)
+
+  hub.ingest({
+    id: 'new-token',
+    source: 'claude_code',
+    eventType: 'token_snapshot',
+    cwd: 'E:/project/a',
+    timestamp: 300,
+    token: { contextUsedPercent: 12, contextWindow: 1_000_000, accuracy: 'exact' },
+  })
+
+  const updated = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
+  assert.equal(updated?.token?.contextStale, false)
+})
+
 test('StatusHub only emits notifications for completed turns', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0, permissionThrottleMs: 0 })
   const notifications: NotificationRequest[] = []

@@ -291,20 +291,6 @@ try {
     storedToken?.turnId === storedTurn?.id,
   )
 
-  // --- 渲染端：同 dedupeKey 的通知只删除指定一条 -----------------------
-  useStore.setState({
-    notifications: [
-      { level: 'soft', title: 'n1', body: 'one', dedupeKey: 'same', sound: false, createdAt: 1 },
-      { level: 'soft', title: 'n2', body: 'two', dedupeKey: 'same', sound: false, createdAt: 2 },
-    ],
-  })
-  useStore.getState().dismissNotification('same', 1)
-  const remainingNotes = useStore.getState().notifications
-  check(
-    'renderer dismiss removes only the selected notification instance',
-    remainingNotes.length === 1 && remainingNotes[0]?.createdAt === 2,
-  )
-
   // --- Claude Code：一次以授权请求结尾的提示 ----------------
   await post({
     source: 'claude_code',

@@ -42,10 +42,14 @@ test('Chinese locale does not expose English dashboard chrome', () => {
     copy.unknownProject,
     copy.agentSetupReminder.title,
     copy.agentSetupReminder.body,
+    copy.agentSetupReminder.firstRunNotice,
+    copy.agentSetupReminder.cleanupNotice,
     copy.agentSetupReminder.missingCli,
     copy.agentSetupReminder.missingHook,
     copy.codexTrustTutorial.title,
     copy.codexTrustTutorial.body,
+    copy.codexTrustTutorial.permissionsTitle,
+    copy.codexTrustTutorial.permissions.join(' '),
     copy.codexTrustTutorial.steps.join(' '),
     copy.codexTrustTutorial.action,
     formatContextWindowStatus(
@@ -75,10 +79,14 @@ test('English locale does not expose Chinese dashboard chrome', () => {
     copy.unknownProject,
     copy.agentSetupReminder.title,
     copy.agentSetupReminder.body,
+    copy.agentSetupReminder.firstRunNotice,
+    copy.agentSetupReminder.cleanupNotice,
     copy.agentSetupReminder.missingCli,
     copy.agentSetupReminder.missingHook,
     copy.codexTrustTutorial.title,
     copy.codexTrustTutorial.body,
+    copy.codexTrustTutorial.permissionsTitle,
+    copy.codexTrustTutorial.permissions.join(' '),
     copy.codexTrustTutorial.steps.join(' '),
     copy.codexTrustTutorial.action,
     formatContextWindowStatus(
@@ -93,4 +101,23 @@ test('English locale does not expose Chinese dashboard chrome', () => {
   ].join(' ')
 
   assert.doesNotMatch(text, /[\u4e00-\u9fff]/)
+})
+
+test('setup tutorial explains written config, uninstall cleanup, and Codex hook permissions', () => {
+  const zh = uiCopy('zh')
+  assert.match(zh.agentSetupReminder.firstRunNotice, /~\/\.claude\/settings\.json/)
+  assert.match(zh.agentSetupReminder.firstRunNotice, /~\/\.codex\/hooks\.json/)
+  assert.match(zh.agentSetupReminder.firstRunNotice, /~\/\.codex\/config\.toml/)
+  assert.match(zh.agentSetupReminder.cleanupNotice, /卸载/)
+  assert.match(zh.agentSetupReminder.cleanupNotice, /自动删除/)
+  assert.match(zh.codexTrustTutorial.permissions.join(' '), /SessionStart/)
+  assert.match(zh.codexTrustTutorial.permissions.join(' '), /PermissionRequest/)
+  assert.match(zh.codexTrustTutorial.permissions.join(' '), /Stop/)
+
+  const en = uiCopy('en')
+  assert.match(en.agentSetupReminder.firstRunNotice, /~\/\.claude\/settings\.json/)
+  assert.match(en.agentSetupReminder.cleanupNotice, /uninstalled/)
+  assert.match(en.codexTrustTutorial.permissions.join(' '), /SessionStart/)
+  assert.match(en.codexTrustTutorial.permissions.join(' '), /PermissionRequest/)
+  assert.match(en.codexTrustTutorial.permissions.join(' '), /Stop/)
 })

@@ -31,6 +31,8 @@ export interface UiCopy {
 export interface AgentSetupReminderCopy {
   title: string
   body: string
+  firstRunNotice: string
+  cleanupNotice: string
   missingCli: string
   missingHook: string
 }
@@ -38,6 +40,8 @@ export interface AgentSetupReminderCopy {
 export interface CodexTrustTutorialCopy {
   title: string
   body: string
+  permissionsTitle: string
+  permissions: string[]
   steps: string[]
   warning: string
   action: string
@@ -92,13 +96,29 @@ const UI_COPY: Record<Locale, UiCopy> = {
     agentSetupReminder: {
       title: '配置与权限检查',
       body: 'CodePulse 每次打开都会检查本机 Claude / Codex 配置。请先处理下面的问题，否则任务状态可能无法同步。',
+      firstRunNotice:
+        '首次打开时，CodePulse 会在 ~/.claude/settings.json、~/.codex/hooks.json 和 ~/.codex/config.toml 写入必要的 CodePulse hook 配置。',
+      cleanupNotice:
+        '卸载 CodePulse 时，安装器会自动删除这些 CodePulse hook 和 statusLine 配置；用户原有的其它 hook、模型、插件和偏好设置会保留。',
       missingCli: '未检测到命令行工具',
       missingHook: '未完成 CodePulse 钩子配置',
     },
     codexTrustTutorial: {
       title: '信任 Codex 钩子',
       body: 'CodePulse 已经写入 Codex 钩子配置。Codex 第一次运行该命令前需要你手动信任，否则 CodePulse 无法接收 Codex 任务状态。',
-      steps: ['打开任意 Codex 项目终端。', '输入 /hooks。', '选择 CodePulse 钩子并确认信任。'],
+      permissionsTitle: '在 /hooks 中需要信任的 CodePulse 权限',
+      permissions: [
+        'SessionStart：识别 Codex 会话开始和项目目录。',
+        'UserPromptSubmit：识别一轮任务已经提交。',
+        'PreToolUse / PermissionRequest / PostToolUse：识别工具执行、权限等待和工具完成状态。',
+        'Stop：识别当前项目的一轮 Codex 任务已完成并发送桌面提醒。',
+      ],
+      steps: [
+        '打开正在使用的 Codex 项目终端。',
+        '输入 /hooks 并回车。',
+        '找到包含 codepulse-hooks/bin/codex-hook.js 的 CodePulse hook。',
+        '依次信任 SessionStart、UserPromptSubmit、PreToolUse、PermissionRequest、PostToolUse、Stop 这些事件。',
+      ],
       warning: '完成信任后，再运行一轮 Codex 任务，面板就会开始同步。',
       action: '我已在 Codex 信任',
     },
@@ -128,16 +148,28 @@ const UI_COPY: Record<Locale, UiCopy> = {
     agentSetupReminder: {
       title: 'Setup and permission check',
       body: 'CodePulse checks local Claude / Codex setup every time it opens. Resolve these items first or task status may not sync.',
+      firstRunNotice:
+        'On first launch, CodePulse writes the required CodePulse hook configuration to ~/.claude/settings.json, ~/.codex/hooks.json, and ~/.codex/config.toml.',
+      cleanupNotice:
+        'When CodePulse is uninstalled, the installer removes those CodePulse hooks and statusLine entries automatically. Your other hooks, models, plugins, and preferences are preserved.',
       missingCli: 'CLI not detected',
       missingHook: 'CodePulse hook is not configured',
     },
     codexTrustTutorial: {
       title: 'Trust the Codex hook',
       body: 'CodePulse has written the Codex hook configuration. Codex requires you to trust that command before it can run; otherwise CodePulse cannot receive Codex task status.',
+      permissionsTitle: 'CodePulse permissions to trust in /hooks',
+      permissions: [
+        'SessionStart: detect Codex session start and project directory.',
+        'UserPromptSubmit: detect that a new turn was submitted.',
+        'PreToolUse / PermissionRequest / PostToolUse: detect tool execution, permission waits, and tool completion.',
+        'Stop: detect that one Codex turn completed for the current project and send a desktop notification.',
+      ],
       steps: [
-        'Open any Codex project terminal.',
+        'Open the Codex project terminal you are using.',
         'Type /hooks.',
-        'Select the CodePulse hook and trust it.',
+        'Find the CodePulse hook that contains codepulse-hooks/bin/codex-hook.js.',
+        'Trust SessionStart, UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse, and Stop.',
       ],
       warning: 'After trusting it, run one Codex task and this panel will start syncing.',
       action: 'I trusted it in Codex',

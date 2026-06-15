@@ -9,6 +9,7 @@ import {
 import { StatusHub } from '@codepulse/core'
 import { openDb, persistEvent, type DB } from '@codepulse/storage'
 import {
+  cleanupAgents,
   configureAgents,
   detectAgents,
   startLocalServer,
@@ -177,6 +178,17 @@ async function configureLocalAgents(): Promise<void> {
   }
 }
 
+async function cleanupLocalAgents(): Promise<void> {
+  const result = await cleanupAgents({ hookBinDir: hookBinDir() })
+  for (const [agent, status] of Object.entries(result)) {
+    if (status.error) {
+      console.error(`[codepulse] failed to clean ${agent}`, status.error)
+      continue
+    }
+    if (status.changed) console.log(`[codepulse] cleaned ${agent} hooks at ${status.path}`)
+  }
+}
+
 async function refreshLocalAgents(): Promise<Agent[]> {
   await configureLocalAgents()
   const agents = await detectAgents()
@@ -189,8 +201,19 @@ if (process.platform === 'win32') {
   app.setAppUserModelId('CodePulse')
 }
 
-const gotLock = app.requestSingleInstanceLock()
-if (!gotLock) {
+const cleanupMode = process.argv.includes('--cleanup-config')
+if (cleanupMode) {
+  app
+    .whenReady()
+    .then(async () => {
+      await cleanupLocalAgents()
+      app.quit()
+    })
+    .catch((err) => {
+      console.error('[codepulse] cleanup failed', err)
+      app.exit(1)
+    })
+} else if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   app.on('second-instance', showWindow)

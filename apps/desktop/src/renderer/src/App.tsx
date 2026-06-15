@@ -143,6 +143,11 @@ function AgentSetupReminderModal({
           </div>
         </div>
 
+        <div className="mt-4 grid gap-2 rounded-xl border border-white/65 bg-white/48 px-3 py-3 text-sm leading-6 text-slate-700 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.65)]">
+          <p>{setup.firstRunNotice}</p>
+          <p>{setup.cleanupNotice}</p>
+        </div>
+
         {issues.length > 0 && (
           <div className="mt-4 grid gap-2.5">
             {issues.map((issue) => (
@@ -164,6 +169,15 @@ function AgentSetupReminderModal({
             <div className="mt-4 rounded-xl border border-indigo-100/80 bg-white/50 px-3 py-3">
               <h3 className="text-sm font-semibold text-slate-950">{tutorial.title}</h3>
               <p className="mt-1.5 text-sm leading-6 text-slate-600">{tutorial.body}</p>
+            </div>
+
+            <div className="mt-3 rounded-xl border border-white/65 bg-white/48 px-3 py-3 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.65)]">
+              <h4 className="text-sm font-semibold text-slate-950">{tutorial.permissionsTitle}</h4>
+              <ul className="mt-2 grid gap-1.5 text-sm leading-6 text-slate-700">
+                {tutorial.permissions.map((permission) => (
+                  <li key={permission}>{permission}</li>
+                ))}
+              </ul>
             </div>
 
             <ol className="mt-3 grid gap-2.5">

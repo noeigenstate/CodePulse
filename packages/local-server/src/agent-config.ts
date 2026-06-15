@@ -67,6 +67,16 @@ export async function configureAgents(
   return { claude, codex }
 }
 
+export async function cleanupAgents(
+  options: AgentConfigurationOptions,
+): Promise<AgentConfigurationResult> {
+  const [claude, codex] = await Promise.all([
+    cleanupClaudeAgent(options),
+    cleanupCodexAgent(options),
+  ])
+  return { claude, codex }
+}
+
 export async function configureClaudeAgent(
   options: AgentConfigurationOptions,
 ): Promise<AgentConfigurationStatus> {
@@ -98,6 +108,34 @@ export async function configureClaudeAgent(
     const changed = next !== (before ?? '')
     if (changed) await writeText(path, next)
     return { path, changed, configured: isClaudeConfigured(settings) }
+  } catch (error) {
+    return { path, changed: false, configured: false, error: errorMessage(error) }
+  }
+}
+
+export async function cleanupClaudeAgent(
+  options: AgentConfigurationOptions,
+): Promise<AgentConfigurationStatus> {
+  const path = claudeConfigPath(options)
+  try {
+    const before = await readTextIfExists(path)
+    if (before == null) return { path, changed: false, configured: false }
+
+    const settings = parseJsonObject(before)
+    const hooks = objectValue(settings.hooks)
+    if (hooks) {
+      removeManagedHookCommands(hooks, 'claude-hook')
+      if (Object.keys(hooks).length === 0) delete settings.hooks
+    }
+
+    const statusLine = objectValue(settings.statusLine)
+    const statusLineCommand = typeof statusLine?.command === 'string' ? statusLine.command : ''
+    if (isCodePulseCommand(statusLineCommand, 'claude-statusline')) delete settings.statusLine
+
+    const next = `${JSON.stringify(settings, null, 2)}\n`
+    const changed = next !== before
+    if (changed) await writeText(path, next)
+    return { path, changed, configured: false }
   } catch (error) {
     return { path, changed: false, configured: false, error: errorMessage(error) }
   }
@@ -138,6 +176,46 @@ export async function configureCodexAgent(
       path: hooksPath,
       changed: hooksChanged || configChanged,
       configured: isCodexConfigured(hooksJson),
+    }
+  } catch (error) {
+    return { path: hooksPath, changed: false, configured: false, error: errorMessage(error) }
+  }
+}
+
+export async function cleanupCodexAgent(
+  options: AgentConfigurationOptions,
+): Promise<AgentConfigurationStatus> {
+  const hooksPath = codexHooksPath(options)
+  const configPath = codexConfigPath(options)
+  try {
+    const beforeHooks = await readTextIfExists(hooksPath)
+    let hooksChanged = false
+    let hasRemainingHooks = true
+    if (beforeHooks != null) {
+      const hooksJson = parseJsonObject(beforeHooks)
+      const hooks = objectValue(hooksJson.hooks)
+      if (hooks) {
+        removeManagedHookCommands(hooks, 'codex-hook')
+        if (Object.keys(hooks).length === 0) delete hooksJson.hooks
+      }
+      hasRemainingHooks = hasAnyHookCommand(objectValue(hooksJson.hooks))
+      const nextHooks = `${JSON.stringify(hooksJson, null, 2)}\n`
+      hooksChanged = nextHooks !== beforeHooks
+      if (hooksChanged) await writeText(hooksPath, nextHooks)
+    }
+
+    const beforeConfig = await readTextIfExists(configPath)
+    let configChanged = false
+    if (beforeConfig != null && !hasRemainingHooks) {
+      const nextConfig = disableTomlHooksFeature(beforeConfig)
+      configChanged = nextConfig !== beforeConfig
+      if (configChanged) await writeText(configPath, nextConfig)
+    }
+
+    return {
+      path: hooksPath,
+      changed: hooksChanged || configChanged,
+      configured: false,
     }
   } catch (error) {
     return { path: hooksPath, changed: false, configured: false, error: errorMessage(error) }
@@ -206,6 +284,41 @@ function eventHasManagedCommand(hooks: JsonObject, event: string, name: string):
   )
 }
 
+function removeManagedHookCommands(hooks: JsonObject, name: string): void {
+  for (const [event, value] of Object.entries(hooks)) {
+    if (!Array.isArray(value)) continue
+    const groups = (value as HookGroup[])
+      .map((group) => {
+        const commands = Array.isArray(group.hooks) ? group.hooks : []
+        return {
+          ...group,
+          hooks: commands.filter((hook) =>
+            typeof hook.command === 'string' ? !isCodePulseCommand(hook.command, name) : true,
+          ),
+        }
+      })
+      .filter((group) => Array.isArray(group.hooks) && group.hooks.length > 0)
+    if (groups.length > 0) {
+      hooks[event] = groups
+    } else {
+      delete hooks[event]
+    }
+  }
+}
+
+function hasAnyHookCommand(hooks: JsonObject | undefined): boolean {
+  if (!hooks) return false
+  return Object.values(hooks).some(
+    (value) =>
+      Array.isArray(value) &&
+      value.some(
+        (group) =>
+          Array.isArray((group as HookGroup).hooks) &&
+          ((group as HookGroup).hooks?.length ?? 0) > 0,
+      ),
+  )
+}
+
 function ensureTomlFeatureEnabled(text: string): string {
   const normalized = text.replace(/\r\n/g, '\n')
   const lines = normalized.length > 0 ? normalized.split('\n') : []
@@ -237,6 +350,35 @@ function ensureTomlFeatureEnabled(text: string): string {
 
   lines.splice(featuresStart + 1, 0, 'hooks = true')
   return `${lines.join('\n').replace(/\n*$/, '')}\n`
+}
+
+function disableTomlHooksFeature(text: string): string {
+  const normalized = text.replace(/\r\n/g, '\n')
+  const lines = normalized.length > 0 ? normalized.split('\n') : []
+  let featuresStart = -1
+  let featuresEnd = lines.length
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]?.trim()
+    if (line === '[features]') {
+      featuresStart = index
+      continue
+    }
+    if (featuresStart >= 0 && index > featuresStart && line?.startsWith('[')) {
+      featuresEnd = index
+      break
+    }
+  }
+
+  if (featuresStart < 0) return text
+
+  for (let index = featuresStart + 1; index < featuresEnd; index += 1) {
+    if (/^\s*hooks\s*=/.test(lines[index] ?? '')) {
+      lines[index] = 'hooks = false'
+      return `${lines.join('\n').replace(/\n*$/, '')}\n`
+    }
+  }
+
+  return text
 }
 
 function parseJsonObject(text: string | undefined): JsonObject {

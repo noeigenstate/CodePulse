@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { configureAgents } from '@codepulse/local-server'
+import { cleanupAgents, configureAgents } from '@codepulse/local-server'
 
 test('agent auto configuration creates missing Claude and Codex config files', async () => {
   const home = await mkdtemp(join(tmpdir(), 'codepulse-agent-config-'))
@@ -118,4 +118,121 @@ test('agent auto configuration is idempotent and preserves non-CodePulse hooks',
 
   const codexConfig = await readFile(join(codexDir, 'config.toml'), 'utf8')
   assert.match(codexConfig, /\[features\]\nhooks = true/)
+})
+
+test('agent cleanup removes CodePulse hooks while preserving user configuration', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'codepulse-agent-cleanup-'))
+  const hookBinDir = join(home, 'CodePulse', 'resources', 'codepulse-hooks', 'bin')
+  const claudeDir = join(home, '.claude')
+  const codexDir = join(home, '.codex')
+  await mkdir(claudeDir, { recursive: true })
+  await mkdir(codexDir, { recursive: true })
+
+  await writeFile(
+    join(claudeDir, 'settings.json'),
+    JSON.stringify(
+      {
+        model: 'opus',
+        hooks: {
+          Stop: [
+            {
+              hooks: [
+                {
+                  type: 'command',
+                  command: 'node D:/CodePulse/resources/codepulse-hooks/bin/claude-hook.js',
+                },
+                { type: 'command', command: 'echo keep-claude' },
+              ],
+            },
+          ],
+        },
+        statusLine: {
+          type: 'command',
+          command: 'node D:/CodePulse/resources/codepulse-hooks/bin/claude-statusline.js',
+        },
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  )
+  await writeFile(
+    join(codexDir, 'hooks.json'),
+    JSON.stringify(
+      {
+        hooks: {
+          Stop: [
+            {
+              hooks: [
+                {
+                  type: 'command',
+                  command: 'node D:/CodePulse/resources/codepulse-hooks/bin/codex-hook.js',
+                },
+                { type: 'command', command: 'echo keep-codex' },
+              ],
+            },
+          ],
+        },
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  )
+  await writeFile(join(codexDir, 'config.toml'), '[features]\nhooks = true\n', 'utf8')
+
+  const result = await cleanupAgents({ homeDir: home, hookBinDir })
+
+  assert.equal(result.claude.changed, true)
+  assert.equal(result.codex.changed, true)
+
+  const claudeSettings = JSON.parse(await readFile(join(claudeDir, 'settings.json'), 'utf8'))
+  assert.equal(claudeSettings.model, 'opus')
+  assert.equal(claudeSettings.statusLine, undefined)
+  assert.deepEqual(
+    claudeSettings.hooks.Stop[0].hooks.map((hook: { command: string }) => hook.command),
+    ['echo keep-claude'],
+  )
+
+  const codexHooks = JSON.parse(await readFile(join(codexDir, 'hooks.json'), 'utf8'))
+  assert.deepEqual(
+    codexHooks.hooks.Stop[0].hooks.map((hook: { command: string }) => hook.command),
+    ['echo keep-codex'],
+  )
+  assert.match(await readFile(join(codexDir, 'config.toml'), 'utf8'), /hooks = true/)
+})
+
+test('agent cleanup disables Codex hooks when only CodePulse hooks remain', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'codepulse-agent-cleanup-empty-'))
+  const codexDir = join(home, '.codex')
+  await mkdir(codexDir, { recursive: true })
+  await writeFile(
+    join(codexDir, 'hooks.json'),
+    JSON.stringify(
+      {
+        hooks: {
+          Stop: [
+            {
+              hooks: [
+                {
+                  type: 'command',
+                  command: 'node D:/CodePulse/resources/codepulse-hooks/bin/codex-hook.js',
+                },
+              ],
+            },
+          ],
+        },
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  )
+  await writeFile(join(codexDir, 'config.toml'), '[features]\nhooks = true\n', 'utf8')
+
+  await cleanupAgents({ homeDir: home, hookBinDir: join(home, 'hooks') })
+
+  const codexHooks = JSON.parse(await readFile(join(codexDir, 'hooks.json'), 'utf8'))
+  assert.equal(codexHooks.hooks, undefined)
+  assert.match(await readFile(join(codexDir, 'config.toml'), 'utf8'), /hooks = false/)
 })

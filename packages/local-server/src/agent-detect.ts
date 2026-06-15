@@ -39,9 +39,10 @@ export async function detectCodexAgent(options: AgentDetectOptions = {}): Promis
   const configPath = codexConfigPath(options)
   const hooksPath = codexHooksPath(options)
 
-  const versionResult = await runCommand(
-    env['CODEX_CLI_PATH'] || commandForPlatform('codex', options),
+  const versionResult = await runFirstAvailableCommand(
+    env['CODEX_CLI_PATH'] ? [env['CODEX_CLI_PATH']] : commandCandidates('codex', options),
     ['--version'],
+    runCommand,
   )
   const configured =
     (await fileContainsAny(hooksPath, ['codex-hook.js', 'codepulse-codex-hook'])) ||
@@ -59,10 +60,15 @@ export async function detectCodexAgent(options: AgentDetectOptions = {}): Promis
 
 /** 检测 Claude Code CLI 及 CodePulse 的 hook/status-line 配置。 */
 export async function detectClaudeAgent(options: AgentDetectOptions = {}): Promise<Agent> {
+  const env = options.env ?? process.env
   const runCommand = options.runCommand ?? runLocalCommand
   const configPath = claudeConfigPath(options)
 
-  const versionResult = await runCommand(commandForPlatform('claude', options), ['--version'])
+  const versionResult = await runFirstAvailableCommand(
+    env['CLAUDE_CLI_PATH'] ? [env['CLAUDE_CLI_PATH']] : commandCandidates('claude', options),
+    ['--version'],
+    runCommand,
+  )
   const configured = await fileContainsAny(configPath, [
     'claude-hook.js',
     'claude-statusline.js',
@@ -123,8 +129,22 @@ function cleanVersion(stdout: string | undefined): string | undefined {
   return text ? text.split(/\r?\n/)[0] : undefined
 }
 
-function commandForPlatform(command: string, options: AgentDetectOptions): string {
-  return (options.platform ?? process.platform) === 'win32' ? `${command}.cmd` : command
+function commandCandidates(command: string, options: AgentDetectOptions): string[] {
+  return (options.platform ?? process.platform) === 'win32'
+    ? [`${command}.cmd`, command, `${command}.exe`]
+    : [command]
+}
+
+async function runFirstAvailableCommand(
+  commands: string[],
+  args: string[],
+  runCommand: (command: string, args: string[]) => Promise<CommandResult>,
+): Promise<CommandResult> {
+  for (const command of commands) {
+    const result = await runCommand(command, args)
+    if (result.ok) return result
+  }
+  return { ok: false }
 }
 
 /** 以 1.5 秒超时执行本地命令；从不抛出，失败时 `ok: false`。 */

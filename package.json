@@ -1,7 +1,7 @@
 {
   "name": "codepulse-desktop",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "CodePulse Desktop / 码脉桌面端 — local AI coding-agent status hub",
   "license": "MIT",
   "type": "module",

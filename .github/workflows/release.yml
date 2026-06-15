@@ -1,0 +1,111 @@
+name: Build and Release CodePulse
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version without the v prefix. Defaults to package.json.'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Build Windows installer
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify
+        run: |
+          pnpm typecheck
+          pnpm test
+          pnpm smoke
+          pnpm lint
+
+      - name: Build installer
+        run: pnpm dist
+
+      - name: Resolve release version
+        id: release
+        shell: pwsh
+        run: |
+          $packageVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $inputVersion = '${{ inputs.version }}'
+
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $tag = $env:GITHUB_REF_NAME
+          } elseif ($inputVersion.Trim().Length -gt 0) {
+            $tag = "v$($inputVersion.TrimStart('v'))"
+          } else {
+            $tag = "v$packageVersion"
+          }
+
+          "package_version=$packageVersion" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "release_name=CodePulse $tag" >> $env:GITHUB_OUTPUT
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: codepulse-windows-${{ steps.release.outputs.tag }}
+          if-no-files-found: error
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest.yml
+
+      - name: Create or update GitHub release
+        if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_NAME: ${{ steps.release.outputs.release_name }}
+        run: |
+          $releaseDir = 'apps/desktop/release'
+          $assets = @(
+            Get-ChildItem -Path $releaseDir -Filter '*.exe' -File
+            Get-ChildItem -Path $releaseDir -Filter '*.blockmap' -File
+            Get-ChildItem -Path $releaseDir -Filter 'latest.yml' -File -ErrorAction SilentlyContinue
+          )
+
+          if ($assets.Count -eq 0) {
+            throw "No release assets found in $releaseDir."
+          }
+
+          $assetPaths = $assets | ForEach-Object { $_.FullName }
+          gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY *> $null
+
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:RELEASE_TAG $assetPaths --repo $env:GITHUB_REPOSITORY --clobber
+          } else {
+            gh release create $env:RELEASE_TAG $assetPaths `
+              --repo $env:GITHUB_REPOSITORY `
+              --title $env:RELEASE_NAME `
+              --notes "Automated CodePulse Windows build for $env:RELEASE_TAG." `
+              --latest
+          }

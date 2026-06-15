@@ -1,5 +1,7 @@
 appId: dev.codepulse.desktop
 productName: CodePulse
+electronVersion: 33.3.1
+electronDist: ../../node_modules/electron/dist
 directories:
   output: release
   buildResources: build
@@ -7,6 +9,13 @@ files:
   - out/**
   - build/icon.png
   - package.json
+extraResources:
+  - from: ../../packages/hooks
+    to: codepulse-hooks
+    filter:
+      - bin/**
+      - lib/**
+      - package.json
 # Native addon must stay unpacked from the asar archive so it can be dlopen'd.
 asarUnpack:
   - '**/*.node'

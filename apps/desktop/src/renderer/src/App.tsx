@@ -14,6 +14,12 @@ import {
 } from '@codepulse/shared'
 import { useStore } from './store.js'
 import { Header } from './components/Header.js'
+import {
+  buildAgentSetupReminder,
+  dismissAgentSetupReminder,
+  shouldShowAgentSetupReminder,
+  type AgentSetupReminder,
+} from './lib/codexTrustTutorial.js'
 import { buildAgentPanels, type AgentPanel, type AgentWorkspaceItem } from './lib/displayAgents.js'
 import { formatDuration, formatRelative, turnStateStyle } from './lib/format.js'
 import {
@@ -38,10 +44,17 @@ import {
  * @returns 渲染后的 Dashboard。
  */
 export function App(): JSX.Element {
-  const { snapshot, muted, init, ack, toggleMute } = useStore()
+  const { snapshot, muted, agents, agentCheckId, init, ack, toggleMute } = useStore()
   const [locale, setLocale] = useState<Locale>(() => readStoredLocale(window.localStorage))
+  const [dismissedAgentCheckId, setDismissedAgentCheckId] = useState<number | undefined>()
   const panels = useMemo(() => buildAgentPanels(snapshot.agents), [snapshot.agents])
+  const setupReminder = useMemo(() => buildAgentSetupReminder(agents), [agents])
   const copy = useMemo(() => uiCopy(locale), [locale])
+  const showSetupReminder = shouldShowAgentSetupReminder(
+    setupReminder,
+    agentCheckId,
+    dismissedAgentCheckId,
+  )
 
   useEffect(() => init(), [init])
 
@@ -51,6 +64,10 @@ export function App(): JSX.Element {
       window.localStorage.setItem('codepulse:locale', next)
       return next
     })
+  }
+
+  const dismissSetupReminder = (): void => {
+    setDismissedAgentCheckId(dismissAgentSetupReminder(agentCheckId))
   }
 
   return (
@@ -77,8 +94,111 @@ export function App(): JSX.Element {
           </div>
         </main>
       </div>
+      {showSetupReminder && (
+        <AgentSetupReminderModal
+          copy={copy}
+          reminder={setupReminder}
+          onConfirm={dismissSetupReminder}
+        />
+      )}
     </div>
   )
+}
+
+function AgentSetupReminderModal({
+  copy,
+  reminder,
+  onConfirm,
+}: {
+  copy: UiCopy
+  reminder: AgentSetupReminder
+  onConfirm: () => void
+}): JSX.Element {
+  const tutorial = copy.codexTrustTutorial
+  const setup = copy.agentSetupReminder
+  const issues = [
+    ...reminder.missingCli.map((agent) => ({
+      label: setup.missingCli,
+      agent,
+    })),
+    ...reminder.missingHook.map((agent) => ({
+      label: setup.missingHook,
+      agent,
+    })),
+  ]
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/18 px-4 backdrop-blur-sm">
+      <section
+        aria-modal="true"
+        className="liquid-glass w-full max-w-[30rem] rounded-[1.35rem] border border-white/75 p-5 shadow-[0_24px_80px_rgb(15_23_42_/_0.2)]"
+        role="dialog"
+      >
+        <div className="flex items-start gap-3">
+          <span className="agent-brand-icon flex h-12 w-12 shrink-0 items-center justify-center rounded-[1rem] border border-indigo-200/70 bg-white/70 shadow-[0_12px_30px_rgb(79_70_229_/_0.12)]">
+            <CodexLogo />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-xl font-semibold text-slate-950">{setup.title}</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">{setup.body}</p>
+          </div>
+        </div>
+
+        {issues.length > 0 && (
+          <div className="mt-4 grid gap-2.5">
+            {issues.map((issue) => (
+              <div
+                className="flex items-center justify-between gap-3 rounded-xl border border-white/65 bg-white/48 px-3 py-2.5 text-sm shadow-[inset_0_1px_0_rgb(255_255_255_/_0.65)]"
+                key={`${issue.agent}:${issue.label}`}
+              >
+                <span className="font-medium text-slate-700">{issue.label}</span>
+                <span className="rounded-full bg-slate-950 px-2.5 py-1 text-xs font-semibold text-white">
+                  {agentName(issue.agent)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {reminder.needsCodexTrust && (
+          <>
+            <div className="mt-4 rounded-xl border border-indigo-100/80 bg-white/50 px-3 py-3">
+              <h3 className="text-sm font-semibold text-slate-950">{tutorial.title}</h3>
+              <p className="mt-1.5 text-sm leading-6 text-slate-600">{tutorial.body}</p>
+            </div>
+
+            <ol className="mt-3 grid gap-2.5">
+              {tutorial.steps.map((step, index) => (
+                <li
+                  className="flex gap-3 rounded-xl border border-white/65 bg-white/48 px-3 py-2.5 text-sm text-slate-700 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.65)]"
+                  key={step}
+                >
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-xs font-semibold text-indigo-600 ring-1 ring-indigo-100">
+                    {index + 1}
+                  </span>
+                  <span className="leading-6">{step}</span>
+                </li>
+              ))}
+            </ol>
+
+            <p className="mt-3 rounded-xl border border-amber-200/70 bg-amber-50/70 px-3 py-2 text-sm leading-6 text-amber-800">
+              {tutorial.warning}
+            </p>
+          </>
+        )}
+
+        <button
+          className="mt-4 w-full rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_28px_rgb(15_23_42_/_0.18)] transition hover:bg-slate-800 active:translate-y-px"
+          onClick={onConfirm}
+        >
+          {tutorial.action}
+        </button>
+      </section>
+    </div>
+  )
+}
+
+function agentName(agent: AgentType): string {
+  return agent === 'codex' ? 'Codex' : 'Claude Code'
 }
 
 const AgentPanelView = memo(function AgentPanelView({

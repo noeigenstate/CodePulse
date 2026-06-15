@@ -10,6 +10,7 @@ export interface CodePulseApi {
   setMute: (muted: boolean) => Promise<boolean>
   detectAgents: () => Promise<Agent[]>
   onStatus: (cb: (snapshot: StatusSnapshot) => void) => Unsubscribe
+  onAgents: (cb: (agents: Agent[]) => void) => Unsubscribe
   onMute: (cb: (muted: boolean) => void) => Unsubscribe
 }
 

@@ -37,12 +37,15 @@ export async function detectCodexAgent(options: AgentDetectOptions = {}): Promis
   const env = options.env ?? process.env
   const runCommand = options.runCommand ?? runLocalCommand
   const configPath = codexConfigPath(options)
+  const hooksPath = codexHooksPath(options)
 
   const versionResult = await runCommand(
     env['CODEX_CLI_PATH'] || commandForPlatform('codex', options),
     ['--version'],
   )
-  const configured = await fileContainsAny(configPath, ['codex-hook.js', 'codepulse-codex-hook'])
+  const configured =
+    (await fileContainsAny(hooksPath, ['codex-hook.js', 'codepulse-codex-hook'])) ||
+    (await fileContainsAny(configPath, ['codex-hook.js', 'codepulse-codex-hook']))
 
   return {
     id: 'codex',
@@ -83,6 +86,13 @@ function codexConfigPath(options: AgentDetectOptions): string {
   return (
     env['CODEPULSE_CODEX_CONFIG_FILE'] ??
     join(options.homeDir ?? homedir(), '.codex', 'config.toml')
+  )
+}
+
+function codexHooksPath(options: AgentDetectOptions): string {
+  const env = options.env ?? process.env
+  return (
+    env['CODEPULSE_CODEX_HOOKS_FILE'] ?? join(options.homeDir ?? homedir(), '.codex', 'hooks.json')
   )
 }
 

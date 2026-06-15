@@ -1,9 +1,19 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain, Menu } from 'electron'
-import { type AgentType, type NotificationRequest, type StatusSnapshot } from '@codepulse/shared'
+import {
+  type Agent,
+  type AgentType,
+  type NotificationRequest,
+  type StatusSnapshot,
+} from '@codepulse/shared'
 import { StatusHub } from '@codepulse/core'
 import { openDb, persistEvent, type DB } from '@codepulse/storage'
-import { detectAgents, startLocalServer, type LocalServer } from '@codepulse/local-server'
+import {
+  configureAgents,
+  detectAgents,
+  startLocalServer,
+  type LocalServer,
+} from '@codepulse/local-server'
 import { TrayController } from './tray.js'
 import { showNotification } from './notifications.js'
 
@@ -24,15 +34,22 @@ function broadcast(channel: string, payload: unknown): void {
 function showWindow(): void {
   if (!mainWindow) {
     createWindow()
+    void refreshLocalAgents()
     return
   }
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.show()
   mainWindow.focus()
+  void refreshLocalAgents()
 }
 
 function appIconPath(): string {
   return join(app.getAppPath(), 'build/icon.png')
+}
+
+function hookBinDir(): string {
+  if (app.isPackaged) return join(process.resourcesPath, 'codepulse-hooks', 'bin')
+  return join(app.getAppPath(), '..', '..', 'packages', 'hooks', 'bin')
 }
 
 function createWindow(): void {
@@ -111,7 +128,7 @@ function registerIpc(): void {
     setMuted(muted)
     return muted
   })
-  ipcMain.handle('codepulse:detect-agents', () => detectAgents())
+  ipcMain.handle('codepulse:detect-agents', () => refreshLocalAgents())
 }
 
 async function bootstrap(): Promise<void> {
@@ -134,6 +151,7 @@ async function bootstrap(): Promise<void> {
   } catch (err) {
     console.error('[codepulse] failed to start local server', err)
   }
+  await refreshLocalAgents()
 
   hub.startWatchdog()
 
@@ -146,6 +164,24 @@ async function bootstrap(): Promise<void> {
   })
 
   createWindow()
+}
+
+async function configureLocalAgents(): Promise<void> {
+  const result = await configureAgents({ hookBinDir: hookBinDir() })
+  for (const [agent, status] of Object.entries(result)) {
+    if (status.error) {
+      console.error(`[codepulse] failed to configure ${agent}`, status.error)
+      continue
+    }
+    if (status.changed) console.log(`[codepulse] configured ${agent} hooks at ${status.path}`)
+  }
+}
+
+async function refreshLocalAgents(): Promise<Agent[]> {
+  await configureLocalAgents()
+  const agents = await detectAgents()
+  broadcast('codepulse:agents', agents)
+  return agents
 }
 
 app.setName('CodePulse')

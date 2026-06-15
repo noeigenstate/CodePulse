@@ -22,8 +22,25 @@ export interface UiCopy {
   read: string
   contextWindow: string
   unknownProject: string
+  agentSetupReminder: AgentSetupReminderCopy
+  codexTrustTutorial: CodexTrustTutorialCopy
   contextStatus: ContextStatusCopy
   pathStatus: PathStatusCopy
+}
+
+export interface AgentSetupReminderCopy {
+  title: string
+  body: string
+  missingCli: string
+  missingHook: string
+}
+
+export interface CodexTrustTutorialCopy {
+  title: string
+  body: string
+  steps: string[]
+  warning: string
+  action: string
 }
 
 export interface ContextStatusCopy {
@@ -72,6 +89,19 @@ const UI_COPY: Record<Locale, UiCopy> = {
     read: '已读',
     contextWindow: '上下文窗口：',
     unknownProject: '未识别项目',
+    agentSetupReminder: {
+      title: '配置与权限检查',
+      body: 'CodePulse 每次打开都会检查本机 Claude / Codex 配置。请先处理下面的问题，否则任务状态可能无法同步。',
+      missingCli: '未检测到命令行工具',
+      missingHook: '未完成 CodePulse 钩子配置',
+    },
+    codexTrustTutorial: {
+      title: '信任 Codex 钩子',
+      body: 'CodePulse 已经写入 Codex 钩子配置。Codex 第一次运行该命令前需要你手动信任，否则 CodePulse 无法接收 Codex 任务状态。',
+      steps: ['打开任意 Codex 项目终端。', '输入 /hooks。', '选择 CodePulse 钩子并确认信任。'],
+      warning: '完成信任后，再运行一轮 Codex 任务，面板就会开始同步。',
+      action: '我已在 Codex 信任',
+    },
     contextStatus: {
       waiting: '等待命令行同步上下文',
       lastPrefix: '上次：',
@@ -95,6 +125,23 @@ const UI_COPY: Record<Locale, UiCopy> = {
     read: 'Read',
     contextWindow: 'Context window:',
     unknownProject: 'Unknown project',
+    agentSetupReminder: {
+      title: 'Setup and permission check',
+      body: 'CodePulse checks local Claude / Codex setup every time it opens. Resolve these items first or task status may not sync.',
+      missingCli: 'CLI not detected',
+      missingHook: 'CodePulse hook is not configured',
+    },
+    codexTrustTutorial: {
+      title: 'Trust the Codex hook',
+      body: 'CodePulse has written the Codex hook configuration. Codex requires you to trust that command before it can run; otherwise CodePulse cannot receive Codex task status.',
+      steps: [
+        'Open any Codex project terminal.',
+        'Type /hooks.',
+        'Select the CodePulse hook and trust it.',
+      ],
+      warning: 'After trusting it, run one Codex task and this panel will start syncing.',
+      action: 'I trusted it in Codex',
+    },
     contextStatus: {
       waiting: 'Waiting for CLI context',
       lastPrefix: 'last: ',

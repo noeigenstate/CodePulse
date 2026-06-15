@@ -7,6 +7,8 @@ dist/
 out/
 build/
 release/
+apps/desktop/out/
+apps/desktop/release/
 !apps/desktop/build/
 !apps/desktop/build/icon.png
 *.tsbuildinfo
@@ -21,6 +23,7 @@ data/
 # generated test bundles
 scripts/*.generated.mjs
 tests/.generated/
+.tmpshots/
 
 # logs
 *.log

@@ -17,6 +17,7 @@ const api = {
   detectAgents: (): Promise<Agent[]> => ipcRenderer.invoke('codepulse:detect-agents'),
   onStatus: (cb: (snapshot: StatusSnapshot) => void): Unsubscribe =>
     subscribe('codepulse:status', cb),
+  onAgents: (cb: (agents: Agent[]) => void): Unsubscribe => subscribe('codepulse:agents', cb),
   onMute: (cb: (muted: boolean) => void): Unsubscribe => subscribe('codepulse:mute', cb),
 }
 

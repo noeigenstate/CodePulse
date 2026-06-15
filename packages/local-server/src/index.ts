@@ -86,5 +86,13 @@ export {
   detectCodexAgent,
   type AgentDetectOptions,
 } from './agent-detect.js'
+export {
+  configureAgents,
+  configureClaudeAgent,
+  configureCodexAgent,
+  type AgentConfigurationOptions,
+  type AgentConfigurationResult,
+  type AgentConfigurationStatus,
+} from './agent-config.js'
 export { registerAgentRoutes, registerEventRoutes, registerStatusRoutes, registerWebSocket }
 export { QuotaRefreshWatcher, readCodexQuotaTokenFromFile } from './quota-watcher.js'

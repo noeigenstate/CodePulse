@@ -9,6 +9,7 @@ interface CodePulseStore {
   snapshot: StatusSnapshot
   muted: boolean
   agents: Agent[]
+  agentCheckId: number
   init: () => () => void
   ack: (agent: AgentType, workspacePath?: string) => void
   toggleMute: () => void
@@ -19,6 +20,7 @@ export const useStore = create<CodePulseStore>((set, get) => ({
   snapshot: EMPTY_SNAPSHOT,
   muted: false,
   agents: [],
+  agentCheckId: 0,
 
   init: () => {
     const api = window.codepulse
@@ -37,15 +39,21 @@ export const useStore = create<CodePulseStore>((set, get) => ({
       })
     }
 
+    const applyAgents = (agents: Agent[]): void => {
+      set((state) => ({ agents, agentCheckId: state.agentCheckId + 1 }))
+    }
+
     void api.getStatus().then((snapshot) => applySnapshot(snapshot, true))
-    void api.detectAgents().then((agents) => set({ agents }))
+    void api.detectAgents().then(applyAgents)
 
     const offStatus = api.onStatus((snapshot) => applySnapshot(snapshot))
     const offMute = api.onMute((muted) => set({ muted }))
+    const offAgents = api.onAgents(applyAgents)
 
     return () => {
       offStatus()
       offMute()
+      offAgents()
     }
   },
 

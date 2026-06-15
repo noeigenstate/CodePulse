@@ -123,6 +123,16 @@ test('setup tutorial explains written config, uninstall cleanup, and Codex hook 
   assert.match(en.codexTrustTutorial.permissions.join(' '), /Stop/)
 })
 
+test('Codex trust tutorial uses user-facing hook selection steps', () => {
+  const zhSteps = uiCopy('zh').codexTrustTutorial.steps.join(' ')
+  const enSteps = uiCopy('en').codexTrustTutorial.steps.join(' ')
+
+  assert.doesNotMatch(zhSteps, /codepulse-hooks\/bin\/codex-hook\.js/)
+  assert.doesNotMatch(enSteps, /codepulse-hooks\/bin\/codex-hook\.js/)
+  assert.match(zhSteps, /CodePulse hook/)
+  assert.match(enSteps, /Select the CodePulse hook/)
+})
+
 test('setup tutorial modal keeps long instructions scrollable', () => {
   const appSource = readFileSync('apps/desktop/src/renderer/src/App.tsx', 'utf8')
 

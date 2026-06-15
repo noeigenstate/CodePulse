@@ -2,6 +2,10 @@ appId: dev.codepulse.desktop
 productName: CodePulse
 electronVersion: 33.3.1
 electronDist: ../../node_modules/electron/dist
+compression: maximum
+electronLanguages:
+  - en-US
+  - zh-CN
 directories:
   output: release
   buildResources: build
@@ -9,6 +13,11 @@ files:
   - out/**
   - build/icon.png
   - package.json
+  - '!**/*.map'
+  - '!**/*.d.ts'
+  - '!**/node_modules/better-sqlite3/deps/**'
+  - '!**/node_modules/better-sqlite3/src/**'
+  - '!**/node_modules/better-sqlite3/build/Release/obj/**'
 extraResources:
   - from: ../../packages/hooks
     to: codepulse-hooks
@@ -19,7 +28,6 @@ extraResources:
 # Native addon must stay unpacked from the asar archive so it can be dlopen'd.
 asarUnpack:
   - '**/*.node'
-  - '**/better-sqlite3/**'
 win:
   icon: build/icon.png
   artifactName: CodePulse_${version}_${arch}-setup.${ext}

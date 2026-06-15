@@ -116,7 +116,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
       steps: [
         '打开正在使用的 Codex 项目终端。',
         '输入 /hooks 并回车。',
-        '找到包含 codepulse-hooks/bin/codex-hook.js 的 CodePulse hook。',
+        '在 /hooks 列表中选择 CodePulse hook。',
         '依次信任 SessionStart、UserPromptSubmit、PreToolUse、PermissionRequest、PostToolUse、Stop 这些事件。',
       ],
       warning: '完成信任后，再运行一轮 Codex 任务，面板就会开始同步。',
@@ -168,7 +168,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
       steps: [
         'Open the Codex project terminal you are using.',
         'Type /hooks.',
-        'Find the CodePulse hook that contains codepulse-hooks/bin/codex-hook.js.',
+        'Select the CodePulse hook in the /hooks list.',
         'Trust SessionStart, UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse, and Stop.',
       ],
       warning: 'After trusting it, run one Codex task and this panel will start syncing.',

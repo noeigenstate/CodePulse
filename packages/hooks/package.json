@@ -1,6 +1,6 @@
 {
   "name": "@codepulse/hooks",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "description": "Standalone hook scripts Codex / Claude Code invoke to report lifecycle events to CodePulse",

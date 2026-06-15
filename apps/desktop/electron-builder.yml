@@ -22,6 +22,7 @@ asarUnpack:
   - '**/better-sqlite3/**'
 win:
   icon: build/icon.png
+  artifactName: CodePulse_${version}_${arch}-setup.${ext}
   target:
     - nsis
 mac:

@@ -46,6 +46,10 @@ jobs:
           pnpm smoke
           pnpm lint
 
+      - name: Clean release output
+        shell: pwsh
+        run: Remove-Item -Path 'apps/desktop/release' -Recurse -Force -ErrorAction SilentlyContinue
+
       - name: Build installer
         run: pnpm dist
 
@@ -68,6 +72,51 @@ jobs:
           "tag=$tag" >> $env:GITHUB_OUTPUT
           "release_name=CodePulse $tag" >> $env:GITHUB_OUTPUT
 
+      - name: Write release notes
+        id: notes
+        shell: pwsh
+        run: |
+          $tag = '${{ steps.release.outputs.tag }}'
+          $installerNames = Get-ChildItem -Path 'apps/desktop/release' -Filter '*.exe' -File |
+            Sort-Object Name |
+            ForEach-Object { "- Windows x64: ``$($_.Name)``" }
+
+          if ($installerNames.Count -eq 0) {
+            throw "No Windows installer found for release notes."
+          }
+
+          $downloadLines = $installerNames -join "`n"
+          $notesPath = Join-Path $env:RUNNER_TEMP 'codepulse-release-notes.md'
+          @(
+            "## $tag",
+            "",
+            "### 功能说明",
+            "",
+            "- 实时展示 Claude Code / Codex 当前任务状态、项目状态和最近完成提醒。",
+            "- 显示上下文窗口、5 小时额度、每周额度和额度刷新时间。",
+            "- 启动时自动检查本机 Claude / Codex CLI、CodePulse hooks 配置和 Codex hook 信任提示。",
+            "- 支持中英文界面切换、托盘常驻和桌面通知。",
+            "",
+            "### 修复问题",
+            "",
+            "- 修复 Windows 上 Claude Code ``.cmd`` shim 损坏时误报“未检测到命令行工具”的问题。",
+            "",
+            "### 下载地址",
+            "",
+            "#### Windows",
+            "",
+            $downloadLines,
+            "",
+            "下载下方 Assets 中的 ``.exe`` 安装包后直接运行安装。",
+            "",
+            "### 使用提示",
+            "",
+            "- 首次运行后，如果弹出“配置与权限检查”，请按提示在 Codex 中输入 ``/hooks`` 并信任 CodePulse hook。",
+            "- Claude Code / Codex 至少需要运行一轮任务，CodePulse 才能收到实时状态。"
+          ) | Set-Content -Path $notesPath -Encoding utf8
+
+          "path=$notesPath" >> $env:GITHUB_OUTPUT
+
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
@@ -85,6 +134,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
           RELEASE_NAME: ${{ steps.release.outputs.release_name }}
+          RELEASE_NOTES: ${{ steps.notes.outputs.path }}
         run: |
           $releaseDir = 'apps/desktop/release'
           $assets = @(
@@ -101,11 +151,16 @@ jobs:
           gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY *> $null
 
           if ($LASTEXITCODE -eq 0) {
+            gh release edit $env:RELEASE_TAG `
+              --repo $env:GITHUB_REPOSITORY `
+              --title $env:RELEASE_NAME `
+              --notes-file $env:RELEASE_NOTES `
+              --latest
             gh release upload $env:RELEASE_TAG $assetPaths --repo $env:GITHUB_REPOSITORY --clobber
           } else {
             gh release create $env:RELEASE_TAG $assetPaths `
               --repo $env:GITHUB_REPOSITORY `
               --title $env:RELEASE_NAME `
-              --notes "Automated CodePulse Windows build for $env:RELEASE_TAG." `
+              --notes-file $env:RELEASE_NOTES `
               --latest
           }

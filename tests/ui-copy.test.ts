@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { TurnState } from '@codepulse/shared'
 import {
@@ -120,4 +121,12 @@ test('setup tutorial explains written config, uninstall cleanup, and Codex hook 
   assert.match(en.codexTrustTutorial.permissions.join(' '), /SessionStart/)
   assert.match(en.codexTrustTutorial.permissions.join(' '), /PermissionRequest/)
   assert.match(en.codexTrustTutorial.permissions.join(' '), /Stop/)
+})
+
+test('setup tutorial modal keeps long instructions scrollable', () => {
+  const appSource = readFileSync('apps/desktop/src/renderer/src/App.tsx', 'utf8')
+
+  assert.match(appSource, /max-h-\[min\(calc\(100vh-2rem\),42rem\)\]/)
+  assert.match(appSource, /overflow-y-auto/)
+  assert.match(appSource, /shrink-0 border-t/)
 })

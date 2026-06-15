@@ -130,82 +130,88 @@ function AgentSetupReminderModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/18 px-4 backdrop-blur-sm">
       <section
         aria-modal="true"
-        className="liquid-glass w-full max-w-[30rem] rounded-[1.35rem] border border-white/75 p-5 shadow-[0_24px_80px_rgb(15_23_42_/_0.2)]"
+        className="liquid-glass flex max-h-[min(calc(100vh-2rem),42rem)] w-full max-w-[30rem] flex-col overflow-hidden rounded-[1.35rem] border border-white/75 shadow-[0_24px_80px_rgb(15_23_42_/_0.2)]"
         role="dialog"
       >
-        <div className="flex items-start gap-3">
-          <span className="agent-brand-icon flex h-12 w-12 shrink-0 items-center justify-center rounded-[1rem] border border-indigo-200/70 bg-white/70 shadow-[0_12px_30px_rgb(79_70_229_/_0.12)]">
-            <CodexLogo />
-          </span>
-          <div className="min-w-0">
-            <h2 className="text-xl font-semibold text-slate-950">{setup.title}</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">{setup.body}</p>
-          </div>
-        </div>
-
-        <div className="mt-4 grid gap-2 rounded-xl border border-white/65 bg-white/48 px-3 py-3 text-sm leading-6 text-slate-700 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.65)]">
-          <p>{setup.firstRunNotice}</p>
-          <p>{setup.cleanupNotice}</p>
-        </div>
-
-        {issues.length > 0 && (
-          <div className="mt-4 grid gap-2.5">
-            {issues.map((issue) => (
-              <div
-                className="flex items-center justify-between gap-3 rounded-xl border border-white/65 bg-white/48 px-3 py-2.5 text-sm shadow-[inset_0_1px_0_rgb(255_255_255_/_0.65)]"
-                key={`${issue.agent}:${issue.label}`}
-              >
-                <span className="font-medium text-slate-700">{issue.label}</span>
-                <span className="rounded-full bg-slate-950 px-2.5 py-1 text-xs font-semibold text-white">
-                  {agentName(issue.agent)}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {reminder.needsCodexTrust && (
-          <>
-            <div className="mt-4 rounded-xl border border-indigo-100/80 bg-white/50 px-3 py-3">
-              <h3 className="text-sm font-semibold text-slate-950">{tutorial.title}</h3>
-              <p className="mt-1.5 text-sm leading-6 text-slate-600">{tutorial.body}</p>
+        <div className="min-h-0 flex-1 overflow-y-auto p-5 pr-4">
+          <div className="flex items-start gap-3">
+            <span className="agent-brand-icon flex h-12 w-12 shrink-0 items-center justify-center rounded-[1rem] border border-indigo-200/70 bg-white/70 shadow-[0_12px_30px_rgb(79_70_229_/_0.12)]">
+              <CodexLogo />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-xl font-semibold text-slate-950">{setup.title}</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">{setup.body}</p>
             </div>
+          </div>
 
-            <div className="mt-3 rounded-xl border border-white/65 bg-white/48 px-3 py-3 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.65)]">
-              <h4 className="text-sm font-semibold text-slate-950">{tutorial.permissionsTitle}</h4>
-              <ul className="mt-2 grid gap-1.5 text-sm leading-6 text-slate-700">
-                {tutorial.permissions.map((permission) => (
-                  <li key={permission}>{permission}</li>
-                ))}
-              </ul>
-            </div>
+          <div className="mt-4 grid gap-2 rounded-xl border border-white/65 bg-white/48 px-3 py-3 text-sm leading-6 text-slate-700 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.65)]">
+            <p>{setup.firstRunNotice}</p>
+            <p>{setup.cleanupNotice}</p>
+          </div>
 
-            <ol className="mt-3 grid gap-2.5">
-              {tutorial.steps.map((step, index) => (
-                <li
-                  className="flex gap-3 rounded-xl border border-white/65 bg-white/48 px-3 py-2.5 text-sm text-slate-700 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.65)]"
-                  key={step}
+          {issues.length > 0 && (
+            <div className="mt-4 grid gap-2.5">
+              {issues.map((issue) => (
+                <div
+                  className="flex items-center justify-between gap-3 rounded-xl border border-white/65 bg-white/48 px-3 py-2.5 text-sm shadow-[inset_0_1px_0_rgb(255_255_255_/_0.65)]"
+                  key={`${issue.agent}:${issue.label}`}
                 >
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-xs font-semibold text-indigo-600 ring-1 ring-indigo-100">
-                    {index + 1}
+                  <span className="font-medium text-slate-700">{issue.label}</span>
+                  <span className="rounded-full bg-slate-950 px-2.5 py-1 text-xs font-semibold text-white">
+                    {agentName(issue.agent)}
                   </span>
-                  <span className="leading-6">{step}</span>
-                </li>
+                </div>
               ))}
-            </ol>
+            </div>
+          )}
 
-            <p className="mt-3 rounded-xl border border-amber-200/70 bg-amber-50/70 px-3 py-2 text-sm leading-6 text-amber-800">
-              {tutorial.warning}
-            </p>
-          </>
-        )}
+          {reminder.needsCodexTrust && (
+            <>
+              <div className="mt-4 rounded-xl border border-indigo-100/80 bg-white/50 px-3 py-3">
+                <h3 className="text-sm font-semibold text-slate-950">{tutorial.title}</h3>
+                <p className="mt-1.5 text-sm leading-6 text-slate-600">{tutorial.body}</p>
+              </div>
 
-        <button
-          className="mt-4 w-full rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_28px_rgb(15_23_42_/_0.18)] transition hover:bg-slate-800 active:translate-y-px"
-          onClick={onConfirm}
-        >
-          {tutorial.action}
-        </button>
+              <div className="mt-3 rounded-xl border border-white/65 bg-white/48 px-3 py-3 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.65)]">
+                <h4 className="text-sm font-semibold text-slate-950">
+                  {tutorial.permissionsTitle}
+                </h4>
+                <ul className="mt-2 grid gap-1.5 text-sm leading-6 text-slate-700">
+                  {tutorial.permissions.map((permission) => (
+                    <li key={permission}>{permission}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <ol className="mt-3 grid gap-2.5">
+                {tutorial.steps.map((step, index) => (
+                  <li
+                    className="flex gap-3 rounded-xl border border-white/65 bg-white/48 px-3 py-2.5 text-sm text-slate-700 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.65)]"
+                    key={step}
+                  >
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-xs font-semibold text-indigo-600 ring-1 ring-indigo-100">
+                      {index + 1}
+                    </span>
+                    <span className="leading-6">{step}</span>
+                  </li>
+                ))}
+              </ol>
+
+              <p className="mt-3 rounded-xl border border-amber-200/70 bg-amber-50/70 px-3 py-2 text-sm leading-6 text-amber-800">
+                {tutorial.warning}
+              </p>
+            </>
+          )}
+        </div>
+
+        <div className="shrink-0 border-t border-white/65 bg-white/40 p-5 pt-4">
+          <button
+            className="w-full rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_28px_rgb(15_23_42_/_0.18)] transition hover:bg-slate-800 active:translate-y-px"
+            onClick={onConfirm}
+          >
+            {tutorial.action}
+          </button>
+        </div>
       </section>
     </div>
   )

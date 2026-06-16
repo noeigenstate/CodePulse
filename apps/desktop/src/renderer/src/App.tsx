@@ -15,8 +15,10 @@ import {
 import { useStore } from './store.js'
 import { Header } from './components/Header.js'
 import {
+  acknowledgeCodexTrust,
   buildAgentSetupReminder,
   dismissAgentSetupReminder,
+  readCodexTrustAcknowledged,
   shouldShowAgentSetupReminder,
   type AgentSetupReminder,
 } from './lib/codexTrustTutorial.js'
@@ -47,6 +49,9 @@ export function App(): JSX.Element {
   const { snapshot, muted, agents, agentCheckId, init, ack, toggleMute } = useStore()
   const [locale, setLocale] = useState<Locale>(() => readStoredLocale(window.localStorage))
   const [dismissedAgentCheckId, setDismissedAgentCheckId] = useState<number | undefined>()
+  const [codexTrustAcknowledged, setCodexTrustAcknowledged] = useState<boolean>(() =>
+    readCodexTrustAcknowledged(window.localStorage),
+  )
   const panels = useMemo(() => buildAgentPanels(snapshot.agents), [snapshot.agents])
   const setupReminder = useMemo(() => buildAgentSetupReminder(agents), [agents])
   const copy = useMemo(() => uiCopy(locale), [locale])
@@ -54,6 +59,7 @@ export function App(): JSX.Element {
     setupReminder,
     agentCheckId,
     dismissedAgentCheckId,
+    codexTrustAcknowledged,
   )
 
   useEffect(() => init(), [init])
@@ -68,6 +74,9 @@ export function App(): JSX.Element {
 
   const dismissSetupReminder = (): void => {
     setDismissedAgentCheckId(dismissAgentSetupReminder(agentCheckId))
+    if (setupReminder.needsCodexTrust) {
+      setCodexTrustAcknowledged(acknowledgeCodexTrust(window.localStorage))
+    }
   }
 
   return (

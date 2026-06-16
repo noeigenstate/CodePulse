@@ -1,139 +1,269 @@
+<div align="center">
+
 # CodePulse
 
-A local desktop console for Codex and Claude Code.
+**A local status hub for your AI coding agents.**
 
-CodePulse shows which AI coding agent is running, waiting for you, finished, or needs attention. It runs locally, lives in the tray, and sends a desktop notification when a project turn is complete.
+Know at a glance whether Codex and Claude Code are working, waiting on you,
+finished, or stuck — without alt-tabbing back to a terminal.
 
-[简体中文](./README.zh-CN.md) | [Product spec](./requirements.md) | [Releases](https://github.com/noeigenstate/CodePulse/releases)
+[![status](https://img.shields.io/badge/status-v0.1%20MVP-orange)](#features)
+[![platform](https://img.shields.io/badge/platform-Windows-blue)](#download)
+[![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#development)
+[![pnpm](https://img.shields.io/badge/pnpm-%E2%89%A59-F69220?logo=pnpm&logoColor=white)](#development)
+[![built with](https://img.shields.io/badge/built%20with-Electron%20%2B%20TypeScript-47848F?logo=electron&logoColor=white)](#how-it-works)
+[![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
+
+[English](./README.md) · [简体中文](./README.zh-CN.md) · [Product spec](./requirements.md)
+
+</div>
+
+---
+
+AI coding agents are great at working unattended — and terrible at telling you
+when they need you. CodePulse listens to the lifecycle hooks that Codex and
+Claude Code already expose, runs every event through a single state machine,
+and surfaces the result three ways:
+
+- 📊 **Live Dashboard** — per-agent, per-workspace cards with state, model,
+  elapsed time, context-window usage, and quota.
+- 🎨 **Color-coded tray icon** — the overall state of every agent, visible at
+  all times.
+- 🔔 **Desktop notifications** — concise project-level completion alerts, with
+  throttling and deduplication built in.
+
+Everything runs **100% locally**. The server binds to loopback only, prompts
+are stored as short previews (never in full), and the hooks fail silently when
+CodePulse isn't running — your agents are never blocked or slowed down.
+
+## Screenshots
+
+![CodePulse dashboard](./docs/screenshots/dashboard.png)
+
+The live dashboard tracks every agent and workspace in real time — state, model,
+elapsed time, context-window usage, and rolling 5-hour / weekly quota. _(Sample
+data shown.)_
 
 ## Features
 
-- Tracks Claude Code and Codex side by side.
-- Groups status by project instead of mixing every terminal together.
-- Shows context window usage, 5-hour quota, weekly quota, and reset time when the CLI provides it.
-- Sends concise desktop notifications for completed turns.
-- Checks local configuration every time the app starts.
-- Installs required CodePulse hooks automatically and removes them automatically on uninstall.
-- Keeps all data local. The server listens on `127.0.0.1:17888`.
+|                                     |                                                                                                                                         |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| 🚦 **Unified state machine**        | One turn lifecycle for every agent: idle → processing → tool running → waiting for permission/input → done / error / cancelled / stuck. |
+| 🧭 **Multi-agent, multi-workspace** | Concurrent Codex and Claude Code sessions across projects, each tracked separately.                                                     |
+| 📈 **Context tracking**             | Compact context-window usage from Claude and Codex, using exact CLI data when available.                                                |
+| 🎟️ **Quota awareness**              | 5-hour / weekly rate-limit windows per quota bucket, matched to the model you're actually running when the CLI reports them.            |
+| 🕰️ **Stuck detection**              | A watchdog flags turns with no activity so silent failures don't burn your afternoon.                                                   |
+| 💾 **Local history**                | Events, sessions, turns, and token snapshots persisted to SQLite — yours to query or delete.                                            |
+| 🔌 **Open local API**               | Plain HTTP + WebSocket on `127.0.0.1:17888` for local integrations.                                                                     |
+
+## How it works
+
+```
+ Codex / Claude Code
+   │  lifecycle hooks & status line (dependency-free Node scripts)
+   ▼
+ POST /api/events ──► adapters ──► StatusHub (pure reducer + rule engine)
+ (Fastify, loopback)   normalize        │
+                                        ├─► SQLite (events / sessions / turns / tokens)
+                                        ├─► tray icon update
+                                        ├─► desktop notification
+                                        └─► WebSocket / IPC push ──► Dashboard (React)
+```
+
+The repository is a `pnpm` workspace:
+
+```
+apps/desktop/        Electron app (main / preload / renderer)
+packages/
+  shared/            Domain types (Agent, Turn, AgentEvent, …) + constants
+  core/              State machine, rule engine, aggregation, StatusHub
+  adapters/          Codex / Claude raw payload → AgentEvent mapping
+  storage/           SQLite schema (Drizzle ORM) + repository
+  local-server/      Fastify HTTP + WebSocket routes
+  hooks/             Standalone hook scripts the agents invoke
+scripts/             Backend smoke test
+tests/               Unit tests
+```
+
+**Stack:** Electron · electron-vite · TypeScript · React · Tailwind · Zustand ·
+Fastify · better-sqlite3 · Drizzle ORM.
 
 ## Download
 
-Download the Windows installer from:
+Download the Windows installer from
+[GitHub Releases](https://github.com/noeigenstate/CodePulse/releases), then run
+the `.exe` asset directly.
 
-https://github.com/noeigenstate/CodePulse/releases
+## First run
 
-Use the `.exe` file under Assets, for example:
-
-`CodePulse_0.1.5_x64-setup.exe`
-
-## First Run
-
-1. Install and open CodePulse.
-2. CodePulse checks your local Claude Code and Codex setup.
-3. If configuration is missing, CodePulse writes only its own required hook entries to:
+1. Open CodePulse.
+2. CodePulse checks your local Claude Code and Codex CLI setup.
+3. If required entries are missing, CodePulse writes only its own hook and
+   status-line configuration to:
    - `~/.claude/settings.json`
    - `~/.codex/hooks.json`
    - `~/.codex/config.toml`
-4. If Codex asks you to trust hooks, open any Codex project terminal and run:
-
-```text
-/hooks
-```
-
-5. Select the CodePulse hook and trust these events:
+4. If the setup dialog asks you to trust Codex hooks, open a Codex project
+   terminal, run `/hooks`, select the CodePulse hook, and trust:
    - `SessionStart`
    - `UserPromptSubmit`
    - `PreToolUse`
    - `PermissionRequest`
    - `PostToolUse`
    - `Stop`
-6. Run one Claude Code or Codex task. The dashboard will start syncing.
+5. Run one Claude Code or Codex task. The dashboard will start syncing.
 
-CodePulse only manages CodePulse hook and status line entries. Existing user hooks, models, plugins, and preferences are preserved.
+CodePulse only manages CodePulse-owned hook and status-line entries. Existing
+user hooks, models, plugins, and preferences are preserved. On uninstall, the
+installer removes CodePulse-managed entries automatically.
 
-## What It Changes Locally
+### Verify
 
-CodePulse may add:
-
-- Claude Code hook entries and status line command.
-- Codex hook entries.
-- `hooks = true` under Codex features when needed.
-
-When CodePulse is uninstalled, the installer removes CodePulse-managed hook and status line entries automatically.
-
-## Privacy
-
-- Events stay on your machine.
-- The local API binds to `127.0.0.1` only.
-- Prompt text is stored only as a short preview, not the full prompt.
-- History is stored in SQLite under the Electron user-data directory.
-
-Default database paths:
-
-- Windows: `%APPDATA%\CodePulse\codepulse.sqlite`
-- macOS: `~/Library/Application Support/CodePulse/codepulse.sqlite`
-- Linux: `~/.config/CodePulse/codepulse.sqlite`
-
-## Development
-
-Requirements:
-
-- Node.js 20 or newer
-- pnpm 9 or newer
-
-Install and run:
+Run any task in either agent and watch the Dashboard light up, or check the
+local API:
 
 ```bash
-pnpm install
-pnpm dev
+curl http://127.0.0.1:17888/api/health
+curl http://127.0.0.1:17888/api/status
 ```
 
-Checks:
+## Tray states
 
-```bash
-pnpm typecheck
-pnpm test
-pnpm smoke
-pnpm lint
-```
+| Color     | Meaning                                     |
+| --------- | ------------------------------------------- |
+| ⚪ Grey   | All idle                                    |
+| 🔵 Blue   | A task is running                           |
+| 🟡 Yellow | Waiting for permission or input — needs you |
+| 🟢 Green  | A turn finished, unread                     |
+| 🔴 Red    | An error                                    |
+| 🟠 Orange | Suspected stuck                             |
 
-Build installer:
-
-```bash
-pnpm dist
-```
-
-The Windows installer is written to:
-
-`apps/desktop/release/`
-
-## Release
-
-The GitHub workflow builds and publishes a Windows installer when a `v*` tag is pushed.
-
-```bash
-git push origin main
-git push origin v0.1.5
-```
-
-If you intentionally moved an existing tag:
-
-```bash
-git push --force origin v0.1.5
-```
+Notifications are throttled and deduplicated so you're informed, not nagged.
+**Mute** (tray or header button) silences sound for 30 minutes; notifications
+still appear, just silently.
 
 ## Local API
 
-CodePulse exposes a loopback-only API at `http://127.0.0.1:17888`.
+Loopback-only (`127.0.0.1:17888`) — never exposed to the network. Point the
+hooks elsewhere with the `CODEPULSE_URL` environment variable.
 
-Common endpoints:
+| Method | Path                 | Purpose                                           |
+| ------ | -------------------- | ------------------------------------------------- |
+| `POST` | `/api/events`        | Ingest a raw hook payload (or an array, max 1000) |
+| `GET`  | `/api/status`        | Full `StatusSnapshot` for the Dashboard           |
+| `GET`  | `/api/device/status` | Minimal status for lightweight local clients      |
+| `GET`  | `/api/agents/detect` | Detect local Codex / Claude CLI and hook setup    |
+| `POST` | `/api/ack/:agent`    | Mark an agent's terminal result as read           |
+| `POST` | `/api/mute`          | `{ "muted": true }` to silence notification sound |
+| `GET`  | `/api/health`        | Liveness probe                                    |
+| `WS`   | `/ws`                | Push channel: `status` + `notification` messages  |
 
-- `GET /api/health`
-- `GET /api/status`
-- `GET /api/agents/detect`
-- `POST /api/events`
-- `WS /ws`
+## Data & privacy
+
+CodePulse stores a single SQLite database in the Electron user-data directory:
+
+| OS      | Path                                                       |
+| ------- | ---------------------------------------------------------- |
+| Windows | `%APPDATA%\CodePulse\codepulse.sqlite`                     |
+| macOS   | `~/Library/Application Support/CodePulse/codepulse.sqlite` |
+| Linux   | `~/.config/CodePulse/codepulse.sqlite`                     |
+
+It records events, sessions, turns, and token snapshots. Prompts are stored
+only as short previews, never in full. Delete the file to reset all history.
+
+## Development
+
+Prerequisites:
+
+- **Node.js ≥ 20** (tested on 22.x)
+- **pnpm ≥ 9** — `npm i -g pnpm`
+
+```bash
+pnpm install
+pnpm dev          # app with hot reload (electron-vite)
+pnpm typecheck    # tsc across every package
+pnpm test         # unit tests
+pnpm smoke        # backend integration test (no Electron, no agent needed)
+pnpm lint         # prettier --check
+pnpm format       # prettier --write
+pnpm db:generate  # generate Drizzle SQL migrations from the schema
+```
+
+Workspace packages are consumed from TypeScript **source** (each package's
+`exports` points at `src/index.ts`); electron-vite and esbuild bundle the
+source directly, so there is no per-package compile step during development.
+
+### Building a distributable
+
+```bash
+pnpm build        # build packages, then bundle the app into apps/desktop/out
+pnpm dist         # package an installer into apps/desktop/release
+pnpm dist:dir     # unpacked build (faster, for local testing)
+```
+
+Targets are configured in `apps/desktop/electron-builder.yml` (NSIS on
+Windows, DMG on macOS, AppImage on Linux). The native `better-sqlite3` addon
+is unpacked so it loads at runtime; non-runtime sources and unused Electron
+locales are excluded from the installer.
+
+## Troubleshooting
+
+<details>
+<summary><b>The Dashboard never leaves "waiting for events"</b></summary>
+
+The agent isn't reaching the server. Check that CodePulse is running, that
+`curl http://127.0.0.1:17888/api/health` returns `{"ok":true}`, and that the
+setup dialog does not report missing Claude / Codex hooks. For Codex, run
+`/hooks` once and trust the CodePulse hook if prompted.
+
+</details>
+
+<details>
+<summary><b>Console logs "SQLite unavailable — running without persistence"</b></summary>
+
+The native `better-sqlite3` build doesn't match your runtime's ABI. The live
+Dashboard still works; only history persistence is off. Rebuild for Electron:
+
+```bash
+# <ELECTRON_VERSION> = the version in node_modules/electron/package.json
+cd node_modules/better-sqlite3
+node ../.bin/prebuild-install --runtime electron --target <ELECTRON_VERSION> --arch x64
+```
+
+(`electron-builder install-app-deps` does not work under pnpm's hoisted
+layout — use the command above.)
+
+</details>
+
+<details>
+<summary><b>Port 17888 is already in use</b></summary>
+
+Another instance (or app) holds the port. Quit the other instance from the
+tray, or change the port and set `CODEPULSE_URL` for the hooks to match.
+
+</details>
+
+<details>
+<summary><b>pnpm install didn't build better-sqlite3 / electron</b></summary>
+
+pnpm 10 blocks dependency build scripts unless allow-listed. They are listed
+under `pnpm.onlyBuiltDependencies` in the root `package.json`; run
+`pnpm install` again, or `pnpm rebuild`.
+
+</details>
+
+## Contributing
+
+Issues and pull requests are welcome. Before submitting:
+
+1. `pnpm typecheck && pnpm test && pnpm smoke` must pass.
+2. Format with `pnpm format`.
+3. Keep changes focused — one concern per PR.
+
+For product context, read [`requirements.md`](./requirements.md); the
+state-machine transition table in §8 is the source of truth for lifecycle
+behavior.
 
 ## License
 
-MIT. See [LICENSE](./LICENSE).
+Released under the [MIT License](./LICENSE) © 2026 CodePulse Contributors.

@@ -49,6 +49,8 @@ export function turnStateStyle(state: TurnState): StateStyle {
       return { label: '出错', dot: 'bg-red-500', text: 'text-red-700' }
     case TurnState.TIMEOUT:
       return { label: '疑似卡住', dot: 'bg-orange-500', text: 'text-orange-700' }
+    case TurnState.USAGE_LIMITED:
+      return { label: '已达用量上限，任务暂时停止', dot: 'bg-red-500', text: 'text-red-700' }
     case TurnState.CANCELLED:
       return { label: '已取消', dot: 'bg-slate-400', text: 'text-slate-500' }
     default:
@@ -74,6 +76,8 @@ export function overallStyle(overall: OverallState): StateStyle {
       return { label: '出错', dot: 'bg-red-500', text: 'text-red-700' }
     case 'stuck':
       return { label: '疑似卡住', dot: 'bg-orange-500', text: 'text-orange-700' }
+    case 'limited':
+      return { label: '用量上限', dot: 'bg-red-500', text: 'text-red-700' }
     default:
       return { label: '空闲', dot: 'bg-amber-500', text: 'text-slate-600' }
   }

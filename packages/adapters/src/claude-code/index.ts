@@ -52,6 +52,9 @@ export function fromClaudeHook(raw: unknown): AgentEventInput | null {
     case 'user_input_required':
       event.message = pickString(r, 'message') ?? '等待用户继续输入'
       break
+    case 'usage_limited':
+      event.message = pickString(r, 'message') ?? '已达用量上限，任务暂时停止'
+      break
     case 'prompt_submit':
       event.message = preview(pickString(r, 'prompt', 'user_prompt'))
       break
@@ -111,10 +114,21 @@ function mapClaudeEvent(hookEvent: string, raw: Record<string, unknown>): AgentE
  */
 function classifyNotification(message: string | undefined): AgentEventType {
   const text = (message ?? '').toLowerCase()
+  if (isUsageLimitMessage(text)) return 'usage_limited'
   if (text.includes('permission') || text.includes('approve') || text.includes('授权')) {
     return 'permission_request'
   }
   return 'user_input_required'
+}
+
+function isUsageLimitMessage(text: string): boolean {
+  return (
+    text.includes('session limit') ||
+    text.includes('usage limit') ||
+    text.includes('rate limit') ||
+    (text.includes('hit your') && text.includes('limit')) ||
+    (text.includes('limit') && text.includes('resets'))
+  )
 }
 
 /**

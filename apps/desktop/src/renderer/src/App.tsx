@@ -568,6 +568,7 @@ function stateChipClass(state: AgentRuntimeState['state']): string {
     case TurnState.DONE:
       return 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
     case TurnState.ERROR:
+    case TurnState.USAGE_LIMITED:
       return 'bg-red-50 text-red-700 ring-1 ring-red-200'
     case TurnState.WAITING_PERMISSION:
     case TurnState.WAITING_USER_INPUT:

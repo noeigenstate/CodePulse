@@ -62,7 +62,8 @@ export function persistEvent(db: DB, event: AgentEvent): void {
       event.eventType === 'turn_stop' ||
       event.eventType === 'turn_error' ||
       event.eventType === 'turn_cancelled' ||
-      event.eventType === 'turn_timeout'
+      event.eventType === 'turn_timeout' ||
+      event.eventType === 'usage_limited'
     ) {
       closeLatestTurn(tx, sessionId, event)
     }
@@ -164,6 +165,7 @@ function closeTurnState(event: AgentEvent): string {
   if (event.eventType === 'turn_error') return TurnState.ERROR
   if (event.eventType === 'turn_cancelled') return TurnState.CANCELLED
   if (event.eventType === 'turn_timeout') return TurnState.TIMEOUT
+  if (event.eventType === 'usage_limited') return TurnState.USAGE_LIMITED
   return TurnState.DONE
 }
 

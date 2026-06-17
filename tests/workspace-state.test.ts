@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { STUCK_STRONG_MS, STUCK_VISIBLE_MS, StatusHub } from '@codepulse/core'
 import { type AgentEvent, type NotificationRequest, TurnState } from '@codepulse/shared'
+import { fromClaudeHook } from '@codepulse/adapters'
 import {
   buildAgentPanels,
   buildWorkspaceAgentGroups,
@@ -130,6 +131,55 @@ test('StatusHub emits a synthetic timeout event through the normal pipeline', ()
   assert.equal(timeout?.externalSessionId, 'session-a')
   assert.equal(timeout?.externalTurnId, 'turn-a')
   assert.equal(timeout?.cwd, 'E:/project/a')
+})
+
+test('Claude session limit notification pauses the current task', () => {
+  const event = fromClaudeHook({
+    source: 'claude_code',
+    hook_event_name: 'Notification',
+    session_id: 'session-a',
+    cwd: 'E:/project/a',
+    model: 'Opus 4.8',
+    message:
+      "You've hit your session limit · resets 2:50pm (Asia/Shanghai). /upgrade to increase your usage limit.",
+  })
+
+  assert.equal(event?.eventType, 'usage_limited')
+  assert.equal(event?.message?.includes('session limit'), true)
+})
+
+test('StatusHub shows usage limit instead of processing after Claude quota stops a task', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const startedAt = 1_000_000
+  const limitedAt = startedAt + 1_000
+
+  hub.ingest({
+    id: 'prompt',
+    source: 'claude_code',
+    eventType: 'prompt_submit',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    model: 'Opus 4.8',
+    timestamp: startedAt,
+  })
+  hub.ingest({
+    id: 'limit',
+    source: 'claude_code',
+    eventType: 'usage_limited',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    model: 'Opus 4.8',
+    message:
+      "You've hit your session limit · resets 2:50pm (Asia/Shanghai). /upgrade to increase your usage limit.",
+    timestamp: limitedAt,
+  })
+
+  const snapshot = hub.snapshot(limitedAt)
+  const claude = snapshot.agents.find((agent) => agent.agentType === 'claude_code')
+  assert.equal(snapshot.overall, 'limited')
+  assert.equal(claude?.state, TurnState.USAGE_LIMITED)
+  assert.equal(claude?.activity, '已达用量上限，任务暂时停止')
+  assert.equal(claude?.turnStartedAt, undefined)
 })
 
 test('StatusHub removes completed projects after five minutes', () => {

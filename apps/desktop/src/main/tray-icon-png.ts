@@ -8,6 +8,7 @@ const STATE_COLORS: Record<OverallState, [number, number, number]> = {
   done_unread: [34, 197, 94],
   error: [239, 68, 68],
   stuck: [249, 115, 18],
+  limited: [239, 68, 68],
 }
 
 const crcTable = buildCrcTable()

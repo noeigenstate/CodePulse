@@ -196,6 +196,7 @@ const OVERALL_LABELS: Record<Locale, Record<OverallState, string>> = {
     done_unread: '一轮完成',
     error: '出错',
     stuck: '疑似卡住',
+    limited: '用量上限',
   },
   en: {
     idle: 'Idle',
@@ -204,6 +205,7 @@ const OVERALL_LABELS: Record<Locale, Record<OverallState, string>> = {
     done_unread: 'Completed',
     error: 'Error',
     stuck: 'Possibly stuck',
+    limited: 'Usage limit',
   },
 }
 
@@ -218,6 +220,7 @@ const TURN_STATE_LABELS: Record<Locale, Record<TurnState, string>> = {
     [TurnState.DONE]: '已完成',
     [TurnState.ERROR]: '出错',
     [TurnState.TIMEOUT]: '疑似卡住',
+    [TurnState.USAGE_LIMITED]: '已达用量上限，任务暂时停止',
     [TurnState.CANCELLED]: '已取消',
   },
   en: {
@@ -230,6 +233,7 @@ const TURN_STATE_LABELS: Record<Locale, Record<TurnState, string>> = {
     [TurnState.DONE]: 'Done',
     [TurnState.ERROR]: 'Error',
     [TurnState.TIMEOUT]: 'Possibly stuck',
+    [TurnState.USAGE_LIMITED]: 'Usage limit reached, paused',
     [TurnState.CANCELLED]: 'Cancelled',
   },
 }

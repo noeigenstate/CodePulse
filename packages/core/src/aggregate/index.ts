@@ -27,6 +27,7 @@ export function deriveOverall(agents: AgentRuntimeState[]): OverallState {
   if (visibleAgents.length === 0) return 'idle'
   const states = visibleAgents.map((a) => a.state)
   if (states.includes(TurnState.ERROR)) return 'error'
+  if (states.includes(TurnState.USAGE_LIMITED)) return 'limited'
   if (states.includes(TurnState.TIMEOUT)) return 'stuck'
   if (
     states.includes(TurnState.WAITING_PERMISSION) ||
@@ -106,6 +107,8 @@ function mapMainState(overall: OverallState): string {
       return 'running'
     case 'error':
       return 'error'
+    case 'limited':
+      return 'usage_limited'
     case 'done_unread':
       return 'done'
     case 'stuck':
@@ -130,6 +133,8 @@ function overallMessage(overall: OverallState): string {
       return 'AI 正在执行'
     case 'error':
       return '执行出错'
+    case 'limited':
+      return '已达用量上限'
     case 'done_unread':
       return '一轮任务已完成'
     case 'stuck':

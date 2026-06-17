@@ -87,6 +87,8 @@ function stateLabel(state: TurnState): string {
       return '出错'
     case TurnState.TIMEOUT:
       return '疑似卡住'
+    case TurnState.USAGE_LIMITED:
+      return '用量上限'
     case TurnState.CANCELLED:
       return '已取消'
     default:
@@ -106,6 +108,8 @@ function overallLabel(overall: OverallState): string {
       return '出错'
     case 'stuck':
       return '疑似卡住'
+    case 'limited':
+      return '用量上限'
     default:
       return '空闲'
   }

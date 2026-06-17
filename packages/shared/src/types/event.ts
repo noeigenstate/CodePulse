@@ -24,6 +24,7 @@ export type AgentEventType =
   | 'turn_error'
   | 'turn_cancelled'
   | 'turn_timeout'
+  | 'usage_limited'
   | 'token_snapshot'
   | 'session_end'
 

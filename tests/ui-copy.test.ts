@@ -30,7 +30,10 @@ test('locale toggle switches between Chinese and English labels', () => {
   assert.equal(nextLocale('zh'), 'en')
   assert.equal(nextLocale('en'), 'zh')
   assert.equal(overallLabel('running', 'en'), 'Running')
+  assert.equal(overallLabel('limited', 'en'), 'Usage limit')
+  assert.equal(turnStateLabel(TurnState.USAGE_LIMITED, 'zh'), '已达用量上限，任务暂时停止')
   assert.equal(turnStateLabel(TurnState.DONE, 'en'), 'Done')
+  assert.equal(turnStateLabel(TurnState.USAGE_LIMITED, 'en'), 'Usage limit reached, paused')
 })
 
 test('Chinese locale does not expose English dashboard chrome', () => {

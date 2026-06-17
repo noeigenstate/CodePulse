@@ -30,6 +30,8 @@ export const TurnState = {
   ERROR: 'ERROR',
   /** 长时间无新事件 —— 疑似卡住。 */
   TIMEOUT: 'TIMEOUT',
+  /** CLI 达到会话/用量上限，当前任务暂停到额度刷新。 */
+  USAGE_LIMITED: 'USAGE_LIMITED',
   /** 用户取消了该轮次。 */
   CANCELLED: 'CANCELLED',
 } as const
@@ -51,6 +53,7 @@ export const TERMINAL_STATES: readonly TurnState[] = [
   TurnState.DONE,
   TurnState.ERROR,
   TurnState.TIMEOUT,
+  TurnState.USAGE_LIMITED,
   TurnState.CANCELLED,
 ]
 

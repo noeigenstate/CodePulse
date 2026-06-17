@@ -59,7 +59,14 @@ export interface AgentRuntimeState {
  *
  * 直接映射为托盘图标颜色。
  */
-export type OverallState = 'idle' | 'running' | 'attention' | 'done_unread' | 'error' | 'stuck'
+export type OverallState =
+  | 'idle'
+  | 'running'
+  | 'attention'
+  | 'done_unread'
+  | 'error'
+  | 'stuck'
+  | 'limited'
 
 /**
  * `GET /api/status` 返回并经 WebSocket 广播的快照。

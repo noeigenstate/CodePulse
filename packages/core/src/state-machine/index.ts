@@ -175,6 +175,17 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       next.unread = true
       break
 
+    case 'usage_limited':
+      next.state = TurnState.USAGE_LIMITED
+      next.turnStartedAt = undefined
+      next.needPermission = false
+      next.needUserInput = false
+      next.toolName = undefined
+      next.terminalAt = event.timestamp
+      next.activity = '已达用量上限，任务暂时停止'
+      next.unread = true
+      break
+
     case 'token_snapshot':
       // 仅携带 token 数据；不改变生命周期状态。
       break

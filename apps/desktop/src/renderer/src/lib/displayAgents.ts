@@ -132,8 +132,6 @@ function buildAgentWorkspaceItems(
     grouped.set(key, [...(grouped.get(key) ?? []), agent])
   }
 
-  if (grouped.size === 0) grouped.set('', [idleAgent(agentType)])
-
   return [...grouped.entries()]
     .map(([key, groupAgents]) => {
       const latest =

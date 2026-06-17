@@ -132,6 +132,59 @@ test('StatusHub emits a synthetic timeout event through the normal pipeline', ()
   assert.equal(timeout?.cwd, 'E:/project/a')
 })
 
+test('StatusHub removes completed projects after five minutes', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const startedAt = 1_000_000
+  const finishedAt = startedAt + 1_000
+  const doneRetentionMs = 5 * 60_000
+
+  hub.ingest({
+    id: 'prompt',
+    source: 'codex',
+    eventType: 'prompt_submit',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    timestamp: startedAt,
+  })
+  hub.ingest({
+    id: 'stop',
+    source: 'codex',
+    eventType: 'turn_stop',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    timestamp: finishedAt,
+  })
+  ;(hub as unknown as { tick(now?: number): void }).tick(finishedAt + doneRetentionMs - 1)
+  assert.equal(hub.snapshot(finishedAt + doneRetentionMs - 1).agents.length, 1)
+  ;(hub as unknown as { tick(now?: number): void }).tick(finishedAt + doneRetentionMs)
+  assert.equal(hub.snapshot(finishedAt + doneRetentionMs).agents.length, 0)
+})
+
+test('StatusHub clears stuck projects after ten minutes', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const startedAt = 1_000_000
+  const timeoutAt = startedAt + STUCK_VISIBLE_MS
+  const timeoutRetentionMs = 10 * 60_000
+
+  hub.ingest({
+    id: 'prompt',
+    source: 'claude_code',
+    eventType: 'prompt_submit',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    timestamp: startedAt,
+  })
+  ;(hub as unknown as { tick(now?: number): void }).tick(timeoutAt)
+  assert.equal(hub.snapshot(timeoutAt).overall, 'stuck')
+  assert.equal(hub.snapshot(timeoutAt).agents[0]?.state, TurnState.TIMEOUT)
+  ;(hub as unknown as { tick(now?: number): void }).tick(timeoutAt + timeoutRetentionMs - 1)
+  assert.equal(hub.snapshot(timeoutAt + timeoutRetentionMs - 1).overall, 'stuck')
+  ;(hub as unknown as { tick(now?: number): void }).tick(timeoutAt + timeoutRetentionMs)
+  const snapshot = hub.snapshot(timeoutAt + timeoutRetentionMs)
+  assert.equal(snapshot.overall, 'idle')
+  assert.equal(snapshot.agents.length, 0)
+})
+
 test('StatusHub does not mark long-running tools as TIMEOUT at the visible threshold', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const startedAt = 1_000_000
@@ -785,6 +838,15 @@ test('display panels group slash and backslash variants into one project', () =>
   const codexPanel = panels.find((panel) => panel.agentType === 'codex')
   assert.equal(codexPanel?.workspaces.length, 1)
   assert.equal(codexPanel?.workspaces[0]?.agent.token?.contextUsedPercent, 12)
+})
+
+test('display panels keep agent shells empty when there are no projects', () => {
+  const panels = buildAgentPanels([])
+  const claudePanel = panels.find((panel) => panel.agentType === 'claude_code')
+  const codexPanel = panels.find((panel) => panel.agentType === 'codex')
+
+  assert.equal(claudePanel?.workspaces.length, 0)
+  assert.equal(codexPanel?.workspaces.length, 0)
 })
 
 test('display panels keep Codex projects inside one panel', () => {

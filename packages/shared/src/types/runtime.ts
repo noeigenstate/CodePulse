@@ -46,6 +46,8 @@ export interface AgentRuntimeState {
   turnStartedAt?: number
   /** 该 agent 最近一次事件的时间（epoch 毫秒）。 */
   lastEventAt: number
+  /** Epoch milliseconds when the current terminal state was entered. */
+  terminalAt?: number
   /** 最近的终结结果是否仍未被用户确认（未读）。 */
   unread: boolean
 }

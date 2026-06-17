@@ -87,6 +87,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
     case 'session_start':
       next.state = TurnState.IDLE
       next.unread = false
+      next.terminalAt = undefined
       if (!hasContextSnapshot(event.token)) next.token = markContextStale(next.token)
       break
 
@@ -97,6 +98,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       next.needPermission = false
       next.needUserInput = false
       next.unread = false
+      next.terminalAt = undefined
       next.activity = 'AI 正在处理任务'
       next.lastAssistantMessage = undefined
       break
@@ -105,6 +107,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       next.state = TurnState.TOOL_RUNNING
       next.toolName = event.toolName
       next.toolCallCount = current.toolCallCount + 1
+      next.terminalAt = undefined
       next.activity = describeTool(event)
       break
 
@@ -112,18 +115,21 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       // 回到思考状态，直到下一个信号；保持轮次存活。
       next.state = TurnState.THINKING
       next.toolName = undefined
+      next.terminalAt = undefined
       next.activity = 'AI 正在生成响应'
       break
 
     case 'permission_request':
       next.state = TurnState.WAITING_PERMISSION
       next.needPermission = true
+      next.terminalAt = undefined
       next.activity = event.message ?? describeTool(event) ?? '等待用户授权'
       break
 
     case 'user_input_required':
       next.state = TurnState.WAITING_USER_INPUT
       next.needUserInput = true
+      next.terminalAt = undefined
       next.activity = event.message ?? '等待用户继续输入'
       break
 
@@ -133,6 +139,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       next.needPermission = false
       next.needUserInput = false
       next.toolName = undefined
+      next.terminalAt = event.timestamp
       next.activity = '本轮任务已完成'
       next.unread = true
       if (event.message) next.lastAssistantMessage = event.message
@@ -141,6 +148,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
     case 'turn_error':
       next.state = TurnState.ERROR
       next.turnStartedAt = undefined
+      next.terminalAt = event.timestamp
       next.activity = event.message ?? '任务执行出错'
       next.unread = true
       break
@@ -151,6 +159,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       next.needPermission = false
       next.needUserInput = false
       next.toolName = undefined
+      next.terminalAt = event.timestamp
       next.activity = event.message ?? '任务已取消'
       next.unread = true
       break
@@ -160,6 +169,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       next.needPermission = false
       next.needUserInput = false
       next.toolName = undefined
+      next.terminalAt = event.timestamp
       next.activity = event.message ?? '疑似卡住'
       next.unread = true
       break
@@ -175,6 +185,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       next.needUserInput = false
       next.toolName = undefined
       next.activity = undefined
+      next.terminalAt = undefined
       if (!hasContextSnapshot(event.token)) next.token = markContextStale(next.token)
       break
 

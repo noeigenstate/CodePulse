@@ -25,6 +25,8 @@ import {
 } from '../rule-engine/index.js'
 
 const WAITING_STALE_MS = 30 * 60_000
+const DONE_RETENTION_MS = 5 * 60_000
+const TIMEOUT_RETENTION_MS = 10 * 60_000
 
 /**
  * {@link StatusHub} 发出的强类型事件。
@@ -166,7 +168,23 @@ export class StatusHub extends EventEmitter {
         changed = true
       }
     }
+    if (this.pruneExpiredAgents(now)) {
+      changed = true
+    }
     if (changed) this.emit('status', this.snapshot(now))
+  }
+
+  private pruneExpiredAgents(now: number): boolean {
+    let changed = false
+    for (const [key, agent] of [...this.agents.entries()]) {
+      if (!isExpiredAgent(agent, now)) continue
+      this.agents.delete(key)
+      if (agent.externalSessionId) {
+        this.sessionKeys.delete(sessionKey(agent.agentType, agent.externalSessionId))
+      }
+      changed = true
+    }
+    return changed
   }
 
   private applyTimeoutEvent(event: AgentEvent, key: string): AgentRuntimeState {
@@ -264,6 +282,19 @@ function timeoutThreshold(state: TurnState): number {
     return WAITING_STALE_MS
   }
   return STUCK_VISIBLE_MS
+}
+
+function isExpiredAgent(agent: AgentRuntimeState, now: number): boolean {
+  const terminalAt = agent.terminalAt ?? agent.lastEventAt
+  if (terminalAt <= 0) return false
+  const retentionMs = terminalRetentionMs(agent.state)
+  return retentionMs != null && now - terminalAt >= retentionMs
+}
+
+function terminalRetentionMs(state: TurnState): number | undefined {
+  if (state === TurnState.DONE) return DONE_RETENTION_MS
+  if (state === TurnState.TIMEOUT) return TIMEOUT_RETENTION_MS
+  return undefined
 }
 
 function sessionKey(agentType: AgentType, sessionId: string): string {

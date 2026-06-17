@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Agent, AgentType, StatusSnapshot } from '@codepulse/shared'
+import type { Agent, AgentType, StatusSnapshot, UpdateInfo } from '@codepulse/shared'
 import { sameSnapshotData } from './lib/snapshotKey.js'
 
 const EMPTY_SNAPSHOT: StatusSnapshot = { overall: 'idle', agents: [], updatedAt: Date.now() }
@@ -10,9 +10,14 @@ interface CodePulseStore {
   muted: boolean
   agents: Agent[]
   agentCheckId: number
+  updateInfo: UpdateInfo | null
+  updateInstalling: boolean
+  updateError?: string
   init: () => () => void
   ack: (agent: AgentType, workspacePath?: string) => void
   toggleMute: () => void
+  dismissUpdate: () => void
+  installUpdate: () => void
 }
 
 export const useStore = create<CodePulseStore>((set, get) => ({
@@ -21,6 +26,9 @@ export const useStore = create<CodePulseStore>((set, get) => ({
   muted: false,
   agents: [],
   agentCheckId: 0,
+  updateInfo: null,
+  updateInstalling: false,
+  updateError: undefined,
 
   init: () => {
     const api = window.codepulse
@@ -45,15 +53,22 @@ export const useStore = create<CodePulseStore>((set, get) => ({
 
     void api.getStatus().then((snapshot) => applySnapshot(snapshot, true))
     void api.detectAgents().then(applyAgents)
+    void api.getUpdate().then((updateInfo) => {
+      if (updateInfo) set({ updateInfo, updateError: undefined })
+    })
 
     const offStatus = api.onStatus((snapshot) => applySnapshot(snapshot))
     const offMute = api.onMute((muted) => set({ muted }))
     const offAgents = api.onAgents(applyAgents)
+    const offUpdate = api.onUpdateAvailable((updateInfo) =>
+      set({ updateInfo, updateError: undefined }),
+    )
 
     return () => {
       offStatus()
       offMute()
       offAgents()
+      offUpdate()
     }
   },
 
@@ -65,5 +80,20 @@ export const useStore = create<CodePulseStore>((set, get) => ({
     const next = !get().muted
     set({ muted: next })
     void window.codepulse.setMute(next)
+  },
+
+  dismissUpdate: () => {
+    set({ updateInfo: null, updateError: undefined, updateInstalling: false })
+  },
+
+  installUpdate: () => {
+    const update = get().updateInfo
+    if (!update || get().updateInstalling) return
+
+    set({ updateInstalling: true, updateError: undefined })
+    void window.codepulse.installUpdate().then((result) => {
+      if (result.ok) return
+      set({ updateInstalling: false, updateError: result.error })
+    })
   },
 }))

@@ -24,6 +24,7 @@ export interface UiCopy {
   unknownProject: string
   agentSetupReminder: AgentSetupReminderCopy
   codexTrustTutorial: CodexTrustTutorialCopy
+  updateAvailable: UpdateAvailableCopy
   contextStatus: ContextStatusCopy
   pathStatus: PathStatusCopy
 }
@@ -45,6 +46,17 @@ export interface CodexTrustTutorialCopy {
   steps: string[]
   warning: string
   action: string
+}
+
+export interface UpdateAvailableCopy {
+  title: string
+  body: string
+  currentVersion: string
+  latestVersion: string
+  later: string
+  install: string
+  installing: string
+  failed: string
 }
 
 export interface ContextStatusCopy {
@@ -122,6 +134,16 @@ const UI_COPY: Record<Locale, UiCopy> = {
       warning: '完成信任后，再运行一轮 Codex 任务，面板就会开始同步。',
       action: '我已在 Codex 信任',
     },
+    updateAvailable: {
+      title: '发现新版本',
+      body: 'CodePulse 已发布新版本。点击立即更新会下载安装包并退出当前应用，安装器会自动打开。',
+      currentVersion: '当前版本',
+      latestVersion: '最新版本',
+      later: '稍后',
+      install: '立即更新',
+      installing: '下载并安装中...',
+      failed: '更新失败，请稍后重试。',
+    },
     contextStatus: {
       waiting: '等待命令行同步上下文',
       lastPrefix: '上次：',
@@ -173,6 +195,16 @@ const UI_COPY: Record<Locale, UiCopy> = {
       ],
       warning: 'After trusting it, run one Codex task and this panel will start syncing.',
       action: 'I trusted it in Codex',
+    },
+    updateAvailable: {
+      title: 'Update available',
+      body: 'A new CodePulse version is available. Update now will download the installer, open it, and quit the current app.',
+      currentVersion: 'Current',
+      latestVersion: 'Latest',
+      later: 'Later',
+      install: 'Update now',
+      installing: 'Downloading...',
+      failed: 'Update failed. Please try again later.',
     },
     contextStatus: {
       waiting: 'Waiting for CLI context',

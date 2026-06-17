@@ -10,6 +10,7 @@ import {
   type AgentRuntimeState,
   type AgentType,
   type TokenPayload,
+  type UpdateInfo,
   TurnState,
 } from '@codepulse/shared'
 import { useStore } from './store.js'
@@ -39,6 +40,7 @@ import {
   type Locale,
   type UiCopy,
 } from './lib/i18n.js'
+import codePulseIcon from './assets/codepulse-icon.png'
 
 /**
  * 应用外壳 Dashboard。
@@ -46,7 +48,20 @@ import {
  * @returns 渲染后的 Dashboard。
  */
 export function App(): JSX.Element {
-  const { snapshot, muted, agents, agentCheckId, init, ack, toggleMute } = useStore()
+  const {
+    snapshot,
+    muted,
+    agents,
+    agentCheckId,
+    updateInfo,
+    updateInstalling,
+    updateError,
+    init,
+    ack,
+    toggleMute,
+    dismissUpdate,
+    installUpdate,
+  } = useStore()
   const [locale, setLocale] = useState<Locale>(() => readStoredLocale(window.localStorage))
   const [dismissedAgentCheckId, setDismissedAgentCheckId] = useState<number | undefined>()
   const [codexTrustAcknowledged, setCodexTrustAcknowledged] = useState<boolean>(() =>
@@ -110,6 +125,91 @@ export function App(): JSX.Element {
           onConfirm={dismissSetupReminder}
         />
       )}
+      {!showSetupReminder && updateInfo && (
+        <UpdateAvailableModal
+          copy={copy}
+          error={updateError}
+          installing={updateInstalling}
+          onDismiss={dismissUpdate}
+          onInstall={installUpdate}
+          update={updateInfo}
+        />
+      )}
+    </div>
+  )
+}
+
+function UpdateAvailableModal({
+  copy,
+  update,
+  installing,
+  error,
+  onDismiss,
+  onInstall,
+}: {
+  copy: UiCopy
+  update: UpdateInfo
+  installing: boolean
+  error: string | undefined
+  onDismiss: () => void
+  onInstall: () => void
+}): JSX.Element {
+  const updateCopy = copy.updateAvailable
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/18 px-4 backdrop-blur-sm">
+      <section
+        aria-modal="true"
+        className="liquid-glass w-full max-w-[28rem] rounded-[1.35rem] p-5 shadow-[0_24px_80px_rgb(15_23_42_/_0.2)]"
+        role="dialog"
+      >
+        <div className="flex items-start gap-3">
+          <img
+            src={codePulseIcon}
+            alt=""
+            className="h-12 w-12 shrink-0 rounded-full object-contain"
+          />
+          <div className="min-w-0">
+            <h2 className="text-xl font-semibold text-slate-950">{updateCopy.title}</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">{updateCopy.body}</p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <div className="rounded-xl border border-white/65 bg-white/48 px-3 py-2.5 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.65)]">
+            <p className="text-xs font-medium text-slate-500">{updateCopy.currentVersion}</p>
+            <p className="mt-1 truncate text-sm font-semibold text-slate-950">
+              v{update.currentVersion}
+            </p>
+          </div>
+          <div className="rounded-xl border border-emerald-200/70 bg-emerald-50/70 px-3 py-2.5 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.65)]">
+            <p className="text-xs font-medium text-emerald-700">{updateCopy.latestVersion}</p>
+            <p className="mt-1 truncate text-sm font-semibold text-emerald-900">{update.tag}</p>
+          </div>
+        </div>
+
+        {error && (
+          <p className="mt-3 rounded-xl border border-red-200/70 bg-red-50/80 px-3 py-2 text-sm leading-6 text-red-700">
+            {updateCopy.failed} {error}
+          </p>
+        )}
+
+        <div className="mt-5 grid grid-cols-[0.8fr_1.2fr] gap-2">
+          <button
+            className="rounded-xl border border-white/70 bg-white/55 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-white/75 active:translate-y-px disabled:opacity-60"
+            disabled={installing}
+            onClick={onDismiss}
+          >
+            {updateCopy.later}
+          </button>
+          <button
+            className="rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_28px_rgb(15_23_42_/_0.18)] transition hover:bg-slate-800 active:translate-y-px disabled:cursor-wait disabled:bg-slate-700"
+            disabled={installing}
+            onClick={onInstall}
+          >
+            {installing ? updateCopy.installing : updateCopy.install}
+          </button>
+        </div>
+      </section>
     </div>
   )
 }

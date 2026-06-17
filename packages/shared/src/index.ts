@@ -14,6 +14,7 @@ export * from './types/token.js'
 export * from './types/session.js'
 export * from './types/event.js'
 export * from './types/runtime.js'
+export * from './types/update.js'
 export * from './token-format.js'
 export * from './path.js'
 

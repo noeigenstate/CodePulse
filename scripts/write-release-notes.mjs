@@ -1,56 +1,81 @@
-import { appendFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { appendFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { execFileSync } from 'node:child_process'
 
 const tag = process.env.RELEASE_TAG ?? 'v0.1.5'
-const releaseDir = process.env.RELEASE_DIR ?? join('apps', 'desktop', 'release')
 const notesPath = join(process.env.RUNNER_TEMP ?? tmpdir(), 'codepulse-release-notes.md')
 
-const installerNames = readdirSync(releaseDir)
-  .filter((name) => name.toLowerCase().endsWith('.exe'))
-  .sort()
-
-if (installerNames.length === 0) {
-  throw new Error(`No Windows installer found in ${releaseDir}.`)
+export function buildReleaseNotes(releaseTag, changes) {
+  const lines = normalizeChanges(changes)
+  return [`## ${releaseTag}`, '', '### 更新内容', '', ...lines.map((line) => `- ${line}`), ''].join(
+    '\n',
+  )
 }
 
-const downloadLines = installerNames.map((name) => `- Windows x64: \`${name}\``).join('\n')
+export function normalizeChanges(changes) {
+  const normalized = changes.map(formatCommitSubject).filter(Boolean)
+  const unique = [...new Set(normalized)]
+  return unique.length > 0 ? unique : ['包含最新稳定性修复和体验优化。']
+}
 
-const notes = `## ${tag}
+export function formatCommitSubject(subject) {
+  return subject
+    .replace(/^[a-f0-9]{7,40}\s+/i, '')
+    .replace(/^(feat|fix|docs|chore|refactor|test|style|perf|ci|build|temp)(\([^)]+\))?:\s*/i, '')
+    .trim()
+}
 
-### 本版重点
+export function releaseChangesFromGit(releaseTag) {
+  const previousTag = findPreviousTag(releaseTag)
+  const rangeEnd = gitRefExists(releaseTag) ? releaseTag : 'HEAD'
+  const range = previousTag ? `${previousTag}..${rangeEnd}` : rangeEnd
+  const output = execFileSync('git', ['log', '--no-merges', '--format=%s', range], {
+    encoding: 'utf8',
+  })
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !isReleaseChore(line))
+}
 
-- Claude Code / Codex 左右分栏展示，任务卡片只保留当前相关项目，信息更集中。
-- 5 小时额度和每周额度常驻在各自 agent 板块中；任务卡片自动清理后，额度条仍会保留。
-- 已完成、空闲项目 5 分钟后从任务列表移除；疑似卡住项目 10 分钟后移除。
-- Claude Code 命中 session limit / usage limit 时会显示“已达用量上限，任务暂时停止”，不再误显示为处理中。
-- 只保留项目完成提醒，通知更精简，并使用 CodePulse 应用名和图标。
+function findPreviousTag(releaseTag) {
+  const output = execFileSync('git', ['tag', '--sort=-version:refname'], { encoding: 'utf8' })
+  const tags = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => /^v?\d+\.\d+\.\d+/.test(line))
+  const currentIndex = tags.indexOf(releaseTag)
+  return currentIndex >= 0
+    ? tags[currentIndex + 1]
+    : tags.find((candidate) => candidate !== releaseTag)
+}
 
-### 同步与准确性
+function gitRefExists(ref) {
+  try {
+    execFileSync('git', ['rev-parse', '--verify', `${ref}^{commit}`], { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
 
-- 优先使用 Claude / Codex CLI 提供的精确上下文数据。
-- Codex 额度按 limit id 分桶保存，避免不同模型或额度桶互相覆盖。
-- 额度重置时会跳过未更新的旧 rollout 数据，避免把过期额度重新写回界面。
-- 会话结束后保留上一份上下文和额度快照，下一波 CLI 数据到来前不清空面板。
+function isReleaseChore(subject) {
+  return /release notes|release v?\d+\.\d+\.\d+|bump version|版本号|readme/i.test(subject)
+}
 
-### 配置与权限
+function envChanges() {
+  const raw = process.env.RELEASE_NOTES?.trim()
+  if (!raw) return undefined
+  return raw
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[-*]\s*/, '').trim())
+    .filter(Boolean)
+}
 
-- 首次打开时说明 CodePulse 会写入的本地配置位置。
-- 启动时检查 Claude / Codex CLI、hook 配置和 Codex hook 信任状态。
-- Codex /hooks 教程只展示用户需要操作的步骤，并说明需要信任的 SessionStart、UserPromptSubmit、PreToolUse、PermissionRequest、PostToolUse、Stop 权限。
-- 卸载时只删除 CodePulse 管理的 Claude / Codex hook 和 statusLine 配置，保留用户原有设置。
-
-### Windows 安装包
-
-${downloadLines}
-
-下载下方 Assets 中的 \`.exe\` 安装包后直接运行安装。
-
-### 使用提示
-
-- 首次运行后，如果弹出配置与权限检查，请按提示在 Codex 中输入 \`/hooks\` 并信任 CodePulse hook。
-- Claude Code / Codex 至少需要运行一轮任务，CodePulse 才能收到实时状态和额度数据。
-`
+const changes = envChanges() ?? releaseChangesFromGit(tag)
+const notes = buildReleaseNotes(tag, changes)
 
 writeFileSync(notesPath, notes, 'utf8')
 

@@ -1,10 +1,12 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, ipcMain, Menu } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron'
 import {
   type Agent,
   type AgentType,
   type NotificationRequest,
   type StatusSnapshot,
+  type UpdateInfo,
+  type UpdateInstallResult,
 } from '@codepulse/shared'
 import { StatusHub } from '@codepulse/core'
 import { openDb, persistEvent, type DB } from '@codepulse/storage'
@@ -17,14 +19,19 @@ import {
 } from '@codepulse/local-server'
 import { TrayController } from './tray.js'
 import { showNotification } from './notifications.js'
+import { checkForUpdate, downloadInstaller } from './update-checker.js'
 
 const MUTE_DURATION_MS = 30 * 60_000
+const UPDATE_CHECK_ENV = 'CODEPULSE_CHECK_UPDATES'
 
 let mainWindow: BrowserWindow | null = null
 let tray: TrayController | null = null
 let server: LocalServer | null = null
 let db: DB | null = null
 let muteTimer: NodeJS.Timeout | null = null
+let latestUpdate: UpdateInfo | null = null
+let checkingUpdate = false
+let installingUpdate = false
 
 const hub = new StatusHub()
 
@@ -130,6 +137,8 @@ function registerIpc(): void {
     return muted
   })
   ipcMain.handle('codepulse:detect-agents', () => refreshLocalAgents())
+  ipcMain.handle('codepulse:get-update', () => latestUpdate)
+  ipcMain.handle('codepulse:install-update', () => installLatestUpdate())
 }
 
 async function bootstrap(): Promise<void> {
@@ -165,6 +174,53 @@ async function bootstrap(): Promise<void> {
   })
 
   createWindow()
+  void checkForUpdatesOnce()
+}
+
+async function checkForUpdatesOnce(): Promise<UpdateInfo | null> {
+  if (!shouldCheckForUpdates() || checkingUpdate) return latestUpdate
+  checkingUpdate = true
+  try {
+    const update = await checkForUpdate(app.getVersion())
+    latestUpdate = update
+    if (update) broadcast('codepulse:update-available', update)
+    return update
+  } catch (err) {
+    console.error('[codepulse] failed to check for updates', err)
+    return null
+  } finally {
+    checkingUpdate = false
+  }
+}
+
+async function installLatestUpdate(): Promise<UpdateInstallResult> {
+  if (installingUpdate) return { ok: false, error: 'Update installation is already running.' }
+  installingUpdate = true
+
+  try {
+    const update = latestUpdate ?? (await checkForUpdatesOnce())
+    if (!update) return { ok: false, error: 'No update is available.' }
+
+    const installerPath = await downloadInstaller(
+      update,
+      join(app.getPath('temp'), 'CodePulse', 'updates', update.tag),
+    )
+    const openError = await shell.openPath(installerPath)
+    if (openError) return { ok: false, error: openError }
+
+    setTimeout(() => app.quit(), 500).unref?.()
+    return { ok: true }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[codepulse] failed to install update', err)
+    return { ok: false, error: message }
+  } finally {
+    installingUpdate = false
+  }
+}
+
+function shouldCheckForUpdates(): boolean {
+  return app.isPackaged || process.env[UPDATE_CHECK_ENV] === '1'
 }
 
 async function configureLocalAgents(): Promise<void> {

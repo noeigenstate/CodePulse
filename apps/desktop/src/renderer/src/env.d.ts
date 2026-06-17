@@ -1,5 +1,11 @@
 /// <reference types="vite/client" />
-import type { Agent, AgentType, StatusSnapshot } from '@codepulse/shared'
+import type {
+  Agent,
+  AgentType,
+  StatusSnapshot,
+  UpdateInfo,
+  UpdateInstallResult,
+} from '@codepulse/shared'
 
 type Unsubscribe = () => void
 
@@ -9,9 +15,12 @@ export interface CodePulseApi {
   ack: (agent: AgentType, workspacePath?: string) => Promise<boolean>
   setMute: (muted: boolean) => Promise<boolean>
   detectAgents: () => Promise<Agent[]>
+  getUpdate: () => Promise<UpdateInfo | null>
+  installUpdate: () => Promise<UpdateInstallResult>
   onStatus: (cb: (snapshot: StatusSnapshot) => void) => Unsubscribe
   onAgents: (cb: (agents: Agent[]) => void) => Unsubscribe
   onMute: (cb: (muted: boolean) => void) => Unsubscribe
+  onUpdateAvailable: (cb: (update: UpdateInfo) => void) => Unsubscribe
 }
 
 declare global {

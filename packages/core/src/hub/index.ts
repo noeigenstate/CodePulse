@@ -12,6 +12,7 @@ import {
   type AgentType,
   type NotificationRequest,
   type StatusSnapshot,
+  type TokenPayload,
   TurnState,
   workspaceKey,
 } from '@codepulse/shared'
@@ -25,6 +26,7 @@ import {
 } from '../rule-engine/index.js'
 
 const WAITING_STALE_MS = 30 * 60_000
+const IDLE_RETENTION_MS = 5 * 60_000
 const DONE_RETENTION_MS = 5 * 60_000
 const TIMEOUT_RETENTION_MS = 10 * 60_000
 
@@ -178,6 +180,13 @@ export class StatusHub extends EventEmitter {
     let changed = false
     for (const [key, agent] of [...this.agents.entries()]) {
       if (!isExpiredAgent(agent, now)) continue
+      if (hasRetainedQuota(agent.token)) {
+        if (!agent.taskHidden || agent.unread) {
+          this.agents.set(key, { ...agent, taskHidden: true, unread: false })
+          changed = true
+        }
+        continue
+      }
       this.agents.delete(key)
       if (agent.externalSessionId) {
         this.sessionKeys.delete(sessionKey(agent.agentType, agent.externalSessionId))
@@ -287,11 +296,22 @@ function timeoutThreshold(state: TurnState): number {
 function isExpiredAgent(agent: AgentRuntimeState, now: number): boolean {
   const terminalAt = agent.terminalAt ?? agent.lastEventAt
   if (terminalAt <= 0) return false
-  const retentionMs = terminalRetentionMs(agent.state)
+  const retentionMs = stateRetentionMs(agent.state)
   return retentionMs != null && now - terminalAt >= retentionMs
 }
 
-function terminalRetentionMs(state: TurnState): number | undefined {
+function hasRetainedQuota(token: TokenPayload | undefined): boolean {
+  return Boolean(
+    token?.rateLimits?.fiveHour ||
+    token?.rateLimits?.sevenDay ||
+    Object.values(token?.quotaBuckets ?? {}).some(
+      (bucket) => bucket.rateLimits?.fiveHour || bucket.rateLimits?.sevenDay,
+    ),
+  )
+}
+
+function stateRetentionMs(state: TurnState): number | undefined {
+  if (state === TurnState.IDLE) return IDLE_RETENTION_MS
   if (state === TurnState.DONE) return DONE_RETENTION_MS
   if (state === TurnState.TIMEOUT) return TIMEOUT_RETENTION_MS
   return undefined

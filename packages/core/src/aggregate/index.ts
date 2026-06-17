@@ -23,8 +23,9 @@ import {
  * @returns 托盘应显示的唯一 {@link OverallState}。
  */
 export function deriveOverall(agents: AgentRuntimeState[]): OverallState {
-  if (agents.length === 0) return 'idle'
-  const states = agents.map((a) => a.state)
+  const visibleAgents = agents.filter((agent) => !agent.taskHidden)
+  if (visibleAgents.length === 0) return 'idle'
+  const states = visibleAgents.map((a) => a.state)
   if (states.includes(TurnState.ERROR)) return 'error'
   if (states.includes(TurnState.TIMEOUT)) return 'stuck'
   if (
@@ -38,7 +39,7 @@ export function deriveOverall(agents: AgentRuntimeState[]): OverallState {
     states.includes(TurnState.TOOL_RUNNING)
   )
     return 'running'
-  if (agents.some((a) => a.state === TurnState.DONE && a.unread)) return 'done_unread'
+  if (visibleAgents.some((a) => a.state === TurnState.DONE && a.unread)) return 'done_unread'
   return 'idle'
 }
 
@@ -65,18 +66,21 @@ export function buildStatusSnapshot(agents: AgentRuntimeState[], now = Date.now(
  * @returns 适合 ESP32 客户端的扁平 {@link DeviceStatus}。
  */
 export function toDeviceStatus(snapshot: StatusSnapshot): DeviceStatus {
-  const attention = snapshot.agents.find(
+  const visibleAgents = snapshot.agents.filter((agent) => !agent.taskHidden)
+  const attention = visibleAgents.find(
     (a) => a.state === TurnState.WAITING_PERMISSION || a.state === TurnState.WAITING_USER_INPUT,
   )
-  const running = snapshot.agents.find(
+  const running = visibleAgents.find(
     (a) =>
       a.state === TurnState.TOOL_RUNNING ||
       a.state === TurnState.THINKING ||
       a.state === TurnState.PROMPT_SUBMITTED,
   )
-  const active = attention ?? running ?? snapshot.agents[0] ?? null
-  const claude = snapshot.agents.find((a) => a.agentType === 'claude_code')
-  const codex = snapshot.agents.find((a) => a.agentType === 'codex')
+  const active = attention ?? running ?? visibleAgents[0] ?? null
+  const claude =
+    visibleAgents.find((a) => a.agentType === 'claude_code') ??
+    snapshot.agents.find((a) => a.agentType === 'claude_code')
+  const codex = visibleAgents.find((a) => a.agentType === 'codex')
 
   return {
     mainState: mapMainState(snapshot.overall),

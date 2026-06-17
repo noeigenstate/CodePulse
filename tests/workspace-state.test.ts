@@ -160,6 +160,82 @@ test('StatusHub removes completed projects after five minutes', () => {
   assert.equal(hub.snapshot(finishedAt + doneRetentionMs).agents.length, 0)
 })
 
+test('StatusHub removes idle projects after five minutes', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const startedAt = 1_000_000
+  const idleAt = startedAt + 1_000
+  const idleRetentionMs = 5 * 60_000
+
+  hub.ingest({
+    id: 'start',
+    source: 'claude_code',
+    eventType: 'session_start',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    timestamp: startedAt,
+  })
+  hub.ingest({
+    id: 'end',
+    source: 'claude_code',
+    eventType: 'session_end',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    timestamp: idleAt,
+  })
+  ;(hub as unknown as { tick(now?: number): void }).tick(idleAt + idleRetentionMs - 1)
+  assert.equal(hub.snapshot(idleAt + idleRetentionMs - 1).agents[0]?.state, TurnState.IDLE)
+  ;(hub as unknown as { tick(now?: number): void }).tick(idleAt + idleRetentionMs)
+  assert.equal(hub.snapshot(idleAt + idleRetentionMs).agents.length, 0)
+})
+
+test('StatusHub keeps quota visible after removing idle project rows', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const startedAt = 1_000_000
+  const tokenAt = startedAt + 500
+  const idleAt = startedAt + 1_000
+  const idleRetentionMs = 5 * 60_000
+
+  hub.ingest({
+    id: 'start',
+    source: 'codex',
+    eventType: 'session_start',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    timestamp: startedAt,
+  })
+  hub.ingest({
+    id: 'token',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    timestamp: tokenAt,
+    token: {
+      accuracy: 'exact',
+      rateLimits: {
+        fiveHour: { usedPercent: 60, resetsAt: tokenAt + 2 * 60 * 60_000 },
+        sevenDay: { usedPercent: 25, resetsAt: tokenAt + 3 * 24 * 60 * 60_000 },
+      },
+    },
+  })
+  hub.ingest({
+    id: 'end',
+    source: 'codex',
+    eventType: 'session_end',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    timestamp: idleAt,
+  })
+  ;(hub as unknown as { tick(now?: number): void }).tick(idleAt + idleRetentionMs)
+  const snapshot = hub.snapshot(idleAt + idleRetentionMs)
+  const codexPanel = buildAgentPanels(snapshot.agents).find((panel) => panel.agentType === 'codex')
+
+  assert.equal(snapshot.overall, 'idle')
+  assert.equal(codexPanel?.workspaces.length, 0)
+  assert.equal(codexPanel?.quotaToken?.rateLimits?.fiveHour?.usedPercent, 60)
+  assert.equal(codexPanel?.quotaToken?.rateLimits?.sevenDay?.usedPercent, 25)
+})
+
 test('StatusHub clears stuck projects after ten minutes', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const startedAt = 1_000_000

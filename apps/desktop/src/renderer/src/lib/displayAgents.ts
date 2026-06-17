@@ -44,7 +44,7 @@ interface QuotaCandidate {
 
 export function buildDisplayAgents(agents: AgentRuntimeState[]): AgentRuntimeState[] {
   return (
-    buildWorkspaceAgentGroups(agents)[0]?.agents ??
+    buildWorkspaceAgentGroups(visibleTaskAgents(agents))[0]?.agents ??
     DISPLAY_AGENT_ORDER.map((type) => idleAgent(type))
   )
 }
@@ -52,7 +52,7 @@ export function buildDisplayAgents(agents: AgentRuntimeState[]): AgentRuntimeSta
 export function buildAgentPanels(agents: AgentRuntimeState[]): AgentPanel[] {
   return DISPLAY_AGENT_ORDER.map((agentType) => {
     const typeAgents = agents.filter((agent) => agent.agentType === agentType)
-    const workspaces = buildAgentWorkspaceItems(agentType, typeAgents)
+    const workspaces = buildAgentWorkspaceItems(agentType, visibleTaskAgents(typeAgents))
     return {
       agentType,
       name: agentType === 'codex' ? 'Codex' : 'Claude Code',
@@ -91,7 +91,7 @@ export function latestQuotaToken(
 export function buildWorkspaceAgentGroups(agents: AgentRuntimeState[]): WorkspaceAgentGroup[] {
   const grouped = new Map<string, AgentRuntimeState[]>()
 
-  for (const agent of agents) {
+  for (const agent of visibleTaskAgents(agents)) {
     const key = workspaceKey(agent.workspacePath)
     grouped.set(key, [...(grouped.get(key) ?? []), agent])
   }
@@ -148,6 +148,10 @@ function buildAgentWorkspaceItems(
       }
     })
     .sort((a, b) => b.updatedAt - a.updatedAt || a.name.localeCompare(b.name))
+}
+
+function visibleTaskAgents(agents: AgentRuntimeState[]): AgentRuntimeState[] {
+  return agents.filter((agent) => !agent.taskHidden)
 }
 
 function idleAgent(agentType: AgentType, workspacePath?: string): AgentRuntimeState {

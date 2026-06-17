@@ -82,6 +82,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
     if (event.model) next.model = event.model
   }
   if (event.token) next.token = mergeToken(current.token, event.token, event.timestamp)
+  if (!tokenOnlyQuotaRefresh && event.eventType !== 'token_snapshot') next.taskHidden = false
 
   switch (event.eventType) {
     case 'session_start':

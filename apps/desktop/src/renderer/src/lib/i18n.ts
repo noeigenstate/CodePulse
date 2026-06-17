@@ -51,10 +51,12 @@ export interface CodexTrustTutorialCopy {
 export interface UpdateAvailableCopy {
   title: string
   body: string
+  manualBody: string
   currentVersion: string
   latestVersion: string
   later: string
   install: string
+  openRelease: string
   installing: string
   failed: string
 }
@@ -137,10 +139,13 @@ const UI_COPY: Record<Locale, UiCopy> = {
     updateAvailable: {
       title: '发现新版本',
       body: 'CodePulse 已发布新版本。点击立即更新会下载安装包并退出当前应用，安装器会自动打开。',
+      manualBody:
+        'CodePulse 已发布新版本，但当前 Release 没有匹配的 Windows 安装包。你可以先打开发布页查看更新。',
       currentVersion: '当前版本',
       latestVersion: '最新版本',
       later: '稍后',
       install: '立即更新',
+      openRelease: '打开发布页',
       installing: '下载并安装中...',
       failed: '更新失败，请稍后重试。',
     },
@@ -199,10 +204,13 @@ const UI_COPY: Record<Locale, UiCopy> = {
     updateAvailable: {
       title: 'Update available',
       body: 'A new CodePulse version is available. Update now will download the installer, open it, and quit the current app.',
+      manualBody:
+        'A new CodePulse version is available, but this release has no matching Windows installer. Open the release page to review it.',
       currentVersion: 'Current',
       latestVersion: 'Latest',
       later: 'Later',
       install: 'Update now',
+      openRelease: 'Open release',
       installing: 'Downloading...',
       failed: 'Update failed. Please try again later.',
     },

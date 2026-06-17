@@ -92,7 +92,10 @@ export const useStore = create<CodePulseStore>((set, get) => ({
 
     set({ updateInstalling: true, updateError: undefined })
     void window.codepulse.installUpdate().then((result) => {
-      if (result.ok) return
+      if (result.ok) {
+        set({ updateInstalling: false, updateInfo: null, updateError: undefined })
+        return
+      }
       set({ updateInstalling: false, updateError: result.error })
     })
   },

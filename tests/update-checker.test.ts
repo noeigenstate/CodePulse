@@ -43,12 +43,13 @@ test('buildUpdateInfo selects the latest Windows installer asset', () => {
     version: '0.1.6',
     tag: 'v0.1.6',
     releaseUrl: 'https://github.com/noeigenstate/CodePulse/releases/tag/v0.1.6',
+    installable: true,
     installerName: 'CodePulse_0.1.6_x64-setup.exe',
     installerUrl: 'https://example.test/installer',
   })
 })
 
-test('buildUpdateInfo returns null when release has no newer Windows installer', () => {
+test('buildUpdateInfo returns null when release is not newer', () => {
   assert.equal(
     buildUpdateInfo(
       {
@@ -65,35 +66,45 @@ test('buildUpdateInfo returns null when release has no newer Windows installer',
     ),
     null,
   )
-
-  assert.equal(
-    buildUpdateInfo(
-      {
-        tag_name: 'v0.1.6',
-        html_url: 'https://github.com/noeigenstate/CodePulse/releases/tag/v0.1.6',
-        assets: [{ name: 'latest.yml', browser_download_url: 'https://example.test/latest.yml' }],
-      },
-      '0.1.5',
-    ),
-    null,
-  )
 })
 
-test('buildUpdateInfo ignores installer assets that do not match the release version', () => {
-  assert.equal(
-    buildUpdateInfo(
-      {
-        tag_name: 'v0.1.6',
-        html_url: 'https://github.com/noeigenstate/CodePulse/releases/tag/v0.1.6',
-        assets: [
-          {
-            name: 'CodePulse_0.1.5_x64-setup.exe',
-            browser_download_url: 'https://example.test/installer',
-          },
-        ],
-      },
-      '0.1.5',
-    ),
-    null,
+test('buildUpdateInfo still reports newer releases without a matching installer', () => {
+  const info = buildUpdateInfo(
+    {
+      tag_name: 'v0.1.6',
+      html_url: 'https://github.com/noeigenstate/CodePulse/releases/tag/v0.1.6',
+      assets: [{ name: 'latest.yml', browser_download_url: 'https://example.test/latest.yml' }],
+    },
+    '0.1.5',
   )
+
+  assert.deepEqual(info, {
+    currentVersion: '0.1.5',
+    version: '0.1.6',
+    tag: 'v0.1.6',
+    releaseUrl: 'https://github.com/noeigenstate/CodePulse/releases/tag/v0.1.6',
+    installable: false,
+    installerName: undefined,
+    installerUrl: undefined,
+  })
+})
+
+test('buildUpdateInfo does not auto-install mismatched installer assets', () => {
+  const info = buildUpdateInfo(
+    {
+      tag_name: 'v0.1.6',
+      html_url: 'https://github.com/noeigenstate/CodePulse/releases/tag/v0.1.6',
+      assets: [
+        {
+          name: 'CodePulse_0.1.5_x64-setup.exe',
+          browser_download_url: 'https://example.test/installer',
+        },
+      ],
+    },
+    '0.1.5',
+  )
+
+  assert.equal(info?.installable, false)
+  assert.equal(info?.installerName, undefined)
+  assert.equal(info?.installerUrl, undefined)
 })

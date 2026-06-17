@@ -22,7 +22,7 @@ import { showNotification } from './notifications.js'
 import { checkForUpdate, downloadInstaller } from './update-checker.js'
 
 const MUTE_DURATION_MS = 30 * 60_000
-const UPDATE_CHECK_ENV = 'CODEPULSE_CHECK_UPDATES'
+const DISABLE_UPDATE_CHECK_ENV = 'CODEPULSE_DISABLE_UPDATE_CHECKS'
 
 let mainWindow: BrowserWindow | null = null
 let tray: TrayController | null = null
@@ -201,6 +201,11 @@ async function installLatestUpdate(): Promise<UpdateInstallResult> {
     const update = latestUpdate ?? (await checkForUpdatesOnce())
     if (!update) return { ok: false, error: 'No update is available.' }
 
+    if (!update.installable) {
+      await shell.openExternal(update.releaseUrl)
+      return { ok: true }
+    }
+
     const installerPath = await downloadInstaller(
       update,
       join(app.getPath('temp'), 'CodePulse', 'updates', update.tag),
@@ -220,7 +225,7 @@ async function installLatestUpdate(): Promise<UpdateInstallResult> {
 }
 
 function shouldCheckForUpdates(): boolean {
-  return app.isPackaged || process.env[UPDATE_CHECK_ENV] === '1'
+  return process.env[DISABLE_UPDATE_CHECK_ENV] !== '1'
 }
 
 async function configureLocalAgents(): Promise<void> {

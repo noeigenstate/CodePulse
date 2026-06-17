@@ -36,6 +36,38 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: Resolve release version
+        id: release
+        shell: pwsh
+        run: |
+          $packageVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $inputVersion = '${{ inputs.version }}'
+
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $tag = $env:GITHUB_REF_NAME
+          } elseif ($inputVersion.Trim().Length -gt 0) {
+            $tag = "v$($inputVersion.TrimStart('v'))"
+          } else {
+            $tag = "v$packageVersion"
+          }
+
+          $version = $tag.TrimStart('v')
+          "package_version=$packageVersion" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "release_name=CodePulse $tag" >> $env:GITHUB_OUTPUT
+
+      - name: Apply release version
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          foreach ($path in @('package.json', 'apps/desktop/package.json')) {
+            $json = Get-Content $path -Raw | ConvertFrom-Json
+            $json.version = $env:RELEASE_VERSION
+            $json | ConvertTo-Json -Depth 100 | Set-Content $path -Encoding utf8
+          }
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -52,25 +84,6 @@ jobs:
 
       - name: Build installer
         run: pnpm dist
-
-      - name: Resolve release version
-        id: release
-        shell: pwsh
-        run: |
-          $packageVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          $inputVersion = '${{ inputs.version }}'
-
-          if ($env:GITHUB_REF_TYPE -eq 'tag') {
-            $tag = $env:GITHUB_REF_NAME
-          } elseif ($inputVersion.Trim().Length -gt 0) {
-            $tag = "v$($inputVersion.TrimStart('v'))"
-          } else {
-            $tag = "v$packageVersion"
-          }
-
-          "package_version=$packageVersion" >> $env:GITHUB_OUTPUT
-          "tag=$tag" >> $env:GITHUB_OUTPUT
-          "release_name=CodePulse $tag" >> $env:GITHUB_OUTPUT
 
       - name: Write release notes
         id: notes

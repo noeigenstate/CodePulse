@@ -155,6 +155,7 @@ function UpdateAvailableModal({
   onInstall: () => void
 }): JSX.Element {
   const updateCopy = copy.updateAvailable
+  const actionText = update.installable ? updateCopy.install : updateCopy.openRelease
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/18 px-4 backdrop-blur-sm">
       <section
@@ -170,7 +171,9 @@ function UpdateAvailableModal({
           />
           <div className="min-w-0">
             <h2 className="text-xl font-semibold text-slate-950">{updateCopy.title}</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">{updateCopy.body}</p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              {update.installable ? updateCopy.body : updateCopy.manualBody}
+            </p>
           </div>
         </div>
 
@@ -206,7 +209,7 @@ function UpdateAvailableModal({
             disabled={installing}
             onClick={onInstall}
           >
-            {installing ? updateCopy.installing : updateCopy.install}
+            {installing ? updateCopy.installing : actionText}
           </button>
         </div>
       </section>

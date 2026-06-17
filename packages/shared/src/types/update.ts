@@ -3,8 +3,9 @@ export interface UpdateInfo {
   version: string
   tag: string
   releaseUrl: string
-  installerName: string
-  installerUrl: string
+  installable: boolean
+  installerName?: string
+  installerUrl?: string
 }
 
 export type UpdateInstallResult = { ok: true } | { ok: false; error: string }

@@ -36,7 +36,6 @@ export function buildUpdateInfo(release: unknown, currentVersion: string): Updat
   if (!tag || !version || !isNewerVersion(version, currentVersion)) return null
 
   const installer = findWindowsInstaller(payload.assets, version)
-  if (!installer) return null
 
   return {
     currentVersion,
@@ -45,8 +44,9 @@ export function buildUpdateInfo(release: unknown, currentVersion: string): Updat
     releaseUrl:
       pickString(payload.html_url) ??
       `https://github.com/noeigenstate/CodePulse/releases/tag/${encodeURIComponent(tag)}`,
-    installerName: installer.name,
-    installerUrl: installer.url,
+    installable: Boolean(installer),
+    installerName: installer?.name,
+    installerUrl: installer?.url,
   }
 }
 
@@ -71,6 +71,10 @@ export function isNewerVersion(latestVersion: string, currentVersion: string): b
 }
 
 export async function downloadInstaller(update: UpdateInfo, directory: string): Promise<string> {
+  if (!update.installable || !update.installerName || !update.installerUrl) {
+    throw new Error('No matching Windows installer is available for this release.')
+  }
+
   await mkdir(directory, { recursive: true })
   const destination = join(directory, sanitizeInstallerName(update.installerName))
   await downloadFile(update.installerUrl, destination)

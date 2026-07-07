@@ -109,16 +109,15 @@ function mapClaudeEvent(hookEvent: string, raw: Record<string, unknown>): AgentE
  * 授权请求或输入请求。
  *
  * @param message 通知消息文本（如有）。
- * @returns 含授权类文本时为 `'permission_request'`，否则为
- *   `'user_input_required'`。
+ * @returns 可确认的状态事件；普通空闲提醒和未知通知返回 `null`。
  */
-function classifyNotification(message: string | undefined): AgentEventType {
+function classifyNotification(message: string | undefined): AgentEventType | null {
   const text = (message ?? '').toLowerCase()
+  if (!text || isIdleReminderMessage(text)) return null
   if (isUsageLimitMessage(text)) return 'usage_limited'
-  if (text.includes('permission') || text.includes('approve') || text.includes('授权')) {
-    return 'permission_request'
-  }
-  return 'user_input_required'
+  if (isPermissionRequestMessage(text)) return 'permission_request'
+  if (isUserInputRequestMessage(text)) return 'user_input_required'
+  return null
 }
 
 function isUsageLimitMessage(text: string): boolean {
@@ -128,6 +127,32 @@ function isUsageLimitMessage(text: string): boolean {
     text.includes('rate limit') ||
     (text.includes('hit your') && text.includes('limit')) ||
     (text.includes('limit') && text.includes('resets'))
+  )
+}
+
+function isIdleReminderMessage(text: string): boolean {
+  return (
+    text.includes('claude is waiting for your input') || text.includes('waiting for your input')
+  )
+}
+
+function isPermissionRequestMessage(text: string): boolean {
+  return (
+    text.includes('permission') ||
+    text.includes('approve') ||
+    text.includes('allow') ||
+    text.includes('deny') ||
+    text.includes('授权')
+  )
+}
+
+function isUserInputRequestMessage(text: string): boolean {
+  return (
+    text.includes('input required') ||
+    text.includes('requires input') ||
+    text.includes('needs your input') ||
+    text.includes('需要输入') ||
+    text.includes('等待输入')
   )
 }
 
@@ -169,6 +194,8 @@ export function fromClaudeStatusLine(raw: unknown): AgentEventInput | null {
     pickNumber(contextUsage ?? {}, 'cache_read_input_tokens', 'cacheReadInputTokens'),
     pickNumber(contextUsage ?? {}, 'cache_creation_input_tokens', 'cacheCreationInputTokens'),
   )
+  const fallbackContextInput =
+    currentInput ?? pickNumber(usageSource, 'input_tokens', 'inputTokens')
   const input =
     pickNumber(contextWindow ?? {}, 'total_input_tokens', 'totalInputTokens') ??
     currentInput ??
@@ -186,7 +213,7 @@ export function fromClaudeStatusLine(raw: unknown): AgentEventInput | null {
     pickNumber(contextWindow ?? {}, 'used_percentage', 'usedPercentage') ??
     pickNumber(r, 'context_used_percent', 'contextUsedPercent') ??
     pickNumber(usageSource, 'context_used_percent', 'contextUsedPercent') ??
-    percentOf(input, contextWindowSize)
+    percentOf(fallbackContextInput, contextWindowSize)
 
   return {
     source: 'claude_code',

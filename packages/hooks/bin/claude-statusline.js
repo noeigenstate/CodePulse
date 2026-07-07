@@ -64,7 +64,7 @@ const ctx =
   tokenPatch.context_used_percent ??
   data?.context_window?.used_percentage ??
   data?.context_used_percent
-const ctxText = typeof ctx === 'number' ? ` · ctx ${ctx}%` : ''
+const ctxText = typeof ctx === 'number' ? ` · ctx ${Math.round(ctx)}%` : ''
 
 process.stdout.write(`⏺ ${model}${dirName ? ` · ${dirName}` : ''}${ctxText}`)
 process.exit(0)
@@ -137,9 +137,9 @@ function normalizeContextWindow(value) {
   const effectiveOutput = typeof output === 'number' ? output : currentOutput
   const effectiveUsed =
     typeof used === 'number'
-      ? used
+      ? Math.round(used)
       : contextWindowSize && effectiveInput
-        ? Math.min(100, (effectiveInput / contextWindowSize) * 100)
+        ? Math.min(100, Math.round((effectiveInput / contextWindowSize) * 100))
         : undefined
   if (
     typeof effectiveUsed !== 'number' &&

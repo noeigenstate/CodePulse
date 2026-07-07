@@ -67,6 +67,24 @@ test('Claude status line prefers official used_percentage when present', () => {
   assert.equal(event?.token?.contextUsedPercent, 12.5)
 })
 
+test('Claude status line does not use cumulative total input as context percent fallback', () => {
+  const event = fromClaudeStatusLine({
+    session_id: 'claude-token',
+    context_window: {
+      total_input_tokens: 800000,
+      context_window_size: 1000000,
+      current_usage: {
+        input_tokens: 100000,
+        cache_creation_input_tokens: 50000,
+        cache_read_input_tokens: 50000,
+      },
+    },
+  })
+
+  assert.equal(event?.token?.input, 800000)
+  assert.equal(event?.token?.contextUsedPercent, 20)
+})
+
 test('Codex hook does not double count cached input for context percent', () => {
   const event = fromCodexHook({
     hook_event_name: 'UserPromptSubmit',

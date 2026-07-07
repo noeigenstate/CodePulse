@@ -36,7 +36,7 @@ test('agent auto configuration creates missing Claude and Codex config files', a
 
 test('agent auto configuration is idempotent and preserves non-CodePulse hooks', async () => {
   const home = await mkdtemp(join(tmpdir(), 'codepulse-agent-config-idempotent-'))
-  const hookBinDir = join(home, 'hooks')
+  const hookBinDir = join(home, 'CodePulse', 'hooks')
   const claudeDir = join(home, '.claude')
   const codexDir = join(home, '.codex')
   await mkdir(claudeDir, { recursive: true })
@@ -50,7 +50,10 @@ test('agent auto configuration is idempotent and preserves non-CodePulse hooks',
           Stop: [
             {
               hooks: [
-                { type: 'command', command: 'node C:/old/packages/hooks/bin/claude-hook.js' },
+                {
+                  type: 'command',
+                  command: 'node C:/old/CodePulse/packages/hooks/bin/claude-hook.js',
+                },
                 { type: 'command', command: 'echo keep-me' },
               ],
             },
@@ -58,7 +61,7 @@ test('agent auto configuration is idempotent and preserves non-CodePulse hooks',
         },
         statusLine: {
           type: 'command',
-          command: 'node C:/old/packages/hooks/bin/claude-statusline.js',
+          command: 'node C:/old/CodePulse/packages/hooks/bin/claude-statusline.js',
         },
       },
       null,
@@ -74,7 +77,10 @@ test('agent auto configuration is idempotent and preserves non-CodePulse hooks',
           Stop: [
             {
               hooks: [
-                { type: 'command', command: 'node C:/old/packages/hooks/bin/codex-hook.js' },
+                {
+                  type: 'command',
+                  command: 'node C:/old/CodePulse/packages/hooks/bin/codex-hook.js',
+                },
                 { type: 'command', command: 'echo keep-me-too' },
               ],
             },
@@ -118,6 +124,87 @@ test('agent auto configuration is idempotent and preserves non-CodePulse hooks',
 
   const codexConfig = await readFile(join(codexDir, 'config.toml'), 'utf8')
   assert.match(codexConfig, /\[features\]\nhooks = true/)
+})
+
+test('Claude hook configuration does not append global hooks into matcher groups', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'codepulse-agent-config-matcher-'))
+  const hookBinDir = join(home, 'CodePulse', 'resources', 'codepulse-hooks', 'bin')
+  const claudeDir = join(home, '.claude')
+  await mkdir(claudeDir, { recursive: true })
+
+  await writeFile(
+    join(claudeDir, 'settings.json'),
+    JSON.stringify(
+      {
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: 'Bash',
+              hooks: [{ type: 'command', command: 'echo bash-only' }],
+            },
+          ],
+        },
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  )
+
+  await configureAgents({ homeDir: home, hookBinDir })
+
+  const claudeSettings = JSON.parse(await readFile(join(claudeDir, 'settings.json'), 'utf8'))
+  const preToolUse = claudeSettings.hooks.PreToolUse
+  assert.equal(preToolUse.length, 2)
+  assert.deepEqual(
+    preToolUse
+      .find((group: { matcher?: string }) => group.matcher === 'Bash')
+      .hooks.map((hook: { command: string }) => hook.command),
+    ['echo bash-only'],
+  )
+  assert.equal(
+    preToolUse.find((group: { matcher?: string }) => group.matcher == null).hooks[0].command,
+    `node "${join(hookBinDir, 'claude-hook.js')}"`,
+  )
+})
+
+test('agent cleanup does not remove user hooks that only share CodePulse script names', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'codepulse-agent-cleanup-own-hooks-'))
+  const hookBinDir = join(home, 'CodePulse', 'resources', 'codepulse-hooks', 'bin')
+  const claudeDir = join(home, '.claude')
+  await mkdir(claudeDir, { recursive: true })
+
+  await writeFile(
+    join(claudeDir, 'settings.json'),
+    JSON.stringify(
+      {
+        hooks: {
+          Stop: [
+            {
+              hooks: [
+                { type: 'command', command: 'node D:/my/hooks/claude-hook.js' },
+                {
+                  type: 'command',
+                  command: 'node D:/CodePulse/resources/codepulse-hooks/bin/claude-hook.js',
+                },
+              ],
+            },
+          ],
+        },
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  )
+
+  await cleanupAgents({ homeDir: home, hookBinDir })
+
+  const claudeSettings = JSON.parse(await readFile(join(claudeDir, 'settings.json'), 'utf8'))
+  assert.deepEqual(
+    claudeSettings.hooks.Stop[0].hooks.map((hook: { command: string }) => hook.command),
+    ['node D:/my/hooks/claude-hook.js'],
+  )
 })
 
 test('agent cleanup removes CodePulse hooks while preserving user configuration', async () => {

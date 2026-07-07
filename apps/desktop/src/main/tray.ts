@@ -16,15 +16,17 @@ export interface TrayCallbacks {
 export class TrayController {
   private tray: Tray
   private muted = false
+  private snapshot: StatusSnapshot = { overall: 'idle', agents: [], updatedAt: Date.now() }
 
   constructor(private callbacks: TrayCallbacks) {
     this.tray = new Tray(trayIconFor('idle'))
     this.tray.setToolTip('CodePulse')
     this.tray.on('click', () => this.callbacks.onOpen())
-    this.update({ overall: 'idle', agents: [], updatedAt: Date.now() })
+    this.update(this.snapshot)
   }
 
   update(snapshot: StatusSnapshot): void {
+    this.snapshot = snapshot
     this.tray.setImage(trayIconFor(snapshot.overall))
     this.tray.setToolTip(`CodePulse - ${overallLabel(snapshot.overall)}`)
     this.tray.setContextMenu(this.buildMenu(snapshot))
@@ -32,6 +34,7 @@ export class TrayController {
 
   setMuted(muted: boolean): void {
     this.muted = muted
+    this.tray.setContextMenu(this.buildMenu(this.snapshot))
   }
 
   destroy(): void {
@@ -39,9 +42,10 @@ export class TrayController {
   }
 
   private buildMenu(snapshot: StatusSnapshot): Menu {
+    const visibleAgents = snapshot.agents.filter((agent) => !agent.taskHidden)
     const agentItems: MenuItemConstructorOptions[] =
-      snapshot.agents.length > 0
-        ? snapshot.agents.map((agent) => ({ label: agentLine(agent), enabled: false }))
+      visibleAgents.length > 0
+        ? visibleAgents.map((agent) => ({ label: agentLine(agent), enabled: false }))
         : [{ label: '暂无活动 Agent', enabled: false }]
 
     return Menu.buildFromTemplate([

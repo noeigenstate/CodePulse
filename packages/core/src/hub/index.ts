@@ -29,6 +29,9 @@ const WAITING_STALE_MS = 30 * 60_000
 const IDLE_RETENTION_MS = 5 * 60_000
 const DONE_RETENTION_MS = 5 * 60_000
 const TIMEOUT_RETENTION_MS = 10 * 60_000
+const ERROR_RETENTION_MS = 10 * 60_000
+const CANCELLED_RETENTION_MS = 5 * 60_000
+const USAGE_LIMITED_RETENTION_MS = 10 * 60_000
 
 /**
  * {@link StatusHub} 发出的强类型事件。
@@ -314,6 +317,9 @@ function stateRetentionMs(state: TurnState): number | undefined {
   if (state === TurnState.IDLE) return IDLE_RETENTION_MS
   if (state === TurnState.DONE) return DONE_RETENTION_MS
   if (state === TurnState.TIMEOUT) return TIMEOUT_RETENTION_MS
+  if (state === TurnState.ERROR) return ERROR_RETENTION_MS
+  if (state === TurnState.CANCELLED) return CANCELLED_RETENTION_MS
+  if (state === TurnState.USAGE_LIMITED) return USAGE_LIMITED_RETENTION_MS
   return undefined
 }
 

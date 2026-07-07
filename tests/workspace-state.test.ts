@@ -90,7 +90,7 @@ test('StatusHub treats slash and backslash workspace paths as the same project',
   assert.equal(codexAgents[0]?.token?.contextUsedPercent, 12)
 })
 
-test('StatusHub keeps turn start time when watchdog marks TIMEOUT', () => {
+test('StatusHub clears turn start time when watchdog marks TIMEOUT', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const startedAt = 1_000_000
 
@@ -106,7 +106,7 @@ test('StatusHub keeps turn start time when watchdog marks TIMEOUT', () => {
 
   const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
   assert.equal(codex?.state, TurnState.TIMEOUT)
-  assert.equal(codex?.turnStartedAt, startedAt)
+  assert.equal(codex?.turnStartedAt, undefined)
 })
 
 test('StatusHub emits a synthetic timeout event through the normal pipeline', () => {
@@ -146,6 +146,69 @@ test('Claude session limit notification pauses the current task', () => {
 
   assert.equal(event?.eventType, 'usage_limited')
   assert.equal(event?.message?.includes('session limit'), true)
+})
+
+test('Claude idle input reminder is ignored after a completed turn', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const startedAt = 1_000_000
+  const finishedAt = startedAt + 1_000
+  const reminder = fromClaudeHook({
+    source: 'claude_code',
+    hook_event_name: 'Notification',
+    session_id: 'session-a',
+    cwd: 'E:/project/a',
+    message: 'Claude is waiting for your input',
+  })
+
+  assert.equal(reminder, null)
+
+  hub.ingest({
+    id: 'prompt',
+    source: 'claude_code',
+    eventType: 'prompt_submit',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    timestamp: startedAt,
+  })
+  hub.ingest({
+    id: 'stop',
+    source: 'claude_code',
+    eventType: 'turn_stop',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    timestamp: finishedAt,
+  })
+
+  const claude = hub
+    .snapshot(finishedAt + 60_000)
+    .agents.find((agent) => agent.agentType === 'claude_code')
+  assert.equal(claude?.state, TurnState.DONE)
+  assert.equal(hub.snapshot(finishedAt + 60_000).overall, 'done_unread')
+})
+
+test('Claude unknown notifications are ignored instead of becoming user-input waits', () => {
+  assert.equal(
+    fromClaudeHook({
+      source: 'claude_code',
+      hook_event_name: 'Notification',
+      session_id: 'session-a',
+      cwd: 'E:/project/a',
+      message: 'Claude Code login successful',
+    }),
+    null,
+  )
+})
+
+test('Claude permission notifications still request attention', () => {
+  const event = fromClaudeHook({
+    source: 'claude_code',
+    hook_event_name: 'Notification',
+    session_id: 'session-a',
+    cwd: 'E:/project/a',
+    message: 'Claude needs permission to run this tool. Approve or deny.',
+  })
+
+  assert.equal(event?.eventType, 'permission_request')
 })
 
 test('StatusHub shows usage limit instead of processing after Claude quota stops a task', () => {
@@ -307,6 +370,41 @@ test('StatusHub clears stuck projects after ten minutes', () => {
   assert.equal(hub.snapshot(timeoutAt + timeoutRetentionMs - 1).overall, 'stuck')
   ;(hub as unknown as { tick(now?: number): void }).tick(timeoutAt + timeoutRetentionMs)
   const snapshot = hub.snapshot(timeoutAt + timeoutRetentionMs)
+  assert.equal(snapshot.overall, 'idle')
+  assert.equal(snapshot.agents.length, 0)
+})
+
+test('StatusHub expires error, cancelled, and usage-limited projects', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const terminalAt = 1_000_000
+
+  hub.ingest({
+    id: 'error',
+    source: 'claude_code',
+    eventType: 'turn_error',
+    externalSessionId: 'error-session',
+    cwd: 'E:/project/error',
+    timestamp: terminalAt,
+  })
+  hub.ingest({
+    id: 'cancelled',
+    source: 'codex',
+    eventType: 'turn_cancelled',
+    externalSessionId: 'cancel-session',
+    cwd: 'E:/project/cancelled',
+    timestamp: terminalAt,
+  })
+  hub.ingest({
+    id: 'limited',
+    source: 'claude_code',
+    eventType: 'usage_limited',
+    externalSessionId: 'limit-session',
+    cwd: 'E:/project/limited',
+    timestamp: terminalAt,
+  })
+  ;(hub as unknown as { tick(now?: number): void }).tick(terminalAt + 10 * 60_000)
+
+  const snapshot = hub.snapshot(terminalAt + 10 * 60_000)
   assert.equal(snapshot.overall, 'idle')
   assert.equal(snapshot.agents.length, 0)
 })

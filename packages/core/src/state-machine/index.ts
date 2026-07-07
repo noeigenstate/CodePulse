@@ -167,6 +167,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
 
     case 'turn_timeout':
       next.state = TurnState.TIMEOUT
+      next.turnStartedAt = undefined
       next.needPermission = false
       next.needUserInput = false
       next.toolName = undefined

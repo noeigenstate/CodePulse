@@ -9,7 +9,7 @@ import {
   type UpdateInstallResult,
 } from '@codepulse/shared'
 import { StatusHub } from '@codepulse/core'
-import { openDb, persistEvent, type DB } from '@codepulse/storage'
+import { openDb, persistEvent, pruneEventsBefore, type DB } from '@codepulse/storage'
 import {
   cleanupAgents,
   configureAgents,
@@ -23,15 +23,21 @@ import { checkForUpdate, downloadInstaller } from './update-checker.js'
 
 const MUTE_DURATION_MS = 30 * 60_000
 const DISABLE_UPDATE_CHECK_ENV = 'CODEPULSE_DISABLE_UPDATE_CHECKS'
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60_000
+const EVENT_RETENTION_MS = 30 * 24 * 60 * 60_000
+const EVENT_PRUNE_INTERVAL_MS = 24 * 60 * 60_000
 
 let mainWindow: BrowserWindow | null = null
 let tray: TrayController | null = null
 let server: LocalServer | null = null
 let db: DB | null = null
 let muteTimer: NodeJS.Timeout | null = null
+let updateTimer: NodeJS.Timeout | null = null
+let pruneTimer: NodeJS.Timeout | null = null
 let latestUpdate: UpdateInfo | null = null
 let checkingUpdate = false
 let installingUpdate = false
+let lastTrayStatusKey: string | undefined
 
 const hub = new StatusHub()
 
@@ -103,7 +109,7 @@ function wireHub(): void {
   })
 
   hub.on('status', (snapshot: StatusSnapshot) => {
-    tray?.update(snapshot)
+    updateTrayIfChanged(snapshot)
     broadcast('codepulse:status', snapshot)
   })
 
@@ -164,6 +170,7 @@ async function bootstrap(): Promise<void> {
   await refreshLocalAgents()
 
   hub.startWatchdog()
+  startMaintenanceTimers()
 
   tray = new TrayController({
     onOpen: showWindow,
@@ -175,6 +182,43 @@ async function bootstrap(): Promise<void> {
 
   createWindow()
   void checkForUpdatesOnce()
+}
+
+function startMaintenanceTimers(): void {
+  prunePersistedEvents()
+
+  if (pruneTimer) clearInterval(pruneTimer)
+  pruneTimer = setInterval(prunePersistedEvents, EVENT_PRUNE_INTERVAL_MS)
+  pruneTimer.unref?.()
+
+  if (updateTimer) clearInterval(updateTimer)
+  updateTimer = setInterval(() => {
+    void checkForUpdatesOnce()
+  }, UPDATE_CHECK_INTERVAL_MS)
+  updateTimer.unref?.()
+}
+
+function stopMaintenanceTimers(): void {
+  if (pruneTimer) clearInterval(pruneTimer)
+  if (updateTimer) clearInterval(updateTimer)
+  pruneTimer = null
+  updateTimer = null
+}
+
+function prunePersistedEvents(): void {
+  if (!db) return
+  try {
+    pruneEventsBefore(db, Date.now() - EVENT_RETENTION_MS)
+  } catch (err) {
+    console.error('[codepulse] failed to prune old events', err)
+  }
+}
+
+function updateTrayIfChanged(snapshot: StatusSnapshot): void {
+  const key = trayStatusKey(snapshot)
+  if (key === lastTrayStatusKey) return
+  lastTrayStatusKey = key
+  tray?.update(snapshot)
 }
 
 async function checkForUpdatesOnce(): Promise<UpdateInfo | null> {
@@ -226,6 +270,13 @@ async function installLatestUpdate(): Promise<UpdateInstallResult> {
 
 function shouldCheckForUpdates(): boolean {
   return process.env[DISABLE_UPDATE_CHECK_ENV] !== '1'
+}
+
+function trayStatusKey(snapshot: StatusSnapshot): string {
+  return JSON.stringify({
+    overall: snapshot.overall,
+    agents: snapshot.agents.filter((agent) => !agent.taskHidden),
+  })
 }
 
 async function configureLocalAgents(): Promise<void> {
@@ -296,6 +347,7 @@ if (cleanupMode) {
 
   app.on('before-quit', () => {
     hub.stopWatchdog()
+    stopMaintenanceTimers()
     tray?.destroy()
     void server?.close()
   })

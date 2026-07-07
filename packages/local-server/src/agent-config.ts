@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -232,7 +232,7 @@ function ensureHookCommand(
   const groups = Array.isArray(hooks[event])
     ? ([...(hooks[event] as HookGroup[])] as HookGroup[])
     : []
-  let target = groups.find((group) => matcher == null || group.matcher === matcher)
+  let target = groups.find((group) => hookMatcherMatches(group.matcher, matcher))
   if (!target) {
     target = matcher == null ? { hooks: [] } : { matcher, hooks: [] }
     groups.push(target)
@@ -393,6 +393,12 @@ function objectValue(value: unknown): JsonObject | undefined {
     : undefined
 }
 
+function hookMatcherMatches(groupMatcher: unknown, matcher: string | undefined): boolean {
+  const normalizedGroupMatcher =
+    typeof groupMatcher === 'string' && groupMatcher.trim() ? groupMatcher : undefined
+  return normalizedGroupMatcher === matcher
+}
+
 function nodeCommand(scriptPath: string): string {
   return `node ${quoteArg(scriptPath)}`
 }
@@ -405,7 +411,10 @@ function isCodePulseCommand(command: string, name: string): boolean {
   const lower = command.toLowerCase().replace(/\\/g, '/')
   return (
     lower.includes(name.toLowerCase()) &&
-    (lower.includes('codepulse') || lower.includes('/packages/hooks/') || lower.includes('/hooks/'))
+    lower.includes('codepulse') &&
+    (lower.includes('/codepulse-hooks/') ||
+      lower.includes('/packages/hooks/') ||
+      lower.includes('/hooks/'))
   )
 }
 
@@ -421,7 +430,14 @@ async function readTextIfExists(path: string): Promise<string | undefined> {
 
 async function writeText(path: string, text: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true })
-  await writeFile(path, text, 'utf8')
+  const tempPath = `${path}.codepulse-${process.pid}-${Date.now()}.tmp`
+  try {
+    await writeFile(tempPath, text, 'utf8')
+    await rename(tempPath, path)
+  } catch (error) {
+    await unlink(tempPath).catch(() => undefined)
+    throw error
+  }
 }
 
 function codexHooksPath(options: Pick<AgentConfigurationOptions, 'env' | 'homeDir'>): string {

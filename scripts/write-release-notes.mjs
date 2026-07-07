@@ -1,4 +1,4 @@
-import { appendFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -75,7 +75,7 @@ function envChanges() {
 }
 
 const changes = envChanges() ?? releaseChangesFromGit(tag)
-const notes = buildReleaseNotes(tag, changes)
+const notes = releaseNotesFromFile(tag) ?? buildReleaseNotes(tag, changes)
 
 writeFileSync(notesPath, notes, 'utf8')
 
@@ -84,3 +84,14 @@ if (process.env.GITHUB_OUTPUT) {
 }
 
 console.log(`Release notes written to ${notesPath}`)
+
+function releaseNotesFromFile(releaseTag) {
+  const normalized = releaseTag.replace(/^v/i, '')
+  const candidates = [
+    join('docs', 'release-notes', `${releaseTag}.md`),
+    join('docs', 'release-notes', `${normalized}.md`),
+  ]
+  const path = candidates.find((candidate) => existsSync(candidate))
+  if (!path) return undefined
+  return readFileSync(path, 'utf8').trimEnd() + '\n'
+}

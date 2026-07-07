@@ -141,6 +141,8 @@ curl http://127.0.0.1:17888/api/status
 Notifications are throttled and deduplicated so you're informed, not nagged.
 **Mute** (tray or header button) silences sound for 30 minutes; notifications
 still appear, just silently.
+Claude Code's routine "waiting for your input" idle reminder is ignored; yellow
+means CodePulse saw a real permission or explicit input request.
 
 ## Local API
 
@@ -168,8 +170,9 @@ CodePulse stores a single SQLite database in the Electron user-data directory:
 | macOS   | `~/Library/Application Support/CodePulse/codepulse.sqlite` |
 | Linux   | `~/.config/CodePulse/codepulse.sqlite`                     |
 
-It records events, sessions, turns, and token snapshots. Prompts are stored
-only as short previews, never in full. Delete the file to reset all history.
+It records events, sessions, turns, and token snapshots. Raw events and token
+snapshots older than 30 days are pruned automatically. Prompts are stored only
+as short previews, never in full. Delete the file to reset all history.
 
 ## Development
 
@@ -200,6 +203,12 @@ pnpm build        # build packages, then bundle the app into apps/desktop/out
 pnpm dist         # package an installer into apps/desktop/release
 pnpm dist:dir     # unpacked build (faster, for local testing)
 ```
+
+`pnpm dist` uses the versions in `package.json` and
+`apps/desktop/package.json`. Keep them aligned with the release tag. Before
+publishing a tag, add or update `docs/release-notes/vX.Y.Z.md`; GitHub Releases
+will use that file as the release body. If user-facing behavior changes, update
+this README and `README.zh-CN.md` in the same change.
 
 Targets are configured in `apps/desktop/electron-builder.yml` (NSIS on
 Windows, DMG on macOS, AppImage on Linux). The native `better-sqlite3` addon

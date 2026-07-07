@@ -131,6 +131,8 @@ curl http://127.0.0.1:17888/api/status
 
 通知经过节流与去重，确保你被告知、而不是被骚扰。**静音**（托盘或顶栏按钮）会让
 声音静默 30 分钟；通知仍会出现，只是没有声音。
+Claude Code 常规的“waiting for your input”空闲提醒会被忽略；黄色状态只表示
+CodePulse 确认看到了真实授权请求或明确输入请求。
 
 ## 本地 API
 
@@ -158,8 +160,8 @@ CodePulse 把单个 SQLite 数据库存放在 Electron 的 user-data 目录：
 | macOS    | `~/Library/Application Support/CodePulse/codepulse.sqlite` |
 | Linux    | `~/.config/CodePulse/codepulse.sqlite`                     |
 
-它记录事件、会话、轮次与 token 快照。提示词只保存短预览，绝不保存全文。删除该文件即可
-重置全部历史。
+它记录事件、会话、轮次与 token 快照。30 天前的原始事件与 token 快照会自动清理。
+提示词只保存短预览，绝不保存全文。删除该文件即可重置全部历史。
 
 ## 开发
 
@@ -189,6 +191,11 @@ pnpm build        # 构建各包，再把应用打包进 apps/desktop/out
 pnpm dist         # 把安装包打到 apps/desktop/release
 pnpm dist:dir     # 免安装目录（更快，便于本地测试）
 ```
+
+`pnpm dist` 使用 `package.json` 与 `apps/desktop/package.json` 里的版本号；
+发版前必须让它们与 tag 一致。推送 tag 前，请新增或更新
+`docs/release-notes/vX.Y.Z.md`，GitHub Release 会直接使用该文件作为发版说明。
+如果用户可见行为发生变化，请在同一次改动里同步更新英文 README 和本中文版。
 
 打包目标在 `apps/desktop/electron-builder.yml` 中配置（Windows 用 NSIS、macOS 用 DMG、
 Linux 用 AppImage）。原生模块 `better-sqlite3` 会保留在 asar 归档之外，以便运行时加载；

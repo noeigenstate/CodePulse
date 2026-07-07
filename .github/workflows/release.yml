@@ -62,11 +62,16 @@ jobs:
         env:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: |
-          foreach ($path in @('package.json', 'apps/desktop/package.json')) {
-            $json = Get-Content $path -Raw | ConvertFrom-Json
-            $json.version = $env:RELEASE_VERSION
-            $json | ConvertTo-Json -Depth 100 | Set-Content $path -Encoding utf8
+          $script = @'
+          const fs = require('node:fs')
+
+          for (const path of ['package.json', 'apps/desktop/package.json']) {
+            const json = JSON.parse(fs.readFileSync(path, 'utf8'))
+            json.version = process.env.RELEASE_VERSION
+            fs.writeFileSync(path, `${JSON.stringify(json, null, 2)}\n`)
           }
+          '@
+          node -e $script
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

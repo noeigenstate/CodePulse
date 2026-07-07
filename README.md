@@ -9,6 +9,7 @@ finished, or stuck — without alt-tabbing back to a terminal.
 
 [![status](https://img.shields.io/badge/status-v0.1%20MVP-orange)](#features)
 [![platform](https://img.shields.io/badge/platform-Windows-blue)](#download)
+[![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#development)
 [![pnpm](https://img.shields.io/badge/pnpm-%E2%89%A59-F69220?logo=pnpm&logoColor=white)](#development)
 [![built with](https://img.shields.io/badge/built%20with-Electron%20%2B%20TypeScript-47848F?logo=electron&logoColor=white)](#how-it-works)
@@ -214,6 +215,26 @@ Targets are configured in `apps/desktop/electron-builder.yml` (NSIS on
 Windows, DMG on macOS, AppImage on Linux). The native `better-sqlite3` addon
 is unpacked so it loads at runtime; non-runtime sources and unused Electron
 locales are excluded from the installer.
+
+### Release workflow
+
+The repository has one GitHub Actions workflow: `Build and Release CodePulse`.
+
+It runs when you push a `v*` tag or start it manually from GitHub Actions. The
+workflow installs dependencies, runs `typecheck`, `test`, `smoke`, and `lint`,
+builds the Windows installer, uploads `.exe` / `.blockmap` / `latest.yml`, and
+creates or updates the GitHub Release.
+
+Release notes come from `docs/release-notes/vX.Y.Z.md`. Keep them short and
+user-facing: list what changed, not the internal implementation log.
+
+To publish a version:
+
+```bash
+pnpm typecheck && pnpm test && pnpm smoke && pnpm lint
+git tag vX.Y.Z
+git push origin main vX.Y.Z
+```
 
 ## Troubleshooting
 

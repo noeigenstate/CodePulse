@@ -9,6 +9,7 @@
 
 [![status](https://img.shields.io/badge/status-v0.1%20MVP-orange)](#功能特性)
 [![platform](https://img.shields.io/badge/platform-Windows-blue)](#下载)
+[![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#开发)
 [![pnpm](https://img.shields.io/badge/pnpm-%E2%89%A59-F69220?logo=pnpm&logoColor=white)](#开发)
 [![built with](https://img.shields.io/badge/built%20with-Electron%20%2B%20TypeScript-47848F?logo=electron&logoColor=white)](#工作原理)
@@ -200,6 +201,25 @@ pnpm dist:dir     # 免安装目录（更快，便于本地测试）
 打包目标在 `apps/desktop/electron-builder.yml` 中配置（Windows 用 NSIS、macOS 用 DMG、
 Linux 用 AppImage）。原生模块 `better-sqlite3` 会保留在 asar 归档之外，以便运行时加载；
 非运行时源码和未使用的 Electron 语言资源会从安装包中排除。
+
+### 发版流程
+
+仓库只保留一个 GitHub Actions workflow：`Build and Release CodePulse`。
+
+它会在推送 `v*` tag 或从 GitHub Actions 手动运行时触发。流程会安装依赖，执行
+`typecheck`、`test`、`smoke`、`lint`，构建 Windows 安装包，上传 `.exe` / `.blockmap` /
+`latest.yml`，并创建或更新 GitHub Release。
+
+发版说明来自 `docs/release-notes/vX.Y.Z.md`。内容保持简短、面向用户：只写这版更新了什么，
+不要写内部实现流水账。
+
+发布一个版本：
+
+```bash
+pnpm typecheck && pnpm test && pnpm smoke && pnpm lint
+git tag vX.Y.Z
+git push origin main vX.Y.Z
+```
 
 ## 故障排查
 

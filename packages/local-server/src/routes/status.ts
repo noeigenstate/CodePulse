@@ -8,7 +8,7 @@ import type { FastifyInstance } from 'fastify'
 import { toDeviceStatus, type StatusHub } from '@codepulse/core'
 import type { AgentType } from '@codepulse/shared'
 
-const AGENT_TYPES: readonly AgentType[] = ['codex', 'claude_code']
+const AGENT_TYPES: readonly AgentType[] = ['codex', 'claude_code', 'grok']
 
 /**
  * 注册读取/控制路由：

@@ -87,10 +87,12 @@ export function overallStyle(overall: OverallState): StateStyle {
  * 把 agent 类型映射为显示名称。
  *
  * @param type agent 类型字符串。
- * @returns `"Codex"` 或 `"Claude Code"`。
+ * @returns `"Codex"`、`"Claude Code"` 或 `"Grok"`。
  */
 export function agentName(type: string): string {
-  return type === 'codex' ? 'Codex' : 'Claude Code'
+  if (type === 'codex') return 'Codex'
+  if (type === 'grok') return 'Grok'
+  return 'Claude Code'
 }
 
 /**

@@ -128,6 +128,7 @@ test('setup tutorial explains written config, uninstall cleanup, and Codex hook 
   assert.match(zh.agentSetupReminder.firstRunNotice, /~\/\.claude\/settings\.json/)
   assert.match(zh.agentSetupReminder.firstRunNotice, /~\/\.codex\/hooks\.json/)
   assert.match(zh.agentSetupReminder.firstRunNotice, /~\/\.codex\/config\.toml/)
+  assert.match(zh.agentSetupReminder.firstRunNotice, /~\/\.grok\/hooks\/codepulse\.json/)
   assert.match(zh.agentSetupReminder.cleanupNotice, /卸载/)
   assert.match(zh.agentSetupReminder.cleanupNotice, /自动删除/)
   assert.match(zh.codexTrustTutorial.permissions.join(' '), /SessionStart/)
@@ -136,6 +137,7 @@ test('setup tutorial explains written config, uninstall cleanup, and Codex hook 
 
   const en = uiCopy('en')
   assert.match(en.agentSetupReminder.firstRunNotice, /~\/\.claude\/settings\.json/)
+  assert.match(en.agentSetupReminder.firstRunNotice, /~\/\.grok\/hooks\/codepulse\.json/)
   assert.match(en.agentSetupReminder.cleanupNotice, /uninstalled/)
   assert.match(en.codexTrustTutorial.permissions.join(' '), /SessionStart/)
   assert.match(en.codexTrustTutorial.permissions.join(' '), /PermissionRequest/)

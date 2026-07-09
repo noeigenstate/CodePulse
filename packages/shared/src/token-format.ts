@@ -130,8 +130,12 @@ export function formatTokenQuotaNotice(
   const sourceNote =
     agent === 'codex'
       ? 'Codex token 为估算值'
-      : token.accuracy === 'estimated'
-        ? 'Claude token 为估算值'
-        : 'Claude token 来自 status line'
+      : agent === 'grok'
+        ? token.accuracy === 'estimated'
+          ? 'Grok token 为估算值'
+          : 'Grok token 来自 hook'
+        : token.accuracy === 'estimated'
+          ? 'Claude token 为估算值'
+          : 'Claude token 来自 status line'
   return `Token/context 已使用 ${pct}。${quotaText}，窗口以对应 CLI 的官方重置时间为准，${sourceNote}。`
 }

@@ -138,8 +138,9 @@ try {
   )
   check('token percent formats as percentage', formatTokenPercent(83.4) === '83%')
   check(
-    'dashboard display always includes Codex slot',
-    buildDisplayAgents([]).some((agent) => agent.agentType === 'codex'),
+    'dashboard display falls back to default agent slots when idle',
+    buildDisplayAgents([]).some((agent) => agent.agentType === 'codex') &&
+      buildDisplayAgents([]).some((agent) => agent.agentType === 'grok'),
   )
 
   // --- Codex 本地检测 --------------------------------------------------

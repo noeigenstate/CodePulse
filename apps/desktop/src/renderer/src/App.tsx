@@ -105,17 +105,21 @@ export function App(): JSX.Element {
       />
       <div className="min-h-0 flex-1 overflow-hidden px-4 pb-4">
         <main className="h-full min-w-0 overflow-x-auto overflow-y-hidden pr-1">
-          <div className="grid h-full min-w-[56rem] grid-cols-[minmax(27rem,1fr)_minmax(27rem,1fr)] items-stretch gap-4">
-            {panels.map((panel) => (
-              <AgentPanelView
-                key={panel.agentType}
-                panel={panel}
-                locale={locale}
-                copy={copy}
-                onAck={(agentType, workspacePath) => ack(agentType, workspacePath)}
-              />
-            ))}
-          </div>
+          {panels.length === 0 ? (
+            <EmptyDashboard copy={copy} />
+          ) : (
+            <div className={`grid h-full items-stretch gap-4 ${panelGridClass(panels.length)}`}>
+              {panels.map((panel) => (
+                <AgentPanelView
+                  key={panel.agentType}
+                  panel={panel}
+                  locale={locale}
+                  copy={copy}
+                  onAck={(agentType, workspacePath) => ack(agentType, workspacePath)}
+                />
+              ))}
+            </div>
+          )}
         </main>
       </div>
       {showSetupReminder && (
@@ -330,7 +334,27 @@ function AgentSetupReminderModal({
 }
 
 function agentName(agent: AgentType): string {
-  return agent === 'codex' ? 'Codex' : 'Claude Code'
+  if (agent === 'codex') return 'Codex'
+  if (agent === 'grok') return 'Grok'
+  return 'Claude Code'
+}
+
+/** 按已启用 CLI 分屏数量自适应列布局。 */
+function panelGridClass(count: number): string {
+  if (count <= 1) return 'min-w-0 grid-cols-1'
+  if (count === 2) {
+    return 'min-w-[56rem] grid-cols-[minmax(27rem,1fr)_minmax(27rem,1fr)]'
+  }
+  return 'min-w-[84rem] grid-cols-[minmax(26rem,1fr)_minmax(26rem,1fr)_minmax(26rem,1fr)]'
+}
+
+function EmptyDashboard({ copy }: { copy: UiCopy }): JSX.Element {
+  return (
+    <div className="liquid-glass flex h-full min-h-0 flex-col items-center justify-center rounded-[1.35rem] px-6 text-center">
+      <p className="text-lg font-semibold text-slate-950">{copy.emptyDashboard.title}</p>
+      <p className="mt-2 max-w-md text-sm leading-6 text-slate-600">{copy.emptyDashboard.body}</p>
+    </div>
+  )
 }
 
 const AgentPanelView = memo(function AgentPanelView({
@@ -394,7 +418,9 @@ const AgentPanelView = memo(function AgentPanelView({
 })
 
 function AgentLogo({ agentType }: { agentType: AgentType }): JSX.Element {
-  return agentType === 'codex' ? <CodexLogo /> : <ClaudeLogo />
+  if (agentType === 'codex') return <CodexLogo />
+  if (agentType === 'grok') return <GrokLogo />
+  return <ClaudeLogo />
 }
 
 function ClaudeLogo(): JSX.Element {
@@ -433,6 +459,18 @@ function CodexLogo(): JSX.Element {
           <stop offset="1" stopColor="#3941FF" />
         </linearGradient>
       </defs>
+    </svg>
+  )
+}
+
+function GrokLogo(): JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" role="img" aria-label="Grok" className="h-7 w-7">
+      <path
+        fill="currentColor"
+        className="text-slate-900"
+        d="M6.227 3.5h3.12l4.38 7.12L18.13 3.5H21.3l-6.02 9.05L21.5 20.5h-3.13l-4.62-7.42-4.63 7.42H6.01l6.24-8.01L6.227 3.5zm-.85 0L12 12.35 5.12 20.5H2.5l6.9-8.19L2.5 3.5h2.877z"
+      />
     </svg>
   )
 }

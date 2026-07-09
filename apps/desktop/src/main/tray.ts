@@ -68,7 +68,8 @@ export class TrayController {
 }
 
 function agentLine(agent: AgentRuntimeState): string {
-  const name = agent.agentType === 'codex' ? 'Codex' : 'Claude Code'
+  const name =
+    agent.agentType === 'codex' ? 'Codex' : agent.agentType === 'grok' ? 'Grok' : 'Claude Code'
   return `${name}: ${stateLabel(agent.state)}`
 }
 

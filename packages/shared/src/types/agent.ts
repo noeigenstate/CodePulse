@@ -9,7 +9,7 @@
  *
  * 在整个代码库中用作事件的 `source`，也是定位运行时状态槽位的键。
  */
-export type AgentType = 'codex' | 'claude_code'
+export type AgentType = 'codex' | 'claude_code' | 'grok'
 
 /**
  * 一个被监控的 AI agent 及 CodePulse 掌握的安装信息。

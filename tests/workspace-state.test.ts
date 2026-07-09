@@ -1025,8 +1025,10 @@ test('display agents are grouped by workspace with a shared token', () => {
     [
       'E:/project/a:claude_code',
       'E:/project/a:codex',
+      'E:/project/a:grok',
       'E:/project/b:claude_code',
       'E:/project/b:codex',
+      'E:/project/b:grok',
     ],
   )
   assert.equal(groups.find((group) => group.workspacePath === 'E:/project/a')?.token?.total, 1200)
@@ -1064,13 +1066,73 @@ test('display panels group slash and backslash variants into one project', () =>
   assert.equal(codexPanel?.workspaces[0]?.agent.token?.contextUsedPercent, 12)
 })
 
-test('display panels keep agent shells empty when there are no projects', () => {
+test('display panels omit agent shells when there are no projects', () => {
   const panels = buildAgentPanels([])
-  const claudePanel = panels.find((panel) => panel.agentType === 'claude_code')
-  const codexPanel = panels.find((panel) => panel.agentType === 'codex')
+  assert.equal(panels.length, 0)
+})
 
-  assert.equal(claudePanel?.workspaces.length, 0)
-  assert.equal(codexPanel?.workspaces.length, 0)
+test('display panels only include agents that have active projects', () => {
+  const panels = buildAgentPanels([
+    {
+      agentType: 'codex',
+      state: TurnState.DONE,
+      toolCallCount: 0,
+      needPermission: false,
+      needUserInput: false,
+      activity: 'done',
+      lastEventAt: 200,
+      unread: true,
+      workspacePath: 'E:/project/a',
+    },
+    {
+      agentType: 'grok',
+      state: TurnState.THINKING,
+      toolCallCount: 0,
+      needPermission: false,
+      needUserInput: false,
+      activity: 'thinking',
+      lastEventAt: 300,
+      unread: false,
+      workspacePath: 'E:/project/b',
+    },
+  ])
+
+  assert.deepEqual(
+    panels.map((panel) => panel.agentType),
+    ['codex', 'grok'],
+  )
+  assert.equal(
+    panels.find((panel) => panel.agentType === 'claude_code'),
+    undefined,
+  )
+})
+
+test('display panels keep quota-only agent after projects are hidden', () => {
+  const panels = buildAgentPanels([
+    {
+      agentType: 'codex',
+      state: TurnState.IDLE,
+      toolCallCount: 0,
+      needPermission: false,
+      needUserInput: false,
+      lastEventAt: 200,
+      unread: false,
+      taskHidden: true,
+      workspacePath: 'E:/project/a',
+      token: {
+        accuracy: 'exact',
+        rateLimits: {
+          fiveHour: { usedPercent: 40, resetsAt: 1_000 },
+          sevenDay: { usedPercent: 12 },
+        },
+      },
+    },
+  ])
+
+  assert.equal(panels.length, 1)
+  assert.equal(panels[0]?.agentType, 'codex')
+  assert.equal(panels[0]?.workspaces.length, 0)
+  assert.equal(panels[0]?.quotaToken?.rateLimits?.fiveHour?.usedPercent, 40)
 })
 
 test('display panels keep Codex projects inside one panel', () => {

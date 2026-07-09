@@ -13,6 +13,7 @@ test('agent auto configuration creates missing Claude and Codex config files', a
 
   assert.equal(result.claude.changed, true)
   assert.equal(result.codex.changed, true)
+  assert.equal(result.grok.changed, true)
 
   const claudeSettings = JSON.parse(await readFile(join(home, '.claude', 'settings.json'), 'utf8'))
   assert.equal(
@@ -32,6 +33,14 @@ test('agent auto configuration creates missing Claude and Codex config files', a
 
   const codexConfig = await readFile(join(home, '.codex', 'config.toml'), 'utf8')
   assert.match(codexConfig, /\[features\][\s\S]*hooks = true/)
+
+  const grokHooks = JSON.parse(
+    await readFile(join(home, '.grok', 'hooks', 'codepulse.json'), 'utf8'),
+  )
+  assert.equal(
+    grokHooks.hooks.Stop[0].hooks[0].command,
+    `node "${join(hookBinDir, 'grok-hook.js')}"`,
+  )
 })
 
 test('agent auto configuration is idempotent and preserves non-CodePulse hooks', async () => {
@@ -268,10 +277,37 @@ test('agent cleanup removes CodePulse hooks while preserving user configuration'
   )
   await writeFile(join(codexDir, 'config.toml'), '[features]\nhooks = true\n', 'utf8')
 
+  const grokDir = join(home, '.grok', 'hooks')
+  await mkdir(grokDir, { recursive: true })
+  await writeFile(
+    join(grokDir, 'codepulse.json'),
+    JSON.stringify(
+      {
+        hooks: {
+          Stop: [
+            {
+              hooks: [
+                {
+                  type: 'command',
+                  command: 'node D:/CodePulse/resources/codepulse-hooks/bin/grok-hook.js',
+                },
+                { type: 'command', command: 'echo keep-grok' },
+              ],
+            },
+          ],
+        },
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  )
+
   const result = await cleanupAgents({ homeDir: home, hookBinDir })
 
   assert.equal(result.claude.changed, true)
   assert.equal(result.codex.changed, true)
+  assert.equal(result.grok.changed, true)
 
   const claudeSettings = JSON.parse(await readFile(join(claudeDir, 'settings.json'), 'utf8'))
   assert.equal(claudeSettings.model, 'opus')
@@ -287,6 +323,12 @@ test('agent cleanup removes CodePulse hooks while preserving user configuration'
     ['echo keep-codex'],
   )
   assert.match(await readFile(join(codexDir, 'config.toml'), 'utf8'), /hooks = true/)
+
+  const grokHooks = JSON.parse(await readFile(join(grokDir, 'codepulse.json'), 'utf8'))
+  assert.deepEqual(
+    grokHooks.hooks.Stop[0].hooks.map((hook: { command: string }) => hook.command),
+    ['echo keep-grok'],
+  )
 })
 
 test('agent cleanup disables Codex hooks when only CodePulse hooks remain', async () => {

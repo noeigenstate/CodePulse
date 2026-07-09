@@ -26,7 +26,11 @@ export interface AgentDetectOptions {
 
 /** 检测 CodePulse 当前知道如何探测的所有 agent。 */
 export async function detectAgents(options: AgentDetectOptions = {}): Promise<Agent[]> {
-  return [await detectClaudeAgent(options), await detectCodexAgent(options)]
+  return [
+    await detectClaudeAgent(options),
+    await detectCodexAgent(options),
+    await detectGrokAgent(options),
+  ]
 }
 
 /**
@@ -86,6 +90,32 @@ export async function detectClaudeAgent(options: AgentDetectOptions = {}): Promi
   }
 }
 
+/** 检测 Grok Build CLI 及 CodePulse 的全局 hook 配置。 */
+export async function detectGrokAgent(options: AgentDetectOptions = {}): Promise<Agent> {
+  const env = options.env ?? process.env
+  const runCommand = options.runCommand ?? runLocalCommand
+  const hooksPath = grokHooksPath(options)
+
+  const versionResult = await runFirstAvailableCommand(
+    env['GROK_CLI_PATH'] ? [env['GROK_CLI_PATH']] : commandCandidates('grok', options),
+    ['--version'],
+    runCommand,
+  )
+  const configured = await fileContainsAny(hooksPath, [
+    'grok-hook.js',
+    'codepulse-grok-hook',
+  ])
+
+  return {
+    id: 'grok',
+    type: 'grok',
+    name: 'Grok',
+    installed: versionResult.ok,
+    configured,
+    version: versionResult.ok ? cleanVersion(versionResult.stdout) : undefined,
+  }
+}
+
 /** 解析 Codex 配置文件路径（环境变量可覆盖，默认 `~/.codex/config.toml`）。 */
 function codexConfigPath(options: AgentDetectOptions): string {
   const env = options.env ?? process.env
@@ -108,6 +138,15 @@ function claudeConfigPath(options: AgentDetectOptions): string {
   return (
     env['CODEPULSE_CLAUDE_CONFIG_FILE'] ??
     join(options.homeDir ?? homedir(), '.claude', 'settings.json')
+  )
+}
+
+/** 解析 Grok CodePulse hook 文件路径（默认 `~/.grok/hooks/codepulse.json`）。 */
+function grokHooksPath(options: AgentDetectOptions): string {
+  const env = options.env ?? process.env
+  return (
+    env['CODEPULSE_GROK_HOOKS_FILE'] ??
+    join(options.homeDir ?? homedir(), '.grok', 'hooks', 'codepulse.json')
   )
 }
 

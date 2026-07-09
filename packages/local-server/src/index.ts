@@ -84,15 +84,18 @@ export {
   detectAgents,
   detectClaudeAgent,
   detectCodexAgent,
+  detectGrokAgent,
   type AgentDetectOptions,
 } from './agent-detect.js'
 export {
   configureAgents,
   configureClaudeAgent,
   configureCodexAgent,
+  configureGrokAgent,
   cleanupAgents,
   cleanupClaudeAgent,
   cleanupCodexAgent,
+  cleanupGrokAgent,
   type AgentConfigurationOptions,
   type AgentConfigurationResult,
   type AgentConfigurationStatus,

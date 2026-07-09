@@ -95,7 +95,9 @@ export class RuleEngine {
 }
 
 function agentLabel(agent: string): string {
-  return agent === 'codex' ? 'Codex' : 'Claude Code'
+  if (agent === 'codex') return 'Codex'
+  if (agent === 'grok') return 'Grok'
+  return 'Claude Code'
 }
 
 function agentScope(agent: AgentRuntimeState): string {

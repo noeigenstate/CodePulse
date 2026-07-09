@@ -9,9 +9,11 @@ import type { AgentEventInput } from '@codepulse/shared'
 import { asRecord, pickString } from './util.js'
 import { fromCodexHook } from './codex/index.js'
 import { fromClaudeHook, fromClaudeStatusLine } from './claude-code/index.js'
+import { fromGrokHook } from './grok/index.js'
 
 export * from './codex/index.js'
 export * from './claude-code/index.js'
+export * from './grok/index.js'
 
 /**
  * 根据载荷的 `source` 与 `channel` 派发到正确的适配器。
@@ -32,6 +34,9 @@ export function normalizeRawEvent(raw: unknown): AgentEventInput | null {
   }
   if (source === 'codex') {
     return fromCodexHook(raw)
+  }
+  if (source === 'grok') {
+    return fromGrokHook(raw)
   }
   return null
 }

@@ -8,8 +8,15 @@ import {
 } from '@codepulse/shared'
 import { visibleRateLimitWindows } from './panelFormat.js'
 
-export const DISPLAY_AGENT_ORDER: readonly AgentType[] = ['claude_code', 'codex']
+export const DISPLAY_AGENT_ORDER: readonly AgentType[] = ['claude_code', 'codex', 'grok']
 const QUOTA_RECENCY_WINDOW_MS = 30 * 60_000
+
+/** 人类可读的 agent 显示名称。 */
+export function agentDisplayName(agentType: AgentType): string {
+  if (agentType === 'codex') return 'Codex'
+  if (agentType === 'grok') return 'Grok'
+  return 'Claude Code'
+}
 
 export interface WorkspaceAgentGroup {
   id: string
@@ -49,17 +56,34 @@ export function buildDisplayAgents(agents: AgentRuntimeState[]): AgentRuntimeSta
   )
 }
 
+/**
+ * 按 agent 类型构建 Dashboard 分屏。
+ * 仅在该 CLI 已有可见任务/项目或额度数据时返回对应分屏（自适应 1～3 栏）。
+ * 项目行被隐藏后仍会保留额度条，直到该 agent 状态槽位被清理。
+ */
 export function buildAgentPanels(agents: AgentRuntimeState[]): AgentPanel[] {
-  return DISPLAY_AGENT_ORDER.map((agentType) => {
+  return DISPLAY_AGENT_ORDER.flatMap((agentType) => {
     const typeAgents = agents.filter((agent) => agent.agentType === agentType)
+    if (typeAgents.length === 0) return []
+
     const workspaces = buildAgentWorkspaceItems(agentType, visibleTaskAgents(typeAgents))
-    return {
-      agentType,
-      name: agentType === 'codex' ? 'Codex' : 'Claude Code',
-      updatedAt: Math.max(0, ...workspaces.map((workspace) => workspace.updatedAt)),
-      quotaToken: latestQuotaToken(typeAgents, preferredQuotaModel(typeAgents)),
-      workspaces,
-    }
+    const quotaToken = latestQuotaToken(typeAgents, preferredQuotaModel(typeAgents))
+    // 无项目且无额度时不分屏；用户开启对应 CLI 任务后再出现
+    if (workspaces.length === 0 && !quotaToken) return []
+
+    return [
+      {
+        agentType,
+        name: agentDisplayName(agentType),
+        updatedAt: Math.max(
+          0,
+          ...workspaces.map((workspace) => workspace.updatedAt),
+          ...typeAgents.map((agent) => agent.lastEventAt),
+        ),
+        quotaToken,
+        workspaces,
+      },
+    ]
   })
 }
 

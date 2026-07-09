@@ -23,6 +23,28 @@ const CODEX_EVENTS = [
 
 const CODEX_MATCHED_EVENTS = new Set<string>(['PreToolUse', 'PermissionRequest', 'PostToolUse'])
 
+/** Grok 全局 hooks 写入 `~/.grok/hooks/codepulse.json` 的事件列表。 */
+const GROK_EVENTS = [
+  'SessionStart',
+  'UserPromptSubmit',
+  'PreToolUse',
+  'PostToolUse',
+  'PostToolUseFailure',
+  'PermissionDenied',
+  'Notification',
+  'Stop',
+  'StopFailure',
+  'SessionEnd',
+] as const
+
+const GROK_MATCHED_EVENTS = new Set<string>([
+  'PreToolUse',
+  'PostToolUse',
+  'PostToolUseFailure',
+  'PermissionDenied',
+  'Notification',
+])
+
 export interface AgentConfigurationOptions {
   env?: Record<string, string | undefined>
   homeDir?: string
@@ -39,6 +61,7 @@ export interface AgentConfigurationStatus {
 export interface AgentConfigurationResult {
   claude: AgentConfigurationStatus
   codex: AgentConfigurationStatus
+  grok: AgentConfigurationStatus
 }
 
 interface JsonObject {
@@ -60,21 +83,23 @@ interface HookCommand {
 export async function configureAgents(
   options: AgentConfigurationOptions,
 ): Promise<AgentConfigurationResult> {
-  const [claude, codex] = await Promise.all([
+  const [claude, codex, grok] = await Promise.all([
     configureClaudeAgent(options),
     configureCodexAgent(options),
+    configureGrokAgent(options),
   ])
-  return { claude, codex }
+  return { claude, codex, grok }
 }
 
 export async function cleanupAgents(
   options: AgentConfigurationOptions,
 ): Promise<AgentConfigurationResult> {
-  const [claude, codex] = await Promise.all([
+  const [claude, codex, grok] = await Promise.all([
     cleanupClaudeAgent(options),
     cleanupCodexAgent(options),
+    cleanupGrokAgent(options),
   ])
-  return { claude, codex }
+  return { claude, codex, grok }
 }
 
 export async function configureClaudeAgent(
@@ -440,10 +465,96 @@ async function writeText(path: string, text: string): Promise<void> {
   }
 }
 
+/**
+ * 配置 Grok Build 全局 hooks（`~/.grok/hooks/codepulse.json`）。
+ * 全局 hooks 默认受信任，无需项目级 `/hooks-trust`。
+ */
+export async function configureGrokAgent(
+  options: AgentConfigurationOptions,
+): Promise<AgentConfigurationStatus> {
+  const path = grokHooksPath(options)
+  const command = nodeCommand(join(options.hookBinDir, 'grok-hook.js'))
+  try {
+    const before = await readTextIfExists(path)
+    const hooksJson = parseJsonObject(before)
+    const hooks = objectValue(hooksJson.hooks) ?? {}
+    hooksJson.hooks = hooks
+
+    for (const event of GROK_EVENTS) {
+      ensureHookCommand(
+        hooks,
+        event,
+        command,
+        (candidate) => isCodePulseCommand(candidate, 'grok-hook'),
+        GROK_MATCHED_EVENTS.has(event) ? '.*' : undefined,
+      )
+    }
+
+    const next = `${JSON.stringify(hooksJson, null, 2)}\n`
+    const changed = next !== (before ?? '')
+    if (changed) await writeText(path, next)
+    return { path, changed, configured: isGrokConfigured(hooksJson) }
+  } catch (error) {
+    return { path, changed: false, configured: false, error: errorMessage(error) }
+  }
+}
+
+export async function cleanupGrokAgent(
+  options: AgentConfigurationOptions,
+): Promise<AgentConfigurationStatus> {
+  const path = grokHooksPath(options)
+  try {
+    const before = await readTextIfExists(path)
+    if (before == null) return { path, changed: false, configured: false }
+
+    const hooksJson = parseJsonObject(before)
+    const hooks = objectValue(hooksJson.hooks)
+    if (hooks) {
+      removeManagedHookCommands(hooks, 'grok-hook')
+      if (Object.keys(hooks).length === 0) delete hooksJson.hooks
+    }
+
+    // CodePulse 独占的 hook 文件：清理后若无剩余 hooks 则删除文件
+    const hasRemaining = hasAnyHookCommand(objectValue(hooksJson.hooks))
+    if (!hasRemaining) {
+      try {
+        await unlink(path)
+        return { path, changed: true, configured: false }
+      } catch (error) {
+        const code = (error as { code?: string }).code
+        if (code !== 'ENOENT') throw error
+        return { path, changed: before != null, configured: false }
+      }
+    }
+
+    const next = `${JSON.stringify(hooksJson, null, 2)}\n`
+    const changed = next !== before
+    if (changed) await writeText(path, next)
+    return { path, changed, configured: false }
+  } catch (error) {
+    return { path, changed: false, configured: false, error: errorMessage(error) }
+  }
+}
+
+function isGrokConfigured(settings: JsonObject): boolean {
+  const hooks = objectValue(settings.hooks)
+  return (
+    !!hooks && GROK_EVENTS.every((event) => eventHasManagedCommand(hooks, event, 'grok-hook'))
+  )
+}
+
 function codexHooksPath(options: Pick<AgentConfigurationOptions, 'env' | 'homeDir'>): string {
   const env = options.env ?? process.env
   return (
     env['CODEPULSE_CODEX_HOOKS_FILE'] ?? join(options.homeDir ?? homedir(), '.codex', 'hooks.json')
+  )
+}
+
+function grokHooksPath(options: Pick<AgentConfigurationOptions, 'env' | 'homeDir'>): string {
+  const env = options.env ?? process.env
+  return (
+    env['CODEPULSE_GROK_HOOKS_FILE'] ??
+    join(options.homeDir ?? homedir(), '.grok', 'hooks', 'codepulse.json')
   )
 }
 

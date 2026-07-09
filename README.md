@@ -4,8 +4,8 @@
 
 **A local status hub for your AI coding agents.**
 
-Know at a glance whether Codex and Claude Code are working, waiting on you,
-finished, or stuck — without alt-tabbing back to a terminal.
+Know at a glance whether Codex, Claude Code, and Grok are working, waiting on
+you, finished, or stuck — without alt-tabbing back to a terminal.
 
 [![status](https://img.shields.io/badge/status-v0.1%20MVP-orange)](#features)
 [![platform](https://img.shields.io/badge/platform-Windows-blue)](#download)
@@ -22,12 +22,13 @@ finished, or stuck — without alt-tabbing back to a terminal.
 ---
 
 AI coding agents are great at working unattended — and terrible at telling you
-when they need you. CodePulse listens to the lifecycle hooks that Codex and
-Claude Code already expose, runs every event through a single state machine,
-and surfaces the result three ways:
+when they need you. CodePulse listens to the lifecycle hooks that Codex, Claude
+Code, and Grok Build already expose, runs every event through a single state
+machine, and surfaces the result three ways:
 
-- 📊 **Live Dashboard** — per-agent, per-workspace cards with state, model,
-  elapsed time, context-window usage, and quota.
+- 📊 **Live Dashboard** — adaptive per-agent panes (only the CLIs you are using),
+  with per-workspace cards for state, model, elapsed time, context usage, and
+  quota.
 - 🎨 **Color-coded tray icon** — the overall state of every agent, visible at
   all times.
 - 🔔 **Desktop notifications** — concise project-level completion alerts, with
@@ -50,8 +51,9 @@ data shown.)_
 |                                     |                                                                                                                                         |
 | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | 🚦 **Unified state machine**        | One turn lifecycle for every agent: idle → processing → tool running → waiting for permission/input → done / error / cancelled / stuck. |
-| 🧭 **Multi-agent, multi-workspace** | Concurrent Codex and Claude Code sessions across projects, each tracked separately.                                                     |
-| 📈 **Context tracking**             | Compact context-window usage from Claude and Codex, using exact CLI data when available.                                                |
+| 🧭 **Multi-agent, multi-workspace** | Concurrent Codex, Claude Code, and Grok sessions across projects, each tracked separately.                                              |
+| 🪟 **Adaptive panes**               | Dashboard columns appear only for CLIs that have active tasks (or retained quota) — one CLI, one pane; all three, three panes.          |
+| 📈 **Context tracking**             | Compact context-window usage from Claude, Codex, and Grok, using exact CLI data when available.                                         |
 | 🎟️ **Quota awareness**              | 5-hour / weekly rate-limit windows per quota bucket, matched to the model you're actually running when the CLI reports them.            |
 | 🕰️ **Stuck detection**              | A watchdog flags turns with no activity so silent failures don't burn your afternoon.                                                   |
 | 💾 **Local history**                | Events, sessions, turns, and token snapshots persisted to SQLite — yours to query or delete.                                            |
@@ -60,7 +62,7 @@ data shown.)_
 ## How it works
 
 ```
- Codex / Claude Code
+ Codex / Claude Code / Grok
    │  lifecycle hooks & status line (dependency-free Node scripts)
    ▼
  POST /api/events ──► adapters ──► StatusHub (pure reducer + rule engine)
@@ -78,7 +80,7 @@ apps/desktop/        Electron app (main / preload / renderer)
 packages/
   shared/            Domain types (Agent, Turn, AgentEvent, …) + constants
   core/              State machine, rule engine, aggregation, StatusHub
-  adapters/          Codex / Claude raw payload → AgentEvent mapping
+  adapters/          Codex / Claude / Grok raw payload → AgentEvent mapping
   storage/           SQLite schema (Drizzle ORM) + repository
   local-server/      Fastify HTTP + WebSocket routes
   hooks/             Standalone hook scripts the agents invoke
@@ -98,12 +100,13 @@ the `.exe` asset directly.
 ## First run
 
 1. Open CodePulse.
-2. CodePulse checks your local Claude Code and Codex CLI setup.
+2. CodePulse checks your local Claude Code, Codex, and Grok CLI setup.
 3. If required entries are missing, CodePulse writes only its own hook and
    status-line configuration to:
    - `~/.claude/settings.json`
    - `~/.codex/hooks.json`
    - `~/.codex/config.toml`
+   - `~/.grok/hooks/codepulse.json` (global Grok hooks; trusted by default)
 4. If the setup dialog asks you to trust Codex hooks, open a Codex project
    terminal, run `/hooks`, select the CodePulse hook, and trust:
    - `SessionStart`
@@ -112,7 +115,8 @@ the `.exe` asset directly.
    - `PermissionRequest`
    - `PostToolUse`
    - `Stop`
-5. Run one Claude Code or Codex task. The dashboard will start syncing.
+5. Run a Claude Code, Codex, or Grok task. Only panes for CLIs that report
+   activity appear on the dashboard (adaptive layout).
 
 CodePulse only manages CodePulse-owned hook and status-line entries. Existing
 user hooks, models, plugins, and preferences are preserved. On uninstall, the
@@ -120,8 +124,8 @@ installer removes CodePulse-managed entries automatically.
 
 ### Verify
 
-Run any task in either agent and watch the Dashboard light up, or check the
-local API:
+Run any task in Claude Code, Codex, or Grok and watch the matching pane light
+up, or check the local API:
 
 ```bash
 curl http://127.0.0.1:17888/api/health
@@ -155,7 +159,7 @@ hooks elsewhere with the `CODEPULSE_URL` environment variable.
 | `POST` | `/api/events`        | Ingest a raw hook payload (or an array, max 1000) |
 | `GET`  | `/api/status`        | Full `StatusSnapshot` for the Dashboard           |
 | `GET`  | `/api/device/status` | Minimal status for lightweight local clients      |
-| `GET`  | `/api/agents/detect` | Detect local Codex / Claude CLI and hook setup    |
+| `GET`  | `/api/agents/detect` | Detect local Codex / Claude / Grok CLI and hooks  |
 | `POST` | `/api/ack/:agent`    | Mark an agent's terminal result as read           |
 | `POST` | `/api/mute`          | `{ "muted": true }` to silence notification sound |
 | `GET`  | `/api/health`        | Liveness probe                                    |
@@ -243,8 +247,9 @@ git push origin main vX.Y.Z
 
 The agent isn't reaching the server. Check that CodePulse is running, that
 `curl http://127.0.0.1:17888/api/health` returns `{"ok":true}`, and that the
-setup dialog does not report missing Claude / Codex hooks. For Codex, run
-`/hooks` once and trust the CodePulse hook if prompted.
+setup dialog does not report missing Claude / Codex / Grok hooks. For Codex, run
+`/hooks` once and trust the CodePulse hook if prompted. Grok global hooks live in
+`~/.grok/hooks/codepulse.json` and do not need project trust.
 
 </details>
 

@@ -5,10 +5,21 @@
  * Grok hook stdin 多为 camelCase（`hookEventName`、`sessionId`、`workspaceRoot`），
  * 事件名可能是 `SessionStart` 或 `session_start`；同时兼容 Claude 风格字段。
  *
+ * Token / 额度数据通常由 hook 脚本从 `signals.json` 与 billing 日志补齐
+ * （尽力而为，`accuracy: 'estimated'`）。
+ *
  * @module adapters/grok
  */
 import type { AgentEventInput, AgentEventType } from '@codepulse/shared'
-import { asRecord, pickString, preview } from '../util.js'
+import {
+  asRecord,
+  pickNumber,
+  pickRateLimitId,
+  pickRateLimitName,
+  pickRateLimits,
+  pickString,
+  preview,
+} from '../util.js'
 
 /**
  * 把 Grok Build 的 hook 载荷映射为 {@link AgentEventInput}。
@@ -41,6 +52,13 @@ export function fromGrokHook(raw: unknown): AgentEventInput | null {
       'cwd',
     ),
     model: pickString(r, 'model'),
+    tokenSourcePath: pickString(
+      r,
+      'token_source_path',
+      'tokenSourcePath',
+      'usage_source_path',
+      'usageSourcePath',
+    ),
     raw,
   }
 
@@ -76,7 +94,72 @@ export function fromGrokHook(raw: unknown): AgentEventInput | null {
       break
   }
 
+  const token = extractGrokToken(r)
+  if (token) event.token = token
+
   return event
+}
+
+/**
+ * 从 Grok 载荷中尽力提取 token / 上下文 / 额度。
+ *
+ * Hook 脚本可能注入 `usage`、`context_usage`、`context_used_percent`、
+ * `rate_limits`（来自 session signals 与 billing 日志）。
+ */
+function extractGrokToken(raw: Record<string, unknown>): AgentEventInput['token'] | undefined {
+  const usage = asRecord(raw.usage ?? raw.token) ?? undefined
+  const contextUsage = asRecord(raw.context_usage ?? raw.contextUsage)
+  const input = pickNumber(usage ?? {}, 'input_tokens', 'inputTokens')
+  const cachedInput = pickNumber(usage ?? {}, 'cached_input_tokens', 'cachedInputTokens')
+  const output = pickNumber(usage ?? {}, 'output_tokens', 'outputTokens')
+  const reasoningOutput = pickNumber(usage ?? {}, 'reasoning_output_tokens', 'reasoningOutputTokens')
+  const total = pickNumber(usage ?? {}, 'total_tokens', 'totalTokens')
+  const contextWindow = pickNumber(raw, 'context_window_size', 'contextWindowSize')
+  const contextSource = contextUsage ?? usage
+  const contextInput =
+    pickNumber(contextSource ?? {}, 'input_tokens', 'inputTokens') ??
+    pickNumber(contextSource ?? {}, 'cached_input_tokens', 'cachedInputTokens')
+  const pct =
+    pickNumber(raw, 'context_used_percent', 'contextUsedPercent') ??
+    pickNumber(usage ?? {}, 'context_used_percent', 'contextUsedPercent') ??
+    percentOf(contextInput, contextWindow)
+  const costUsd = pickNumber(raw, 'cost_usd', 'costUsd') ?? pickNumber(usage ?? {}, 'cost_usd', 'costUsd')
+  const rateLimits = pickRateLimits(raw)
+  const rateLimitId = pickRateLimitId(raw)
+  const rateLimitName = pickRateLimitName(raw)
+
+  if (
+    input == null &&
+    cachedInput == null &&
+    output == null &&
+    reasoningOutput == null &&
+    total == null &&
+    pct == null &&
+    costUsd == null &&
+    !rateLimits
+  ) {
+    return undefined
+  }
+
+  return {
+    input,
+    cachedInput,
+    output,
+    reasoningOutput,
+    total,
+    contextUsedPercent: pct,
+    contextWindow,
+    rateLimits,
+    rateLimitId,
+    rateLimitName,
+    costUsd,
+    accuracy: 'estimated',
+  }
+}
+
+function percentOf(value: number | undefined, total: number | undefined): number | undefined {
+  if (value == null || total == null || total <= 0) return undefined
+  return Math.min(100, (value / total) * 100)
 }
 
 /**

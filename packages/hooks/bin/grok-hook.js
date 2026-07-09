@@ -10,7 +10,9 @@
  * @module hooks/bin/grok-hook
  */
 import { readStdinJson, postEvent } from '../lib/post.js'
+import { readLatestGrokUsage } from '../lib/grok-usage.js'
 
 const data = await readStdinJson()
-await postEvent({ source: 'grok', ...data })
+const usagePatch = await readLatestGrokUsage(data)
+await postEvent({ source: 'grok', ...data, ...usagePatch })
 process.exit(0)

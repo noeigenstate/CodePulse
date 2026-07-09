@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { fromClaudeStatusLine, fromCodexHook } from '@codepulse/adapters'
+import { fromClaudeStatusLine, fromCodexHook, fromGrokHook } from '@codepulse/adapters'
 
 test('Claude status line sums current_usage cache tokens into context input', () => {
   const event = fromClaudeStatusLine({
@@ -133,4 +133,33 @@ test('Codex hook carries quota bucket identity from rate limits', () => {
   assert.equal(event?.token?.rateLimitId, 'codex_bengalfox')
   assert.equal(event?.token?.rateLimitName, 'GPT-5.3-Codex-Spark')
   assert.equal(event?.token?.rateLimits?.fiveHour?.usedPercent, 2)
+})
+
+test('Grok hook maps signals-style context and weekly credit rate limits', () => {
+  const event = fromGrokHook({
+    hookEventName: 'Stop',
+    sessionId: 'grok-session',
+    model: 'grok-4.5',
+    usage: { input_tokens: 44907, total_tokens: 44907 },
+    context_usage: { input_tokens: 44907, total_tokens: 44907 },
+    context_window_size: 500000,
+    context_used_percent: 8,
+    rate_limits: {
+      seven_day: { used_percentage: 1, resets_at: 1_784_000_000, window_minutes: 10080 },
+    },
+    rate_limit_name: 'SuperGrok',
+    rate_limit_id: 'supergrok',
+    usage_source_path: 'C:/Users/me/.grok/sessions/x/signals.json',
+  })
+
+  assert.equal(event?.eventType, 'turn_stop')
+  assert.equal(event?.model, 'grok-4.5')
+  assert.equal(event?.tokenSourcePath, 'C:/Users/me/.grok/sessions/x/signals.json')
+  assert.equal(event?.token?.input, 44907)
+  assert.equal(event?.token?.contextWindow, 500000)
+  assert.equal(event?.token?.contextUsedPercent, 8)
+  assert.equal(event?.token?.rateLimits?.sevenDay?.usedPercent, 1)
+  assert.equal(event?.token?.rateLimits?.sevenDay?.resetsAt, 1_784_000_000)
+  assert.equal(event?.token?.rateLimitName, 'SuperGrok')
+  assert.equal(event?.token?.accuracy, 'estimated')
 })

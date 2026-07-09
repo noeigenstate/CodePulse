@@ -65,10 +65,7 @@ test('Grok usage reader extracts context from signals.json and weekly credits fr
   )
 
   try {
-    const usage = await readLatestGrokUsage(
-      { session_id: sessionId, cwd },
-      { grokHome: home },
-    )
+    const usage = await readLatestGrokUsage({ session_id: sessionId, cwd }, { grokHome: home })
 
     assert.equal(usage.model, 'grok-4.5')
     assert.equal(usage.context_window_size, 500000)
@@ -78,10 +75,7 @@ test('Grok usage reader extracts context from signals.json and weekly credits fr
       total_tokens: 60000,
     })
     assert.equal(usage.rate_limits.seven_day.used_percentage, 17.5)
-    assert.equal(
-      usage.rate_limits.seven_day.resets_at,
-      Math.floor(Date.parse(periodEnd) / 1000),
-    )
+    assert.equal(usage.rate_limits.seven_day.resets_at, Math.floor(Date.parse(periodEnd) / 1000))
     assert.equal(usage.rate_limits.seven_day.window_minutes, 7 * 24 * 60)
     assert.equal(usage.rate_limit_name, 'SuperGrok')
     assert.ok(String(usage.usage_source_path).includes('signals.json'))

@@ -112,7 +112,11 @@ function extractGrokToken(raw: Record<string, unknown>): AgentEventInput['token'
   const input = pickNumber(usage ?? {}, 'input_tokens', 'inputTokens')
   const cachedInput = pickNumber(usage ?? {}, 'cached_input_tokens', 'cachedInputTokens')
   const output = pickNumber(usage ?? {}, 'output_tokens', 'outputTokens')
-  const reasoningOutput = pickNumber(usage ?? {}, 'reasoning_output_tokens', 'reasoningOutputTokens')
+  const reasoningOutput = pickNumber(
+    usage ?? {},
+    'reasoning_output_tokens',
+    'reasoningOutputTokens',
+  )
   const total = pickNumber(usage ?? {}, 'total_tokens', 'totalTokens')
   const contextWindow = pickNumber(raw, 'context_window_size', 'contextWindowSize')
   const contextSource = contextUsage ?? usage
@@ -123,7 +127,8 @@ function extractGrokToken(raw: Record<string, unknown>): AgentEventInput['token'
     pickNumber(raw, 'context_used_percent', 'contextUsedPercent') ??
     pickNumber(usage ?? {}, 'context_used_percent', 'contextUsedPercent') ??
     percentOf(contextInput, contextWindow)
-  const costUsd = pickNumber(raw, 'cost_usd', 'costUsd') ?? pickNumber(usage ?? {}, 'cost_usd', 'costUsd')
+  const costUsd =
+    pickNumber(raw, 'cost_usd', 'costUsd') ?? pickNumber(usage ?? {}, 'cost_usd', 'costUsd')
   const rateLimits = pickRateLimits(raw)
   const rateLimitId = pickRateLimitId(raw)
   const rateLimitName = pickRateLimitName(raw)
@@ -212,7 +217,10 @@ function mapGrokEvent(hookEvent: string, raw: Record<string, unknown>): AgentEve
 
 /** 去掉分隔符并小写，统一 `SessionStart` / `session_start` / `sessionStart`。 */
 function normalizeHookEventName(value: string): string {
-  return value.trim().toLowerCase().replace(/[_\s-]/g, '')
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s-]/g, '')
 }
 
 function classifyNotification(message: string | undefined): AgentEventType | null {

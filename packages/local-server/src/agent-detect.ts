@@ -101,10 +101,7 @@ export async function detectGrokAgent(options: AgentDetectOptions = {}): Promise
     ['--version'],
     runCommand,
   )
-  const configured = await fileContainsAny(hooksPath, [
-    'grok-hook.js',
-    'codepulse-grok-hook',
-  ])
+  const configured = await fileContainsAny(hooksPath, ['grok-hook.js', 'codepulse-grok-hook'])
 
   return {
     id: 'grok',

@@ -538,9 +538,7 @@ export async function cleanupGrokAgent(
 
 function isGrokConfigured(settings: JsonObject): boolean {
   const hooks = objectValue(settings.hooks)
-  return (
-    !!hooks && GROK_EVENTS.every((event) => eventHasManagedCommand(hooks, event, 'grok-hook'))
-  )
+  return !!hooks && GROK_EVENTS.every((event) => eventHasManagedCommand(hooks, event, 'grok-hook'))
 }
 
 function codexHooksPath(options: Pick<AgentConfigurationOptions, 'env' | 'homeDir'>): string {

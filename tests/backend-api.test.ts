@@ -246,11 +246,7 @@ test('GET /api/agents/detect returns supported agent detection records', async (
 
   assert.equal(Array.isArray(body.agents), true)
   assert.equal(body.agents.length, 3)
-  assert.deepEqual(body.agents.map((agent) => agent.type).sort(), [
-    'claude_code',
-    'codex',
-    'grok',
-  ])
+  assert.deepEqual(body.agents.map((agent) => agent.type).sort(), ['claude_code', 'codex', 'grok'])
   for (const agent of body.agents) {
     assert.equal(typeof agent.installed, 'boolean')
     assert.equal(typeof agent.configured, 'boolean')

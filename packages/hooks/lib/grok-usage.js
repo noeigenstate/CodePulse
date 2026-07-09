@@ -45,9 +45,7 @@ export async function readLatestGrokUsage(raw, options = {}) {
 async function findSessionDir(raw, grokHome) {
   const sessionsRoot = join(grokHome, 'sessions')
   const sessionId =
-    stringValue(raw?.session_id) ??
-    stringValue(raw?.sessionId) ??
-    stringValue(raw?.conversation_id)
+    stringValue(raw?.session_id) ?? stringValue(raw?.sessionId) ?? stringValue(raw?.conversation_id)
   const cwd =
     stringValue(raw?.cwd) ??
     stringValue(raw?.workspaceRoot) ??
@@ -338,11 +336,11 @@ function percentOf(value, total) {
 function hasUsefulPatch(patch) {
   return Boolean(
     patch.usage ||
-      patch.context_usage ||
-      patch.context_window_size != null ||
-      patch.context_used_percent != null ||
-      patch.rate_limits ||
-      patch.model,
+    patch.context_usage ||
+    patch.context_window_size != null ||
+    patch.context_used_percent != null ||
+    patch.rate_limits ||
+    patch.model,
   )
 }
 
@@ -402,4 +400,3 @@ function optionalNumber(value) {
   }
   return undefined
 }
-

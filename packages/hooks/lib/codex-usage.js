@@ -171,15 +171,71 @@ function toUsagePatch(tokenCount, taskStarted) {
   }
 }
 
+/**
+ * Codex historically used primary=5h / secondary=weekly. After dropping the
+ * 5h window, weekly often arrives only on `primary` (window_minutes=10080)
+ * with `secondary: null`. Classify by window_minutes when available.
+ */
 function normalizeRateLimits(raw) {
   if (!raw || typeof raw !== 'object') return undefined
-  const fiveHour = normalizeWindow(raw.five_hour ?? raw.fiveHour ?? raw.primary)
-  const sevenDay = normalizeWindow(raw.seven_day ?? raw.sevenDay ?? raw.secondary)
-  if (!fiveHour && !sevenDay) return undefined
-  return {
-    ...(fiveHour ? { five_hour: fiveHour } : {}),
-    ...(sevenDay ? { seven_day: sevenDay } : {}),
+
+  const explicitFive = normalizeWindow(raw.five_hour ?? raw.fiveHour)
+  const explicitSeven = normalizeWindow(raw.seven_day ?? raw.sevenDay)
+  if (explicitFive || explicitSeven) {
+    return {
+      ...(explicitFive ? { five_hour: explicitFive } : {}),
+      ...(explicitSeven ? { seven_day: explicitSeven } : {}),
+    }
   }
+
+  const primary = normalizeWindow(raw.primary)
+  const secondary = normalizeWindow(raw.secondary)
+  if (!primary && !secondary) return undefined
+
+  const classified = classifyPrimarySecondaryWindows(primary, secondary)
+  if (!classified.fiveHour && !classified.sevenDay) return undefined
+  return {
+    ...(classified.fiveHour ? { five_hour: classified.fiveHour } : {}),
+    ...(classified.sevenDay ? { seven_day: classified.sevenDay } : {}),
+  }
+}
+
+function classifyPrimarySecondaryWindows(primary, secondary) {
+  const fiveHour = []
+  const sevenDay = []
+
+  for (const window of [primary, secondary]) {
+    if (!window) continue
+    const kind = classifyWindowKind(window)
+    if (kind === 'fiveHour') fiveHour.push(window)
+    else if (kind === 'sevenDay') sevenDay.push(window)
+  }
+
+  // Both windows present but neither has usable minutes: legacy primary/secondary.
+  if (primary && secondary && fiveHour.length === 0 && sevenDay.length === 0) {
+    return { fiveHour: primary, sevenDay: secondary }
+  }
+
+  // Single unlabelled window: current Codex plans are weekly-only.
+  if (primary && !secondary && fiveHour.length === 0 && sevenDay.length === 0) {
+    return { sevenDay: primary }
+  }
+  if (secondary && !primary && fiveHour.length === 0 && sevenDay.length === 0) {
+    return { sevenDay: secondary }
+  }
+
+  return {
+    fiveHour: fiveHour[0],
+    sevenDay: sevenDay[0],
+  }
+}
+
+/** Short windows (≤24h) map to fiveHour; longer (weekly etc.) map to sevenDay. */
+function classifyWindowKind(window) {
+  const minutes = window.window_minutes
+  if (typeof minutes !== 'number' || !Number.isFinite(minutes) || minutes <= 0) return 'unknown'
+  if (minutes <= 24 * 60) return 'fiveHour'
+  return 'sevenDay'
 }
 
 function codexContextInputTokens(usage) {

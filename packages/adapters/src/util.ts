@@ -65,20 +65,67 @@ export function preview(text: string | undefined, max = 120): string | undefined
   return trimmed.length <= max ? trimmed : `${trimmed.slice(0, max)}…`
 }
 
-/** 从 Claude/Codex 的 rate limit 结构中读取 5 小时与 7 天额度。 */
+/**
+ * 从 Claude/Codex 的 rate limit 结构中读取 5 小时与 7 天额度。
+ *
+ * Codex 取消 5h 后，周额度常只出现在 `primary`（window_minutes=10080）且
+ * `secondary` 为 null；不能再固定把 primary 当 5h、secondary 当周额度。
+ */
 export function pickRateLimits(raw: Record<string, unknown>): TokenPayload['rateLimits'] {
   const rateLimits = asRecord(raw.rate_limits ?? raw.rateLimits)
   if (!rateLimits) return undefined
 
-  const fiveHour = readRateLimitWindow(
-    rateLimits.five_hour ?? rateLimits.fiveHour ?? rateLimits.primary,
-  )
-  const sevenDay = readRateLimitWindow(
-    rateLimits.seven_day ?? rateLimits.sevenDay ?? rateLimits.secondary,
-  )
+  const explicitFive = readRateLimitWindow(rateLimits.five_hour ?? rateLimits.fiveHour)
+  const explicitSeven = readRateLimitWindow(rateLimits.seven_day ?? rateLimits.sevenDay)
+  if (explicitFive || explicitSeven) {
+    return { fiveHour: explicitFive, sevenDay: explicitSeven }
+  }
 
-  if (!fiveHour && !sevenDay) return undefined
-  return { fiveHour, sevenDay }
+  const primary = readRateLimitWindow(rateLimits.primary)
+  const secondary = readRateLimitWindow(rateLimits.secondary)
+  if (!primary && !secondary) return undefined
+
+  return classifyPrimarySecondaryWindows(primary, secondary)
+}
+
+function classifyPrimarySecondaryWindows(
+  primary: RateLimitWindowPayload,
+  secondary: RateLimitWindowPayload,
+): NonNullable<TokenPayload['rateLimits']> {
+  const fiveHour: NonNullable<RateLimitWindowPayload>[] = []
+  const sevenDay: NonNullable<RateLimitWindowPayload>[] = []
+
+  for (const window of [primary, secondary]) {
+    if (!window) continue
+    const kind = classifyWindowKind(window)
+    if (kind === 'fiveHour') fiveHour.push(window)
+    else if (kind === 'sevenDay') sevenDay.push(window)
+  }
+
+  if (primary && secondary && fiveHour.length === 0 && sevenDay.length === 0) {
+    return { fiveHour: primary, sevenDay: secondary }
+  }
+  if (primary && !secondary && fiveHour.length === 0 && sevenDay.length === 0) {
+    return { sevenDay: primary }
+  }
+  if (secondary && !primary && fiveHour.length === 0 && sevenDay.length === 0) {
+    return { sevenDay: secondary }
+  }
+
+  return {
+    fiveHour: fiveHour[0],
+    sevenDay: sevenDay[0],
+  }
+}
+
+/** ≤24h → fiveHour；更长窗口（如 10080 分钟）→ sevenDay。 */
+function classifyWindowKind(
+  window: NonNullable<RateLimitWindowPayload>,
+): 'fiveHour' | 'sevenDay' | 'unknown' {
+  const minutes = window.windowMinutes
+  if (typeof minutes !== 'number' || !Number.isFinite(minutes) || minutes <= 0) return 'unknown'
+  if (minutes <= 24 * 60) return 'fiveHour'
+  return 'sevenDay'
 }
 
 /** Read a quota bucket id from a hook payload or nested rate limit payload. */

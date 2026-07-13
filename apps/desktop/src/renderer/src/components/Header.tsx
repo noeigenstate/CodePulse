@@ -1,24 +1,14 @@
-import type { OverallState } from '@codepulse/shared'
-import { overallStyle } from '../lib/format.js'
-import { headerCopy, overallLabel, type Locale } from '../lib/i18n.js'
+import { headerCopy, type Locale } from '../lib/i18n.js'
 import codePulseIcon from '../assets/codepulse-icon.png'
 
 interface Props {
-  overall: OverallState
   locale: Locale
   muted: boolean
   onToggleLocale: () => void
   onToggleMute: () => void
 }
 
-export function Header({
-  overall,
-  locale,
-  muted,
-  onToggleLocale,
-  onToggleMute,
-}: Props): JSX.Element {
-  const style = overallStyle(overall)
+export function Header({ locale, muted, onToggleLocale, onToggleMute }: Props): JSX.Element {
   const copy = headerCopy(locale)
 
   return (
@@ -41,10 +31,6 @@ export function Header({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-3">
-          <div className="control-glass flex h-11 items-center gap-2 rounded-xl px-3.5 text-sm font-medium">
-            <span className={`inline-block h-2.5 w-2.5 rounded-full ${style.dot}`} />
-            <span className={style.text}>{overallLabel(overall, locale)}</span>
-          </div>
           <button
             onClick={onToggleLocale}
             className="control-glass h-11 min-w-11 rounded-xl px-3.5 text-sm font-semibold text-slate-800 transition hover:bg-white/75 active:translate-y-px"

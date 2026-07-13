@@ -473,6 +473,67 @@ test('Codex usage reader accepts rate limits under info', async () => {
   }
 })
 
+test('Codex usage reader maps weekly-only primary rate limit to seven_day', async () => {
+  const home = join(tmpdir(), `codepulse-codex-weekly-only-${Date.now()}`)
+  const sessions = join(home, 'sessions', '2026', '07', '12')
+  const sessionId = 'session-weekly-only'
+  const rollout = join(sessions, `rollout-2026-07-12T22-00-00-${sessionId}.jsonl`)
+
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    rollout,
+    [
+      JSON.stringify({
+        timestamp: '2026-07-12T14:00:00.000Z',
+        type: 'event_msg',
+        payload: {
+          type: 'task_started',
+          model_context_window: 353400,
+        },
+      }),
+      JSON.stringify({
+        timestamp: '2026-07-12T14:00:01.000Z',
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 353400,
+            last_token_usage: {
+              input_tokens: 1000,
+              output_tokens: 50,
+              total_tokens: 1050,
+            },
+          },
+          rate_limits: {
+            limit_id: 'codex',
+            limit_name: null,
+            primary: {
+              used_percent: 2,
+              window_minutes: 10080,
+              resets_at: 1784513490,
+            },
+            secondary: null,
+            plan_type: 'prolite',
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  try {
+    const usage = await readLatestCodexUsage({ session_id: sessionId }, { codexHome: home })
+    assert.equal(usage.rate_limits?.five_hour, undefined)
+    assert.deepEqual(usage.rate_limits?.seven_day, {
+      used_percentage: 2,
+      resets_at: 1784513490,
+      window_minutes: 10080,
+    })
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
 test('Codex usage reader exposes quota bucket identity from rollout rate limits', async () => {
   const home = join(tmpdir(), `codepulse-codex-rate-identity-${Date.now()}`)
   const sessions = join(home, 'sessions', '2026', '06', '11')

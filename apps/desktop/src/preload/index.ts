@@ -3,6 +3,7 @@ import type {
   Agent,
   AgentType,
   StatusSnapshot,
+  UpdateDownloadProgress,
   UpdateInfo,
   UpdateInstallResult,
 } from '@codepulse/shared'
@@ -29,6 +30,8 @@ const api = {
   onMute: (cb: (muted: boolean) => void): Unsubscribe => subscribe('codepulse:mute', cb),
   onUpdateAvailable: (cb: (update: UpdateInfo) => void): Unsubscribe =>
     subscribe('codepulse:update-available', cb),
+  onUpdateProgress: (cb: (progress: UpdateDownloadProgress) => void): Unsubscribe =>
+    subscribe('codepulse:update-progress', cb),
 }
 
 export type CodePulseApi = typeof api

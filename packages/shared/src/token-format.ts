@@ -74,13 +74,23 @@ export function formatTokenUsage(token: TokenPayload | undefined): string {
   return parts.length > 0 ? parts.join(' / ') : 'Token 暂无数据'
 }
 
-export function formatTokenQuotaDetail(token: TokenPayload | undefined, now = Date.now()): string {
+/** Codex / Grok 仅周额度；Claude Code 保留 5 小时 + 周额度。 */
+function showsFiveHourQuota(agent: AgentType | undefined): boolean {
+  return agent === 'claude_code'
+}
+
+export function formatTokenQuotaDetail(
+  token: TokenPayload | undefined,
+  now = Date.now(),
+  agent?: AgentType,
+): string {
   if (!token) return '等待 CLI 同步额度'
   const rateLimits = token?.rateLimits
-  return [
-    formatTokenQuotaWindow('5h', rateLimits?.fiveHour, now),
+  const parts = [
+    ...(showsFiveHourQuota(agent) ? [formatTokenQuotaWindow('5h', rateLimits?.fiveHour, now)] : []),
     formatTokenQuotaWindow('每周', rateLimits?.sevenDay, now),
-  ].join(' / ')
+  ]
+  return parts.join(' / ')
 }
 
 function formatTokenQuotaWindow(
@@ -126,7 +136,7 @@ export function formatTokenQuotaNotice(
   now = Date.now(),
 ): string {
   const pct = formatTokenPercent(token.contextUsedPercent)
-  const quotaText = formatTokenQuotaDetail(token, now)
+  const quotaText = formatTokenQuotaDetail(token, now, agent)
   const sourceNote =
     agent === 'codex'
       ? 'Codex token 为估算值'

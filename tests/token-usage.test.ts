@@ -133,6 +133,24 @@ test('Codex hook carries quota bucket identity from rate limits', () => {
   assert.equal(event?.token?.rateLimitId, 'codex_bengalfox')
   assert.equal(event?.token?.rateLimitName, 'GPT-5.3-Codex-Spark')
   assert.equal(event?.token?.rateLimits?.fiveHour?.usedPercent, 2)
+  assert.equal(event?.token?.rateLimits?.sevenDay?.usedPercent, 1)
+})
+
+test('Codex hook maps weekly-only primary window (no 5h) to sevenDay', () => {
+  const event = fromCodexHook({
+    hook_event_name: 'UserPromptSubmit',
+    rate_limits: {
+      limit_id: 'codex',
+      limit_name: null,
+      primary: { used_percent: 2, window_minutes: 10080, resets_at: 1_784_513_490 },
+      secondary: null,
+    },
+  })
+
+  assert.equal(event?.token?.rateLimits?.fiveHour, undefined)
+  assert.equal(event?.token?.rateLimits?.sevenDay?.usedPercent, 2)
+  assert.equal(event?.token?.rateLimits?.sevenDay?.windowMinutes, 10080)
+  assert.equal(event?.token?.rateLimits?.sevenDay?.resetsAt, 1_784_513_490)
 })
 
 test('Grok hook maps signals-style context and weekly credit rate limits', () => {

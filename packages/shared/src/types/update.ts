@@ -8,4 +8,10 @@ export interface UpdateInfo {
   installerUrl?: string
 }
 
+export interface UpdateDownloadProgress {
+  received: number
+  total?: number
+  percent?: number
+}
+
 export type UpdateInstallResult = { ok: true } | { ok: false; error: string }

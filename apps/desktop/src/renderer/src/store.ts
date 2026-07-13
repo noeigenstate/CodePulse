@@ -1,5 +1,11 @@
 import { create } from 'zustand'
-import type { Agent, AgentType, StatusSnapshot, UpdateInfo } from '@codepulse/shared'
+import type {
+  Agent,
+  AgentType,
+  StatusSnapshot,
+  UpdateDownloadProgress,
+  UpdateInfo,
+} from '@codepulse/shared'
 import { sameSnapshotData } from './lib/snapshotKey.js'
 
 const EMPTY_SNAPSHOT: StatusSnapshot = { overall: 'idle', agents: [], updatedAt: Date.now() }
@@ -12,6 +18,7 @@ interface CodePulseStore {
   agentCheckId: number
   updateInfo: UpdateInfo | null
   updateInstalling: boolean
+  updateProgress?: UpdateDownloadProgress
   updateError?: string
   init: () => () => void
   ack: (agent: AgentType, workspacePath?: string) => void
@@ -28,6 +35,7 @@ export const useStore = create<CodePulseStore>((set, get) => ({
   agentCheckId: 0,
   updateInfo: null,
   updateInstalling: false,
+  updateProgress: undefined,
   updateError: undefined,
 
   init: () => {
@@ -61,14 +69,16 @@ export const useStore = create<CodePulseStore>((set, get) => ({
     const offMute = api.onMute((muted) => set({ muted }))
     const offAgents = api.onAgents(applyAgents)
     const offUpdate = api.onUpdateAvailable((updateInfo) =>
-      set({ updateInfo, updateError: undefined }),
+      set({ updateInfo, updateError: undefined, updateProgress: undefined }),
     )
+    const offUpdateProgress = api.onUpdateProgress((updateProgress) => set({ updateProgress }))
 
     return () => {
       offStatus()
       offMute()
       offAgents()
       offUpdate()
+      offUpdateProgress()
     }
   },
 
@@ -83,20 +93,30 @@ export const useStore = create<CodePulseStore>((set, get) => ({
   },
 
   dismissUpdate: () => {
-    set({ updateInfo: null, updateError: undefined, updateInstalling: false })
+    set({
+      updateInfo: null,
+      updateError: undefined,
+      updateInstalling: false,
+      updateProgress: undefined,
+    })
   },
 
   installUpdate: () => {
     const update = get().updateInfo
     if (!update || get().updateInstalling) return
 
-    set({ updateInstalling: true, updateError: undefined })
+    set({ updateInstalling: true, updateError: undefined, updateProgress: undefined })
     void window.codepulse.installUpdate().then((result) => {
       if (result.ok) {
-        set({ updateInstalling: false, updateInfo: null, updateError: undefined })
+        set({
+          updateInstalling: false,
+          updateInfo: null,
+          updateError: undefined,
+          updateProgress: undefined,
+        })
         return
       }
-      set({ updateInstalling: false, updateError: result.error })
+      set({ updateInstalling: false, updateError: result.error, updateProgress: undefined })
     })
   },
 }))

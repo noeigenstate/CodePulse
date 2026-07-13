@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron'
 import {
@@ -5,6 +6,7 @@ import {
   type AgentType,
   type NotificationRequest,
   type StatusSnapshot,
+  type UpdateDownloadProgress,
   type UpdateInfo,
   type UpdateInstallResult,
 } from '@codepulse/shared'
@@ -253,19 +255,59 @@ async function installLatestUpdate(): Promise<UpdateInstallResult> {
     const installerPath = await downloadInstaller(
       update,
       join(app.getPath('temp'), 'CodePulse', 'updates', update.tag),
+      (progress) => broadcastUpdateProgress(progress),
     )
-    const openError = await shell.openPath(installerPath)
-    if (openError) return { ok: false, error: openError }
 
-    setTimeout(() => app.quit(), 500).unref?.()
+    // Hide the modal window first so Windows UAC / NSIS UI is not covered.
+    try {
+      mainWindow?.setAlwaysOnTop(false)
+      mainWindow?.hide()
+    } catch {
+      // ignore window hide failures
+    }
+
+    // Detached spawn: shell.openPath can block on UAC and leave the UI stuck on
+    // "installing". NSIS also waits if CodePulse is still running with locked files.
+    launchInstallerDetached(installerPath)
+
+    // Exit ASAP so the installer can replace files; delay only enough for IPC to flush.
+    setTimeout(() => {
+      app.exit(0)
+    }, 150).unref?.()
     return { ok: true }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('[codepulse] failed to install update', err)
+    // Restore window if download failed after hide (should only fail before hide).
+    try {
+      mainWindow?.show()
+    } catch {
+      // ignore
+    }
     return { ok: false, error: message }
   } finally {
     installingUpdate = false
   }
+}
+
+function broadcastUpdateProgress(progress: UpdateDownloadProgress): void {
+  broadcast('codepulse:update-progress', progress)
+}
+
+/**
+ * Launch the NSIS installer without waiting for it (or for UAC).
+ * Using detached+unref keeps the child alive after CodePulse exits.
+ */
+export function launchInstallerDetached(installerPath: string): void {
+  const child = spawn(installerPath, [], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: false,
+  })
+  child.unref()
+  child.on('error', (err) => {
+    console.error('[codepulse] failed to launch installer', err)
+  })
 }
 
 function shouldCheckForUpdates(): boolean {

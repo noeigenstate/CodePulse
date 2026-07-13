@@ -197,8 +197,8 @@ function latestToken(agents: AgentRuntimeState[]): TokenPayload | undefined {
     ?.token
 }
 
-function hasVisibleRateLimits(token: TokenPayload | undefined): boolean {
-  const windows = visibleRateLimitWindows(token)
+function hasVisibleRateLimits(token: TokenPayload | undefined, agentType: AgentType): boolean {
+  const windows = visibleRateLimitWindows(token, agentType)
   return Boolean(windows.fiveHour ?? windows.sevenDay)
 }
 
@@ -211,7 +211,9 @@ function quotaCandidatesForAgent(agent: AgentRuntimeState): QuotaCandidate[] {
     .filter((candidate): candidate is QuotaCandidate => Boolean(candidate))
 
   if (bucketCandidates.length > 0) return bucketCandidates
-  return hasVisibleRateLimits(token) ? [{ agent, token, updatedAt: agent.lastEventAt }] : []
+  return hasVisibleRateLimits(token, agent.agentType)
+    ? [{ agent, token, updatedAt: agent.lastEventAt }]
+    : []
 }
 
 function quotaCandidateFromBucket(
@@ -225,16 +227,19 @@ function quotaCandidateFromBucket(
     rateLimitName: bucket.rateLimitName,
     rateLimits: bucket.rateLimits,
   }
-  if (!hasVisibleRateLimits(token)) return undefined
+  if (!hasVisibleRateLimits(token, agent.agentType)) return undefined
   return { agent, token, updatedAt: bucket.updatedAt ?? agent.lastEventAt }
 }
 
 function compareQuotaCandidates(a: QuotaCandidate, b: QuotaCandidate): number {
-  return b.updatedAt - a.updatedAt || quotaPressure(b.token) - quotaPressure(a.token)
+  return (
+    b.updatedAt - a.updatedAt ||
+    quotaPressure(b.token, b.agent.agentType) - quotaPressure(a.token, a.agent.agentType)
+  )
 }
 
-function quotaPressure(token: TokenPayload | undefined): number {
-  const windows = visibleRateLimitWindows(token)
+function quotaPressure(token: TokenPayload | undefined, agentType: AgentType): number {
+  const windows = visibleRateLimitWindows(token, agentType)
   return Math.max(
     normalizedPercent(windows.fiveHour?.usedPercent),
     normalizedPercent(windows.sevenDay?.usedPercent),

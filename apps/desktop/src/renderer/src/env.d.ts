@@ -3,6 +3,7 @@ import type {
   Agent,
   AgentType,
   StatusSnapshot,
+  UpdateDownloadProgress,
   UpdateInfo,
   UpdateInstallResult,
 } from '@codepulse/shared'
@@ -21,6 +22,7 @@ export interface CodePulseApi {
   onAgents: (cb: (agents: Agent[]) => void) => Unsubscribe
   onMute: (cb: (muted: boolean) => void) => Unsubscribe
   onUpdateAvailable: (cb: (update: UpdateInfo) => void) => Unsubscribe
+  onUpdateProgress: (cb: (progress: UpdateDownloadProgress) => void) => Unsubscribe
 }
 
 declare global {

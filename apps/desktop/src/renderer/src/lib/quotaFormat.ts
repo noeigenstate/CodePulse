@@ -1,18 +1,23 @@
-import type { TokenPayload, TokenRateLimitWindow } from '@codepulse/shared'
+import type { AgentType, TokenPayload, TokenRateLimitWindow } from '@codepulse/shared'
 import { formatTokenPercent } from '@codepulse/shared'
 import type { Locale } from './i18n.js'
+import { showsFiveHourQuota } from './panelFormat.js'
 
 export function formatQuotaDetail(
   token: TokenPayload | undefined,
   now = Date.now(),
   locale: Locale = 'zh',
+  agentType?: AgentType,
 ): string {
   if (!token) return locale === 'zh' ? '等待命令行同步额度' : 'Waiting for CLI quota sync'
   const rateLimits = token.rateLimits
-  return [
-    formatQuotaWindow(locale === 'zh' ? '5 小时' : '5h', rateLimits?.fiveHour, now, locale),
+  const parts = [
+    ...(showsFiveHourQuota(agentType)
+      ? [formatQuotaWindow(locale === 'zh' ? '5 小时' : '5h', rateLimits?.fiveHour, now, locale)]
+      : []),
     formatQuotaWindow(locale === 'zh' ? '每周' : 'Weekly', rateLimits?.sevenDay, now, locale),
-  ].join(' / ')
+  ]
+  return parts.join(' / ')
 }
 
 function formatQuotaWindow(

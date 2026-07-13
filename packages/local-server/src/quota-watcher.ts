@@ -194,10 +194,59 @@ function readUsage(value: unknown): Record<string, unknown> | undefined {
 function normalizeRateLimits(value: unknown): TokenPayload['rateLimits'] {
   const raw = isRecord(value) ? value : undefined
   if (!raw) return undefined
-  const fiveHour = normalizeWindow(raw.five_hour ?? raw.fiveHour ?? raw.primary)
-  const sevenDay = normalizeWindow(raw.seven_day ?? raw.sevenDay ?? raw.secondary)
-  if (!fiveHour && !sevenDay) return undefined
-  return { fiveHour, sevenDay }
+
+  const explicitFive = normalizeWindow(raw.five_hour ?? raw.fiveHour)
+  const explicitSeven = normalizeWindow(raw.seven_day ?? raw.sevenDay)
+  if (explicitFive || explicitSeven) {
+    return { fiveHour: explicitFive, sevenDay: explicitSeven }
+  }
+
+  const primary = normalizeWindow(raw.primary)
+  const secondary = normalizeWindow(raw.secondary)
+  if (!primary && !secondary) return undefined
+
+  return classifyPrimarySecondaryWindows(primary, secondary)
+}
+
+type RateLimitWindow = NonNullable<TokenPayload['rateLimits']>['fiveHour']
+
+function classifyPrimarySecondaryWindows(
+  primary: RateLimitWindow,
+  secondary: RateLimitWindow,
+): NonNullable<TokenPayload['rateLimits']> {
+  const fiveHour: NonNullable<RateLimitWindow>[] = []
+  const sevenDay: NonNullable<RateLimitWindow>[] = []
+
+  for (const window of [primary, secondary]) {
+    if (!window) continue
+    const kind = classifyWindowKind(window)
+    if (kind === 'fiveHour') fiveHour.push(window)
+    else if (kind === 'sevenDay') sevenDay.push(window)
+  }
+
+  if (primary && secondary && fiveHour.length === 0 && sevenDay.length === 0) {
+    return { fiveHour: primary, sevenDay: secondary }
+  }
+  if (primary && !secondary && fiveHour.length === 0 && sevenDay.length === 0) {
+    return { sevenDay: primary }
+  }
+  if (secondary && !primary && fiveHour.length === 0 && sevenDay.length === 0) {
+    return { sevenDay: secondary }
+  }
+
+  return {
+    fiveHour: fiveHour[0],
+    sevenDay: sevenDay[0],
+  }
+}
+
+function classifyWindowKind(
+  window: NonNullable<RateLimitWindow>,
+): 'fiveHour' | 'sevenDay' | 'unknown' {
+  const minutes = window.windowMinutes
+  if (typeof minutes !== 'number' || !Number.isFinite(minutes) || minutes <= 0) return 'unknown'
+  if (minutes <= 24 * 60) return 'fiveHour'
+  return 'sevenDay'
 }
 
 function normalizeWindow(value: unknown): NonNullable<TokenPayload['rateLimits']>['fiveHour'] {

@@ -64,6 +64,8 @@ export interface UpdateAvailableCopy {
   install: string
   openRelease: string
   installing: string
+  downloadingPercent: string
+  downloadingHint: string
   failed: string
 }
 
@@ -148,7 +150,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
     },
     updateAvailable: {
       title: '发现新版本',
-      body: 'CodePulse 已发布新版本。点击立即更新会下载安装包并退出当前应用，安装器会自动打开。',
+      body: 'CodePulse 已发布新版本。点击立即更新会下载安装包（约 70MB），下载完成后会打开安装器并退出当前应用。',
       manualBody:
         'CodePulse 已发布新版本，但当前 Release 没有匹配的 Windows 安装包。你可以先打开发布页查看更新。',
       currentVersion: '当前版本',
@@ -156,7 +158,9 @@ const UI_COPY: Record<Locale, UiCopy> = {
       later: '稍后',
       install: '立即更新',
       openRelease: '打开发布页',
-      installing: '下载并安装中...',
+      installing: '正在下载安装包...',
+      downloadingPercent: '下载中 {percent}%',
+      downloadingHint: '正在从 GitHub 下载安装包，请保持网络畅通',
       failed: '更新失败，请稍后重试。',
     },
     contextStatus: {
@@ -217,7 +221,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
     },
     updateAvailable: {
       title: 'Update available',
-      body: 'A new CodePulse version is available. Update now will download the installer, open it, and quit the current app.',
+      body: 'A new CodePulse version is available. Update now downloads the installer (~70MB), opens it, and quits this app.',
       manualBody:
         'A new CodePulse version is available, but this release has no matching Windows installer. Open the release page to review it.',
       currentVersion: 'Current',
@@ -225,7 +229,9 @@ const UI_COPY: Record<Locale, UiCopy> = {
       later: 'Later',
       install: 'Update now',
       openRelease: 'Open release',
-      installing: 'Downloading...',
+      installing: 'Downloading installer...',
+      downloadingPercent: 'Downloading {percent}%',
+      downloadingHint: 'Downloading the installer from GitHub — keep your network connected',
       failed: 'Update failed. Please try again later.',
     },
     contextStatus: {

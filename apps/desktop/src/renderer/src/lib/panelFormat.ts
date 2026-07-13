@@ -1,5 +1,10 @@
-import type { TokenPayload, TokenRateLimitWindow } from '@codepulse/shared'
+import type { AgentType, TokenPayload, TokenRateLimitWindow } from '@codepulse/shared'
 import type { ContextStatusCopy, PathStatusCopy } from './i18n.js'
+
+/** Codex / Grok 仅展示周额度；Claude Code 仍展示 5 小时 + 周额度。 */
+export function showsFiveHourQuota(agentType: AgentType | undefined): boolean {
+  return agentType === 'claude_code'
+}
 
 export interface ContextWindowStatus {
   usedPercent?: number
@@ -34,14 +39,20 @@ export function formatContextWindowStatus(
   }
 }
 
-export function visibleRateLimitWindows(token: TokenPayload | undefined): {
+export function visibleRateLimitWindows(
+  token: TokenPayload | undefined,
+  agentType?: AgentType,
+): {
   fiveHour?: TokenRateLimitWindow
   sevenDay?: TokenRateLimitWindow
 } {
   const rateLimits = token?.rateLimits
   if (!rateLimits) return {}
 
-  const windows = [rateLimits.fiveHour, rateLimits.sevenDay].filter(Boolean)
+  const includeFiveHour = showsFiveHourQuota(agentType)
+  const fiveHour = includeFiveHour ? rateLimits.fiveHour : undefined
+  const sevenDay = rateLimits.sevenDay
+  const windows = [fiveHour, sevenDay].filter(Boolean)
   if (windows.length === 0) return {}
 
   const hasDisplayableUsage = windows.some((window) => {
@@ -53,7 +64,10 @@ export function visibleRateLimitWindows(token: TokenPayload | undefined): {
   })
   if (!hasDisplayableUsage) return {}
 
-  return rateLimits
+  return {
+    ...(fiveHour ? { fiveHour } : {}),
+    ...(sevenDay ? { sevenDay } : {}),
+  }
 }
 
 export function formatWorkspaceLocation(

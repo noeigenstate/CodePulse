@@ -28,6 +28,7 @@ import { formatDuration, formatRelative, turnStateStyle } from './lib/format.js'
 import {
   formatContextWindowStatus,
   formatProjectDirectoryBadge,
+  showsFiveHourQuota,
   visibleRateLimitWindows,
 } from './lib/panelFormat.js'
 import { formatQuotaReset } from './lib/quotaFormat.js'
@@ -55,6 +56,7 @@ export function App(): JSX.Element {
     agentCheckId,
     updateInfo,
     updateInstalling,
+    updateProgress,
     updateError,
     init,
     ack,
@@ -97,7 +99,6 @@ export function App(): JSX.Element {
   return (
     <div className="app-shell flex h-full flex-col text-slate-950">
       <Header
-        overall={snapshot.overall}
         locale={locale}
         muted={muted}
         onToggleLocale={toggleLocale}
@@ -134,6 +135,7 @@ export function App(): JSX.Element {
           copy={copy}
           error={updateError}
           installing={updateInstalling}
+          progress={updateProgress}
           onDismiss={dismissUpdate}
           onInstall={installUpdate}
           update={updateInfo}
@@ -147,6 +149,7 @@ function UpdateAvailableModal({
   copy,
   update,
   installing,
+  progress,
   error,
   onDismiss,
   onInstall,
@@ -154,12 +157,26 @@ function UpdateAvailableModal({
   copy: UiCopy
   update: UpdateInfo
   installing: boolean
+  progress: { received: number; total?: number; percent?: number } | undefined
   error: string | undefined
   onDismiss: () => void
   onInstall: () => void
 }): JSX.Element {
   const updateCopy = copy.updateAvailable
   const actionText = update.installable ? updateCopy.install : updateCopy.openRelease
+  const installingLabel =
+    installing && typeof progress?.percent === 'number'
+      ? updateCopy.downloadingPercent.replace('{percent}', String(progress.percent))
+      : installing
+        ? updateCopy.installing
+        : actionText
+  const progressWidth =
+    installing && typeof progress?.percent === 'number'
+      ? `${Math.min(100, Math.max(2, progress.percent))}%`
+      : installing
+        ? '18%'
+        : '0%'
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/18 px-4 backdrop-blur-sm">
       <section
@@ -194,6 +211,25 @@ function UpdateAvailableModal({
           </div>
         </div>
 
+        {installing && (
+          <div className="mt-3">
+            <div className="mb-1.5 flex items-center justify-between gap-2 text-xs text-slate-500">
+              <span>{updateCopy.downloadingHint}</span>
+              {typeof progress?.percent === 'number' && (
+                <span className="font-semibold text-slate-700">{progress.percent}%</span>
+              )}
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-slate-200/80 ring-1 ring-white/80">
+              <div
+                className={`h-full rounded-full bg-emerald-500 transition-[width] duration-200 ${
+                  typeof progress?.percent === 'number' ? '' : 'animate-pulse'
+                }`}
+                style={{ width: progressWidth }}
+              />
+            </div>
+          </div>
+        )}
+
         {error && (
           <p className="mt-3 rounded-xl border border-red-200/70 bg-red-50/80 px-3 py-2 text-sm leading-6 text-red-700">
             {updateCopy.failed} {error}
@@ -213,7 +249,7 @@ function UpdateAvailableModal({
             disabled={installing}
             onClick={onInstall}
           >
-            {installing ? updateCopy.installing : actionText}
+            {installingLabel}
           </button>
         </div>
       </section>
@@ -400,7 +436,12 @@ const AgentPanelView = memo(function AgentPanelView({
             />
           </div>
         </div>
-        <PanelQuotaMeter token={panel.quotaToken} locale={locale} copy={copy} />
+        <PanelQuotaMeter
+          agentType={panel.agentType}
+          token={panel.quotaToken}
+          locale={locale}
+          copy={copy}
+        />
       </div>
       <div className="agent-project-list grid min-h-0 flex-1 content-start gap-2 overflow-y-auto pr-1">
         {panel.workspaces.map((item) => (
@@ -534,29 +575,40 @@ const ProjectTile = memo(function ProjectTile({
 })
 
 function PanelQuotaMeter({
+  agentType,
   token,
   locale,
   copy,
 }: {
+  agentType: AgentType
   token: TokenPayload | undefined
   locale: Locale
   copy: UiCopy
 }): JSX.Element {
   const now = useNow()
-  const { fiveHour, sevenDay } = visibleRateLimitWindows(token)
+  const { fiveHour, sevenDay } = visibleRateLimitWindows(token, agentType)
   const hasQuota = Boolean(fiveHour ?? sevenDay)
   const bucket = quotaBucketLabel(token)
+  const showFiveHour = showsFiveHourQuota(agentType)
 
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
-      <TokenMeter
-        label={copy.fiveHourQuota}
-        percent={fiveHour?.usedPercent}
-        detail={quotaDetail(
-          hasQuota ? formatQuotaReset(fiveHour?.resetsAt, now, locale) : copy.waitingQuota,
-          bucket,
-        )}
-      />
+    <div
+      className={
+        showFiveHour
+          ? 'grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2'
+          : 'grid grid-cols-1 gap-2'
+      }
+    >
+      {showFiveHour && (
+        <TokenMeter
+          label={copy.fiveHourQuota}
+          percent={fiveHour?.usedPercent}
+          detail={quotaDetail(
+            hasQuota ? formatQuotaReset(fiveHour?.resetsAt, now, locale) : copy.waitingQuota,
+            bucket,
+          )}
+        />
+      )}
       <TokenMeter
         label={copy.weeklyQuota}
         percent={sevenDay?.usedPercent}

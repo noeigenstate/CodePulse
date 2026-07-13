@@ -1,19 +1,25 @@
 import { createWriteStream } from 'node:fs'
-import { mkdir, stat, unlink } from 'node:fs/promises'
-import { get as httpGet } from 'node:http'
-import { get as httpsGet } from 'node:https'
+import { mkdir, open, rename, stat, unlink } from 'node:fs/promises'
+import { request as httpRequest, type IncomingMessage } from 'node:http'
+import { request as httpsRequest } from 'node:https'
+import { Agent as HttpAgent } from 'node:http'
+import { Agent as HttpsAgent } from 'node:https'
 import { join } from 'node:path'
 import { URL } from 'node:url'
-import type { IncomingMessage } from 'node:http'
 import type { UpdateInfo } from '@codepulse/shared'
 
 const LATEST_RELEASE_URL = 'https://api.github.com/repos/noeigenstate/CodePulse/releases/latest'
+const USER_AGENT = 'CodePulse-Desktop'
 const MAX_REDIRECTS = 8
 /** Idle socket timeout while waiting for headers / next chunk. */
 const REQUEST_IDLE_TIMEOUT_MS = 30_000
 /** Absolute ceiling for a full installer download (~70MB over slow links). */
 const DOWNLOAD_HARD_TIMEOUT_MS = 15 * 60_000
-const USER_AGENT = 'CodePulse-Desktop'
+/** Use multi-connection downloads above this size. */
+const PARALLEL_MIN_BYTES = 4 * 1024 * 1024
+const PARALLEL_CONNECTIONS = 6
+/** How long to wait when racing mirrors for the first usable probe. */
+const MIRROR_RACE_MS = 4_000
 
 export interface DownloadProgress {
   received: number
@@ -33,6 +39,23 @@ interface ReleasePayload {
   html_url?: unknown
   assets?: unknown
 }
+
+interface ProbeResult {
+  url: string
+  total?: number
+  acceptRanges: boolean
+}
+
+const httpAgent = new HttpAgent({
+  keepAlive: true,
+  maxSockets: PARALLEL_CONNECTIONS + 2,
+  keepAliveMsecs: 15_000,
+})
+const httpsAgent = new HttpsAgent({
+  keepAlive: true,
+  maxSockets: PARALLEL_CONNECTIONS + 2,
+  keepAliveMsecs: 15_000,
+})
 
 export async function checkForUpdate(currentVersion: string): Promise<UpdateInfo | null> {
   const release = await requestJson(LATEST_RELEASE_URL)
@@ -82,6 +105,43 @@ export function isNewerVersion(latestVersion: string, currentVersion: string): b
   return compareVersions(latestVersion, currentVersion) > 0
 }
 
+/**
+ * Candidate download URLs: official GitHub first, then common acceleration
+ * proxies (helpful when github.com is slow).
+ */
+export function buildDownloadCandidates(installerUrl: string): string[] {
+  const original = installerUrl.trim()
+  if (!original) return []
+  const candidates = [original]
+  if (/^https:\/\/(github\.com|objects\.githubusercontent\.com)\//i.test(original)) {
+    candidates.push(
+      `https://ghfast.top/${original}`,
+      `https://gh-proxy.com/${original}`,
+      `https://mirror.ghproxy.com/${original}`,
+    )
+  }
+  return [...new Set(candidates)]
+}
+
+/** Split a file into contiguous byte ranges for parallel download. */
+export function planByteRanges(
+  total: number,
+  connections = PARALLEL_CONNECTIONS,
+): Array<{ start: number; end: number }> {
+  if (total <= 0) return []
+  // Aim for the requested connection count, but avoid tiny ranges under 256KB.
+  const parts = Math.max(1, Math.min(connections, Math.ceil(total / (256 * 1024))))
+  const chunk = Math.ceil(total / parts)
+  const ranges: Array<{ start: number; end: number }> = []
+  for (let i = 0; i < parts; i++) {
+    const start = i * chunk
+    if (start >= total) break
+    const end = Math.min(total - 1, start + chunk - 1)
+    ranges.push({ start, end })
+  }
+  return ranges
+}
+
 export async function downloadInstaller(
   update: UpdateInfo,
   directory: string,
@@ -93,10 +153,401 @@ export async function downloadInstaller(
 
   await mkdir(directory, { recursive: true })
   const destination = join(directory, sanitizeInstallerName(update.installerName))
-  // Always re-download so a partial/corrupt previous attempt cannot hang install.
+  const candidates = buildDownloadCandidates(update.installerUrl)
+
+  const probe = await pickDownloadSource(candidates)
+  if (await isCompleteCachedFile(destination, probe.total)) {
+    onProgress?.({
+      received: probe.total ?? 0,
+      total: probe.total,
+      percent: 100,
+    })
+    return destination
+  }
+
   await unlink(destination).catch(() => undefined)
-  await downloadFile(update.installerUrl, destination, onProgress)
+  await downloadWithHardTimeout(probe, destination, onProgress)
+  await verifyDownloadedFile(destination, probe.total)
   return destination
+}
+
+/**
+ * Race mirrors for the first healthy probe. Falls back to sequential tries.
+ */
+export async function pickDownloadSource(candidates: string[]): Promise<ProbeResult> {
+  if (candidates.length === 0) throw new Error('No download candidates.')
+  if (candidates.length === 1) return probeUrl(candidates[0]!)
+
+  const controllers = candidates.map(() => new AbortController())
+  const race = Promise.any(
+    candidates.map(async (url, index) => {
+      const result = await probeUrl(url, controllers[index]!.signal)
+      for (const controller of controllers) controller.abort()
+      return result
+    }),
+  )
+
+  try {
+    return await Promise.race([
+      race,
+      sleep(MIRROR_RACE_MS).then(() => {
+        throw new Error('mirror-race-timeout')
+      }),
+    ])
+  } catch {
+    for (const controller of controllers) controller.abort()
+    let lastError: unknown
+    for (const url of candidates) {
+      try {
+        return await probeUrl(url)
+      } catch (error) {
+        lastError = error
+      }
+    }
+    throw lastError instanceof Error
+      ? lastError
+      : new Error(`Failed to probe installer download sources: ${String(lastError)}`)
+  }
+}
+
+async function downloadWithHardTimeout(
+  probe: ProbeResult,
+  destination: string,
+  onProgress?: DownloadProgressListener,
+): Promise<void> {
+  let timer: NodeJS.Timeout | undefined
+  try {
+    await Promise.race([
+      downloadFromProbe(probe, destination, onProgress),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(
+            new Error(`Download timed out after ${DOWNLOAD_HARD_TIMEOUT_MS / 1000}s: ${probe.url}`),
+          )
+        }, DOWNLOAD_HARD_TIMEOUT_MS)
+        timer.unref?.()
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+async function downloadFromProbe(
+  probe: ProbeResult,
+  destination: string,
+  onProgress?: DownloadProgressListener,
+): Promise<void> {
+  const total = probe.total
+  if (probe.acceptRanges && typeof total === 'number' && total >= PARALLEL_MIN_BYTES) {
+    await downloadParallel(probe.url, destination, total, onProgress)
+    return
+  }
+  await downloadSingle(probe.url, destination, onProgress, total)
+}
+
+async function probeUrl(url: string, signal?: AbortSignal): Promise<ProbeResult> {
+  try {
+    const head = await openResponse(url, { ...downloadHeaders() }, MAX_REDIRECTS, 'HEAD', signal)
+    head.resume()
+    await onceEnd(head)
+    if ((head.statusCode ?? 0) >= 200 && (head.statusCode ?? 0) < 300) {
+      return {
+        url,
+        total: parseContentLength(head.headers['content-length']),
+        acceptRanges: supportsRanges(head.headers['accept-ranges'], head.headers['content-length']),
+      }
+    }
+  } catch {
+    // fall through
+  }
+
+  const response = await openResponse(
+    url,
+    { ...downloadHeaders(), Range: 'bytes=0-0' },
+    MAX_REDIRECTS,
+    'GET',
+    signal,
+  )
+  response.resume()
+  await onceEnd(response)
+
+  if (response.statusCode !== 200 && response.statusCode !== 206) {
+    throw new Error(`Probe failed with HTTP ${response.statusCode}: ${url}`)
+  }
+
+  const total =
+    parseContentRangeTotal(response.headers['content-range']) ??
+    parseContentLength(response.headers['content-length'])
+
+  return {
+    url,
+    total,
+    acceptRanges:
+      response.statusCode === 206 ||
+      supportsRanges(response.headers['accept-ranges'], response.headers['content-length']),
+  }
+}
+
+async function downloadParallel(
+  url: string,
+  destination: string,
+  total: number,
+  onProgress?: DownloadProgressListener,
+): Promise<void> {
+  const ranges = planByteRanges(total, PARALLEL_CONNECTIONS)
+  const partPaths = ranges.map((_, index) => `${destination}.part${index}`)
+  const receivedByPart = ranges.map(() => 0)
+
+  const report = (): void => {
+    if (!onProgress) return
+    const received = receivedByPart.reduce((sum, value) => sum + value, 0)
+    onProgress({
+      received,
+      total,
+      percent: Math.min(100, Math.round((received / total) * 100)),
+    })
+  }
+
+  try {
+    await Promise.all(
+      ranges.map(async (range, index) => {
+        await downloadRangeToFile(url, partPaths[index]!, range.start, range.end, (delta) => {
+          receivedByPart[index] = delta
+          report()
+        })
+      }),
+    )
+
+    const handle = await open(destination, 'w')
+    try {
+      for (const partPath of partPaths) {
+        const part = await open(partPath, 'r')
+        try {
+          const buffer = Buffer.alloc(64 * 1024)
+          while (true) {
+            const { bytesRead } = await part.read(buffer, 0, buffer.length, null)
+            if (bytesRead <= 0) break
+            await handle.write(buffer, 0, bytesRead)
+          }
+        } finally {
+          await part.close()
+        }
+      }
+    } finally {
+      await handle.close()
+    }
+  } catch (error) {
+    await unlink(destination).catch(() => undefined)
+    throw error
+  } finally {
+    await Promise.all(partPaths.map((partPath) => unlink(partPath).catch(() => undefined)))
+  }
+
+  report()
+}
+
+async function downloadRangeToFile(
+  url: string,
+  path: string,
+  start: number,
+  end: number,
+  onBytes: (receivedInPart: number) => void,
+): Promise<void> {
+  const expected = end - start + 1
+  const response = await openResponse(
+    url,
+    { ...downloadHeaders(), Range: `bytes=${start}-${end}` },
+    MAX_REDIRECTS,
+    'GET',
+  )
+
+  if (response.statusCode !== 206 && response.statusCode !== 200) {
+    response.resume()
+    throw new Error(`Range download failed with HTTP ${response.statusCode}: ${url}`)
+  }
+
+  await writeResponseToFile(response, path, (received) => onBytes(received))
+
+  const info = await stat(path)
+  if (response.statusCode === 206 && info.size !== expected) {
+    await unlink(path).catch(() => undefined)
+    throw new Error(`Range size mismatch for ${url} (${info.size} != ${expected})`)
+  }
+}
+
+async function downloadSingle(
+  url: string,
+  destination: string,
+  onProgress?: DownloadProgressListener,
+  knownTotal?: number,
+): Promise<void> {
+  const tempPath = `${destination}.download`
+  await unlink(tempPath).catch(() => undefined)
+
+  const response = await openResponse(url, downloadHeaders(), MAX_REDIRECTS, 'GET')
+  if ((response.statusCode ?? 0) < 200 || (response.statusCode ?? 0) >= 300) {
+    response.resume()
+    throw new Error(`Download failed with HTTP ${response.statusCode}: ${url}`)
+  }
+
+  const total = knownTotal ?? parseContentLength(response.headers['content-length'])
+  await writeResponseToFile(response, tempPath, (received) => {
+    if (!onProgress) return
+    const percent =
+      total && total > 0 ? Math.min(100, Math.round((received / total) * 100)) : undefined
+    onProgress({ received, total, percent })
+  })
+  await rename(tempPath, destination)
+}
+
+function writeResponseToFile(
+  response: IncomingMessage,
+  path: string,
+  onBytes: (received: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const file = createWriteStream(path)
+    let received = 0
+    let settled = false
+
+    const fail = (error: Error) => {
+      if (settled) return
+      settled = true
+      response.destroy()
+      file.destroy()
+      void unlink(path).catch(() => undefined)
+      reject(error)
+    }
+
+    response.on('data', (chunk: Buffer) => {
+      received += chunk.length
+      onBytes(received)
+    })
+    response.on('error', (err) => fail(err instanceof Error ? err : new Error(String(err))))
+    response.on('aborted', () => fail(new Error('Download aborted')))
+
+    file.on('error', (err) => fail(err instanceof Error ? err : new Error(String(err))))
+    file.on('finish', () => {
+      if (settled) return
+      settled = true
+      resolve()
+    })
+
+    response.pipe(file)
+  })
+}
+
+function openResponse(
+  url: string,
+  headers: Record<string, string>,
+  redirects: number,
+  method: 'GET' | 'HEAD',
+  signal?: AbortSignal,
+): Promise<IncomingMessage> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error('Aborted'))
+      return
+    }
+
+    const parsed = new URL(url)
+    const isHttps = parsed.protocol === 'https:'
+    const request = isHttps ? httpsRequest : httpRequest
+    const agent = isHttps ? httpsAgent : httpAgent
+
+    const req = request(
+      {
+        protocol: parsed.protocol,
+        hostname: parsed.hostname,
+        port: parsed.port || (isHttps ? 443 : 80),
+        path: `${parsed.pathname}${parsed.search}`,
+        method,
+        headers,
+        agent,
+      },
+      (response) => {
+        const statusCode = response.statusCode ?? 0
+        const location = response.headers.location
+
+        if (statusCode >= 300 && statusCode < 400 && location) {
+          response.resume()
+          if (redirects <= 0) {
+            reject(new Error(`Too many redirects while requesting ${url}`))
+            return
+          }
+          const redirected = new URL(location, parsed).toString()
+          openResponse(redirected, headers, redirects - 1, method, signal).then(resolve, reject)
+          return
+        }
+
+        resolve(response)
+      },
+    )
+
+    const onAbort = (): void => {
+      req.destroy(new Error('Aborted'))
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+
+    req.setTimeout(REQUEST_IDLE_TIMEOUT_MS, () => {
+      req.destroy(
+        new Error(`Request timed out after ${REQUEST_IDLE_TIMEOUT_MS / 1000}s idle: ${url}`),
+      )
+    })
+    req.on('error', (error) => {
+      signal?.removeEventListener('abort', onAbort)
+      reject(error)
+    })
+    req.end()
+  })
+}
+
+function onceEnd(stream: IncomingMessage): Promise<void> {
+  return new Promise((resolve, reject) => {
+    stream.on('end', () => resolve())
+    stream.on('error', reject)
+    // HEAD responses may end immediately with no body.
+    if (stream.complete) resolve()
+  })
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms)
+    timer.unref?.()
+  })
+}
+
+async function isCompleteCachedFile(
+  path: string,
+  expectedSize: number | undefined,
+): Promise<boolean> {
+  try {
+    const info = await stat(path)
+    if (info.size < 1_000_000) return false
+    if (expectedSize != null && expectedSize > 0) return info.size === expectedSize
+    return info.size > 1_000_000
+  } catch {
+    return false
+  }
+}
+
+async function verifyDownloadedFile(path: string, expectedSize: number | undefined): Promise<void> {
+  const info = await stat(path)
+  if (info.size <= 0) {
+    throw new Error('Downloaded installer is empty.')
+  }
+  if (info.size < 1_000_000) {
+    throw new Error(
+      `Downloaded installer is unexpectedly small (${info.size} bytes). The download may have failed.`,
+    )
+  }
+  if (expectedSize != null && expectedSize > 0 && info.size !== expectedSize) {
+    throw new Error(
+      `Downloaded installer size mismatch (got ${info.size}, expected ${expectedSize}).`,
+    )
+  }
 }
 
 function asReleasePayload(value: unknown): ReleasePayload | null {
@@ -141,175 +592,61 @@ function sanitizeInstallerName(name: string): string {
 }
 
 async function requestJson(url: string): Promise<unknown> {
-  const text = await requestText(url, {
-    Accept: 'application/vnd.github+json',
-    'User-Agent': USER_AGENT,
-    'X-GitHub-Api-Version': '2022-11-28',
-  })
+  const response = await openResponse(
+    url,
+    {
+      Accept: 'application/vnd.github+json',
+      'User-Agent': USER_AGENT,
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+    5,
+    'GET',
+  )
+  const text = await readResponseText(response)
+  if ((response.statusCode ?? 0) < 200 || (response.statusCode ?? 0) >= 300) {
+    throw new Error(`Request failed with HTTP ${response.statusCode}: ${url}`)
+  }
   return JSON.parse(text) as unknown
 }
 
-function requestText(
-  url: string,
-  headers: Record<string, string>,
-  redirects = MAX_REDIRECTS,
-): Promise<string> {
+function readResponseText(response: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
-    openResponse(url, headers, redirects)
-      .then((response) => {
-        const chunks: Buffer[] = []
-        response.on('data', (chunk: Buffer) => chunks.push(chunk))
-        response.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
-        response.on('error', reject)
-      })
-      .catch(reject)
+    const chunks: Buffer[] = []
+    response.on('data', (chunk: Buffer) => chunks.push(chunk))
+    response.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
+    response.on('error', reject)
   })
-}
-
-function downloadFile(
-  url: string,
-  destination: string,
-  onProgress?: DownloadProgressListener,
-  redirects = MAX_REDIRECTS,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    let settled = false
-    let received = 0
-    let hardTimer: NodeJS.Timeout | undefined
-    let file: ReturnType<typeof createWriteStream> | undefined
-
-    const fail = (error: Error) => {
-      if (settled) return
-      settled = true
-      if (hardTimer) clearTimeout(hardTimer)
-      file?.destroy()
-      void unlink(destination).catch(() => undefined)
-      reject(error)
-    }
-
-    const succeed = () => {
-      if (settled) return
-      settled = true
-      if (hardTimer) clearTimeout(hardTimer)
-      resolve()
-    }
-
-    hardTimer = setTimeout(() => {
-      fail(new Error(`Download timed out after ${DOWNLOAD_HARD_TIMEOUT_MS / 1000}s: ${url}`))
-    }, DOWNLOAD_HARD_TIMEOUT_MS)
-    hardTimer.unref?.()
-
-    openResponse(url, downloadHeaders(), redirects)
-      .then((response) => {
-        const total = contentLength(response)
-        file = createWriteStream(destination)
-
-        file.on('error', (err) => fail(err instanceof Error ? err : new Error(String(err))))
-        file.on('finish', () => {
-          file?.close((closeError) => {
-            if (closeError) {
-              fail(closeError)
-              return
-            }
-            void verifyDownloadedFile(destination, total).then(succeed, fail)
-          })
-        })
-
-        response.on('error', (err) => fail(err instanceof Error ? err : new Error(String(err))))
-        response.on('data', (chunk: Buffer) => {
-          received += chunk.length
-          if (!onProgress) return
-          const percent =
-            total && total > 0 ? Math.min(100, Math.round((received / total) * 100)) : undefined
-          onProgress({ received, total, percent })
-        })
-        response.on('aborted', () => fail(new Error(`Download aborted: ${url}`)))
-
-        response.pipe(file)
-      })
-      .catch((error: unknown) => {
-        fail(error instanceof Error ? error : new Error(String(error)))
-      })
-  })
-}
-
-async function verifyDownloadedFile(path: string, expectedSize: number | undefined): Promise<void> {
-  const info = await stat(path)
-  if (info.size <= 0) {
-    throw new Error('Downloaded installer is empty.')
-  }
-  // Installers are tens of MB; a few KB body is almost always an HTML/JSON error page.
-  if (info.size < 1_000_000) {
-    throw new Error(
-      `Downloaded installer is unexpectedly small (${info.size} bytes). The download may have failed.`,
-    )
-  }
-  if (expectedSize != null && expectedSize > 0 && info.size !== expectedSize) {
-    throw new Error(
-      `Downloaded installer size mismatch (got ${info.size}, expected ${expectedSize}).`,
-    )
-  }
-}
-
-function contentLength(response: IncomingMessage): number | undefined {
-  const raw = response.headers['content-length']
-  if (!raw) return undefined
-  const value = Number(raw)
-  return Number.isFinite(value) && value > 0 ? value : undefined
 }
 
 function downloadHeaders(): Record<string, string> {
   return {
-    // Avoid GitHub API JSON Accept when fetching release binaries / CDN redirects.
     Accept: 'application/octet-stream,*/*;q=0.8',
     'User-Agent': USER_AGENT,
   }
 }
 
-function openResponse(
-  url: string,
-  headers: Record<string, string>,
-  redirects: number,
-): Promise<IncomingMessage> {
-  return new Promise((resolve, reject) => {
-    const parsed = new URL(url)
-    const get = parsed.protocol === 'http:' ? httpGet : httpsGet
+function parseContentLength(value: string | string[] | undefined): number | undefined {
+  if (value == null) return undefined
+  const raw = Array.isArray(value) ? value[0] : value
+  const n = Number(raw)
+  return Number.isFinite(n) && n > 0 ? n : undefined
+}
 
-    const req = get(
-      parsed,
-      {
-        headers,
-      },
-      (response) => {
-        const statusCode = response.statusCode ?? 0
-        const location = response.headers.location
+function parseContentRangeTotal(value: string | string[] | undefined): number | undefined {
+  if (value == null) return undefined
+  const raw = Array.isArray(value) ? value[0] : value
+  const match = String(raw).match(/\/(\d+)\s*$/)
+  if (!match) return undefined
+  const n = Number(match[1])
+  return Number.isFinite(n) && n > 0 ? n : undefined
+}
 
-        if (statusCode >= 300 && statusCode < 400 && location) {
-          response.resume()
-          if (redirects <= 0) {
-            reject(new Error(`Too many redirects while requesting ${url}`))
-            return
-          }
-          const redirected = new URL(location, parsed).toString()
-          openResponse(redirected, headers, redirects - 1).then(resolve, reject)
-          return
-        }
-
-        if (statusCode < 200 || statusCode >= 300) {
-          response.resume()
-          reject(new Error(`Request failed with HTTP ${statusCode}: ${url}`))
-          return
-        }
-
-        resolve(response)
-      },
-    )
-
-    req.setTimeout(REQUEST_IDLE_TIMEOUT_MS, () => {
-      req.destroy(
-        new Error(`Request timed out after ${REQUEST_IDLE_TIMEOUT_MS / 1000}s idle: ${url}`),
-      )
-    })
-    req.on('error', reject)
-  })
+function supportsRanges(
+  acceptRanges: string | string[] | undefined,
+  contentLength: string | string[] | undefined,
+): boolean {
+  const value = Array.isArray(acceptRanges) ? acceptRanges.join(',') : acceptRanges
+  if (value && /bytes/i.test(value)) return true
+  // GitHub CDN often omits Accept-Ranges on HEAD but still honors Range.
+  return parseContentLength(contentLength) != null
 }

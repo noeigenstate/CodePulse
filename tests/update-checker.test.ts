@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
+  buildDownloadCandidates,
   buildUpdateInfo,
   compareVersions,
   isNewerVersion,
+  planByteRanges,
 } from '../apps/desktop/src/main/update-checker.js'
 
 test('compareVersions handles multi-digit semver parts', () => {
@@ -107,4 +109,32 @@ test('buildUpdateInfo does not auto-install mismatched installer assets', () => 
   assert.equal(info?.installable, false)
   assert.equal(info?.installerName, undefined)
   assert.equal(info?.installerUrl, undefined)
+})
+
+test('buildDownloadCandidates keeps official URL first and adds GitHub mirrors', () => {
+  const url =
+    'https://github.com/noeigenstate/CodePulse/releases/download/v0.1.9/CodePulse_0.1.9_x64-setup.exe'
+  const candidates = buildDownloadCandidates(url)
+  assert.equal(candidates[0], url)
+  assert.ok(candidates.some((item) => item.includes('ghfast.top')))
+  assert.ok(candidates.some((item) => item.includes('gh-proxy.com')))
+  assert.deepEqual(buildDownloadCandidates('https://example.test/app.exe'), [
+    'https://example.test/app.exe',
+  ])
+})
+
+test('planByteRanges covers the full installer without gaps or overlaps', () => {
+  const total = 1_000_000
+  const ranges = planByteRanges(total, 4)
+  assert.equal(ranges.length, 4)
+  assert.equal(ranges[0]?.start, 0)
+  assert.equal(ranges.at(-1)?.end, total - 1)
+
+  let cursor = 0
+  for (const range of ranges) {
+    assert.equal(range.start, cursor)
+    assert.ok(range.end >= range.start)
+    cursor = range.end + 1
+  }
+  assert.equal(cursor, total)
 })

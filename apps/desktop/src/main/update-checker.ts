@@ -11,15 +11,15 @@ import type { UpdateInfo } from '@codepulse/shared'
 const LATEST_RELEASE_URL = 'https://api.github.com/repos/noeigenstate/CodePulse/releases/latest'
 const USER_AGENT = 'CodePulse-Desktop'
 const MAX_REDIRECTS = 8
-/** Idle socket timeout while waiting for headers / next chunk. */
-const REQUEST_IDLE_TIMEOUT_MS = 30_000
+/** Idle socket timeout while waiting for headers / next chunk (slow links need headroom). */
+const REQUEST_IDLE_TIMEOUT_MS = 120_000
 /** Absolute ceiling for a full installer download (~70MB over slow links). */
-const DOWNLOAD_HARD_TIMEOUT_MS = 15 * 60_000
+const DOWNLOAD_HARD_TIMEOUT_MS = 20 * 60_000
 /** Use multi-connection downloads above this size. */
 const PARALLEL_MIN_BYTES = 4 * 1024 * 1024
 const PARALLEL_CONNECTIONS = 6
 /** How long to wait when racing mirrors for the first usable probe. */
-const MIRROR_RACE_MS = 4_000
+const MIRROR_RACE_MS = 6_000
 
 export interface DownloadProgress {
   received: number
@@ -106,21 +106,24 @@ export function isNewerVersion(latestVersion: string, currentVersion: string): b
 }
 
 /**
- * Candidate download URLs: official GitHub first, then common acceleration
- * proxies (helpful when github.com is slow).
+ * Candidate download URLs.
+ *
+ * Acceleration mirrors are listed **before** official GitHub: direct
+ * github.com / objects.githubusercontent.com downloads often stall or time out
+ * in regions with poor GitHub connectivity. Official URL stays as the last fallback.
  */
 export function buildDownloadCandidates(installerUrl: string): string[] {
   const original = installerUrl.trim()
   if (!original) return []
-  const candidates = [original]
-  if (/^https:\/\/(github\.com|objects\.githubusercontent\.com)\//i.test(original)) {
-    candidates.push(
-      `https://ghfast.top/${original}`,
-      `https://gh-proxy.com/${original}`,
-      `https://mirror.ghproxy.com/${original}`,
-    )
+  if (!/^https:\/\/(github\.com|objects\.githubusercontent\.com)\//i.test(original)) {
+    return [original]
   }
-  return [...new Set(candidates)]
+  return [
+    `https://ghfast.top/${original}`,
+    `https://gh-proxy.com/${original}`,
+    `https://ghproxy.net/${original}`,
+    original,
+  ]
 }
 
 /** Split a file into contiguous byte ranges for parallel download. */
@@ -155,24 +158,47 @@ export async function downloadInstaller(
   const destination = join(directory, sanitizeInstallerName(update.installerName))
   const candidates = buildDownloadCandidates(update.installerUrl)
 
-  const probe = await pickDownloadSource(candidates)
-  if (await isCompleteCachedFile(destination, probe.total)) {
+  // Quick size probe (best-effort) so we can reuse a complete local cache.
+  const quickProbe = await pickDownloadSource(candidates).catch(() => undefined)
+  if (await isCompleteCachedFile(destination, quickProbe?.total)) {
     onProgress?.({
-      received: probe.total ?? 0,
-      total: probe.total,
+      received: quickProbe?.total ?? 0,
+      total: quickProbe?.total,
       percent: 100,
     })
     return destination
   }
 
-  await unlink(destination).catch(() => undefined)
-  await downloadWithHardTimeout(probe, destination, onProgress)
-  await verifyDownloadedFile(destination, probe.total)
-  return destination
+  // Prefer the fastest probe first, then walk remaining candidates if download fails.
+  // Critical: a source that answers HEAD quickly can still time out on the full body.
+  const ordered = await orderCandidatesForDownload(candidates)
+  const errors: string[] = []
+
+  for (const url of ordered) {
+    try {
+      await unlink(destination).catch(() => undefined)
+      const probe = await probeUrl(url)
+      await downloadWithHardTimeout(probe, destination, onProgress)
+      await verifyDownloadedFile(destination, probe.total)
+      return destination
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      errors.push(`${url}: ${message}`)
+      console.error('[codepulse] installer download failed, trying next source', url, message)
+      await unlink(destination).catch(() => undefined)
+      // Clear partial part files from parallel attempts.
+      await cleanupPartFiles(destination)
+    }
+  }
+
+  throw new Error(
+    `All download sources failed. Last errors:\n${errors.slice(-4).join('\n')}\nYou can also open the release page and install manually.`,
+  )
 }
 
 /**
- * Race mirrors for the first healthy probe. Falls back to sequential tries.
+ * Race mirrors for the first healthy probe, then append the remaining candidates
+ * so a successful probe that later fails mid-download is not the only attempt.
  */
 export async function pickDownloadSource(candidates: string[]): Promise<ProbeResult> {
   if (candidates.length === 0) throw new Error('No download candidates.')
@@ -208,6 +234,26 @@ export async function pickDownloadSource(candidates: string[]): Promise<ProbeRes
       ? lastError
       : new Error(`Failed to probe installer download sources: ${String(lastError)}`)
   }
+}
+
+/** Fastest successful probe first; keep remaining candidates as ordered fallbacks. */
+async function orderCandidatesForDownload(candidates: string[]): Promise<string[]> {
+  if (candidates.length <= 1) return candidates
+  try {
+    const winner = await pickDownloadSource(candidates)
+    return [winner.url, ...candidates.filter((url) => url !== winner.url)]
+  } catch {
+    return candidates
+  }
+}
+
+async function cleanupPartFiles(destination: string): Promise<void> {
+  await Promise.all(
+    Array.from({ length: PARALLEL_CONNECTIONS }, (_, index) =>
+      unlink(`${destination}.part${index}`).catch(() => undefined),
+    ),
+  )
+  await unlink(`${destination}.download`).catch(() => undefined)
 }
 
 async function downloadWithHardTimeout(

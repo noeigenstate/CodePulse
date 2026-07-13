@@ -284,6 +284,15 @@ async function installLatestUpdate(): Promise<UpdateInstallResult> {
     } catch {
       // ignore
     }
+    // Offer the release page so users can install manually when GitHub is unreachable.
+    try {
+      const releaseUrl = latestUpdate?.releaseUrl
+      if (releaseUrl && /timed out|All download sources failed|ENOTFOUND|ECONN/i.test(message)) {
+        await shell.openExternal(releaseUrl)
+      }
+    } catch {
+      // ignore
+    }
     return { ok: false, error: message }
   } finally {
     installingUpdate = false

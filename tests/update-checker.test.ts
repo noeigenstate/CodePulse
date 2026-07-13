@@ -111,13 +111,13 @@ test('buildUpdateInfo does not auto-install mismatched installer assets', () => 
   assert.equal(info?.installerUrl, undefined)
 })
 
-test('buildDownloadCandidates keeps official URL first and adds GitHub mirrors', () => {
+test('buildDownloadCandidates prefers GitHub mirrors before official URL', () => {
   const url =
     'https://github.com/noeigenstate/CodePulse/releases/download/v0.1.9/CodePulse_0.1.9_x64-setup.exe'
   const candidates = buildDownloadCandidates(url)
-  assert.equal(candidates[0], url)
-  assert.ok(candidates.some((item) => item.includes('ghfast.top')))
+  assert.ok(candidates[0]?.includes('ghfast.top'))
   assert.ok(candidates.some((item) => item.includes('gh-proxy.com')))
+  assert.equal(candidates.at(-1), url)
   assert.deepEqual(buildDownloadCandidates('https://example.test/app.exe'), [
     'https://example.test/app.exe',
   ])

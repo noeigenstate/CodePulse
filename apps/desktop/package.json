@@ -1,6 +1,6 @@
 {
   "name": "@codepulse/desktop",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "private": true,
   "description": "CodePulse Desktop Electron app",
   "main": "./out/main/index.js",

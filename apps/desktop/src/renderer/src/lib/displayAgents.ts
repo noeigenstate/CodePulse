@@ -142,9 +142,8 @@ export function collectQuotaMeters(
     if (matched.length > 0) {
       meters = matched
     } else {
-      // Avoid showing the wrong family (e.g. Spark bar after switching to gpt-5.6).
-      const familyFiltered = filterMetersByModelFamily(meters, models)
-      if (familyFiltered.length > 0) meters = familyFiltered
+      // Never fall back to the wrong family (e.g. Spark while on gpt-5.6-sol).
+      meters = filterMetersByModelFamily(meters, models)
     }
   }
 
@@ -321,10 +320,49 @@ function quotaCandidatesForAgent(agent: AgentRuntimeState): QuotaCandidate[] {
     .map(([, bucket]) => quotaCandidateFromBucket(agent, token, bucket))
     .filter((candidate): candidate is QuotaCandidate => Boolean(candidate))
 
-  if (bucketCandidates.length > 0) return bucketCandidates
-  return hasVisibleRateLimits(token, agent.agentType)
-    ? [{ agent, token, updatedAt: agent.lastEventAt }]
-    : []
+  const model = agent.model
+  if (bucketCandidates.length > 0) {
+    if (model) {
+      const matched = bucketCandidates.filter((candidate) =>
+        quotaMatchesPreferredModel(candidate.token, model),
+      )
+      if (matched.length > 0) return matched
+
+      // gpt-5.6 / non-Spark must not surface Spark buckets from an earlier turn.
+      const family = bucketCandidates.filter((candidate) =>
+        meterMatchesModelFamily(candidate.token, model),
+      )
+      if (family.length > 0) return family
+
+      // Only Spark data left while model is non-Spark: show weekly numbers without Spark branding.
+      if (!isSparkModel(normalizeModel(model)) && hasVisibleRateLimits(token, agent.agentType)) {
+        return [
+          {
+            agent,
+            token: stripSparkBranding(token),
+            updatedAt: agent.lastEventAt,
+          },
+        ]
+      }
+      return []
+    }
+    return bucketCandidates
+  }
+
+  if (!hasVisibleRateLimits(token, agent.agentType)) return []
+
+  // Single payload without buckets: drop Spark branding when the session model is not Spark.
+  const displayToken =
+    model && !isSparkModel(normalizeModel(model)) && tokenLooksLikeSpark(token)
+      ? stripSparkBranding(token)
+      : token
+  if (model && !quotaMatchesPreferredModel(displayToken, model) && tokenLooksLikeSpark(token)) {
+    // Still Spark-only metadata with a non-Spark model — show neutral weekly bar.
+    return isSparkModel(normalizeModel(model))
+      ? [{ agent, token: displayToken, updatedAt: agent.lastEventAt }]
+      : [{ agent, token: stripSparkBranding(token), updatedAt: agent.lastEventAt }]
+  }
+  return [{ agent, token: displayToken, updatedAt: agent.lastEventAt }]
 }
 
 function quotaCandidateFromBucket(
@@ -332,12 +370,22 @@ function quotaCandidateFromBucket(
   baseToken: TokenPayload,
   bucket: TokenQuotaBucket,
 ): QuotaCandidate | undefined {
+  // Copy usage/context fields but do NOT inherit top-level Spark limit identity
+  // onto a different bucket (undefined bucket name used to leave sticky Spark labels).
+  const {
+    rateLimitId: _ignoreId,
+    rateLimitName: _ignoreName,
+    rateLimits: _ignoreLimits,
+    quotaBuckets: _ignoreBuckets,
+    ...rest
+  } = baseToken
   const token: TokenPayload = {
-    ...baseToken,
-    rateLimitId: bucket.rateLimitId,
-    rateLimitName: bucket.rateLimitName,
+    ...rest,
     rateLimits: bucket.rateLimits,
+    ...(bucket.rateLimitId ? { rateLimitId: bucket.rateLimitId } : {}),
+    ...(bucket.rateLimitName ? { rateLimitName: bucket.rateLimitName } : {}),
   }
+
   if (!hasVisibleRateLimits(token, agent.agentType)) return undefined
   return { agent, token, updatedAt: bucket.updatedAt ?? agent.lastEventAt }
 }
@@ -416,19 +464,46 @@ function quotaMatchesPreferredModel(
   token: TokenPayload | undefined,
   preferredModel: string,
 ): boolean {
+  const preferred = normalizeModel(preferredModel)
+  const preferredSpark = isSparkModel(preferred)
+  const bucketSpark = tokenLooksLikeSpark(token)
+
+  // Hard rule: Spark buckets only for Spark models (and vice versa for default weekly).
+  if (bucketSpark !== preferredSpark) return false
+
   const bucket = normalizeModel(`${token?.rateLimitId ?? ''} ${token?.rateLimitName ?? ''}`)
   if (!bucket) return true
 
-  const preferred = normalizeModel(preferredModel)
-  const preferredSpark = isSparkModel(preferred)
-  const bucketSpark = isSparkQuota(bucket)
-  if (bucketSpark !== preferredSpark && (bucketSpark || isDefaultCodexQuota(bucket))) return false
-
-  const quotaVersion = extractGptVersion(bucket)
-  const preferredVersion = extractGptVersion(preferred)
-  if (quotaVersion && preferredVersion && quotaVersion !== preferredVersion) return false
-
+  // Do not require GPT version equality between model id and quota bucket name —
+  // gpt-5.6-sol uses the shared non-Spark weekly bucket (often unlabeled or "Codex").
   return true
+}
+
+function meterMatchesModelFamily(token: TokenPayload, model: string): boolean {
+  return tokenLooksLikeSpark(token) === isSparkModel(normalizeModel(model))
+}
+
+function tokenLooksLikeSpark(token: TokenPayload | undefined): boolean {
+  if (!token) return false
+  return isSparkQuota(normalizeModel(`${token.rateLimitId ?? ''} ${token.rateLimitName ?? ''}`))
+}
+
+/** Keep usage numbers but remove Spark limit labels for non-Spark sessions. */
+function stripSparkBranding(token: TokenPayload): TokenPayload {
+  const next: TokenPayload = { ...token }
+  delete next.rateLimitId
+  delete next.rateLimitName
+  // Drop Spark-only buckets so they are not re-expanded later.
+  if (next.quotaBuckets) {
+    const kept: NonNullable<TokenPayload['quotaBuckets']> = {}
+    for (const [key, bucket] of Object.entries(next.quotaBuckets)) {
+      const label = normalizeModel(`${bucket.rateLimitId ?? ''} ${bucket.rateLimitName ?? key}`)
+      if (isSparkQuota(label)) continue
+      kept[key] = bucket
+    }
+    next.quotaBuckets = Object.keys(kept).length > 0 ? kept : undefined
+  }
+  return next
 }
 
 function isDefaultCodexQuota(value: string): boolean {

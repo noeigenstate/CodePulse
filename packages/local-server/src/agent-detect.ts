@@ -6,7 +6,7 @@
  */
 import { access, readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { delimiter, join, posix } from 'node:path'
+import { join, posix } from 'node:path'
 import { execFile } from 'node:child_process'
 import type { Agent } from '@codepulse/shared'
 

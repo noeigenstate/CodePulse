@@ -7,7 +7,7 @@
 Know at a glance whether Codex, Claude Code, and Grok are working, waiting on
 you, finished, or stuck — without alt-tabbing back to a terminal.
 
-[![status](https://img.shields.io/badge/status-v0.1%20MVP-orange)](#features)
+[![status](https://img.shields.io/badge/status-v1.0.0-brightgreen)](#features)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue)](#download)
 [![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#development)
@@ -26,13 +26,14 @@ when they need you. CodePulse listens to the lifecycle hooks that Codex, Claude
 Code, and Grok Build already expose, runs every event through a single state
 machine, and surfaces the result three ways:
 
-- 📊 **Live Dashboard** — adaptive per-agent panes (only the CLIs you are using),
-  with per-workspace cards for state, model, elapsed time, context usage, and
-  quota.
+- 📊 **Live Dashboard** — light adaptive panes for Claude Code / Codex / Grok
+  (only the CLIs you are using), with brand colors, project cards, context bars,
+  and quota meters.
 - 🎨 **Color-coded tray icon** — the overall state of every agent, visible at
   all times.
-- 🔔 **Desktop notifications** — concise project-level completion alerts, with
-  throttling and deduplication built in.
+- 🔔 **Desktop notifications** — project-first completion toasts with a short
+  summary of your prompt (≤15 Chinese characters / ≤15 English words), throttled
+  and deduplicated.
 
 Everything runs **100% locally**. The server binds to loopback only, prompts
 are stored as short previews (never in full), and the hooks fail silently when
@@ -40,11 +41,17 @@ CodePulse isn't running — your agents are never blocked or slowed down.
 
 ## Screenshots
 
-![CodePulse dashboard](./docs/screenshots/dashboard.png)
+<p align="center">
+  <img src="./docs/screenshots/dashboard.png" alt="CodePulse dashboard (English)" width="920" />
+</p>
 
-The live dashboard tracks every agent and workspace in real time — state, model,
-elapsed time, context-window usage, and rolling 5-hour / weekly quota. _(Sample
-data shown.)_
+<p align="center">
+  <img src="./docs/screenshots/dashboard-zh.png" alt="CodePulse dashboard (Chinese)" width="920" />
+</p>
+
+Adaptive three-pane console: Claude keeps **5h + weekly** quota meters; Codex
+and Grok show **weekly only**. Each project card surfaces model, elapsed time,
+context window, and state badges. _(Sample data shown.)_
 
 ## Features
 
@@ -53,8 +60,10 @@ data shown.)_
 | 🚦 **Unified state machine**        | One turn lifecycle for every agent: idle → processing → tool running → waiting for permission/input → done / error / cancelled / stuck. |
 | 🧭 **Multi-agent, multi-workspace** | Concurrent Codex, Claude Code, and Grok sessions across projects, each tracked separately.                                              |
 | 🪟 **Adaptive panes**               | Dashboard columns appear only for CLIs that have active tasks (or retained quota) — one CLI, one pane; all three, three panes.          |
+| 🎨 **Light design system**          | Brand-accented agent panels, 6px progress meters, status chips, and a compact footer strip for pane/session sync status.                |
 | 📈 **Context tracking**             | Compact context-window usage from Claude, Codex, and Grok, using exact CLI data when available.                                         |
-| 🎟️ **Quota awareness**              | 5-hour / weekly rate-limit windows per quota bucket, matched to the model you're actually running when the CLI reports them.            |
+| 🎟️ **Quota awareness**              | Claude: 5-hour + weekly windows. Codex / Grok: weekly window only, matched to the model/bucket when the CLI reports it.                 |
+| 🔔 **Glanceable toasts**            | Completion title is the project name; body is a cleaned prompt summary — no CLI branding noise.                                         |
 | 🕰️ **Stuck detection**              | A watchdog flags turns with no activity so silent failures don't burn your afternoon.                                                   |
 | 💾 **Local history**                | Events, sessions, turns, and token snapshots persisted to SQLite — yours to query or delete.                                            |
 | 🔌 **Open local API**               | Plain HTTP + WebSocket on `127.0.0.1:17888` for local integrations.                                                                     |
@@ -147,6 +156,8 @@ curl http://127.0.0.1:17888/api/status
 | 🟠 Orange | Suspected stuck                             |
 
 Notifications are throttled and deduplicated so you're informed, not nagged.
+On completion, the toast title is `{emoji} {project} done` and the body is a
+short summary of the user prompt (Chinese ≤15 characters, English ≤15 words).
 **Mute** (tray or header button) silences sound for 30 minutes; notifications
 still appear, just silently.
 Claude Code's routine "waiting for your input" idle reminder is ignored; yellow

@@ -1,0 +1,763 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CodePulse Dashboard Mock</title>
+    <style>
+      :root {
+        --canvas: #f6f9ff;
+        --ink: #0f172a;
+        --ink-500: #64748b;
+        --ink-700: #334155;
+        --line: #e6ebf5;
+        --claude: #ff8a2b;
+        --codex: #5b6bff;
+        --grok: #17c083;
+        --shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        font-family:
+          Inter,
+          'Segoe UI',
+          system-ui,
+          -apple-system,
+          'PingFang SC',
+          'Microsoft YaHei',
+          'Noto Sans SC',
+          sans-serif;
+        color: var(--ink);
+        background: var(--canvas);
+        -webkit-font-smoothing: antialiased;
+      }
+      body {
+        min-height: 900px;
+      }
+      .app {
+        position: relative;
+        min-height: 900px;
+        display: flex;
+        flex-direction: column;
+        background:
+          radial-gradient(ellipse 80% 50% at 10% -10%, rgba(91, 107, 255, 0.08), transparent 55%),
+          radial-gradient(ellipse 60% 40% at 90% 0%, rgba(23, 192, 131, 0.07), transparent 50%),
+          radial-gradient(ellipse 50% 40% at 50% 100%, rgba(255, 138, 43, 0.06), transparent 55%),
+          var(--canvas);
+      }
+      .app::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        opacity: 0.55;
+        background-image:
+          linear-gradient(rgba(15, 23, 42, 0.035) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(15, 23, 42, 0.035) 1px, transparent 1px);
+        background-size: 32px 32px;
+        mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.55), transparent 88%);
+      }
+      header {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 22px 28px 12px;
+        gap: 24px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        min-width: 0;
+      }
+      .brand img {
+        width: 44px;
+        height: 44px;
+        border-radius: 999px;
+        box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
+      }
+      .brand h1 {
+        margin: 0;
+        font-size: 22px;
+        line-height: 1.25;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+      .brand p {
+        margin: 2px 0 0;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--ink-500);
+      }
+      .controls {
+        display: flex;
+        gap: 10px;
+        flex-shrink: 0;
+      }
+      .chip,
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        height: 40px;
+        padding: 0 14px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.95);
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+        font-size: 13px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #f59e0b;
+      }
+      main {
+        position: relative;
+        z-index: 1;
+        flex: 1;
+        min-height: 0;
+        padding: 8px 20px 12px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+      }
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: var(--shadow);
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-height: 720px;
+      }
+      .panel.claude {
+        box-shadow: var(--shadow), inset 3px 0 0 var(--claude);
+      }
+      .panel.codex {
+        box-shadow: var(--shadow), inset 3px 0 0 var(--codex);
+      }
+      .panel.grok {
+        box-shadow: var(--shadow), inset 3px 0 0 var(--grok);
+      }
+      .panel-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .logo {
+        width: 44px;
+        height: 44px;
+        border-radius: 16px;
+        border: 1px solid var(--line);
+        background: #fff;
+        display: grid;
+        place-items: center;
+        position: relative;
+        box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06);
+        flex-shrink: 0;
+      }
+      .logo.claude {
+        border-color: rgba(255, 138, 43, 0.28);
+        background: linear-gradient(180deg, #fff7ed 0%, #fff 100%);
+      }
+      .logo.codex {
+        border-color: rgba(91, 107, 255, 0.28);
+        background: linear-gradient(180deg, #eef1ff 0%, #fff 100%);
+      }
+      .logo.grok {
+        border-color: rgba(23, 192, 131, 0.28);
+        background: linear-gradient(180deg, #ecfdf5 0%, #fff 100%);
+      }
+      .logo svg {
+        width: 28px;
+        height: 28px;
+      }
+      .status-dot {
+        position: absolute;
+        right: 4px;
+        bottom: 4px;
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        border: 2px solid #fff;
+      }
+      .panel-title {
+        min-width: 0;
+        flex: 1;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+      }
+      .panel-title h2 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 650;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 12px;
+        padding: 4px 10px;
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .badge.blue {
+        background: #eff6ff;
+        color: #1d4ed8;
+        box-shadow: inset 0 0 0 1px #bfdbfe;
+      }
+      .badge.green {
+        background: #ecfdf5;
+        color: #047857;
+        box-shadow: inset 0 0 0 1px #a7f3d0;
+      }
+      .badge.amber {
+        background: #fffbeb;
+        color: #b45309;
+        box-shadow: inset 0 0 0 1px #fde68a;
+      }
+      .metrics {
+        display: grid;
+        grid-template-columns: 70px 90px;
+        gap: 8px;
+        flex-shrink: 0;
+      }
+      .stat {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #f8fafc;
+        padding: 6px 10px;
+        min-width: 0;
+      }
+      .stat label {
+        display: block;
+        font-size: 10px;
+        color: var(--ink-500);
+      }
+      .stat strong {
+        display: block;
+        margin-top: 2px;
+        font-size: 13px;
+        font-weight: 650;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .meters {
+        display: grid;
+        gap: 8px;
+      }
+      .meters.two {
+        grid-template-columns: 1fr 1fr;
+      }
+      .meter {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #f8fafc;
+        padding: 8px 12px;
+      }
+      .meter-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 12px;
+        margin-bottom: 6px;
+      }
+      .meter-top span {
+        color: var(--ink-500);
+        font-weight: 500;
+      }
+      .meter-top strong {
+        font-weight: 650;
+      }
+      .track {
+        height: 6px;
+        border-radius: 999px;
+        background: #eef2f7;
+        overflow: hidden;
+      }
+      .fill {
+        height: 100%;
+        border-radius: 999px;
+      }
+      .fill.claude {
+        background: var(--claude);
+      }
+      .fill.codex {
+        background: var(--codex);
+      }
+      .fill.grok {
+        background: var(--grok);
+      }
+      .fill.warn {
+        background: #f59e0b;
+      }
+      .meter-detail {
+        margin: 6px 0 0;
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--ink-500);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .projects {
+        display: grid;
+        gap: 10px;
+        content: start;
+      }
+      .tile {
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: #fff;
+        box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+        padding: 12px 14px;
+        display: grid;
+        gap: 10px;
+      }
+      .tile-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+      }
+      .title-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+      .title-row .pd {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        flex-shrink: 0;
+      }
+      .title-row h3 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 650;
+        white-space: nowrap;
+      }
+      .path {
+        display: inline-flex;
+        max-width: 140px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: #f8fafc;
+        color: var(--ink-500);
+        font-size: 12px;
+        font-weight: 500;
+        padding: 5px 10px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .tile-actions {
+        display: flex;
+        gap: 6px;
+        flex-shrink: 0;
+      }
+      .fields {
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+        gap: 8px;
+      }
+      footer {
+        position: relative;
+        z-index: 1;
+        border-top: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.72);
+        color: var(--ink-500);
+        font-size: 12px;
+        display: flex;
+        justify-content: space-between;
+        padding: 10px 28px;
+      }
+      .bg-blue {
+        background: #3b82f6;
+      }
+      .bg-amber {
+        background: #f59e0b;
+      }
+      .bg-green {
+        background: #10b981;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app" id="app">
+      <header>
+        <div class="brand">
+          <img src="./icon.png" alt="" />
+          <div>
+            <h1>CodePulse</h1>
+            <p data-i18n="subtitle">编程助手实时控制台</p>
+          </div>
+        </div>
+        <div class="controls">
+          <span class="chip"><span class="dot"></span><span data-i18n="overall">需要介入</span></span>
+          <span class="btn" data-i18n="lang">英文</span>
+          <span class="btn" data-i18n="mute">静音 30 分钟</span>
+        </div>
+      </header>
+      <main>
+        <!-- Claude -->
+        <section class="panel claude">
+          <div class="panel-head">
+            <div class="logo claude">
+              <svg viewBox="0 0 24 24">
+                <path
+                  fill="#D97757"
+                  fill-rule="evenodd"
+                  d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z"
+                />
+              </svg>
+              <span class="status-dot bg-blue"></span>
+            </div>
+            <div class="panel-title">
+              <h2>Claude Code</h2>
+              <span class="badge blue" data-i18n="usingTools">执行工具</span>
+            </div>
+            <div class="metrics">
+              <div class="stat">
+                <label data-i18n="projects">项目</label>
+                <strong>2</strong>
+              </div>
+              <div class="stat">
+                <label data-i18n="recent">最近</label>
+                <strong data-i18n="ago9s">9 秒前</strong>
+              </div>
+            </div>
+          </div>
+          <div class="meters two">
+            <div class="meter">
+              <div class="meter-top">
+                <span data-i18n="fiveHour">5 小时额度</span>
+                <strong>29%</strong>
+              </div>
+              <div class="track"><div class="fill claude" style="width: 29%"></div></div>
+              <p class="meter-detail" data-i18n="refreshClaude5h">刷新 2 小时 44 分</p>
+            </div>
+            <div class="meter">
+              <div class="meter-top">
+                <span data-i18n="weekly">每周额度</span>
+                <strong>3%</strong>
+              </div>
+              <div class="track"><div class="fill claude" style="width: 3%"></div></div>
+              <p class="meter-detail" data-i18n="refreshClaudeWeek">刷新 3 小时 39 分</p>
+            </div>
+          </div>
+          <div class="projects">
+            <article class="tile">
+              <div class="tile-top">
+                <div class="title-row">
+                  <span class="pd bg-blue"></span>
+                  <h3>web-dashboard</h3>
+                  <span class="path">… / dev / code</span>
+                </div>
+                <div class="tile-actions">
+                  <span class="badge blue" data-i18n="usingTools">执行工具</span>
+                </div>
+              </div>
+              <div class="fields">
+                <div class="stat">
+                  <label data-i18n="model">模型</label>
+                  <strong>Claude Opus 4.6</strong>
+                </div>
+                <div class="stat">
+                  <label data-i18n="elapsed">耗时</label>
+                  <strong data-i18n="elapsed1">2 分 31 秒</strong>
+                </div>
+              </div>
+              <div class="meter">
+                <div class="meter-top">
+                  <span data-i18n="context">上下文窗口：</span>
+                  <strong data-i18n="ctx1">79% 剩余 (210K 已用 / 1M)</strong>
+                </div>
+                <div class="track"><div class="fill claude" style="width: 21%"></div></div>
+              </div>
+            </article>
+            <article class="tile">
+              <div class="tile-top">
+                <div class="title-row">
+                  <span class="pd bg-amber"></span>
+                  <h3>mobile-app</h3>
+                  <span class="path">… / dev / code</span>
+                </div>
+                <div class="tile-actions">
+                  <span class="badge amber" data-i18n="waitingInput">等待输入</span>
+                </div>
+              </div>
+              <div class="fields">
+                <div class="stat">
+                  <label data-i18n="model">模型</label>
+                  <strong>Claude Sonnet 4.5</strong>
+                </div>
+                <div class="stat">
+                  <label data-i18n="elapsed">耗时</label>
+                  <strong data-i18n="elapsed2">1 分 36 秒</strong>
+                </div>
+              </div>
+              <div class="meter">
+                <div class="meter-top">
+                  <span data-i18n="context">上下文窗口：</span>
+                  <strong data-i18n="ctx2">48% 剩余 (520K 已用 / 1M)</strong>
+                </div>
+                <div class="track"><div class="fill claude" style="width: 52%"></div></div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <!-- Codex -->
+        <section class="panel codex">
+          <div class="panel-head">
+            <div class="logo codex">
+              <svg viewBox="0 0 24 24">
+                <defs>
+                  <linearGradient id="cg" x1="12" x2="12" y1="0" y2="24" gradientUnits="userSpaceOnUse">
+                    <stop stop-color="#B1A7FF" />
+                    <stop offset=".5" stop-color="#7A9DFF" />
+                    <stop offset="1" stop-color="#3941FF" />
+                  </linearGradient>
+                </defs>
+                <path
+                  fill="url(#cg)"
+                  d="M8.086.457a6.105 6.105 0 013.046-.415c1.333.153 2.521.72 3.564 1.7a.117.117 0 00.107.029c1.408-.346 2.762-.224 4.061.366l.063.03.154.076c1.357.703 2.33 1.77 2.918 3.198.278.679.418 1.388.421 2.126a5.655 5.655 0 01-.18 1.631.167.167 0 00.04.155 5.982 5.982 0 011.578 2.891c.385 1.901-.01 3.615-1.183 5.14l-.182.22a6.063 6.063 0 01-2.934 1.851.162.162 0 00-.108.102c-.255.736-.511 1.364-.987 1.992-1.199 1.582-2.962 2.462-4.948 2.451-1.583-.008-2.986-.587-4.21-1.736a.145.145 0 00-.14-.032c-.518.167-1.04.191-1.604.185a5.924 5.924 0 01-2.595-.622 6.058 6.058 0 01-2.146-1.781c-.203-.269-.404-.522-.551-.821a7.74 7.74 0 01-.495-1.283 6.11 6.11 0 01-.017-3.064.166.166 0 00.008-.074.115.115 0 00-.037-.064 5.958 5.958 0 01-1.38-2.202 5.196 5.196 0 01-.333-1.589 6.915 6.915 0 01.188-2.132c.45-1.484 1.309-2.648 2.577-3.493.282-.188.55-.334.802-.438.286-.12.573-.22.861-.304a.129.129 0 00.087-.087A6.016 6.016 0 015.635 2.31C6.315 1.464 7.132.846 8.086.457zm-.804 7.85a.848.848 0 00-1.473.842l1.694 2.965-1.688 2.848a.849.849 0 001.46.864l1.94-3.272a.849.849 0 00.007-.854l-1.94-3.393zm5.446 6.24a.849.849 0 000 1.695h4.848a.849.849 0 000-1.696h-4.848z"
+                />
+              </svg>
+              <span class="status-dot bg-green"></span>
+            </div>
+            <div class="panel-title">
+              <h2>Codex</h2>
+              <span class="badge green" data-i18n="done">已完成</span>
+            </div>
+            <div class="metrics">
+              <div class="stat">
+                <label data-i18n="projects">项目</label>
+                <strong>1</strong>
+              </div>
+              <div class="stat">
+                <label data-i18n="recent">最近</label>
+                <strong data-i18n="ago3m">3 分钟前</strong>
+              </div>
+            </div>
+          </div>
+          <div class="meters">
+            <div class="meter">
+              <div class="meter-top">
+                <span data-i18n="weekly">每周额度</span>
+                <strong>63%</strong>
+              </div>
+              <div class="track"><div class="fill codex" style="width: 63%"></div></div>
+              <p class="meter-detail" data-i18n="refreshCodexWeek">刷新 5 天 23 小时 · GPT 5.3</p>
+            </div>
+          </div>
+          <div class="projects">
+            <article class="tile">
+              <div class="tile-top">
+                <div class="title-row">
+                  <span class="pd bg-green"></span>
+                  <h3>api-service</h3>
+                  <span class="path">… / dev / code</span>
+                </div>
+                <div class="tile-actions">
+                  <span class="badge green" data-i18n="done">已完成</span>
+                  <span class="badge green" data-i18n="read">已读</span>
+                </div>
+              </div>
+              <div class="fields">
+                <div class="stat">
+                  <label data-i18n="model">模型</label>
+                  <strong>gpt-5.3</strong>
+                </div>
+                <div class="stat">
+                  <label data-i18n="elapsed">耗时</label>
+                  <strong>—</strong>
+                </div>
+              </div>
+              <div class="meter">
+                <div class="meter-top">
+                  <span data-i18n="context">上下文窗口：</span>
+                  <strong data-i18n="ctx3">82% 剩余 (47K 已用 / 258K)</strong>
+                </div>
+                <div class="track"><div class="fill codex" style="width: 18%"></div></div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <!-- Grok -->
+        <section class="panel grok">
+          <div class="panel-head">
+            <div class="logo grok">
+              <svg viewBox="0 0 24 24">
+                <path
+                  fill="#0F172A"
+                  d="M6.227 3.5h3.12l4.38 7.12L18.13 3.5H21.3l-6.02 9.05L21.5 20.5h-3.13l-4.62-7.42-4.63 7.42H6.01l6.24-8.01L6.227 3.5zm-.85 0L12 12.35 5.12 20.5H2.5l6.9-8.19L2.5 3.5h2.877z"
+                />
+              </svg>
+              <span class="status-dot bg-blue"></span>
+            </div>
+            <div class="panel-title">
+              <h2>Grok</h2>
+              <span class="badge blue" data-i18n="processing">处理中</span>
+            </div>
+            <div class="metrics">
+              <div class="stat">
+                <label data-i18n="projects">项目</label>
+                <strong>1</strong>
+              </div>
+              <div class="stat">
+                <label data-i18n="recent">最近</label>
+                <strong data-i18n="ago12s">12 秒前</strong>
+              </div>
+            </div>
+          </div>
+          <div class="meters">
+            <div class="meter">
+              <div class="meter-top">
+                <span data-i18n="weekly">每周额度</span>
+                <strong>41%</strong>
+              </div>
+              <div class="track"><div class="fill grok" style="width: 41%"></div></div>
+              <p class="meter-detail" data-i18n="refreshGrokWeek">刷新 4 天 6 小时</p>
+            </div>
+          </div>
+          <div class="projects">
+            <article class="tile">
+              <div class="tile-top">
+                <div class="title-row">
+                  <span class="pd bg-blue"></span>
+                  <h3>codepulse</h3>
+                  <span class="path">… / CodePulse</span>
+                </div>
+                <div class="tile-actions">
+                  <span class="badge blue" data-i18n="processing">处理中</span>
+                </div>
+              </div>
+              <div class="fields">
+                <div class="stat">
+                  <label data-i18n="model">模型</label>
+                  <strong>grok-code</strong>
+                </div>
+                <div class="stat">
+                  <label data-i18n="elapsed">耗时</label>
+                  <strong data-i18n="elapsed3">48 秒</strong>
+                </div>
+              </div>
+              <div class="meter">
+                <div class="meter-top">
+                  <span data-i18n="context">上下文窗口：</span>
+                  <strong data-i18n="ctx4">66% 剩余 (88K 已用 / 256K)</strong>
+                </div>
+                <div class="track"><div class="fill grok" style="width: 34%"></div></div>
+              </div>
+            </article>
+          </div>
+        </section>
+      </main>
+      <footer>
+        <span data-i18n="footerLeft">3 个助手分屏 · 4 个会话</span>
+        <span data-i18n="footerRight">同步 刚刚</span>
+      </footer>
+    </div>
+    <script>
+      const dict = {
+        zh: {
+          subtitle: '编程助手实时控制台',
+          overall: '需要介入',
+          lang: '英文',
+          mute: '静音 30 分钟',
+          usingTools: '执行工具',
+          projects: '项目',
+          recent: '最近',
+          ago9s: '9 秒前',
+          fiveHour: '5 小时额度',
+          weekly: '每周额度',
+          refreshClaude5h: '刷新 2 小时 44 分',
+          refreshClaudeWeek: '刷新 3 小时 39 分',
+          model: '模型',
+          elapsed: '耗时',
+          elapsed1: '2 分 31 秒',
+          context: '上下文窗口：',
+          ctx1: '79% 剩余 (210K 已用 / 1M)',
+          waitingInput: '等待输入',
+          elapsed2: '1 分 36 秒',
+          ctx2: '48% 剩余 (520K 已用 / 1M)',
+          done: '已完成',
+          ago3m: '3 分钟前',
+          refreshCodexWeek: '刷新 5 天 23 小时 · GPT 5.3',
+          read: '已读',
+          ctx3: '82% 剩余 (47K 已用 / 258K)',
+          processing: '处理中',
+          ago12s: '12 秒前',
+          refreshGrokWeek: '刷新 4 天 6 小时',
+          elapsed3: '48 秒',
+          ctx4: '66% 剩余 (88K 已用 / 256K)',
+          footerLeft: '3 个助手分屏 · 4 个会话',
+          footerRight: '同步 刚刚',
+        },
+        en: {
+          subtitle: 'AI coding-agent live console',
+          overall: 'Attention',
+          lang: 'Chinese',
+          mute: 'Mute 30 min',
+          usingTools: 'Using tools',
+          projects: 'Projects',
+          recent: 'Recent',
+          ago9s: '9s ago',
+          fiveHour: '5h quota',
+          weekly: 'Weekly quota',
+          refreshClaude5h: 'Refresh 2h 44m',
+          refreshClaudeWeek: 'Refresh 3h 39m',
+          model: 'Model',
+          elapsed: 'Elapsed',
+          elapsed1: '2m 31s',
+          context: 'Context window:',
+          ctx1: '79% left (210K used / 1M)',
+          waitingInput: 'Waiting input',
+          elapsed2: '1m 36s',
+          ctx2: '48% left (520K used / 1M)',
+          done: 'Done',
+          ago3m: '3m ago',
+          refreshCodexWeek: 'Refresh 5d 23h · GPT 5.3',
+          read: 'Read',
+          ctx3: '82% left (47K used / 258K)',
+          processing: 'Processing',
+          ago12s: '12s ago',
+          refreshGrokWeek: 'Refresh 4d 6h',
+          elapsed3: '48s',
+          ctx4: '66% left (88K used / 256K)',
+          footerLeft: '3 panels · 4 sessions',
+          footerRight: 'Synced just now',
+        },
+      }
+
+      const params = new URLSearchParams(location.search)
+      const locale = params.get('lang') === 'en' ? 'en' : 'zh'
+      document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en'
+      const t = dict[locale]
+      for (const el of document.querySelectorAll('[data-i18n]')) {
+        const key = el.getAttribute('data-i18n')
+        if (key && t[key] != null) el.textContent = t[key]
+      }
+    </script>
+  </body>
+</html>

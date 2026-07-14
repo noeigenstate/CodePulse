@@ -10,7 +10,9 @@ import {
   type AgentRuntimeState,
   type AgentType,
   type TokenPayload,
+  type UpdateDownloadProgress,
   type UpdateInfo,
+  type UpdateProgressPhase,
   TurnState,
 } from '@codepulse/shared'
 import { useStore } from './store.js'
@@ -23,7 +25,12 @@ import {
   shouldShowAgentSetupReminder,
   type AgentSetupReminder,
 } from './lib/codexTrustTutorial.js'
-import { buildAgentPanels, type AgentPanel, type AgentWorkspaceItem } from './lib/displayAgents.js'
+import {
+  buildAgentPanels,
+  type AgentPanel,
+  type AgentWorkspaceItem,
+  type QuotaMeterSource,
+} from './lib/displayAgents.js'
 import { formatDuration, formatRelative, turnStateStyle } from './lib/format.js'
 import {
   formatContextWindowStatus,
@@ -173,25 +180,52 @@ function UpdateAvailableModal({
   copy: UiCopy
   update: UpdateInfo
   installing: boolean
-  progress: { received: number; total?: number; percent?: number } | undefined
+  progress: UpdateDownloadProgress | undefined
   error: string | undefined
   onDismiss: () => void
   onInstall: () => void
 }): JSX.Element {
   const updateCopy = copy.updateAvailable
   const actionText = update.installable ? updateCopy.install : updateCopy.openRelease
+  const phase: UpdateProgressPhase = progress?.phase ?? (installing ? 'preparing' : 'preparing')
+  const downloadPercent =
+    typeof progress?.percent === 'number'
+      ? Math.min(100, Math.max(0, progress.percent))
+      : phase === 'verifying' || phase === 'launching'
+        ? 100
+        : undefined
+  const downloadDone = downloadPercent === 100 || phase === 'verifying' || phase === 'launching'
+  const installActive = phase === 'verifying' || phase === 'launching'
+  const installDone = phase === 'launching'
+  const installWidth = installDone ? '100%' : installActive ? '55%' : '0%'
+
   const installingLabel =
-    installing && typeof progress?.percent === 'number'
-      ? updateCopy.downloadingPercent.replace('{percent}', String(progress.percent))
-      : installing
-        ? updateCopy.installing
-        : actionText
-  const progressWidth =
-    installing && typeof progress?.percent === 'number'
-      ? `${Math.min(100, Math.max(2, progress.percent))}%`
-      : installing
-        ? '18%'
-        : '0%'
+    !installing
+      ? actionText
+      : phase === 'launching'
+        ? updateCopy.phaseLaunching
+        : phase === 'verifying'
+          ? updateCopy.phaseVerifying
+          : typeof downloadPercent === 'number'
+            ? updateCopy.downloadingPercent.replace('{percent}', String(downloadPercent))
+            : updateCopy.installing
+
+  const downloadStatus =
+    phase === 'preparing'
+      ? updateCopy.phasePreparing
+      : phase === 'downloading'
+        ? updateCopy.phaseDownloading
+        : downloadDone
+          ? '100%'
+          : updateCopy.phasePreparing
+
+  const installStatus = installDone
+    ? updateCopy.installReady
+    : installActive
+      ? updateCopy.phaseVerifying
+      : updateCopy.installWaiting
+
+  const sizeLabel = formatDownloadSize(progress?.received, progress?.total)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-sm">
@@ -226,20 +260,63 @@ function UpdateAvailableModal({
         </div>
 
         {installing && (
-          <div className="mt-3">
-            <div className="mb-1.5 flex items-center justify-between gap-2 text-xs text-ink-500">
-              <span>{updateCopy.downloadingHint}</span>
-              {typeof progress?.percent === 'number' && (
-                <span className="font-semibold text-ink-700">{progress.percent}%</span>
-              )}
+          <div className="mt-4 grid gap-3 rounded-card border border-line bg-white/90 px-3.5 py-3 shadow-soft">
+            <p className="text-xs font-medium text-ink-500">{updateCopy.downloadingHint}</p>
+
+            {/* 1. Download progress */}
+            <div>
+              <div className="mb-1.5 flex items-center justify-between gap-2 text-xs">
+                <span className="font-semibold text-ink">{updateCopy.stepDownload}</span>
+                <span className="tabular-nums font-semibold text-ink-700">
+                  {typeof downloadPercent === 'number' ? `${downloadPercent}%` : downloadStatus}
+                </span>
+              </div>
+              <div className="meter-track h-2">
+                <div
+                  className={`meter-fill brand-codex transition-[width] duration-200 ${
+                    typeof downloadPercent === 'number' || downloadDone ? '' : 'animate-pulse'
+                  }`}
+                  style={{
+                    width:
+                      typeof downloadPercent === 'number'
+                        ? `${Math.max(downloadPercent > 0 ? downloadPercent : 2, downloadPercent === 0 ? 2 : downloadPercent)}%`
+                        : installing
+                          ? '12%'
+                          : '0%',
+                  }}
+                />
+              </div>
+              <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] font-medium text-ink-500">
+                <span className="truncate">
+                  {phase === 'preparing'
+                    ? updateCopy.phasePreparing
+                    : phase === 'downloading'
+                      ? updateCopy.phaseDownloading
+                      : downloadDone
+                        ? updateCopy.phaseVerifying
+                        : updateCopy.phasePreparing}
+                </span>
+                {sizeLabel ? <span className="shrink-0 tabular-nums">{sizeLabel}</span> : null}
+              </div>
             </div>
-            <div className="meter-track">
-              <div
-                className={`meter-fill brand-grok ${
-                  typeof progress?.percent === 'number' ? '' : 'animate-pulse'
-                }`}
-                style={{ width: progressWidth }}
-              />
+
+            {/* 2. Install / launch progress */}
+            <div>
+              <div className="mb-1.5 flex items-center justify-between gap-2 text-xs">
+                <span className="font-semibold text-ink">{updateCopy.stepInstall}</span>
+                <span className="tabular-nums font-semibold text-ink-700">
+                  {installDone ? '100%' : installActive ? '…' : '—'}
+                </span>
+              </div>
+              <div className="meter-track h-2">
+                <div
+                  className={`meter-fill brand-grok transition-[width] duration-300 ${
+                    installActive && !installDone ? 'animate-pulse' : ''
+                  }`}
+                  style={{ width: installWidth }}
+                />
+              </div>
+              <p className="mt-1.5 truncate text-[11px] font-medium text-ink-500">{installStatus}</p>
             </div>
           </div>
         )}
@@ -269,6 +346,21 @@ function UpdateAvailableModal({
       </section>
     </div>
   )
+}
+
+function formatDownloadSize(received: number | undefined, total: number | undefined): string | undefined {
+  if (typeof received !== 'number' || received < 0) return undefined
+  if (typeof total === 'number' && total > 0) {
+    return `${formatBytes(received)} / ${formatBytes(total)}`
+  }
+  if (received > 0) return formatBytes(received)
+  return undefined
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 function AgentSetupReminderModal({
@@ -450,7 +542,7 @@ const AgentPanelView = memo(function AgentPanelView({
         <PanelQuotaMeter
           agentType={panel.agentType}
           brand={brand}
-          token={panel.quotaToken}
+          meters={panel.quotaMeters}
           locale={locale}
           copy={copy}
         />
@@ -592,60 +684,92 @@ const ProjectTile = memo(function ProjectTile({
 function PanelQuotaMeter({
   agentType,
   brand,
-  token,
+  meters,
   locale,
   copy,
 }: {
   agentType: AgentType
   brand: BrandClass
-  token: TokenPayload | undefined
+  meters: QuotaMeterSource[]
   locale: Locale
   copy: UiCopy
 }): JSX.Element {
   const now = useNow()
-  const { fiveHour, sevenDay } = visibleRateLimitWindows(token, agentType)
-  const hasQuota = Boolean(fiveHour ?? sevenDay)
-  const bucket = quotaBucketLabel(token)
   const showFiveHour = showsFiveHourQuota(agentType)
 
-  return (
-    <div
-      className={
-        showFiveHour
-          ? 'grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2'
-          : 'grid grid-cols-1 gap-2'
-      }
-    >
-      {showFiveHour && (
+  // No quota yet — keep a single waiting weekly bar so the pane layout stays stable.
+  if (meters.length === 0) {
+    return (
+      <div className="grid grid-cols-1 gap-2">
+        <TokenMeter
+          brand={brand}
+          label={copy.weeklyQuota}
+          percent={undefined}
+          detail={copy.waitingQuota}
+        />
+      </div>
+    )
+  }
+
+  // Claude: one bucket with 5h + weekly side-by-side.
+  if (showFiveHour && meters.length === 1) {
+    const token = meters[0]!.token
+    const { fiveHour, sevenDay } = visibleRateLimitWindows(token, agentType)
+    const hasQuota = Boolean(fiveHour ?? sevenDay)
+    return (
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
         <TokenMeter
           brand={brand}
           label={copy.fiveHourQuota}
           percent={fiveHour?.usedPercent}
-          detail={quotaDetail(
-            hasQuota ? formatQuotaReset(fiveHour?.resetsAt, now, locale) : copy.waitingQuota,
-            bucket,
-          )}
+          detail={hasQuota ? formatQuotaReset(fiveHour?.resetsAt, now, locale) : copy.waitingQuota}
         />
-      )}
-      <TokenMeter
-        brand={brand}
-        label={copy.weeklyQuota}
-        percent={sevenDay?.usedPercent}
-        detail={quotaDetail(
-          hasQuota ? formatQuotaReset(sevenDay?.resetsAt, now, locale) : copy.waitingQuota,
-          bucket,
-        )}
-      />
+        <TokenMeter
+          brand={brand}
+          label={copy.weeklyQuota}
+          percent={sevenDay?.usedPercent}
+          detail={hasQuota ? formatQuotaReset(sevenDay?.resetsAt, now, locale) : copy.waitingQuota}
+        />
+      </div>
+    )
+  }
+
+  // Codex / Grok: weekly bars only. Multiple Codex buckets (default + Spark) stack vertically.
+  return (
+    <div className="grid grid-cols-1 gap-2">
+      {meters.map((meter) => {
+        const { sevenDay } = visibleRateLimitWindows(meter.token, agentType)
+        const hasQuota = Boolean(sevenDay)
+        return (
+          <TokenMeter
+            key={meter.id}
+            brand={brand}
+            label={weeklyMeterLabel(meter.token, copy.weeklyQuota)}
+            percent={sevenDay?.usedPercent}
+            detail={hasQuota ? formatQuotaReset(sevenDay?.resetsAt, now, locale) : copy.waitingQuota}
+          />
+        )
+      })}
     </div>
   )
 }
 
-function quotaDetail(detail: string, bucket: string | undefined): string {
-  return bucket ? `${detail} · ${bucket}` : detail
+/**
+ * Default Codex weekly → "每周额度"; Spark / named buckets keep the CLI limit name
+ * (e.g. GPT-5.3-Codex-Spark) so stacked bars stay distinguishable.
+ */
+function weeklyMeterLabel(token: TokenPayload | undefined, weeklyQuota: string): string {
+  const name = quotaBucketLabel(token)
+  if (!name) return weeklyQuota
+  const normalized = name.toLowerCase()
+  if (normalized === 'codex' || normalized === 'weekly' || normalized.includes('weekly')) {
+    return weeklyQuota
+  }
+  return name
 }
 
 function quotaBucketLabel(token: TokenPayload | undefined): string | undefined {
-  const label = token?.rateLimitName?.trim()
+  const label = token?.rateLimitName?.trim() || token?.rateLimitId?.trim()
   if (!label) return undefined
   return label.replace(/^GPT-/i, 'GPT ')
 }

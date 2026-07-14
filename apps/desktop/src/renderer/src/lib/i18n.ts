@@ -66,6 +66,16 @@ export interface UpdateAvailableCopy {
   installing: string
   downloadingPercent: string
   downloadingHint: string
+  /** Dual progress: download step label */
+  stepDownload: string
+  /** Dual progress: install step label */
+  stepInstall: string
+  phasePreparing: string
+  phaseDownloading: string
+  phaseVerifying: string
+  phaseLaunching: string
+  installWaiting: string
+  installReady: string
   failed: string
 }
 
@@ -150,7 +160,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
     },
     updateAvailable: {
       title: '发现新版本',
-      body: 'CodePulse 已发布新版本。点击立即更新会下载安装包（约 70MB），下载完成后会打开安装器并退出当前应用。',
+      body: 'CodePulse 已发布新版本。点击立即更新会下载安装包（约 70MB），下载完成后会打开安装器并退出当前应用。过程可能需要几分钟，请保持网络畅通。',
       manualBody:
         'CodePulse 已发布新版本，但当前 Release 没有匹配的 Windows 安装包。你可以先打开发布页查看更新。',
       currentVersion: '当前版本',
@@ -158,9 +168,17 @@ const UI_COPY: Record<Locale, UiCopy> = {
       later: '稍后',
       install: '立即更新',
       openRelease: '打开发布页',
-      installing: '正在下载安装包...',
+      installing: '正在更新...',
       downloadingPercent: '下载中 {percent}%',
-      downloadingHint: '正在从 GitHub 下载安装包，请保持网络畅通',
+      downloadingHint: '正在下载安装包，请保持网络畅通',
+      stepDownload: '1. 下载安装包',
+      stepInstall: '2. 启动安装',
+      phasePreparing: '准备下载…',
+      phaseDownloading: '正在下载…',
+      phaseVerifying: '正在校验安装包…',
+      phaseLaunching: '正在打开安装器…',
+      installWaiting: '等待下载完成',
+      installReady: '即将退出并安装',
       failed: '更新失败，请稍后重试。',
     },
     contextStatus: {
@@ -221,7 +239,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
     },
     updateAvailable: {
       title: 'Update available',
-      body: 'A new CodePulse version is available. Update now downloads the installer (~70MB), opens it, and quits this app.',
+      body: 'A new CodePulse version is available. Update now downloads the installer (~70MB), opens it, and quits this app. This may take a few minutes — keep your network connected.',
       manualBody:
         'A new CodePulse version is available, but this release has no matching Windows installer. Open the release page to review it.',
       currentVersion: 'Current',
@@ -229,9 +247,17 @@ const UI_COPY: Record<Locale, UiCopy> = {
       later: 'Later',
       install: 'Update now',
       openRelease: 'Open release',
-      installing: 'Downloading installer...',
+      installing: 'Updating...',
       downloadingPercent: 'Downloading {percent}%',
-      downloadingHint: 'Downloading the installer from GitHub — keep your network connected',
+      downloadingHint: 'Downloading the installer — keep your network connected',
+      stepDownload: '1. Download installer',
+      stepInstall: '2. Start installer',
+      phasePreparing: 'Preparing download…',
+      phaseDownloading: 'Downloading…',
+      phaseVerifying: 'Verifying installer…',
+      phaseLaunching: 'Opening installer…',
+      installWaiting: 'Waiting for download',
+      installReady: 'Quitting to install',
       failed: 'Update failed. Please try again later.',
     },
     contextStatus: {

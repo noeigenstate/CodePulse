@@ -8,9 +8,15 @@ export interface UpdateInfo {
   installerUrl?: string
 }
 
+/** Stages of the in-app update flow shown on the progress UI. */
+export type UpdateProgressPhase = 'preparing' | 'downloading' | 'verifying' | 'launching'
+
 export interface UpdateDownloadProgress {
+  /** Current stage of download → verify → launch installer. */
+  phase: UpdateProgressPhase
   received: number
   total?: number
+  /** Download percent 0–100 when known (primarily for the downloading phase). */
   percent?: number
 }
 

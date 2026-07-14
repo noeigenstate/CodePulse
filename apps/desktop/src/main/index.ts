@@ -252,11 +252,28 @@ async function installLatestUpdate(): Promise<UpdateInstallResult> {
       return { ok: true }
     }
 
+    broadcastUpdateProgress({ phase: 'preparing', received: 0, percent: 0 })
+
     const installerPath = await downloadInstaller(
       update,
       join(app.getPath('temp'), 'CodePulse', 'updates', update.tag),
-      (progress) => broadcastUpdateProgress(progress),
+      (progress) =>
+        broadcastUpdateProgress({
+          phase: progress.phase ?? 'downloading',
+          received: progress.received,
+          total: progress.total,
+          percent: progress.percent,
+        }),
     )
+
+    // Download finished — show install/launch progress before we quit.
+    broadcastUpdateProgress({
+      phase: 'launching',
+      received: 0,
+      percent: 100,
+    })
+    // Give the renderer a beat to paint the install progress bar.
+    await sleep(350)
 
     // Hide the modal window first so Windows UAC / NSIS UI is not covered.
     try {
@@ -273,7 +290,7 @@ async function installLatestUpdate(): Promise<UpdateInstallResult> {
     // Exit ASAP so the installer can replace files; delay only enough for IPC to flush.
     setTimeout(() => {
       app.exit(0)
-    }, 150).unref?.()
+    }, 200).unref?.()
     return { ok: true }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -321,6 +338,10 @@ export function launchInstallerDetached(installerPath: string): void {
 
 function shouldCheckForUpdates(): boolean {
   return process.env[DISABLE_UPDATE_CHECK_ENV] !== '1'
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function trayStatusKey(snapshot: StatusSnapshot): string {

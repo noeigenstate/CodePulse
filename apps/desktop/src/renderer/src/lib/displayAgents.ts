@@ -40,8 +40,18 @@ export interface AgentPanel {
   agentType: AgentType
   name: string
   updatedAt: number
+  /** Preferred single bucket (active model); kept for callers that only need one. */
   quotaToken?: TokenPayload
+  /** All quota meters to render for this pane (Codex may stack weekly + Spark). */
+  quotaMeters: QuotaMeterSource[]
   workspaces: AgentWorkspaceItem[]
+}
+
+/** One rate-limit bar source (usually a Codex quota bucket). */
+export interface QuotaMeterSource {
+  id: string
+  token: TokenPayload
+  updatedAt: number
 }
 
 interface QuotaCandidate {
@@ -68,9 +78,12 @@ export function buildAgentPanels(agents: AgentRuntimeState[]): AgentPanel[] {
     if (typeAgents.length === 0) return []
 
     const workspaces = buildAgentWorkspaceItems(agentType, visibleTaskAgents(typeAgents))
-    const quotaToken = latestQuotaToken(typeAgents, preferredQuotaModel(typeAgents))
+    const preferredModel = preferredQuotaModel(typeAgents)
+    const quotaMeters = collectQuotaMeters(typeAgents, agentType)
+    const quotaToken =
+      latestQuotaToken(typeAgents, preferredModel) ?? quotaMeters[0]?.token
     // 无项目且无额度时不分屏；用户开启对应 CLI 任务后再出现
-    if (workspaces.length === 0 && !quotaToken) return []
+    if (workspaces.length === 0 && quotaMeters.length === 0) return []
 
     return [
       {
@@ -82,10 +95,51 @@ export function buildAgentPanels(agents: AgentRuntimeState[]): AgentPanel[] {
           ...typeAgents.map((agent) => agent.lastEventAt),
         ),
         quotaToken,
+        quotaMeters,
         workspaces,
       },
     ]
   })
+}
+
+/**
+ * Collect quota bars for a pane.
+ * Codex may expose multiple weekly buckets (default weekly vs Spark);
+ * show only buckets matching models the user has used, or all if both were used.
+ */
+export function collectQuotaMeters(
+  agents: AgentRuntimeState[],
+  agentType: AgentType,
+): QuotaMeterSource[] {
+  const byId = new Map<string, QuotaMeterSource>()
+
+  for (const agent of agents) {
+    if (agent.agentType !== agentType) continue
+    for (const candidate of quotaCandidatesForAgent(agent)) {
+      const id = quotaMeterId(candidate.token)
+      const previous = byId.get(id)
+      if (!previous || candidate.updatedAt >= previous.updatedAt) {
+        byId.set(id, {
+          id,
+          token: candidate.token,
+          updatedAt: candidate.updatedAt,
+        })
+      }
+    }
+  }
+
+  let meters = [...byId.values()]
+  if (meters.length === 0) return []
+
+  const models = usedModels(agents)
+  if (models.length > 0 && meters.length > 1) {
+    const matched = meters.filter((meter) =>
+      models.some((model) => quotaMatchesPreferredModel(meter.token, model)),
+    )
+    if (matched.length > 0) meters = matched
+  }
+
+  return meters.sort(compareQuotaMeters)
 }
 
 export function latestQuotaToken(
@@ -338,15 +392,37 @@ function quotaMatchesPreferredModel(
 }
 
 function isDefaultCodexQuota(value: string): boolean {
-  return value.split(/\s+/).includes('codex')
+  // Default Codex weekly bucket id/name is plain "codex", not Spark variants.
+  const tokens = value.split(/[\s/_-]+/).filter(Boolean)
+  return tokens.includes('codex') && !isSparkQuota(value)
 }
 
 function isSparkQuota(value: string): boolean {
   return value.includes('spark') || value.includes('bengalfox')
 }
 
+/** Only true Spark models share the Spark weekly bucket — not every gpt-5.3 build. */
 function isSparkModel(value: string): boolean {
-  return value.includes('spark') || value.includes('5.3')
+  return value.includes('spark') || value.includes('bengalfox')
+}
+
+function usedModels(agents: AgentRuntimeState[]): string[] {
+  const models = agents
+    .filter((agent) => Boolean(agent.model) && agent.lastEventAt > 0)
+    .map((agent) => agent.model!)
+  return [...new Set(models)]
+}
+
+function quotaMeterId(token: TokenPayload): string {
+  return token.rateLimitId?.trim() || token.rateLimitName?.trim() || 'default'
+}
+
+function compareQuotaMeters(a: QuotaMeterSource, b: QuotaMeterSource): number {
+  const aSpark = isSparkQuota(normalizeModel(`${a.token.rateLimitId ?? ''} ${a.token.rateLimitName ?? ''}`))
+  const bSpark = isSparkQuota(normalizeModel(`${b.token.rateLimitId ?? ''} ${b.token.rateLimitName ?? ''}`))
+  // Default weekly first, Spark (and other named buckets) below — matches Codex status line order.
+  if (aSpark !== bSpark) return aSpark ? 1 : -1
+  return b.updatedAt - a.updatedAt || a.id.localeCompare(b.id)
 }
 
 function extractGptVersion(value: string): string | undefined {

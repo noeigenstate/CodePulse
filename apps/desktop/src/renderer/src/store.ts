@@ -105,14 +105,19 @@ export const useStore = create<CodePulseStore>((set, get) => ({
     const update = get().updateInfo
     if (!update || get().updateInstalling) return
 
-    set({ updateInstalling: true, updateError: undefined, updateProgress: undefined })
+    set({
+      updateInstalling: true,
+      updateError: undefined,
+      updateProgress: { phase: 'preparing', received: 0, percent: 0 },
+    })
     void window.codepulse.installUpdate().then((result) => {
       if (result.ok) {
+        // App usually exits right after launching the installer; keep the modal on
+        // the launch phase until then so the install bar does not disappear first.
         set({
-          updateInstalling: false,
-          updateInfo: null,
+          updateInstalling: true,
+          updateProgress: { phase: 'launching', received: 0, percent: 100 },
           updateError: undefined,
-          updateProgress: undefined,
         })
         return
       }

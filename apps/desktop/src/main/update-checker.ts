@@ -22,6 +22,7 @@ const PARALLEL_CONNECTIONS = 6
 const MIRROR_RACE_MS = 6_000
 
 export interface DownloadProgress {
+  phase?: 'preparing' | 'downloading' | 'verifying' | 'launching'
   received: number
   total?: number
   percent?: number
@@ -158,12 +159,22 @@ export async function downloadInstaller(
   const destination = join(directory, sanitizeInstallerName(update.installerName))
   const candidates = buildDownloadCandidates(update.installerUrl)
 
+  onProgress?.({ phase: 'preparing', received: 0, percent: 0 })
+
   // Quick size probe (best-effort) so we can reuse a complete local cache.
   const quickProbe = await pickDownloadSource(candidates).catch(() => undefined)
   if (await isCompleteCachedFile(destination, quickProbe?.total)) {
+    const total = quickProbe?.total
     onProgress?.({
-      received: quickProbe?.total ?? 0,
-      total: quickProbe?.total,
+      phase: 'downloading',
+      received: total ?? 0,
+      total,
+      percent: 100,
+    })
+    onProgress?.({
+      phase: 'verifying',
+      received: total ?? 0,
+      total,
       percent: 100,
     })
     return destination
@@ -178,7 +189,18 @@ export async function downloadInstaller(
     try {
       await unlink(destination).catch(() => undefined)
       const probe = await probeUrl(url)
-      await downloadWithHardTimeout(probe, destination, onProgress)
+      await downloadWithHardTimeout(probe, destination, (progress) => {
+        onProgress?.({
+          ...progress,
+          phase: 'downloading',
+        })
+      })
+      onProgress?.({
+        phase: 'verifying',
+        received: probe.total ?? 0,
+        total: probe.total,
+        percent: 100,
+      })
       await verifyDownloadedFile(destination, probe.total)
       return destination
     } catch (error) {
@@ -188,6 +210,7 @@ export async function downloadInstaller(
       await unlink(destination).catch(() => undefined)
       // Clear partial part files from parallel attempts.
       await cleanupPartFiles(destination)
+      onProgress?.({ phase: 'preparing', received: 0, percent: 0 })
     }
   }
 

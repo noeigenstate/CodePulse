@@ -47,26 +47,18 @@ CodePulse isn't running — your agents are never blocked or slowed down.
 ### Live console
 
 <p align="center">
-  <img src="./docs/screenshots/dashboard.png" alt="CodePulse live console (English)" width="920" />
-</p>
-
-<p align="center">
-  <img src="./docs/screenshots/dashboard-zh.png" alt="CodePulse live console (Chinese)" width="920" />
+  <img src="./docs/screenshots/dashboard.png" alt="CodePulse live console" width="920" />
 </p>
 
 Adaptive three-pane console: Claude keeps **5h + weekly** quota meters; Codex
 and Grok show **weekly only**. Each project card surfaces model, elapsed time,
-context window, and state badges. Open **Insights** (Chinese UI: **后台**) for
-local analytics. _(Sample data shown.)_
+context window, and state badges. Open **Insights** for local analytics.
+_(Sample data shown.)_
 
 ### Local analytics console
 
 <p align="center">
-  <img src="./docs/screenshots/stats.png" alt="CodePulse local analytics (English)" width="920" />
-</p>
-
-<p align="center">
-  <img src="./docs/screenshots/stats-zh.png" alt="CodePulse local analytics (Chinese)" width="920" />
+  <img src="./docs/screenshots/stats.png" alt="CodePulse local analytics console" width="920" />
 </p>
 
 SQLite-backed rollups of tokens, coding time, project ranking, model mix, and

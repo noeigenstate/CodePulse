@@ -1,0 +1,1261 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CodePulse Stats Mock</title>
+    <style>
+      :root {
+        --canvas: #f6f8fc;
+        --ink: #0f172a;
+        --ink-500: #64748b;
+        --ink-700: #334155;
+        --line: #e6ebf5;
+        --indigo: #6366f1;
+        --blue: #3b82f6;
+        --green: #34d399;
+        --amber: #f59e0b;
+        --shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        font-family:
+          Inter,
+          'Segoe UI',
+          system-ui,
+          -apple-system,
+          'PingFang SC',
+          'Microsoft YaHei',
+          'Noto Sans SC',
+          sans-serif;
+        color: var(--ink);
+        background: var(--canvas);
+        -webkit-font-smoothing: antialiased;
+      }
+      body {
+        min-height: 1100px;
+      }
+      .app {
+        min-height: 1100px;
+        display: flex;
+        flex-direction: column;
+        background:
+          radial-gradient(ellipse 80% 50% at 10% -10%, rgba(91, 107, 255, 0.08), transparent 55%),
+          radial-gradient(ellipse 60% 40% at 90% 0%, rgba(23, 192, 131, 0.07), transparent 50%),
+          var(--canvas);
+      }
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        flex-wrap: wrap;
+        padding: 14px 22px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.85);
+        backdrop-filter: blur(10px);
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+      }
+      .brand img {
+        width: 36px;
+        height: 36px;
+        border-radius: 999px;
+      }
+      .brand h1 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 700;
+      }
+      .brand p {
+        margin: 2px 0 0;
+        font-size: 12px;
+        color: var(--ink-500);
+      }
+      .tag {
+        display: inline-flex;
+        margin-left: 8px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: #eef2ff;
+        color: #4f46e5;
+        font-size: 11px;
+        font-weight: 650;
+        border: 1px solid #e0e7ff;
+      }
+      .controls {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .btn,
+      .seg {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 34px;
+        padding: 0 12px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #fff;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--ink);
+        white-space: nowrap;
+      }
+      .range {
+        display: inline-flex;
+        padding: 3px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #f8fafc;
+        gap: 2px;
+      }
+      .range span {
+        padding: 5px 10px;
+        border-radius: 10px;
+        font-size: 11px;
+        font-weight: 650;
+        color: var(--ink-500);
+      }
+      .range .on {
+        background: #fff;
+        color: var(--indigo);
+        box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06);
+      }
+      main {
+        flex: 1;
+        padding: 16px 22px 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        max-width: 1400px;
+        width: 100%;
+        margin: 0 auto;
+      }
+      .section-head h2 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 650;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .section-head p {
+        margin: 4px 0 0;
+        font-size: 12px;
+        color: var(--ink-500);
+      }
+      .spark {
+        width: 22px;
+        height: 22px;
+        border-radius: 8px;
+        background: #eef2ff;
+        color: var(--indigo);
+        display: grid;
+        place-items: center;
+        font-size: 12px;
+      }
+      .kpis {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .kpi {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: var(--shadow);
+        padding: 12px 14px;
+      }
+      .kpi label {
+        display: block;
+        font-size: 12px;
+        color: var(--ink-500);
+        font-weight: 500;
+      }
+      .kpi strong {
+        display: block;
+        margin-top: 6px;
+        font-size: 22px;
+        font-weight: 750;
+        letter-spacing: -0.02em;
+        font-variant-numeric: tabular-nums;
+      }
+      .kpi .delta {
+        margin-top: 8px;
+        font-size: 11px;
+        font-weight: 600;
+        color: #059669;
+      }
+      .kpi .delta.down {
+        color: #e11d48;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1.15fr 1.15fr 0.9fr;
+        gap: 12px;
+      }
+      .row2 {
+        display: grid;
+        grid-template-columns: 1.55fr 0.9fr;
+        gap: 12px;
+      }
+      .row3 {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: var(--shadow);
+        padding: 14px;
+        min-height: 0;
+      }
+      .card h3 {
+        margin: 0 0 12px;
+        font-size: 13px;
+        font-weight: 650;
+      }
+      .card-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .card-head h3 {
+        margin: 0;
+      }
+      .chart {
+        height: 150px;
+        position: relative;
+      }
+      .chart svg {
+        width: 100%;
+        height: 100%;
+      }
+      .xlabels {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 4px;
+        font-size: 10px;
+        color: var(--ink-500);
+        font-variant-numeric: tabular-nums;
+      }
+      .donut-wrap {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .donut {
+        width: 112px;
+        height: 112px;
+        position: relative;
+        flex-shrink: 0;
+      }
+      .donut svg {
+        width: 100%;
+        height: 100%;
+        transform: rotate(-90deg);
+      }
+      .donut-center {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-content: center;
+        text-align: center;
+      }
+      .donut-center strong {
+        font-size: 14px;
+        font-weight: 750;
+      }
+      .donut-center span {
+        font-size: 10px;
+        color: var(--ink-500);
+      }
+      .legend {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        flex: 1;
+        min-width: 0;
+      }
+      .legend li {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 12px;
+        margin-bottom: 8px;
+      }
+      .legend .name {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--ink-700);
+        font-weight: 500;
+        min-width: 0;
+      }
+      .swatch {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        flex-shrink: 0;
+      }
+      .legend strong {
+        font-variant-numeric: tabular-nums;
+      }
+      .heat {
+        display: grid;
+        grid-template-columns: 28px 1fr;
+        gap: 4px;
+      }
+      .heat-hours {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        font-size: 9px;
+        color: var(--ink-500);
+        text-align: center;
+      }
+      .heat-row {
+        display: contents;
+      }
+      .heat-row > span {
+        font-size: 10px;
+        color: var(--ink-500);
+        align-self: center;
+      }
+      .heat-cells {
+        display: grid;
+        grid-template-columns: repeat(24, 1fr);
+        gap: 2px;
+      }
+      .cell {
+        aspect-ratio: 1;
+        border-radius: 2px;
+        background: #eef2f7;
+      }
+      .heat-scale {
+        margin-top: 8px;
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 4px;
+        font-size: 10px;
+        color: var(--ink-500);
+      }
+      .heat-scale i {
+        width: 10px;
+        height: 10px;
+        border-radius: 2px;
+        display: inline-block;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      th {
+        text-align: left;
+        color: var(--ink-500);
+        font-weight: 500;
+        padding-bottom: 8px;
+      }
+      td {
+        padding: 10px 0;
+        border-top: 1px solid rgba(230, 235, 245, 0.9);
+        font-variant-numeric: tabular-nums;
+      }
+      td.name {
+        font-weight: 650;
+      }
+      .bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .bar span:first-child {
+        width: 48px;
+        font-weight: 650;
+      }
+      .bar .track {
+        flex: 1;
+        height: 6px;
+        border-radius: 999px;
+        background: #eef2f7;
+        overflow: hidden;
+        max-width: 80px;
+      }
+      .bar .fill {
+        height: 100%;
+        background: var(--indigo);
+        border-radius: 999px;
+      }
+      .insights {
+        display: grid;
+        gap: 10px;
+      }
+      .insight {
+        display: flex;
+        gap: 10px;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #f8fafc;
+      }
+      .insight .ico {
+        width: 28px;
+        height: 28px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .insight .ico.g {
+        background: #ecfdf5;
+        color: #059669;
+      }
+      .insight .ico.a {
+        background: #fffbeb;
+        color: #d97706;
+      }
+      .insight .ico.i {
+        background: #eef2ff;
+        color: var(--indigo);
+      }
+      .insight strong {
+        display: block;
+        font-size: 13px;
+        margin-bottom: 2px;
+      }
+      .insight p {
+        margin: 0;
+        font-size: 12px;
+        color: var(--ink-500);
+        line-height: 1.45;
+      }
+      .hbars {
+        display: grid;
+        gap: 10px;
+      }
+      .hbar label {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        margin-bottom: 4px;
+        color: var(--ink-700);
+        font-weight: 500;
+      }
+      .hbar .track {
+        height: 8px;
+        border-radius: 999px;
+        background: #eef2f7;
+        overflow: hidden;
+      }
+      .hbar .fill {
+        height: 100%;
+        border-radius: 999px;
+        background: var(--indigo);
+      }
+      .buckets {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 8px;
+        height: 140px;
+        padding-top: 8px;
+      }
+      .bucket {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        min-width: 0;
+      }
+      .bucket .col {
+        width: 100%;
+        max-width: 28px;
+        border-radius: 6px 6px 0 0;
+        background: rgba(99, 102, 241, 0.85);
+      }
+      .bucket span {
+        font-size: 10px;
+        color: var(--ink-500);
+        white-space: nowrap;
+      }
+      .score-wrap {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .score {
+        width: 96px;
+        height: 96px;
+        position: relative;
+        flex-shrink: 0;
+      }
+      .score svg {
+        width: 100%;
+        height: 100%;
+        transform: rotate(-90deg);
+      }
+      .score-center {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-content: center;
+        text-align: center;
+      }
+      .score-center strong {
+        font-size: 22px;
+        color: var(--indigo);
+        font-weight: 750;
+      }
+      .score-center span {
+        font-size: 10px;
+        font-weight: 650;
+        color: var(--ink-500);
+      }
+      .score-list {
+        flex: 1;
+        font-size: 12px;
+      }
+      .score-list div {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 6px;
+        color: var(--ink-500);
+      }
+      .score-list strong {
+        color: var(--ink);
+        font-variant-numeric: tabular-nums;
+      }
+      footer {
+        border-top: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.72);
+        color: var(--ink-500);
+        font-size: 12px;
+        display: flex;
+        justify-content: space-between;
+        padding: 10px 22px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header>
+        <div class="brand">
+          <img src="./icon.png" alt="" />
+          <div>
+            <h1>
+              <span data-i18n="title">本地开发数据统计</span>
+              <span class="tag" data-i18n="overviewTag">概览</span>
+            </h1>
+            <p data-i18n="subtitle">专注于本地开发效率与资源消耗分析，帮助团队做出更优决策</p>
+          </div>
+        </div>
+        <div class="controls">
+          <span class="btn">📅 <span data-i18n="rangeLabel">2026-06-01 ~ 2026-06-07</span></span>
+          <div class="range">
+            <span data-i18n="today">今日</span>
+            <span class="on" data-i18n="d7">近 7 天</span>
+            <span data-i18n="d30">近 30 天</span>
+          </div>
+          <span class="btn" data-i18n="refresh">刷新数据</span>
+          <span class="btn" data-i18n="exit">退出大屏</span>
+        </div>
+      </header>
+
+      <main>
+        <div class="section-head">
+          <h2><span class="spark">✦</span><span data-i18n="overview">概览</span></h2>
+          <p data-i18n="overviewHint">全面掌握本地开发活动与资源消耗情况</p>
+        </div>
+
+        <div class="kpis">
+          <div class="kpi">
+            <label data-i18n="kpiTokens">总消耗 Token</label>
+            <strong>2.45M</strong>
+            <div class="delta" data-i18n="d1">较上周 +18.6%</div>
+          </div>
+          <div class="kpi">
+            <label data-i18n="kpiDur">总开发时长</label>
+            <strong>156h 32m</strong>
+            <div class="delta" data-i18n="d2">较上周 +12.3%</div>
+          </div>
+          <div class="kpi">
+            <label data-i18n="kpiProj">总项目数</label>
+            <strong>18</strong>
+            <div class="delta" data-i18n="d3">较上周 +2</div>
+          </div>
+          <div class="kpi">
+            <label data-i18n="kpiAvgT">日均 Token</label>
+            <strong>350.6K</strong>
+            <div class="delta" data-i18n="d4">较上周 +9.8%</div>
+          </div>
+          <div class="kpi">
+            <label data-i18n="kpiAvgD">日均开发时长</label>
+            <strong>22h 22m</strong>
+            <div class="delta" data-i18n="d5">较上周 +8.4%</div>
+          </div>
+          <div class="kpi">
+            <label data-i18n="kpiDlg">总对话次数</label>
+            <strong>1,248</strong>
+            <div class="delta" data-i18n="d6">较上周 +15.1%</div>
+          </div>
+        </div>
+
+        <div class="row">
+          <section class="card">
+            <div class="card-head">
+              <h3 data-i18n="tokenTrend">Token 消耗趋势</h3>
+              <div class="range">
+                <span class="on" data-i18n="byDay">按日</span>
+                <span data-i18n="byWeek">按周</span>
+                <span data-i18n="byMonth">按月</span>
+              </div>
+            </div>
+            <div class="chart">
+              <svg viewBox="0 0 320 140" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="tg" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#6366F1" stop-opacity="0.35" />
+                    <stop offset="100%" stop-color="#6366F1" stop-opacity="0.02" />
+                  </linearGradient>
+                </defs>
+                <path
+                  d="M8 90 C 50 85, 70 78, 95 70 S 150 40, 175 38 S 230 55, 255 52 S 300 48, 312 50 L 312 124 L 8 124 Z"
+                  fill="url(#tg)"
+                />
+                <path
+                  d="M8 90 C 50 85, 70 78, 95 70 S 150 40, 175 38 S 230 55, 255 52 S 300 48, 312 50"
+                  fill="none"
+                  stroke="#6366F1"
+                  stroke-width="2.5"
+                />
+                <circle cx="175" cy="38" r="4" fill="#6366F1" stroke="#fff" stroke-width="2" />
+              </svg>
+            </div>
+            <div class="xlabels">
+              <span>06-01</span><span>06-02</span><span>06-03</span><span>06-04</span
+              ><span>06-05</span><span>06-06</span><span>06-07</span>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-head">
+              <h3 data-i18n="durTrend">开发时长趋势</h3>
+              <div class="range">
+                <span class="on" data-i18n="byDay">按日</span>
+                <span data-i18n="byWeek">按周</span>
+                <span data-i18n="byMonth">按月</span>
+              </div>
+            </div>
+            <div class="chart">
+              <svg viewBox="0 0 320 140" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="dg" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#34D399" stop-opacity="0.35" />
+                    <stop offset="100%" stop-color="#34D399" stop-opacity="0.02" />
+                  </linearGradient>
+                </defs>
+                <path
+                  d="M8 95 C 45 88, 70 70, 100 68 S 150 55, 175 42 S 230 58, 260 55 S 300 60, 312 58 L 312 124 L 8 124 Z"
+                  fill="url(#dg)"
+                />
+                <path
+                  d="M8 95 C 45 88, 70 70, 100 68 S 150 55, 175 42 S 230 58, 260 55 S 300 60, 312 58"
+                  fill="none"
+                  stroke="#34D399"
+                  stroke-width="2.5"
+                />
+                <circle cx="175" cy="42" r="4" fill="#34D399" stroke="#fff" stroke-width="2" />
+              </svg>
+            </div>
+            <div class="xlabels">
+              <span>06-01</span><span>06-02</span><span>06-03</span><span>06-04</span
+              ><span>06-05</span><span>06-06</span><span>06-07</span>
+            </div>
+          </section>
+
+          <div style="display: flex; flex-direction: column; gap: 12px">
+            <section class="card">
+              <h3 data-i18n="modelMix">模型使用占比</h3>
+              <div class="donut-wrap">
+                <div class="donut">
+                  <svg viewBox="0 0 112 112">
+                    <circle cx="56" cy="56" r="42" fill="none" stroke="#EEF2F7" stroke-width="14" />
+                    <circle
+                      cx="56"
+                      cy="56"
+                      r="42"
+                      fill="none"
+                      stroke="#6366F1"
+                      stroke-width="14"
+                      stroke-dasharray="119.4 144.5"
+                      stroke-dashoffset="0"
+                    />
+                    <circle
+                      cx="56"
+                      cy="56"
+                      r="42"
+                      fill="none"
+                      stroke="#3B82F6"
+                      stroke-width="14"
+                      stroke-dasharray="75.8 188.1"
+                      stroke-dashoffset="-119.4"
+                    />
+                    <circle
+                      cx="56"
+                      cy="56"
+                      r="42"
+                      fill="none"
+                      stroke="#F59E0B"
+                      stroke-width="14"
+                      stroke-dasharray="40.4 223.5"
+                      stroke-dashoffset="-195.2"
+                    />
+                    <circle
+                      cx="56"
+                      cy="56"
+                      r="42"
+                      fill="none"
+                      stroke="#94A3B8"
+                      stroke-width="14"
+                      stroke-dasharray="28.5 235.4"
+                      stroke-dashoffset="-235.6"
+                    />
+                  </svg>
+                  <div class="donut-center">
+                    <strong>2.45M</strong>
+                    <span>Token</span>
+                  </div>
+                </div>
+                <ul class="legend">
+                  <li>
+                    <span class="name"><i class="swatch" style="background: #6366f1"></i>Claude-3.5</span
+                    ><strong>45.2%</strong>
+                  </li>
+                  <li>
+                    <span class="name"><i class="swatch" style="background: #3b82f6"></i>GPT-4o</span
+                    ><strong>28.7%</strong>
+                  </li>
+                  <li>
+                    <span class="name"><i class="swatch" style="background: #f59e0b"></i>Gemini-1.5</span
+                    ><strong>15.3%</strong>
+                  </li>
+                  <li>
+                    <span class="name"
+                      ><i class="swatch" style="background: #94a3b8"></i
+                      ><span data-i18n="other">其他</span></span
+                    ><strong>10.8%</strong>
+                  </li>
+                </ul>
+              </div>
+            </section>
+            <section class="card">
+              <h3 data-i18n="heatmap">高峰时段分布</h3>
+              <div class="heat" id="heat"></div>
+              <div class="heat-scale">
+                <span data-i18n="low">低</span>
+                <i style="background: #eef2f7"></i><i style="background: #c7d2fe"></i
+                ><i style="background: #818cf8"></i><i style="background: #6366f1"></i
+                ><i style="background: #4338ca"></i>
+                <span data-i18n="high">高</span>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <div class="row2">
+          <section class="card">
+            <h3 data-i18n="rank">项目消耗排行</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th data-i18n="colProj">项目名称</th>
+                  <th data-i18n="colTok">Token 消耗</th>
+                  <th data-i18n="colShare">占比</th>
+                  <th data-i18n="colDur">开发时长</th>
+                  <th data-i18n="colDlg">对话次数</th>
+                  <th data-i18n="colLast">最后活跃</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>1</td>
+                  <td class="name">gitlab_single_pipe</td>
+                  <td>
+                    <div class="bar">
+                      <span>812.5K</span>
+                      <div class="track"><div class="fill" style="width: 100%"></div></div>
+                    </div>
+                  </td>
+                  <td>33.2%</td>
+                  <td>52h 18m</td>
+                  <td>356</td>
+                  <td data-i18n="ago2h">2 小时前</td>
+                </tr>
+                <tr>
+                  <td>2</td>
+                  <td class="name">flow_pattern_classifier</td>
+                  <td>
+                    <div class="bar">
+                      <span>568.2K</span>
+                      <div class="track"><div class="fill" style="width: 70%"></div></div>
+                    </div>
+                  </td>
+                  <td>23.2%</td>
+                  <td>38h 45m</td>
+                  <td>278</td>
+                  <td data-i18n="ago4h">4 小时前</td>
+                </tr>
+                <tr>
+                  <td>3</td>
+                  <td class="name">MetaMax_recovered</td>
+                  <td>
+                    <div class="bar">
+                      <span>425.7K</span>
+                      <div class="track"><div class="fill" style="width: 52%"></div></div>
+                    </div>
+                  </td>
+                  <td>17.4%</td>
+                  <td>27h 32m</td>
+                  <td>189</td>
+                  <td data-i18n="ago1d">1 天前</td>
+                </tr>
+                <tr>
+                  <td>4</td>
+                  <td class="name">desktop</td>
+                  <td>
+                    <div class="bar">
+                      <span>310.1K</span>
+                      <div class="track"><div class="fill" style="width: 38%"></div></div>
+                    </div>
+                  </td>
+                  <td>12.6%</td>
+                  <td>18h 20m</td>
+                  <td>156</td>
+                  <td data-i18n="ago2d">2 天前</td>
+                </tr>
+                <tr>
+                  <td>5</td>
+                  <td class="name">results</td>
+                  <td>
+                    <div class="bar">
+                      <span>175.3K</span>
+                      <div class="track"><div class="fill" style="width: 22%"></div></div>
+                    </div>
+                  </td>
+                  <td>7.1%</td>
+                  <td>11h 37m</td>
+                  <td>96</td>
+                  <td data-i18n="ago3d">3 天前</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section class="card">
+            <h3 data-i18n="insights">使用洞察</h3>
+            <div class="insights">
+              <div class="insight">
+                <div class="ico g">↑</div>
+                <div>
+                  <strong data-i18n="i1t">周四使用最高</strong>
+                  <p data-i18n="i1d">本周四 Token 消耗达峰值 425,690</p>
+                </div>
+              </div>
+              <div class="insight">
+                <div class="ico a">★</div>
+                <div>
+                  <strong data-i18n="i2t">Claude 使用占比最高</strong>
+                  <p data-i18n="i2d">Claude-3.5 占比 45.2%，建议关注成本</p>
+                </div>
+              </div>
+              <div class="insight">
+                <div class="ico i">!</div>
+                <div>
+                  <strong data-i18n="i3t">效率提升建议</strong>
+                  <p data-i18n="i3d">平均每次对话消耗 1,964 Token，可优化提示</p>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="row3">
+          <section class="card">
+            <h3 data-i18n="projType">项目类型分布</h3>
+            <div class="donut-wrap">
+              <div class="donut" style="width: 96px; height: 96px">
+                <svg viewBox="0 0 96 96">
+                  <circle cx="48" cy="48" r="36" fill="none" stroke="#EEF2F7" stroke-width="12" />
+                  <circle
+                    cx="48"
+                    cy="48"
+                    r="36"
+                    fill="none"
+                    stroke="#6366F1"
+                    stroke-width="12"
+                    stroke-dasharray="88 138"
+                    stroke-dashoffset="0"
+                  />
+                  <circle
+                    cx="48"
+                    cy="48"
+                    r="36"
+                    fill="none"
+                    stroke="#34D399"
+                    stroke-width="12"
+                    stroke-dasharray="63 163"
+                    stroke-dashoffset="-88"
+                  />
+                  <circle
+                    cx="48"
+                    cy="48"
+                    r="36"
+                    fill="none"
+                    stroke="#3B82F6"
+                    stroke-width="12"
+                    stroke-dasharray="50 176"
+                    stroke-dashoffset="-151"
+                  />
+                  <circle
+                    cx="48"
+                    cy="48"
+                    r="36"
+                    fill="none"
+                    stroke="#94A3B8"
+                    stroke-width="12"
+                    stroke-dasharray="25 201"
+                    stroke-dashoffset="-201"
+                  />
+                </svg>
+                <div class="donut-center">
+                  <strong>18</strong>
+                  <span data-i18n="projCount">总项目数</span>
+                </div>
+              </div>
+              <ul class="legend">
+                <li>
+                  <span class="name"
+                    ><i class="swatch" style="background: #6366f1"></i
+                    ><span data-i18n="typeTool">工具/脚本</span></span
+                  ><strong>38.9%</strong>
+                </li>
+                <li>
+                  <span class="name"
+                    ><i class="swatch" style="background: #34d399"></i
+                    ><span data-i18n="typeRes">研究/实验</span></span
+                  ><strong>27.8%</strong>
+                </li>
+                <li>
+                  <span class="name"
+                    ><i class="swatch" style="background: #3b82f6"></i
+                    ><span data-i18n="typeWeb">Web 应用</span></span
+                  ><strong>22.2%</strong>
+                </li>
+                <li>
+                  <span class="name"
+                    ><i class="swatch" style="background: #94a3b8"></i
+                    ><span data-i18n="other">其他</span></span
+                  ><strong>11.1%</strong>
+                </li>
+              </ul>
+            </div>
+          </section>
+
+          <section class="card">
+            <h3 data-i18n="fileType">文件类型分布</h3>
+            <div class="hbars">
+              <div class="hbar">
+                <label><span>Python</span><span>42.1%</span></label>
+                <div class="track"><div class="fill" style="width: 42.1%"></div></div>
+              </div>
+              <div class="hbar">
+                <label><span>Markdown</span><span>23.4%</span></label>
+                <div class="track"><div class="fill" style="width: 23.4%"></div></div>
+              </div>
+              <div class="hbar">
+                <label><span>JavaScript</span><span>14.6%</span></label>
+                <div class="track"><div class="fill" style="width: 14.6%"></div></div>
+              </div>
+              <div class="hbar">
+                <label><span>JSON</span><span>8.7%</span></label>
+                <div class="track"><div class="fill" style="width: 8.7%"></div></div>
+              </div>
+              <div class="hbar">
+                <label><span data-i18n="other">其他</span><span>11.2%</span></label>
+                <div class="track"><div class="fill" style="width: 11.2%"></div></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="card">
+            <h3 data-i18n="bucketTitle">单次对话消耗分布 (Token)</h3>
+            <div class="buckets">
+              <div class="bucket">
+                <div class="col" style="height: 45%"></div>
+                <span>0-500</span>
+              </div>
+              <div class="bucket">
+                <div class="col" style="height: 100%"></div>
+                <span>500-2K</span>
+              </div>
+              <div class="bucket">
+                <div class="col" style="height: 78%"></div>
+                <span>2K-5K</span>
+              </div>
+              <div class="bucket">
+                <div class="col" style="height: 55%"></div>
+                <span>5K-10K</span>
+              </div>
+              <div class="bucket">
+                <div class="col" style="height: 32%"></div>
+                <span>10K+</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="card">
+            <h3 data-i18n="scoreTitle">本地开发效率评分</h3>
+            <div class="score-wrap">
+              <div class="score">
+                <svg viewBox="0 0 96 96">
+                  <circle cx="48" cy="48" r="36" fill="none" stroke="#EEF2F7" stroke-width="10" />
+                  <circle
+                    cx="48"
+                    cy="48"
+                    r="36"
+                    fill="none"
+                    stroke="#6366F1"
+                    stroke-width="10"
+                    stroke-dasharray="196 226"
+                    stroke-linecap="round"
+                  />
+                </svg>
+                <div class="score-center">
+                  <strong>87</strong>
+                  <span data-i18n="excellent">优秀</span>
+                </div>
+              </div>
+              <div class="score-list">
+                <div>
+                  <span data-i18n="s1">代码生成效率</span><strong>92</strong>
+                </div>
+                <div>
+                  <span data-i18n="s2">问题解决效率</span><strong>85</strong>
+                </div>
+                <div>
+                  <span data-i18n="s3">对话质量</span><strong>88</strong>
+                </div>
+                <div>
+                  <span data-i18n="s4">持续专注度</span><strong>83</strong>
+                </div>
+                <div style="color: #059669; font-weight: 650" data-i18n="sDelta">较上周 ↑ 5</div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+
+      <footer>
+        <span data-i18n="privacy">数据仅存本机，不上传云端。</span>
+        <span data-i18n="synced">同步 刚刚</span>
+      </footer>
+    </div>
+
+    <script>
+      const weekdaysZh = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+      const weekdaysEn = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+      const heatRoot = document.getElementById('heat')
+      const params = new URLSearchParams(location.search)
+      const locale = params.get('lang') === 'en' ? 'en' : 'zh'
+      document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en'
+      const days = locale === 'zh' ? weekdaysZh : weekdaysEn
+
+      // Seeded intensity pattern focused on work hours / weekdays
+      const levels = ['#eef2f7', '#c7d2fe', '#818cf8', '#6366f1', '#4338ca']
+      heatRoot.innerHTML =
+        '<div></div><div class="heat-hours"><span>0</span><span>4</span><span>8</span><span>12</span><span>16</span><span>20</span></div>' +
+        days
+          .map((d, wi) => {
+            const cells = Array.from({ length: 24 }, (_, h) => {
+              let t = 0
+              if (wi < 5 && h >= 9 && h <= 22) t = 1 + ((h + wi) % 4)
+              if (wi < 5 && (h === 14 || h === 15 || h === 20)) t = 4
+              if (wi >= 5 && h >= 10 && h <= 18) t = (h + wi) % 3
+              return `<div class="cell" style="background:${levels[t]}"></div>`
+            }).join('')
+            return `<div class="heat-row"><span>${d}</span><div class="heat-cells">${cells}</div></div>`
+          })
+          .join('')
+
+      const dict = {
+        zh: {
+          title: '本地开发数据统计',
+          overviewTag: '概览',
+          subtitle: '专注于本地开发效率与资源消耗分析，帮助团队做出更优决策',
+          rangeLabel: '2026-06-01 ~ 2026-06-07',
+          today: '今日',
+          d7: '近 7 天',
+          d30: '近 30 天',
+          refresh: '刷新数据',
+          exit: '退出大屏',
+          overview: '概览',
+          overviewHint: '全面掌握本地开发活动与资源消耗情况',
+          kpiTokens: '总消耗 Token',
+          kpiDur: '总开发时长',
+          kpiProj: '总项目数',
+          kpiAvgT: '日均 Token',
+          kpiAvgD: '日均开发时长',
+          kpiDlg: '总对话次数',
+          d1: '较上周 +18.6%',
+          d2: '较上周 +12.3%',
+          d3: '较上周 +2',
+          d4: '较上周 +9.8%',
+          d5: '较上周 +8.4%',
+          d6: '较上周 +15.1%',
+          tokenTrend: 'Token 消耗趋势',
+          durTrend: '开发时长趋势',
+          byDay: '按日',
+          byWeek: '按周',
+          byMonth: '按月',
+          modelMix: '模型使用占比',
+          other: '其他',
+          heatmap: '高峰时段分布',
+          low: '低',
+          high: '高',
+          rank: '项目消耗排行',
+          colProj: '项目名称',
+          colTok: 'Token 消耗',
+          colShare: '占比',
+          colDur: '开发时长',
+          colDlg: '对话次数',
+          colLast: '最后活跃',
+          ago2h: '2 小时前',
+          ago4h: '4 小时前',
+          ago1d: '1 天前',
+          ago2d: '2 天前',
+          ago3d: '3 天前',
+          insights: '使用洞察',
+          i1t: '周四使用最高',
+          i1d: '本周四 Token 消耗达峰值 425,690',
+          i2t: 'Claude 使用占比最高',
+          i2d: 'Claude-3.5 占比 45.2%，建议关注成本',
+          i3t: '效率提升建议',
+          i3d: '平均每次对话消耗 1,964 Token，可优化提示',
+          projType: '项目类型分布',
+          projCount: '总项目数',
+          typeTool: '工具/脚本',
+          typeRes: '研究/实验',
+          typeWeb: 'Web 应用',
+          fileType: '文件类型分布',
+          bucketTitle: '单次对话消耗分布 (Token)',
+          scoreTitle: '本地开发效率评分',
+          excellent: '优秀',
+          s1: '代码生成效率',
+          s2: '问题解决效率',
+          s3: '对话质量',
+          s4: '持续专注度',
+          sDelta: '较上周 ↑ 5',
+          privacy: '数据仅存本机，不上传云端。',
+          synced: '同步 刚刚',
+        },
+        en: {
+          title: 'Local development analytics',
+          overviewTag: 'Overview',
+          subtitle: 'Local efficiency and resource analysis — nothing leaves this machine',
+          rangeLabel: '2026-06-01 ~ 2026-06-07',
+          today: 'Today',
+          d7: 'Last 7 days',
+          d30: 'Last 30 days',
+          refresh: 'Refresh',
+          exit: 'Exit',
+          overview: 'Overview',
+          overviewHint: 'Local development activity and resource consumption at a glance',
+          kpiTokens: 'Total tokens',
+          kpiDur: 'Total coding time',
+          kpiProj: 'Projects',
+          kpiAvgT: 'Avg daily tokens',
+          kpiAvgD: 'Avg daily time',
+          kpiDlg: 'Dialogs',
+          d1: 'vs last period +18.6%',
+          d2: 'vs last period +12.3%',
+          d3: 'vs last period +2',
+          d4: 'vs last period +9.8%',
+          d5: 'vs last period +8.4%',
+          d6: 'vs last period +15.1%',
+          tokenTrend: 'Token usage trend',
+          durTrend: 'Coding time trend',
+          byDay: 'Day',
+          byWeek: 'Week',
+          byMonth: 'Month',
+          modelMix: 'Model mix',
+          other: 'Other',
+          heatmap: 'Peak hours',
+          low: 'Low',
+          high: 'High',
+          rank: 'Project ranking',
+          colProj: 'Project',
+          colTok: 'Tokens',
+          colShare: 'Share',
+          colDur: 'Duration',
+          colDlg: 'Dialogs',
+          colLast: 'Last active',
+          ago2h: '2h ago',
+          ago4h: '4h ago',
+          ago1d: '1d ago',
+          ago2d: '2d ago',
+          ago3d: '3d ago',
+          insights: 'Insights',
+          i1t: 'Peak day',
+          i1d: 'Thursday peaked at 425,690 tokens',
+          i2t: 'Top model',
+          i2d: 'Claude-3.5 is 45.2% — watch cost',
+          i3t: 'Efficiency tip',
+          i3d: 'Avg 1,964 tokens per dialog — prompts can be tightened',
+          projType: 'Project types',
+          projCount: 'Projects',
+          typeTool: 'Tools / scripts',
+          typeRes: 'Research',
+          typeWeb: 'Web apps',
+          fileType: 'File types',
+          bucketTitle: 'Tokens per dialog',
+          scoreTitle: 'Local efficiency score',
+          excellent: 'Excellent',
+          s1: 'Code generation',
+          s2: 'Problem solving',
+          s3: 'Dialog quality',
+          s4: 'Focus',
+          sDelta: 'vs last period ↑ 5',
+          privacy: 'Local only — nothing is uploaded.',
+          synced: 'Synced just now',
+        },
+      }
+      const t = dict[locale]
+      for (const el of document.querySelectorAll('[data-i18n]')) {
+        const key = el.getAttribute('data-i18n')
+        if (key && t[key] != null) el.textContent = t[key]
+      }
+    </script>
+  </body>
+</html>

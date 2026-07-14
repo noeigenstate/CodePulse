@@ -411,9 +411,33 @@
           </div>
         </div>
         <div class="controls">
-          <span class="chip"><span class="dot"></span><span data-i18n="overall">需要介入</span></span>
-          <span class="btn" data-i18n="lang">英文</span>
-          <span class="btn" data-i18n="mute">静音 30 分钟</span>
+          <span class="btn">
+            <svg viewBox="0 0 20 20" width="14" height="14" opacity="0.7" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M10 1.5a8.5 8.5 0 100 17 8.5 8.5 0 000-17zm0 1.5c1.5 0 2.9.5 4 1.3A14 14 0 0012.2 8H7.8A14 14 0 006 4.3 6.9 6.9 0 0110 3zm-5.3 2.1A12.5 12.5 0 016.3 9H3.6a7 7 0 011.1-3.9zM3.6 11h2.7a12.5 12.5 0 01-1.6 3.9A7 7 0 013.6 11zm3.1 0h4.6a14 14 0 01-1.8 4.2A6.9 6.9 0 0110 17a6.9 6.9 0 01-1.5-1.8A14 14 0 016.7 11zm6 0h2.7a7 7 0 01-1.1 3.9A12.5 12.5 0 0112.7 11zm2.7-2h-2.7A12.5 12.5 0 0114.3 5a7 7 0 011.1 4z"
+              />
+            </svg>
+            <span data-i18n="lang">英文</span>
+          </span>
+          <span class="btn">
+            <svg viewBox="0 0 20 20" width="14" height="14" opacity="0.7" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M10 2a5 5 0 00-5 5v2.2c0 .5-.2 1-.5 1.4L3.3 12.5A1 1 0 004.1 14h11.8a1 1 0 00.8-1.5L15.5 10.6c-.3-.4-.5-.9-.5-1.4V7a5 5 0 00-5-5zm0 14a2 2 0 01-1.7-1h3.4A2 2 0 0110 16z"
+              />
+            </svg>
+            <span data-i18n="mute">静音 30 分钟</span>
+          </span>
+          <span class="btn">
+            <svg viewBox="0 0 20 20" width="14" height="14" opacity="0.7" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M3 3a1 1 0 011-1h1a1 1 0 011 1v14H4a1 1 0 01-1-1V3zm5 6a1 1 0 011-1h1a1 1 0 011 1v8H8V9zm5-4a1 1 0 011-1h1a1 1 0 011 1v12h-3V5z"
+              />
+            </svg>
+            <span data-i18n="stats">后台</span>
+          </span>
         </div>
       </header>
       <main>
@@ -682,9 +706,9 @@
       const dict = {
         zh: {
           subtitle: '编程助手实时控制台',
-          overall: '需要介入',
           lang: '英文',
           mute: '静音 30 分钟',
+          stats: '后台',
           usingTools: '执行工具',
           projects: '项目',
           recent: '最近',
@@ -716,9 +740,9 @@
         },
         en: {
           subtitle: 'AI coding-agent live console',
-          overall: 'Attention',
           lang: 'Chinese',
           mute: 'Mute 30 min',
+          stats: 'Insights',
           usingTools: 'Using tools',
           projects: 'Projects',
           recent: 'Recent',

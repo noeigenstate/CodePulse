@@ -82,9 +82,10 @@ test('queryUsageStats aggregates tokens, turns, and projects from SQLite', async
       timestamp: now - day + 90_000,
     })
 
-    const stats = queryUsageStats(db, { range: '7d' }, now)
+    const stats = queryUsageStats(db, { range: '7d' }, now, { dbPath: join(home, 'codepulse.sqlite') })
 
     assert.equal(stats.hasData, true)
+    assert.equal(stats.persistenceAvailable, true)
     assert.ok(stats.kpis.totalTokens >= 11_500)
     assert.equal(stats.kpis.projectCount, 2)
     assert.equal(stats.kpis.dialogCount, 2)
@@ -102,8 +103,14 @@ test('queryUsageStats aggregates tokens, turns, and projects from SQLite', async
 })
 
 test('queryUsageStats returns empty snapshot without db', () => {
-  const stats = queryUsageStats(null, { range: 'today' }, Date.now())
+  const stats = queryUsageStats(null, { range: 'today' }, Date.now(), {
+    dbPath: 'C:/tmp/codepulse.sqlite',
+    openError: 'native module missing',
+  })
   assert.equal(stats.hasData, false)
+  assert.equal(stats.persistenceAvailable, false)
+  assert.equal(stats.dbPath, 'C:/tmp/codepulse.sqlite')
+  assert.match(String(stats.persistenceError), /native module missing|SQLite unavailable/)
   assert.equal(stats.kpis.totalTokens, 0)
   assert.equal(stats.projectRank.length, 0)
 })

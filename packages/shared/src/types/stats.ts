@@ -122,6 +122,15 @@ export interface UsageStatsSnapshot {
   generatedAt: number
   /** 范围内是否有任何事件/轮次。 */
   hasData: boolean
+  /**
+   * SQLite 是否可用。false 时统计恒为空（实时面板仍可工作）。
+   * 打包环境若 better-sqlite3 加载失败会落到此状态。
+   */
+  persistenceAvailable: boolean
+  /** 本机库路径（便于排查 dev / 安装包 userData 是否同一文件）。 */
+  dbPath?: string
+  /** 打开数据库或聚合失败时的简短原因。 */
+  persistenceError?: string
   kpis: StatsKpis
   tokenTrend: StatsTrendPoint[]
   durationTrend: StatsTrendPoint[]

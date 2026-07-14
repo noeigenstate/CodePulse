@@ -41,6 +41,10 @@ let mainWindow: BrowserWindow | null = null
 let tray: TrayController | null = null
 let server: LocalServer | null = null
 let db: DB | null = null
+/** 本机 SQLite 路径；统计后台只读此库（与实时 StatusHub 内存态分离）。 */
+let dbPath: string | null = null
+/** openDb 失败时的原因，用于统计页诊断。 */
+let dbOpenError: string | undefined
 let muteTimer: NodeJS.Timeout | null = null
 let updateTimer: NodeJS.Timeout | null = null
 let pruneTimer: NodeJS.Timeout | null = null
@@ -163,19 +167,28 @@ function registerIpc(): void {
   ipcMain.handle('codepulse:get-update', () => latestUpdate)
   ipcMain.handle('codepulse:install-update', () => installLatestUpdate())
   ipcMain.handle('codepulse:get-stats', (_event, query?: UsageStatsQuery) =>
-    queryUsageStats(db, query ?? {}),
+    queryUsageStats(db, query ?? {}, Date.now(), {
+      dbPath: dbPath ?? undefined,
+      openError: dbOpenError,
+    }),
   )
 }
 
 async function bootstrap(): Promise<void> {
   Menu.setApplicationMenu(null)
 
-  const dbPath = join(app.getPath('userData'), 'codepulse.sqlite')
+  dbPath = join(app.getPath('userData'), 'codepulse.sqlite')
   try {
     db = openDb(dbPath).db
+    dbOpenError = undefined
+    console.log(`[codepulse] SQLite ready at ${dbPath}`)
   } catch (err) {
     db = null
+    dbOpenError = err instanceof Error ? err.message : String(err)
     console.error('[codepulse] SQLite unavailable - running without persistence', err)
+    console.error(
+      '[codepulse] Live dashboard still works; local analytics will stay empty until SQLite loads.',
+    )
   }
 
   wireHub()

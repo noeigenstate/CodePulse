@@ -200,8 +200,23 @@ function StatsBody({
       </div>
 
       {!stats.hasData && (
-        <div className="rounded-card border border-dashed border-indigo-200 bg-indigo-50/50 px-4 py-3 text-sm text-indigo-800">
-          {s.noData}
+        <div
+          className={`rounded-card border border-dashed px-4 py-3 text-sm ${
+            stats.persistenceAvailable === false || stats.persistenceError
+              ? 'border-amber-200 bg-amber-50/80 text-amber-900'
+              : 'border-indigo-200 bg-indigo-50/50 text-indigo-800'
+          }`}
+        >
+          <p>
+            {stats.persistenceAvailable === false
+              ? s.persistenceUnavailable
+              : stats.persistenceError
+                ? s.queryFailed.replace('{error}', stats.persistenceError)
+                : s.emptyHistory}
+          </p>
+          {stats.dbPath ? (
+            <p className="mt-2 break-all text-meta opacity-80">SQLite: {stats.dbPath}</p>
+          ) : null}
         </div>
       )}
 

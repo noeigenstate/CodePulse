@@ -114,6 +114,11 @@ export interface StatsCopy {
   otherModels: string
   loading: string
   syncFailed: string
+  /** SQLite 未打开：实时面板可用，但历史统计为空 */
+  persistenceUnavailable: string
+  /** 库可用但时间范围内无记录 */
+  emptyHistory: string
+  queryFailed: string
 }
 
 export interface EmptyDashboardCopy {
@@ -358,6 +363,11 @@ const UI_COPY: Record<Locale, UiCopy> = {
       otherModels: '其他',
       loading: '正在同步本地数据…',
       syncFailed: '同步失败，请稍后重试',
+      persistenceUnavailable:
+        '本机历史库未就绪（SQLite 不可用）。实时控制台仍可工作，但统计需要落盘后的本地数据。请确认安装包完整，或查看主进程日志中的 SQLite 错误。',
+      emptyHistory:
+        '当前时间范围内没有本地历史记录。统计只读 SQLite（%APPDATA%\\CodePulse\\codepulse.sqlite），不会读取实时内存状态。请在本安装实例下再跑几轮 CLI 任务后点「刷新数据」。',
+      queryFailed: '统计聚合失败：{error}',
     },
   },
   en: {
@@ -514,6 +524,11 @@ const UI_COPY: Record<Locale, UiCopy> = {
       otherModels: 'Other',
       loading: 'Syncing local data…',
       syncFailed: 'Sync failed. Try again shortly.',
+      persistenceUnavailable:
+        'Local history DB is unavailable (SQLite did not open). The live console still works, but analytics needs on-disk data. Check that the installer is complete and look for SQLite errors in the main-process log.',
+      emptyHistory:
+        'No local history in this date range. Analytics reads only SQLite (not the in-memory live state). Run a few CLI turns with this installed app, then hit Refresh.',
+      queryFailed: 'Stats aggregation failed: {error}',
     },
   },
 }

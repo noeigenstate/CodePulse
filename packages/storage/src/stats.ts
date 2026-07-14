@@ -4,7 +4,7 @@
  *
  * @module storage/stats
  */
-import { and, gte, lt } from 'drizzle-orm'
+import { and, desc, gte, lt } from 'drizzle-orm'
 import type {
   StatsCategoryShare,
   StatsDelta,
@@ -34,23 +34,37 @@ interface RangeBounds {
   dayCount: number
 }
 
+export interface QueryUsageStatsOptions {
+  /** 本机库路径，仅写入快照供排查。 */
+  dbPath?: string
+  /** 打开库失败原因。 */
+  openError?: string
+}
+
 /**
  * 查询本地使用统计快照。
  *
- * @param db Drizzle 句柄；为 null 时返回空快照。
+ * @param db Drizzle 句柄；为 null 时返回空快照（persistenceAvailable=false）。
  * @param query 范围与粒度。
  * @param now 可选当前时间（测试可注入）。
+ * @param options 持久化诊断字段。
  */
 export function queryUsageStats(
   db: DB | null,
   query: UsageStatsQuery = {},
   now = Date.now(),
+  options: QueryUsageStatsOptions = {},
 ): UsageStatsSnapshot {
   const range = resolveRange(query, now)
-  const empty = emptySnapshot(range, now)
+  const empty = emptySnapshot(range, now, {
+    persistenceAvailable: Boolean(db),
+    dbPath: options.dbPath,
+    persistenceError: db ? undefined : (options.openError ?? 'SQLite unavailable'),
+  })
   if (!db) return empty
 
   try {
+    const started = Date.now()
     const current = collectPeriod(db, range.start, range.end, now)
     const prevStart = range.start - (range.end - range.start)
     const previous = collectPeriod(db, prevStart, range.start, now)
@@ -68,12 +82,19 @@ export function queryUsageStats(
     const insights = buildInsights(current, models, heatmap, heatmapMax, range)
     const kpis = buildKpis(current, previous, range.dayCount)
 
+    const elapsed = Date.now() - started
+    if (elapsed > 2_000) {
+      console.warn(`[codepulse] queryUsageStats took ${elapsed}ms`)
+    }
+
     return {
       rangeStart: range.start,
       rangeEnd: range.end,
       rangePreset: range.preset,
       generatedAt: now,
       hasData: current.eventCount > 0 || current.dialogCount > 0 || current.totalTokens > 0,
+      persistenceAvailable: true,
+      dbPath: options.dbPath,
       kpis,
       tokenTrend: trends,
       durationTrend: trends,
@@ -89,7 +110,12 @@ export function queryUsageStats(
     }
   } catch (err) {
     console.error('[codepulse] queryUsageStats failed', err)
-    return empty
+    const message = err instanceof Error ? err.message : String(err)
+    return emptySnapshot(range, now, {
+      persistenceAvailable: true,
+      dbPath: options.dbPath,
+      persistenceError: message,
+    })
   }
 }
 
@@ -486,20 +512,24 @@ function buildHeatmap(db: DB, start: number, end: number): StatsHeatCell[] {
 }
 
 function buildFileTypes(db: DB, start: number, end: number): StatsCategoryShare[] {
+  // 仅用 tool 相关短字段，避免把 message 全文扫进内存（大库上会导致统计卡住/失败）。
+  // 取最近一批即可反映分布，不必全量扫描。
   const rows = db
     .select({
       toolName: events.toolName,
       command: events.command,
-      message: events.message,
     })
     .from(events)
     .where(and(gte(events.timestamp, start), lt(events.timestamp, end)))
+    .orderBy(desc(events.timestamp))
+    .limit(8_000)
     .all()
 
   const counts = new Map<string, number>()
   const extRe = /\.([a-zA-Z0-9]{1,8})\b/g
   for (const row of rows) {
-    const text = `${row.toolName ?? ''} ${row.command ?? ''} ${row.message ?? ''}`
+    if (!row.toolName && !row.command) continue
+    const text = `${row.toolName ?? ''} ${row.command ?? ''}`
     let match: RegExpExecArray | null
     const seen = new Set<string>()
     while ((match = extRe.exec(text)) !== null) {
@@ -808,7 +838,15 @@ function resolveRange(query: UsageStatsQuery, now: number): RangeBounds {
   return { start, end, preset, dayCount: 7 }
 }
 
-function emptySnapshot(range: RangeBounds, now: number): UsageStatsSnapshot {
+function emptySnapshot(
+  range: RangeBounds,
+  now: number,
+  meta: {
+    persistenceAvailable: boolean
+    dbPath?: string
+    persistenceError?: string
+  } = { persistenceAvailable: false },
+): UsageStatsSnapshot {
   const emptyDelta: StatsDelta = { comparable: false }
   const zeroKpis: StatsKpis = {
     totalTokens: 0,
@@ -832,6 +870,9 @@ function emptySnapshot(range: RangeBounds, now: number): UsageStatsSnapshot {
     rangePreset: range.preset,
     generatedAt: now,
     hasData: false,
+    persistenceAvailable: meta.persistenceAvailable,
+    dbPath: meta.dbPath,
+    persistenceError: meta.persistenceError,
     kpis: zeroKpis,
     tokenTrend: makeBuckets(range.start, range.end, 'day').map((bucketStart) => ({
       bucketStart,

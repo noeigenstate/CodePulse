@@ -3,9 +3,12 @@ import type {
   Agent,
   AgentType,
   StatusSnapshot,
+  UiLocale,
   UpdateDownloadProgress,
   UpdateInfo,
   UpdateInstallResult,
+  UsageStatsQuery,
+  UsageStatsSnapshot,
 } from '@codepulse/shared'
 
 type Unsubscribe = () => void
@@ -21,9 +24,13 @@ const api = {
   ack: (agent: AgentType, workspacePath?: string): Promise<boolean> =>
     ipcRenderer.invoke('codepulse:ack', agent, workspacePath),
   setMute: (muted: boolean): Promise<boolean> => ipcRenderer.invoke('codepulse:set-mute', muted),
+  setLocale: (locale: UiLocale): Promise<UiLocale> =>
+    ipcRenderer.invoke('codepulse:set-locale', locale),
   detectAgents: (): Promise<Agent[]> => ipcRenderer.invoke('codepulse:detect-agents'),
   getUpdate: (): Promise<UpdateInfo | null> => ipcRenderer.invoke('codepulse:get-update'),
   installUpdate: (): Promise<UpdateInstallResult> => ipcRenderer.invoke('codepulse:install-update'),
+  getStats: (query?: UsageStatsQuery): Promise<UsageStatsSnapshot> =>
+    ipcRenderer.invoke('codepulse:get-stats', query),
   onStatus: (cb: (snapshot: StatusSnapshot) => void): Unsubscribe =>
     subscribe('codepulse:status', cb),
   onAgents: (cb: (agents: Agent[]) => void): Unsubscribe => subscribe('codepulse:agents', cb),

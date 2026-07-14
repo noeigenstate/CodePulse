@@ -17,6 +17,7 @@ import {
 } from '@codepulse/shared'
 import { useStore } from './store.js'
 import { Header } from './components/Header.js'
+import { StatsDashboard } from './components/StatsDashboard.js'
 import {
   acknowledgeCodexTrust,
   buildAgentSetupReminder,
@@ -48,7 +49,6 @@ import {
   type Locale,
   type UiCopy,
 } from './lib/i18n.js'
-import { buildUsageStats, formatQuotaPercent } from './lib/usageStats.js'
 import codePulseIcon from './assets/codepulse-icon.png'
 
 /**
@@ -77,12 +77,9 @@ export function App(): JSX.Element {
   const [codexTrustAcknowledged, setCodexTrustAcknowledged] = useState<boolean>(() =>
     readCodexTrustAcknowledged(window.localStorage),
   )
+  /** 本地开发数据统计后台（设计稿大屏） */
   const [statsOpen, setStatsOpen] = useState(false)
   const panels = useMemo(() => buildAgentPanels(snapshot.agents), [snapshot.agents])
-  const usageStats = useMemo(
-    () => buildUsageStats(panels, snapshot.updatedAt),
-    [panels, snapshot.updatedAt],
-  )
   const setupReminder = useMemo(() => buildAgentSetupReminder(agents), [agents])
   const copy = useMemo(() => uiCopy(locale), [locale])
   const showSetupReminder = shouldShowAgentSetupReminder(
@@ -92,6 +89,10 @@ export function App(): JSX.Element {
     codexTrustAcknowledged,
   )
   const now = useNow(30_000)
+
+  useEffect(() => {
+    void window.codepulse.setLocale(locale)
+  }, [locale])
 
   useEffect(() => init(), [init])
 
@@ -110,6 +111,18 @@ export function App(): JSX.Element {
     }
   }
 
+  const liveConsole = (
+    <LiveConsole
+      panels={panels}
+      sessionCount={snapshot.agents.length}
+      updatedAt={snapshot.updatedAt}
+      locale={locale}
+      copy={copy}
+      now={now}
+      onAck={(agentType, workspacePath) => ack(agentType, workspacePath)}
+    />
+  )
+
   return (
     <div className="app-shell flex h-full flex-col text-ink">
       <Header
@@ -118,40 +131,9 @@ export function App(): JSX.Element {
         onToggleLocale={toggleLocale}
         onToggleMute={toggleMute}
         onOpenStats={() => setStatsOpen(true)}
+        statsActive={statsOpen}
       />
-      <div className="min-h-0 flex-1 overflow-hidden px-5 pb-3">
-        <main className="h-full min-w-0 overflow-x-auto overflow-y-hidden pr-1">
-          {panels.length === 0 ? (
-            <EmptyDashboard copy={copy} />
-          ) : (
-            <div className={`grid h-full items-stretch gap-4 ${panelGridClass(panels.length)}`}>
-              {panels.map((panel) => (
-                <AgentPanelView
-                  key={panel.agentType}
-                  panel={panel}
-                  locale={locale}
-                  copy={copy}
-                  onAck={(agentType, workspacePath) => ack(agentType, workspacePath)}
-                />
-              ))}
-            </div>
-          )}
-        </main>
-      </div>
-      <footer className="footer-strip flex shrink-0 items-center justify-between gap-3 px-6 py-2.5">
-        <span>
-          {panels.length === 0
-            ? copy.emptyDashboard.title
-            : locale === 'zh'
-              ? `${panels.length} 个助手分屏 · ${snapshot.agents.length} 个会话`
-              : `${panels.length} panels · ${snapshot.agents.length} sessions`}
-        </span>
-        <span className="tabular-nums">
-          {locale === 'zh'
-            ? `同步 ${formatRelative(snapshot.updatedAt, now, locale)}`
-            : `Synced ${formatRelative(snapshot.updatedAt, now, locale)}`}
-        </span>
-      </footer>
+      {liveConsole}
       {showSetupReminder && (
         <AgentSetupReminderModal
           copy={copy}
@@ -171,155 +153,66 @@ export function App(): JSX.Element {
         />
       )}
       {statsOpen && (
-        <UsageStatsModal
-          copy={copy}
-          locale={locale}
-          stats={usageStats}
-          now={now}
-          onClose={() => setStatsOpen(false)}
-        />
+        <StatsDashboard locale={locale} copy={copy} onClose={() => setStatsOpen(false)} />
       )}
     </div>
   )
 }
 
-function UsageStatsModal({
-  copy,
+/** 实时三栏控制台主体 + 底栏（与设计稿一致） */
+function LiveConsole({
+  panels,
+  sessionCount,
+  updatedAt,
   locale,
-  stats,
+  copy,
   now,
-  onClose,
+  onAck,
 }: {
-  copy: UiCopy
+  panels: AgentPanel[]
+  sessionCount: number
+  updatedAt: number
   locale: Locale
-  stats: ReturnType<typeof buildUsageStats>
+  copy: UiCopy
   now: number
-  onClose: () => void
+  onAck: (agentType: AgentType, workspacePath?: string) => void
 }): JSX.Element {
-  const s = copy.stats
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-sm">
-      <section
-        aria-modal="true"
-        className="liquid-glass flex max-h-[min(calc(100vh-2rem),40rem)] w-full max-w-[32rem] flex-col overflow-hidden shadow-card-hover"
-        role="dialog"
-      >
-        <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
-          <div className="min-w-0">
-            <h2 className="text-xl font-semibold text-ink">{s.title}</h2>
-            <p className="mt-1 text-sm leading-6 text-ink-500">{s.subtitle}</p>
-          </div>
-          <button type="button" className="control-btn h-9 shrink-0" onClick={onClose}>
-            {s.close}
-          </button>
-        </div>
-
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
-          <div>
-            <p className="text-meta font-semibold text-ink-500">{s.overview}</p>
-            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-              <StatCard label={s.panels} value={String(stats.panelCount)} />
-              <StatCard label={s.projects} value={String(stats.projectCount)} />
-              <StatCard label={s.running} value={String(stats.runningCount)} />
-              <StatCard label={s.waiting} value={String(stats.waitingCount)} />
-              <StatCard label={s.unread} value={String(stats.unreadCount)} />
-              <StatCard
-                label={s.models}
-                value={stats.models.length > 0 ? String(stats.models.length) : '—'}
-              />
-            </div>
-            {stats.models.length > 0 && (
-              <p className="mt-2 truncate text-meta text-ink-500" title={stats.models.join(', ')}>
-                {s.models}: {stats.models.join(' · ')}
-              </p>
-            )}
-            <p className="mt-1 text-meta text-ink-400">
-              {locale === 'zh'
-                ? `同步 ${formatRelative(stats.updatedAt, now, locale)}`
-                : `Synced ${formatRelative(stats.updatedAt, now, locale)}`}
-            </p>
-          </div>
-
-          <div>
-            <p className="text-meta font-semibold text-ink-500">{s.byAgent}</p>
-            {stats.agents.length === 0 ? (
-              <p className="mt-2 text-sm leading-6 text-ink-500">{s.noData}</p>
-            ) : (
-              <div className="mt-2 grid gap-2">
-                {stats.agents.map((row) => (
-                  <div
-                    key={row.agentType}
-                    className="rounded-card border border-line bg-white px-3 py-2.5 shadow-soft"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="font-semibold text-ink">{row.name}</p>
-                      <p className="text-meta tabular-nums text-ink-500">
-                        {row.projects} · {s.projects}
-                      </p>
-                    </div>
-                    <div className="mt-2 grid grid-cols-3 gap-2 text-meta">
-                      <span className="text-ink-500">
-                        {s.running} <strong className="text-ink">{row.running}</strong>
-                      </span>
-                      <span className="text-ink-500">
-                        {s.waiting} <strong className="text-ink">{row.waiting}</strong>
-                      </span>
-                      <span className="text-ink-500">
-                        {s.unread} <strong className="text-ink">{row.unread}</strong>
-                      </span>
-                    </div>
-                    {(row.weeklyUsedPercent != null || row.fiveHourUsedPercent != null) && (
-                      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-meta text-ink-500">
-                        {row.fiveHourUsedPercent != null && (
-                          <span>
-                            {s.fiveHourUsed}: {formatQuotaPercent(row.fiveHourUsedPercent)}
-                          </span>
-                        )}
-                        {row.weeklyUsedPercent != null && (
-                          <span>
-                            {s.weeklyUsed}: {formatQuotaPercent(row.weeklyUsedPercent)}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    {row.models.length > 0 && (
-                      <p
-                        className="mt-1 truncate text-meta text-ink-400"
-                        title={row.models.join(', ')}
-                      >
-                        {row.models.join(' · ')}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-card border border-line bg-[#F8FAFC] px-3 py-3">
-            <p className="text-meta font-semibold text-ink-500">{s.roadmapTitle}</p>
-            <ul className="mt-2 space-y-1.5">
-              {s.roadmap.map((item) => (
-                <li key={item} className="flex gap-2 text-sm leading-5 text-ink-700">
-                  <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-brand-codex" />
-                  <span>{item}</span>
-                </li>
+    <>
+      <div className="min-h-0 flex-1 overflow-hidden px-5 pb-3">
+        <main className="h-full min-w-0 overflow-x-auto overflow-y-hidden pr-1">
+          {panels.length === 0 ? (
+            <EmptyDashboard copy={copy} />
+          ) : (
+            <div className={`grid h-full items-stretch gap-4 ${panelGridClass(panels.length)}`}>
+              {panels.map((panel) => (
+                <AgentPanelView
+                  key={panel.agentType}
+                  panel={panel}
+                  locale={locale}
+                  copy={copy}
+                  onAck={onAck}
+                />
               ))}
-            </ul>
-            <p className="mt-3 text-meta text-ink-400">{s.privacyNote}</p>
-          </div>
-        </div>
-      </section>
-    </div>
-  )
-}
-
-function StatCard({ label, value }: { label: string; value: string }): JSX.Element {
-  return (
-    <div className="stat-pill">
-      <p className="text-[10px] font-medium text-ink-500">{label}</p>
-      <p className="mt-0.5 text-[15px] font-semibold tabular-nums text-ink">{value}</p>
-    </div>
+            </div>
+          )}
+        </main>
+      </div>
+      <footer className="footer-strip flex shrink-0 items-center justify-between gap-3 px-6 py-2.5">
+        <span>
+          {panels.length === 0
+            ? copy.emptyDashboard.title
+            : locale === 'zh'
+              ? `${panels.length} 个助手分屏 · ${sessionCount} 个会话`
+              : `${panels.length} panels · ${sessionCount} sessions`}
+        </span>
+        <span className="tabular-nums">
+          {locale === 'zh'
+            ? `同步 ${formatRelative(updatedAt, now, locale)}`
+            : `Synced ${formatRelative(updatedAt, now, locale)}`}
+        </span>
+      </footer>
+    </>
   )
 }
 

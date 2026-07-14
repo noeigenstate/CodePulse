@@ -705,6 +705,44 @@ test('StatusHub only emits notifications for completed turns', () => {
   )
 })
 
+test('StatusHub applies locale changes to subsequent completion notifications', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0, locale: 'en' })
+  const notifications: NotificationRequest[] = []
+  hub.on('notification', (notification) => notifications.push(notification))
+
+  const completeTurn = (turnId: string, timestamp: number): void => {
+    hub.ingest({
+      id: `${turnId}-prompt`,
+      source: 'codex',
+      eventType: 'prompt_submit',
+      externalSessionId: 'locale-session',
+      externalTurnId: turnId,
+      cwd: 'E:/project/locale-demo',
+      message: 'Please fix the update timeout',
+      timestamp,
+    })
+    hub.ingest({
+      id: `${turnId}-stop`,
+      source: 'codex',
+      eventType: 'turn_stop',
+      externalSessionId: 'locale-session',
+      externalTurnId: turnId,
+      cwd: 'E:/project/locale-demo',
+      timestamp: timestamp + 1,
+    })
+  }
+
+  completeTurn('turn-en', 2_000_000)
+  assert.match(notifications[0]?.title ?? '', /completed/)
+  assert.equal(notifications[0]?.body, 'fix the update timeout')
+
+  hub.setLocale('zh')
+  completeTurn('turn-zh', 2_000_010)
+  assert.match(notifications[1]?.title ?? '', /已完成/)
+  assert.equal(notifications[1]?.body, '任务已完成，请打开应用查看详情')
+  assert.doesNotMatch(notifications[1]?.body ?? '', /\b(fix|update|timeout|completed)\b/i)
+})
+
 test('StatusHub keeps concurrent sessions in the same workspace separate', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
 

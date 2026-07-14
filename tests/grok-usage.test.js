@@ -135,3 +135,111 @@ test('Grok usage reader returns empty object when no local data exists', async (
     await rm(home, { recursive: true, force: true })
   }
 })
+
+test('Grok usage reader uses updates.jsonl live context when signals.json is absent', async () => {
+  const home = join(tmpdir(), `codepulse-grok-live-${Date.now()}`)
+  const cwd = 'E:\\work\\active-session'
+  const sessionId = '019f2222-aaaa-bbbb-cccc-ddddeeeeffff'
+  const sessionDir = join(home, 'sessions', encodeURIComponent(cwd), sessionId)
+
+  await mkdir(sessionDir, { recursive: true })
+  await writeFile(
+    join(sessionDir, 'summary.json'),
+    JSON.stringify({
+      info: { id: sessionId, cwd },
+      current_model_id: 'grok-4.5',
+    }),
+    'utf8',
+  )
+  // Active turn: only summary + updates (no signals.json yet).
+  // Earlier higher totalTokens must NOT win — context can shrink after compression.
+  await writeFile(
+    join(sessionDir, 'updates.jsonl'),
+    [
+      JSON.stringify({
+        type: 'status',
+        params: { _meta: { totalTokens: 200000 }, model: 'grok-4.5' },
+      }),
+      JSON.stringify({
+        type: 'turn_completed',
+        params: {
+          // Cumulative model-call volume — must be ignored for context.
+          usage: { totalTokens: 999999 },
+        },
+      }),
+      JSON.stringify({
+        type: 'status',
+        params: { _meta: { totalTokens: 115254 }, model: 'grok-4.5' },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+  await writeFile(
+    join(home, 'models_cache.json'),
+    JSON.stringify({
+      models: [
+        {
+          id: 'grok-4.5',
+          context_window: 500000,
+        },
+      ],
+    }),
+    'utf8',
+  )
+
+  try {
+    const usage = await readLatestGrokUsage({ session_id: sessionId, cwd }, { grokHome: home })
+
+    assert.equal(usage.model, 'grok-4.5')
+    assert.equal(usage.usage?.total_tokens, 115254, 'must use last _meta.totalTokens, not max')
+    assert.equal(usage.context_window_size, 500000)
+    assert.ok(
+      Math.abs(Number(usage.context_used_percent) - (115254 / 500000) * 100) < 0.01,
+      `expected ~23% context, got ${usage.context_used_percent}`,
+    )
+    assert.ok(String(usage.usage_source_path).includes('updates.jsonl'))
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('Grok usage reader prefers signals.json over updates.jsonl when both exist', async () => {
+  const home = join(tmpdir(), `codepulse-grok-signals-pref-${Date.now()}`)
+  const cwd = 'E:\\work\\done-session'
+  const sessionId = '019f3333-aaaa-bbbb-cccc-ddddeeeeffff'
+  const sessionDir = join(home, 'sessions', encodeURIComponent(cwd), sessionId)
+
+  await mkdir(sessionDir, { recursive: true })
+  await writeFile(
+    join(sessionDir, 'summary.json'),
+    JSON.stringify({ info: { id: sessionId, cwd }, current_model_id: 'grok-4.5' }),
+    'utf8',
+  )
+  await writeFile(
+    join(sessionDir, 'updates.jsonl'),
+    JSON.stringify({
+      type: 'status',
+      params: { _meta: { totalTokens: 99999 }, model: 'grok-4.5' },
+    }) + '\n',
+    'utf8',
+  )
+  await writeFile(
+    join(sessionDir, 'signals.json'),
+    JSON.stringify({
+      contextWindowUsage: 23,
+      contextTokensUsed: 115254,
+      contextWindowTokens: 500000,
+      primaryModelId: 'grok-4.5',
+    }),
+    'utf8',
+  )
+
+  try {
+    const usage = await readLatestGrokUsage({ session_id: sessionId, cwd }, { grokHome: home })
+    assert.equal(usage.context_used_percent, 23)
+    assert.equal(usage.usage?.total_tokens, 115254)
+    assert.ok(String(usage.usage_source_path).includes('signals.json'))
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})

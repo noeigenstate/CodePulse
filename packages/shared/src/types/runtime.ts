@@ -123,6 +123,9 @@ export type ServerPushMessage =
  */
 export type NotificationLevel = 'soft' | 'normal' | 'strong'
 
+/** 用户在桌面端选择的界面语言，同时用于系统通知文案。 */
+export type UiLocale = 'zh' | 'en'
+
 /**
  * 由规则引擎产生的、展示一条通知的请求。
  *

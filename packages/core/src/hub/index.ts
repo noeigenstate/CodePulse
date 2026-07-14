@@ -13,6 +13,7 @@ import {
   type NotificationRequest,
   type StatusSnapshot,
   type TokenPayload,
+  type UiLocale,
   TurnState,
   workspaceKey,
 } from '@codepulse/shared'
@@ -123,6 +124,11 @@ export class StatusHub extends EventEmitter {
    */
   setMuted(muted: boolean): void {
     this.rules.setMuted(muted)
+  }
+
+  /** 让后续系统通知使用桌面端当前选择的语言。 */
+  setLocale(locale: UiLocale): void {
+    this.rules.setLocale(locale)
   }
 
   /**

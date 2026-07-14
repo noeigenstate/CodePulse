@@ -6,12 +6,20 @@ import {
   type AgentType,
   type NotificationRequest,
   type StatusSnapshot,
+  type UiLocale,
   type UpdateDownloadProgress,
   type UpdateInfo,
   type UpdateInstallResult,
+  type UsageStatsQuery,
 } from '@codepulse/shared'
 import { StatusHub } from '@codepulse/core'
-import { openDb, persistEvent, pruneEventsBefore, type DB } from '@codepulse/storage'
+import {
+  openDb,
+  persistEvent,
+  pruneEventsBefore,
+  queryUsageStats,
+  type DB,
+} from '@codepulse/storage'
 import {
   cleanupAgents,
   configureAgents,
@@ -134,6 +142,12 @@ function setMuted(muted: boolean): void {
   broadcast('codepulse:mute', muted)
 }
 
+function setLocale(value: unknown): UiLocale {
+  const locale: UiLocale = value === 'en' ? 'en' : 'zh'
+  hub.setLocale(locale)
+  return locale
+}
+
 function registerIpc(): void {
   ipcMain.handle('codepulse:get-status', () => hub.snapshot())
   ipcMain.handle('codepulse:ack', (_event, agent: AgentType, workspacePath?: string) => {
@@ -144,9 +158,13 @@ function registerIpc(): void {
     setMuted(muted)
     return muted
   })
+  ipcMain.handle('codepulse:set-locale', (_event, locale: unknown) => setLocale(locale))
   ipcMain.handle('codepulse:detect-agents', () => refreshLocalAgents())
   ipcMain.handle('codepulse:get-update', () => latestUpdate)
   ipcMain.handle('codepulse:install-update', () => installLatestUpdate())
+  ipcMain.handle('codepulse:get-stats', (_event, query?: UsageStatsQuery) =>
+    queryUsageStats(db, query ?? {}),
+  )
 }
 
 async function bootstrap(): Promise<void> {

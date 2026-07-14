@@ -7,6 +7,8 @@ interface Props {
   onToggleLocale: () => void
   onToggleMute: () => void
   onOpenStats: () => void
+  /** 大屏模式中：按钮变为退出大屏 */
+  statsActive?: boolean
 }
 
 export function Header({
@@ -15,8 +17,14 @@ export function Header({
   onToggleLocale,
   onToggleMute,
   onOpenStats,
+  statsActive = false,
 }: Props): JSX.Element {
   const copy = headerCopy(locale)
+  const statsLabel = statsActive
+    ? locale === 'zh'
+      ? '退出大屏'
+      : 'Exit'
+    : copy.stats
 
   return (
     <header className="px-6 pb-3 pt-5">
@@ -59,9 +67,16 @@ export function Header({
             {muted ? <BellOffIcon /> : <BellIcon />}
             <span>{muted ? copy.muted : copy.mute}</span>
           </button>
-          <button type="button" onClick={onOpenStats} className="control-btn" title={copy.stats}>
+          <button
+            type="button"
+            onClick={onOpenStats}
+            className={`control-btn ${
+              statsActive ? 'border-indigo-200 bg-indigo-50 text-brand-codex hover:bg-indigo-100' : ''
+            }`}
+            title={statsLabel}
+          >
             <ChartIcon />
-            <span>{copy.stats}</span>
+            <span>{statsLabel}</span>
           </button>
         </div>
       </div>

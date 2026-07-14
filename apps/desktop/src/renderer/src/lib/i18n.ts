@@ -37,20 +37,83 @@ export interface StatsCopy {
   title: string
   subtitle: string
   close: string
+  backToLive: string
+  pageTitle: string
+  pageSubtitle: string
   overview: string
-  panels: string
-  projects: string
-  running: string
-  waiting: string
-  unread: string
-  models: string
-  byAgent: string
-  weeklyUsed: string
-  fiveHourUsed: string
+  overviewHint: string
+  rangeToday: string
+  range7d: string
+  range30d: string
+  refresh: string
+  refreshing: string
+  granularityDay: string
+  granularityWeek: string
+  granularityMonth: string
   noData: string
   privacyNote: string
-  roadmapTitle: string
-  roadmap: string[]
+  /** KPI */
+  kpiTotalTokens: string
+  kpiTotalDuration: string
+  kpiProjects: string
+  kpiAvgDailyTokens: string
+  kpiAvgDailyDuration: string
+  kpiDialogs: string
+  vsPrev: string
+  vsPrevWeek: string
+  /** Charts */
+  tokenTrendTitle: string
+  durationTrendTitle: string
+  modelMixTitle: string
+  heatmapTitle: string
+  projectRankTitle: string
+  insightsTitle: string
+  projectTypeTitle: string
+  fileTypeTitle: string
+  dialogBucketTitle: string
+  efficiencyTitle: string
+  /** Table columns */
+  colRank: string
+  colProject: string
+  colTokens: string
+  colShare: string
+  colDuration: string
+  colDialogs: string
+  colLastActive: string
+  /** Categories */
+  projectTypeTool: string
+  projectTypeResearch: string
+  projectTypeWeb: string
+  projectTypeOther: string
+  bucket0_500: string
+  bucket500_2k: string
+  bucket2k_5k: string
+  bucket5k_10k: string
+  bucket10k_plus: string
+  /** Efficiency */
+  gradeExcellent: string
+  gradeGood: string
+  gradeFair: string
+  gradeLow: string
+  scoreCodeGen: string
+  scoreProblemSolve: string
+  scoreDialogQuality: string
+  scoreFocus: string
+  weekdayLabels: string[]
+  /** Insights templates */
+  insightPeakDay: string
+  insightPeakDayDetail: string
+  insightTopModel: string
+  insightTopModelDetail: string
+  insightEfficiency: string
+  insightEfficiencyDetail: string
+  insightPeakHour: string
+  insightPeakHourDetail: string
+  insightEmpty: string
+  insightEmptyDetail: string
+  otherModels: string
+  loading: string
+  syncFailed: string
 }
 
 export interface EmptyDashboardCopy {
@@ -221,28 +284,80 @@ const UI_COPY: Record<Locale, UiCopy> = {
       projectRoot: '项目根目录',
     },
     stats: {
-      title: '使用统计',
-      subtitle: '基于本机实时状态的本地汇总，不上传云端。',
+      title: '本地开发数据统计',
+      subtitle: '专注于本地开发效率与资源消耗分析，帮助团队做出更优决策',
       close: '关闭',
-      overview: '总览',
-      panels: '助手分屏',
-      projects: '活跃项目',
-      running: '进行中',
-      waiting: '等待你',
-      unread: '未读完成',
-      models: '模型',
-      byAgent: '按助手',
-      weeklyUsed: '每周已用',
-      fiveHourUsed: '5 小时已用',
-      noData: '暂无任务数据。开始 CLI 任务后这里会汇总项目与额度。',
-      privacyNote: '统计仅使用本机内存中的 Dashboard 状态，不会发送到服务器。',
-      roadmapTitle: '后续可扩展',
-      roadmap: [
-        '近 7 天完成轮次 / 工具调用趋势',
-        '按项目统计耗时与完成次数',
-        '额度告警阈值与静音策略',
-        '导出 CSV / 本地报告',
-      ],
+      backToLive: '退出大屏',
+      pageTitle: '概览',
+      pageSubtitle: '全面掌握本地开发活动与资源消耗情况',
+      overview: '概览',
+      overviewHint: '数据来自本机 SQLite，点击刷新可同步最新记录',
+      rangeToday: '今日',
+      range7d: '近 7 天',
+      range30d: '近 30 天',
+      refresh: '刷新数据',
+      refreshing: '同步中…',
+      granularityDay: '按日',
+      granularityWeek: '按周',
+      granularityMonth: '按月',
+      noData: '暂无统计数据。开始 CLI 任务后，后台会自动汇总 Token、耗时与项目。',
+      privacyNote: '数据仅存本机，不上传云端。',
+      kpiTotalTokens: '总消耗 Token',
+      kpiTotalDuration: '总开发时长',
+      kpiProjects: '总项目数',
+      kpiAvgDailyTokens: '日均 Token',
+      kpiAvgDailyDuration: '日均开发时长',
+      kpiDialogs: '总对话次数',
+      vsPrev: '较上期',
+      vsPrevWeek: '较上周',
+      tokenTrendTitle: 'Token 消耗趋势',
+      durationTrendTitle: '开发时长趋势',
+      modelMixTitle: '模型使用占比',
+      heatmapTitle: '高峰时段分布',
+      projectRankTitle: '项目消耗排行',
+      insightsTitle: '使用洞察',
+      projectTypeTitle: '项目类型分布',
+      fileTypeTitle: '文件类型分布',
+      dialogBucketTitle: '单次对话消耗分布 (Token)',
+      efficiencyTitle: '本地开发效率评分',
+      colRank: '#',
+      colProject: '项目名称',
+      colTokens: 'Token 消耗',
+      colShare: '占比',
+      colDuration: '开发时长',
+      colDialogs: '对话次数',
+      colLastActive: '最后活跃',
+      projectTypeTool: '工具/脚本',
+      projectTypeResearch: '研究/实验',
+      projectTypeWeb: 'Web 应用',
+      projectTypeOther: '其他',
+      bucket0_500: '0-500',
+      bucket500_2k: '500-2K',
+      bucket2k_5k: '2K-5K',
+      bucket5k_10k: '5K-10K',
+      bucket10k_plus: '10K+',
+      gradeExcellent: '优秀',
+      gradeGood: '良好',
+      gradeFair: '一般',
+      gradeLow: '待提升',
+      scoreCodeGen: '代码生成效率',
+      scoreProblemSolve: '问题解决效率',
+      scoreDialogQuality: '对话质量',
+      scoreFocus: '持续专注度',
+      weekdayLabels: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
+      insightPeakDay: '峰值日使用最高',
+      insightPeakDayDetail: '{day} Token 消耗达峰值 {tokens}',
+      insightTopModel: '模型使用占比最高',
+      insightTopModelDetail: '{model} 占比 {percent}%，建议关注成本',
+      insightEfficiency: '效率提升建议',
+      insightEfficiencyDetail: '平均每次对话消耗 {avgTokens} Token，可优化提示',
+      insightPeakHour: '活跃高峰',
+      insightPeakHourDetail: '{weekday} {hour}:00 附近最活跃（{value} 次事件）',
+      insightEmpty: '等待数据',
+      insightEmptyDetail: '近 {days} 天尚无足够记录，开始 CLI 任务后自动同步。',
+      otherModels: '其他',
+      loading: '正在同步本地数据…',
+      syncFailed: '同步失败，请稍后重试',
     },
   },
   en: {
@@ -325,28 +440,80 @@ const UI_COPY: Record<Locale, UiCopy> = {
       projectRoot: 'Project root',
     },
     stats: {
-      title: 'Usage insights',
-      subtitle: 'Local summary from live dashboard state — nothing is uploaded.',
+      title: 'Local development analytics',
+      subtitle: 'Local efficiency and resource analysis — nothing leaves this machine',
       close: 'Close',
+      backToLive: 'Exit',
+      pageTitle: 'Overview',
+      pageSubtitle: 'Local development activity and resource consumption at a glance',
       overview: 'Overview',
-      panels: 'Agent panes',
-      projects: 'Active projects',
-      running: 'Running',
-      waiting: 'Waiting on you',
-      unread: 'Unread done',
-      models: 'Models',
-      byAgent: 'By agent',
-      weeklyUsed: 'Weekly used',
-      fiveHourUsed: '5h used',
-      noData: 'No task data yet. Start a CLI task and this view will fill in.',
-      privacyNote: 'Stats use in-memory dashboard state only and never leave this machine.',
-      roadmapTitle: 'Possible next steps',
-      roadmap: [
-        '7-day completed turns / tool-call trends',
-        'Per-project time and completion counts',
-        'Quota alert history and mute policy',
-        'Export CSV / local reports',
-      ],
+      overviewHint: 'Data from local SQLite. Refresh syncs the latest records.',
+      rangeToday: 'Today',
+      range7d: 'Last 7 days',
+      range30d: 'Last 30 days',
+      refresh: 'Refresh',
+      refreshing: 'Syncing…',
+      granularityDay: 'Day',
+      granularityWeek: 'Week',
+      granularityMonth: 'Month',
+      noData: 'No stats yet. Start a CLI task and tokens, time, and projects will roll up here.',
+      privacyNote: 'Local only — nothing is uploaded.',
+      kpiTotalTokens: 'Total tokens',
+      kpiTotalDuration: 'Total coding time',
+      kpiProjects: 'Projects',
+      kpiAvgDailyTokens: 'Avg daily tokens',
+      kpiAvgDailyDuration: 'Avg daily time',
+      kpiDialogs: 'Dialogs',
+      vsPrev: 'vs prev',
+      vsPrevWeek: 'vs last period',
+      tokenTrendTitle: 'Token usage trend',
+      durationTrendTitle: 'Coding time trend',
+      modelMixTitle: 'Model mix',
+      heatmapTitle: 'Peak hours',
+      projectRankTitle: 'Project ranking',
+      insightsTitle: 'Insights',
+      projectTypeTitle: 'Project types',
+      fileTypeTitle: 'File types',
+      dialogBucketTitle: 'Tokens per dialog',
+      efficiencyTitle: 'Local efficiency score',
+      colRank: '#',
+      colProject: 'Project',
+      colTokens: 'Tokens',
+      colShare: 'Share',
+      colDuration: 'Duration',
+      colDialogs: 'Dialogs',
+      colLastActive: 'Last active',
+      projectTypeTool: 'Tools / scripts',
+      projectTypeResearch: 'Research',
+      projectTypeWeb: 'Web apps',
+      projectTypeOther: 'Other',
+      bucket0_500: '0-500',
+      bucket500_2k: '500-2K',
+      bucket2k_5k: '2K-5K',
+      bucket5k_10k: '5K-10K',
+      bucket10k_plus: '10K+',
+      gradeExcellent: 'Excellent',
+      gradeGood: 'Good',
+      gradeFair: 'Fair',
+      gradeLow: 'Needs work',
+      scoreCodeGen: 'Code generation',
+      scoreProblemSolve: 'Problem solving',
+      scoreDialogQuality: 'Dialog quality',
+      scoreFocus: 'Focus',
+      weekdayLabels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+      insightPeakDay: 'Peak day',
+      insightPeakDayDetail: '{day} peaked at {tokens} tokens',
+      insightTopModel: 'Top model',
+      insightTopModelDetail: '{model} is {percent}% — watch cost',
+      insightEfficiency: 'Efficiency tip',
+      insightEfficiencyDetail: 'Avg {avgTokens} tokens per dialog — prompts can be tightened',
+      insightPeakHour: 'Busy hour',
+      insightPeakHourDetail: 'Most active around {weekday} {hour}:00 ({value} events)',
+      insightEmpty: 'Waiting for data',
+      insightEmptyDetail: 'Not enough records in the last {days} day(s). Start a CLI task to sync.',
+      otherModels: 'Other',
+      loading: 'Syncing local data…',
+      syncFailed: 'Sync failed. Try again shortly.',
     },
   },
 }

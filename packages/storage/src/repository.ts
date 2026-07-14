@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto'
 import { and, desc, eq, lt } from 'drizzle-orm'
 import { TurnState, isActiveState, type AgentEvent } from '@codepulse/shared'
 import type { DB } from './sqlite/db.js'
-import { events, sessions, tokenSnapshots, turns } from './sqlite/schema.js'
+import { events, sessions, tokenSnapshots, turns, workspaces } from './sqlite/schema.js'
 
 /**
  * 持久化一个归一化事件，并推进派生的会话/轮次/token 行。
@@ -100,6 +100,7 @@ export function persistEvent(db: DB, event: AgentEvent): void {
  */
 function ensureSession(tx: DB, event: AgentEvent): string {
   const externalId = event.externalSessionId ?? `${event.source}:unknown`
+  const workspaceId = ensureWorkspace(tx, event.workspacePath ?? event.cwd, event.timestamp)
   const existing = tx
     .select({ id: sessions.id })
     .from(sessions)
@@ -108,14 +109,15 @@ function ensureSession(tx: DB, event: AgentEvent): string {
     .all()
 
   if (existing.length > 0) {
-    if (event.model) {
-      tx.update(sessions).set({ model: event.model }).where(eq(sessions.id, existing[0]!.id)).run()
-    }
+    const patch: { model?: string; workspaceId?: string; state?: string; endedAt?: number } = {}
+    if (event.model) patch.model = event.model
+    if (workspaceId) patch.workspaceId = workspaceId
     if (event.eventType === 'session_end') {
-      tx.update(sessions)
-        .set({ state: 'done', endedAt: event.timestamp })
-        .where(eq(sessions.id, existing[0]!.id))
-        .run()
+      patch.state = 'done'
+      patch.endedAt = event.timestamp
+    }
+    if (Object.keys(patch).length > 0) {
+      tx.update(sessions).set(patch).where(eq(sessions.id, existing[0]!.id)).run()
     }
     return existing[0]!.id
   }
@@ -126,9 +128,52 @@ function ensureSession(tx: DB, event: AgentEvent): string {
       id,
       agentType: event.source,
       externalSessionId: externalId,
+      workspaceId,
       model: event.model,
       state: 'running',
       startedAt: event.timestamp,
+    })
+    .run()
+  return id
+}
+
+/** 确保工作区行存在，并刷新 lastActiveAt。 */
+function ensureWorkspace(
+  tx: DB,
+  path: string | undefined,
+  timestamp: number,
+): string | undefined {
+  if (!path) return undefined
+  const normalized = path.trim().replace(/[\\/]+$/, '')
+  if (!normalized) return undefined
+
+  const existing = tx
+    .select({ id: workspaces.id })
+    .from(workspaces)
+    .where(eq(workspaces.path, normalized))
+    .limit(1)
+    .all()
+
+  if (existing.length > 0) {
+    tx.update(workspaces)
+      .set({ lastActiveAt: timestamp })
+      .where(eq(workspaces.id, existing[0]!.id))
+      .run()
+    return existing[0]!.id
+  }
+
+  const id = randomUUID()
+  const name =
+    normalized
+      .split(/[\\/]/)
+      .filter(Boolean)
+      .pop() || normalized
+  tx.insert(workspaces)
+    .values({
+      id,
+      name,
+      path: normalized,
+      lastActiveAt: timestamp,
     })
     .run()
   return id

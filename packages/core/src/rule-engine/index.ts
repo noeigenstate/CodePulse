@@ -2,6 +2,7 @@ import {
   type AgentRuntimeState,
   type NotificationLevel,
   type NotificationRequest,
+  type UiLocale,
   TurnState,
   workspaceKey,
 } from '@codepulse/shared'
@@ -13,6 +14,7 @@ export const STUCK_STRONG_MS = 10 * 60_000
 
 export interface RuleEngineOptions {
   muted?: boolean
+  locale?: UiLocale
   sessionThrottleMs?: number
   permissionThrottleMs?: number
 }
@@ -40,18 +42,30 @@ export class RuleEngine {
     this.options.muted = muted
   }
 
+  setLocale(locale: UiLocale): void {
+    this.options.locale = locale
+  }
+
   onTransition(result: TransitionResult, now = Date.now()): NotificationRequest[] {
     const { next, previous, previousState } = result
     if (next.state === previousState || next.state !== TurnState.DONE) return []
 
     const out: NotificationRequest[] = []
     const scope = agentScope(next)
-    const project = projectLabel(next.workspacePath)
-    const promptSummary = summarizeUserPrompt(next.lastUserPrompt ?? previous.lastUserPrompt, 15)
+    const locale = this.options.locale ?? 'zh'
+    const project = projectLabel(next.workspacePath, locale)
+    const promptSummary = completionNotificationBody(
+      next.lastUserPrompt ?? previous.lastUserPrompt,
+      locale,
+      15,
+    )
     this.push(out, now, {
       level: 'normal',
       // Project name is primary; no Claude/Codex branding in the toast.
-      title: `${completionEmoji(project)} ${project} 已完成`,
+      title:
+        locale === 'zh'
+          ? `${completionEmoji(project)} ${project} 已完成`
+          : `${completionEmoji(project)} ${project} completed`,
       // Body is a short word-capped summary of the user question, not agent name.
       body: promptSummary,
       dedupeKey: `done:${scope}:${
@@ -102,13 +116,14 @@ function agentScope(agent: AgentRuntimeState): string {
   return `${agent.agentType}:${workspaceKey(agent.workspacePath)}`
 }
 
-function projectLabel(workspacePath: string | undefined): string {
-  if (!workspacePath) return '未知项目'
+function projectLabel(workspacePath: string | undefined, locale: UiLocale): string {
+  const fallback = locale === 'zh' ? '未知项目' : 'Unknown project'
+  if (!workspacePath) return fallback
   const parts = workspacePath
     .replace(/[\\/]+$/, '')
     .split(/[\\/]/)
     .filter(Boolean)
-  return parts.at(-1) ?? '未知项目'
+  return parts.at(-1) ?? fallback
 }
 
 const COMPLETION_EMOJIS = ['💖', '💕', '✨', '🎉', '🌸', '🍀', '💝', '⭐'] as const
@@ -164,6 +179,23 @@ export function summarizeUserPrompt(prompt: string | undefined, maxUnits = 15): 
   if (words.length === 0) return '任务完成'
   // Complete word units only — never cut mid-word for English.
   return joinWords(words.slice(0, maxUnits)) || '任务完成'
+}
+
+/**
+ * Make the completion toast follow the selected UI language. This deliberately
+ * avoids pretending to translate arbitrary prompts: a prompt written in the
+ * other language gets a stable localized completion message instead.
+ */
+export function completionNotificationBody(
+  prompt: string | undefined,
+  locale: UiLocale,
+  maxUnits = 15,
+): string {
+  const summary = summarizeUserPrompt(prompt, maxUnits)
+  if (locale === 'zh') {
+    return isPrimarilyCjk(summary) ? summary : '任务已完成，请打开应用查看详情'
+  }
+  return isPrimarilyCjk(summary) ? 'Task completed. Open CodePulse for details.' : summary
 }
 
 /** Prefer the Han-character budget when CJK dominates the cleaned prompt. */

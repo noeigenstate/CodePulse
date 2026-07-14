@@ -2,10 +2,22 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   clipChineseSummary,
+  completionNotificationBody,
   isPrimarilyCjk,
   summarizeUserPrompt,
   tokenizeWords,
 } from '../packages/core/src/rule-engine/index.js'
+
+test('completion notification forces a Chinese fallback for an English prompt', () => {
+  const body = completionNotificationBody('Please fix the update timeout', 'zh')
+  assert.equal(body, '任务已完成，请打开应用查看详情')
+  assert.doesNotMatch(body, /\b(fix|update|timeout)\b/i)
+})
+
+test('completion notification keeps an English summary in English mode', () => {
+  const body = completionNotificationBody('Please fix the update timeout', 'en')
+  assert.equal(body, 'fix the update timeout')
+})
 
 test('summarizeUserPrompt keeps short Chinese asks within 15 汉字', () => {
   const body = summarizeUserPrompt('请帮我修复更新超时并优化下载')

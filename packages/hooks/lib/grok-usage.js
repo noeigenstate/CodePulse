@@ -241,8 +241,7 @@ async function readSessionUsage(sessionDir, grokHome) {
   const signalTokens = optionalNumber(signals?.contextTokensUsed)
   const signalWindow = optionalNumber(signals?.contextWindowTokens)
   const signalUsage = optionalNumber(signals?.contextWindowUsage)
-  const hasSignalContext =
-    signalTokens != null || signalWindow != null || signalUsage != null
+  const hasSignalContext = signalTokens != null || signalWindow != null || signalUsage != null
 
   let contextTokensUsed = hasSignalContext ? signalTokens : undefined
   let contextWindowTokens = hasSignalContext ? signalWindow : undefined

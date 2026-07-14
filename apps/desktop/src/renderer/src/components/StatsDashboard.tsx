@@ -142,7 +142,13 @@ export function StatsDashboard({ locale, copy, onClose }: Props): JSX.Element {
               </button>
             </div>
           ) : stats ? (
-            <StatsBody stats={stats} s={s} locale={locale} granularity={granularity} onGranularity={setGranularity} />
+            <StatsBody
+              stats={stats}
+              s={s}
+              locale={locale}
+              granularity={granularity}
+              onGranularity={setGranularity}
+            />
           ) : null}
         </div>
 
@@ -256,9 +262,7 @@ function StatsBody({
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.15fr_1.15fr_0.9fr]">
         <SurfaceCard
           title={s.tokenTrendTitle}
-          action={
-            <GranularityToggle value={granularity} labels={s} onChange={onGranularity} />
-          }
+          action={<GranularityToggle value={granularity} labels={s} onChange={onGranularity} />}
         >
           <AreaTrendChart
             points={stats.tokenTrend}
@@ -271,9 +275,7 @@ function StatsBody({
 
         <SurfaceCard
           title={s.durationTrendTitle}
-          action={
-            <GranularityToggle value={granularity} labels={s} onChange={onGranularity} />
-          }
+          action={<GranularityToggle value={granularity} labels={s} onChange={onGranularity} />}
         >
           <AreaTrendChart
             points={stats.durationTrend.length ? stats.durationTrend : stats.tokenTrend}
@@ -286,14 +288,14 @@ function StatsBody({
 
         <div className="flex flex-col gap-3">
           <SurfaceCard title={s.modelMixTitle}>
-            <ModelDonut models={stats.models} otherLabel={s.otherModels} totalTokens={k.totalTokens} />
+            <ModelDonut
+              models={stats.models}
+              otherLabel={s.otherModels}
+              totalTokens={k.totalTokens}
+            />
           </SurfaceCard>
           <SurfaceCard title={s.heatmapTitle}>
-            <Heatmap
-              cells={stats.heatmap}
-              max={stats.heatmapMax}
-              weekdayLabels={s.weekdayLabels}
-            />
+            <Heatmap cells={stats.heatmap} max={stats.heatmapMax} weekdayLabels={s.weekdayLabels} />
           </SurfaceCard>
         </div>
       </div>
@@ -550,9 +552,7 @@ function AreaTrendChart({
             strokeDasharray="4 4"
           />
         ))}
-        {area && (
-          <path d={area} fill={`url(#grad-${color.replace('#', '')})`} stroke="none" />
-        )}
+        {area && <path d={area} fill={`url(#grad-${color.replace('#', '')})`} stroke="none" />}
         {line && (
           <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" />
         )}
@@ -591,7 +591,10 @@ function ModelDonut({
   const restPct = rest.reduce((a, m) => a + m.percent, 0)
   const slices =
     restPct > 0
-      ? [...top, { model: otherLabel, tokens: rest.reduce((a, m) => a + m.tokens, 0), percent: restPct }]
+      ? [
+          ...top,
+          { model: otherLabel, tokens: rest.reduce((a, m) => a + m.tokens, 0), percent: restPct },
+        ]
       : top
 
   const r = 42
@@ -617,22 +620,22 @@ function ModelDonut({
       <div className="relative h-28 w-28 shrink-0">
         <svg viewBox="0 0 112 112" className="h-full w-full -rotate-90">
           <circle cx={cx} cy={cy} r={r} fill="none" stroke="#EEF2F7" strokeWidth="14" />
-          {arcs.length === 0 ? null : (
-            arcs.map((a) => (
-              <circle
-                key={a.model}
-                cx={cx}
-                cy={cy}
-                r={r}
-                fill="none"
-                stroke={a.color}
-                strokeWidth="14"
-                strokeDasharray={a.dash}
-                strokeDashoffset={a.offset}
-                strokeLinecap="butt"
-              />
-            ))
-          )}
+          {arcs.length === 0
+            ? null
+            : arcs.map((a) => (
+                <circle
+                  key={a.model}
+                  cx={cx}
+                  cy={cy}
+                  r={r}
+                  fill="none"
+                  stroke={a.color}
+                  strokeWidth="14"
+                  strokeDasharray={a.dash}
+                  strokeDashoffset={a.offset}
+                  strokeLinecap="butt"
+                />
+              ))}
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <p className="text-sm font-bold tabular-nums text-ink">
@@ -691,7 +694,10 @@ function Heatmap({
         {weekdayLabels.map((label, weekday) => (
           <div key={label} className="contents">
             <span className="self-center text-[10px] text-ink-500">{label}</span>
-            <div className="grid grid-cols-24 gap-0.5" style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}>
+            <div
+              className="grid grid-cols-24 gap-0.5"
+              style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}
+            >
               {Array.from({ length: 24 }, (_, hour) => {
                 const v = byKey.get(`${weekday}:${hour}`) ?? 0
                 const t = max > 0 ? v / max : 0
@@ -784,9 +790,7 @@ function ProjectTable({
               </td>
               <td className="py-2.5 tabular-nums text-ink-700">{row.dialogCount}</td>
               <td className="py-2.5 text-ink-500">
-                {row.lastActiveAt
-                  ? formatRelative(row.lastActiveAt, Date.now(), locale)
-                  : '—'}
+                {row.lastActiveAt ? formatRelative(row.lastActiveAt, Date.now(), locale) : '—'}
               </td>
             </tr>
           ))}
@@ -951,8 +955,7 @@ function BucketBars({
     <div className="flex h-36 items-end justify-between gap-2 px-1">
       {buckets.map((b) => {
         const h = Math.max(4, (b.count / max) * 100)
-        const label =
-          b.labelKey in s ? (s[b.labelKey as keyof StatsCopy] as string) : b.key
+        const label = b.labelKey in s ? (s[b.labelKey as keyof StatsCopy] as string) : b.key
         return (
           <div key={b.key} className="flex min-w-0 flex-1 flex-col items-center gap-1">
             <span className="text-[10px] tabular-nums text-ink-400">{b.count || ''}</span>
@@ -1015,7 +1018,9 @@ function EfficiencyPanel({
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <p className="text-xl font-bold tabular-nums text-indigo-600">{efficiency.score || '—'}</p>
+          <p className="text-xl font-bold tabular-nums text-indigo-600">
+            {efficiency.score || '—'}
+          </p>
           <p className="text-[10px] font-semibold text-ink-500">{grade}</p>
         </div>
       </div>
@@ -1212,4 +1217,3 @@ function LightbulbIcon(): JSX.Element {
     </svg>
   )
 }
-

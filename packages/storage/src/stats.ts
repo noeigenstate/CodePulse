@@ -609,29 +609,41 @@ function buildEfficiency(current: PeriodMetrics, previous: PeriodMetrics): Stats
   // 越接近 8–25 分钟越好
   const ideal = 15 * 60_000
   const durationScore =
-    avgMs <= 0 ? 70 : Math.max(40, Math.min(100, 100 - Math.abs(avgMs - ideal) / ideal / 2 * 100))
+    avgMs <= 0 ? 70 : Math.max(40, Math.min(100, 100 - (Math.abs(avgMs - ideal) / ideal / 2) * 100))
   const codeGen = Math.round(55 + completionRate * 40)
   const problemSolve = Math.round(durationScore)
   const dialogQuality = Math.round(
-    Math.min(100, 50 + (current.avgDialogTokens > 0 ? Math.min(40, current.avgDialogTokens / 500) : 20)),
+    Math.min(
+      100,
+      50 + (current.avgDialogTokens > 0 ? Math.min(40, current.avgDialogTokens / 500) : 20),
+    ),
   )
   const focus = Math.round(
-    Math.min(100, 50 + Math.min(40, (current.projectCount > 0 ? 30 / Math.max(1, current.projectCount) : 0) + completionRate * 30)),
+    Math.min(
+      100,
+      50 +
+        Math.min(
+          40,
+          (current.projectCount > 0 ? 30 / Math.max(1, current.projectCount) : 0) +
+            completionRate * 30,
+        ),
+    ),
   )
   const score = Math.round((codeGen + problemSolve + dialogQuality + focus) / 4)
-  const grade =
-    score >= 85 ? 'excellent' : score >= 70 ? 'good' : score >= 55 ? 'fair' : 'low'
+  const grade = score >= 85 ? 'excellent' : score >= 70 ? 'good' : score >= 55 ? 'fair' : 'low'
 
-  const prevScore = previous.dialogCount + previous.eventCount > 0
-    ? Math.round(
-        (55 +
-          (previous.dialogCount > 0 ? previous.completedDialogs / previous.dialogCount : 0.5) * 40 +
-          70 +
-          70 +
-          70) /
-          4,
-      )
-    : undefined
+  const prevScore =
+    previous.dialogCount + previous.eventCount > 0
+      ? Math.round(
+          (55 +
+            (previous.dialogCount > 0 ? previous.completedDialogs / previous.dialogCount : 0.5) *
+              40 +
+            70 +
+            70 +
+            70) /
+            4,
+        )
+      : undefined
 
   return {
     score,
@@ -738,10 +750,7 @@ function buildKpis(current: PeriodMetrics, previous: PeriodMetrics, dayCount: nu
       totalDurationMs: makeRatioDelta(current.totalDurationMs, previous.totalDurationMs),
       projectCount: makeAbsoluteDelta(current.projectCount, previous.projectCount),
       dialogCount: makeRatioDelta(current.dialogCount, previous.dialogCount),
-      avgDailyTokens: makeRatioDelta(
-        current.totalTokens / days,
-        previous.totalTokens / days,
-      ),
+      avgDailyTokens: makeRatioDelta(current.totalTokens / days, previous.totalTokens / days),
       avgDailyDurationMs: makeRatioDelta(
         current.totalDurationMs / days,
         previous.totalDurationMs / days,
@@ -752,7 +761,11 @@ function buildKpis(current: PeriodMetrics, previous: PeriodMetrics, dayCount: nu
 
 function makeRatioDelta(current: number, previous: number): StatsDelta {
   if (previous <= 0) {
-    return { comparable: current > 0, ratio: current > 0 ? 1 : undefined, absolute: current - previous }
+    return {
+      comparable: current > 0,
+      ratio: current > 0 ? 1 : undefined,
+      absolute: current - previous,
+    }
   }
   return {
     comparable: true,
@@ -894,7 +907,11 @@ function makeBuckets(start: number, end: number, granularity: StatsTrendGranular
   return buckets
 }
 
-function bucketStartFor(ts: number, _rangeStart: number, granularity: StatsTrendGranularity): number {
+function bucketStartFor(
+  ts: number,
+  _rangeStart: number,
+  granularity: StatsTrendGranularity,
+): number {
   if (granularity === 'day') return startOfLocalDay(ts)
   if (granularity === 'week') return startOfLocalWeek(ts)
   const d = new Date(ts)
@@ -982,11 +999,11 @@ function normalizeModel(model: string | null | undefined): string {
   const m = model.trim()
   // 缩短常见长名
   if (/claude.*3\.5|claude-3-5|claude-3\.5/i.test(m)) return 'Claude-3.5'
-  if (/claude.*4|claude-sonnet-4|claude-opus-4/i.test(m)) return m.replace(/^.*?(claude[^/\s]*)/i, '$1')
+  if (/claude.*4|claude-sonnet-4|claude-opus-4/i.test(m))
+    return m.replace(/^.*?(claude[^/\s]*)/i, '$1')
   if (/gpt-4o/i.test(m)) return 'GPT-4o'
   if (/gpt-5/i.test(m)) return m.length > 24 ? 'GPT-5' : m
   if (/gemini/i.test(m)) return m.length > 20 ? 'Gemini' : m
   if (/o[1-4]/i.test(m)) return m
   return m.length > 28 ? `${m.slice(0, 26)}…` : m
 }
-

@@ -138,11 +138,7 @@ function ensureSession(tx: DB, event: AgentEvent): string {
 }
 
 /** 确保工作区行存在，并刷新 lastActiveAt。 */
-function ensureWorkspace(
-  tx: DB,
-  path: string | undefined,
-  timestamp: number,
-): string | undefined {
+function ensureWorkspace(tx: DB, path: string | undefined, timestamp: number): string | undefined {
   if (!path) return undefined
   const normalized = path.trim().replace(/[\\/]+$/, '')
   if (!normalized) return undefined
@@ -163,11 +159,7 @@ function ensureWorkspace(
   }
 
   const id = randomUUID()
-  const name =
-    normalized
-      .split(/[\\/]/)
-      .filter(Boolean)
-      .pop() || normalized
+  const name = normalized.split(/[\\/]/).filter(Boolean).pop() || normalized
   tx.insert(workspaces)
     .values({
       id,

@@ -20,11 +20,7 @@ export function Header({
   statsActive = false,
 }: Props): JSX.Element {
   const copy = headerCopy(locale)
-  const statsLabel = statsActive
-    ? locale === 'zh'
-      ? '退出大屏'
-      : 'Exit'
-    : copy.stats
+  const statsLabel = statsActive ? (locale === 'zh' ? '退出大屏' : 'Exit') : copy.stats
 
   return (
     <header className="px-6 pb-3 pt-5">
@@ -71,7 +67,9 @@ export function Header({
             type="button"
             onClick={onOpenStats}
             className={`control-btn ${
-              statsActive ? 'border-indigo-200 bg-indigo-50 text-brand-codex hover:bg-indigo-100' : ''
+              statsActive
+                ? 'border-indigo-200 bg-indigo-50 text-brand-codex hover:bg-indigo-100'
+                : ''
             }`}
             title={statsLabel}
           >

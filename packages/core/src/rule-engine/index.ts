@@ -240,7 +240,10 @@ function stripLeadingFiller(text: string): string {
         '',
       )
       .replace(/^(please|pls|plz)\s+/i, '')
-      .replace(/^(请你?|麻烦你?|烦请|拜托|帮我|帮忙|帮忙把|请帮我|请帮忙|能否|可以|能不能|麻烦)+/u, '')
+      .replace(
+        /^(请你?|麻烦你?|烦请|拜托|帮我|帮忙|帮忙把|请帮我|请帮忙|能否|可以|能不能|麻烦)+/u,
+        '',
+      )
       .replace(/^(把|将|为|给我|帮|去)\s*/u, '')
       .trim()
     if (next === current) break

@@ -80,8 +80,7 @@ export function buildAgentPanels(agents: AgentRuntimeState[]): AgentPanel[] {
     const workspaces = buildAgentWorkspaceItems(agentType, visibleTaskAgents(typeAgents))
     const preferredModel = preferredQuotaModel(typeAgents)
     const quotaMeters = collectQuotaMeters(typeAgents, agentType)
-    const quotaToken =
-      latestQuotaToken(typeAgents, preferredModel) ?? quotaMeters[0]?.token
+    const quotaToken = latestQuotaToken(typeAgents, preferredModel) ?? quotaMeters[0]?.token
     // 无项目且无额度时不分屏；用户开启对应 CLI 任务后再出现
     if (workspaces.length === 0 && quotaMeters.length === 0) return []
 
@@ -418,8 +417,12 @@ function quotaMeterId(token: TokenPayload): string {
 }
 
 function compareQuotaMeters(a: QuotaMeterSource, b: QuotaMeterSource): number {
-  const aSpark = isSparkQuota(normalizeModel(`${a.token.rateLimitId ?? ''} ${a.token.rateLimitName ?? ''}`))
-  const bSpark = isSparkQuota(normalizeModel(`${b.token.rateLimitId ?? ''} ${b.token.rateLimitName ?? ''}`))
+  const aSpark = isSparkQuota(
+    normalizeModel(`${a.token.rateLimitId ?? ''} ${a.token.rateLimitName ?? ''}`),
+  )
+  const bSpark = isSparkQuota(
+    normalizeModel(`${b.token.rateLimitId ?? ''} ${b.token.rateLimitName ?? ''}`),
+  )
   // Default weekly first, Spark (and other named buckets) below — matches Codex status line order.
   if (aSpark !== bSpark) return aSpark ? 1 : -1
   return b.updatedAt - a.updatedAt || a.id.localeCompare(b.id)

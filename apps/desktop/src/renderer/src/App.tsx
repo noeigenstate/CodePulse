@@ -199,16 +199,15 @@ function UpdateAvailableModal({
   const installDone = phase === 'launching'
   const installWidth = installDone ? '100%' : installActive ? '55%' : '0%'
 
-  const installingLabel =
-    !installing
-      ? actionText
-      : phase === 'launching'
-        ? updateCopy.phaseLaunching
-        : phase === 'verifying'
-          ? updateCopy.phaseVerifying
-          : typeof downloadPercent === 'number'
-            ? updateCopy.downloadingPercent.replace('{percent}', String(downloadPercent))
-            : updateCopy.installing
+  const installingLabel = !installing
+    ? actionText
+    : phase === 'launching'
+      ? updateCopy.phaseLaunching
+      : phase === 'verifying'
+        ? updateCopy.phaseVerifying
+        : typeof downloadPercent === 'number'
+          ? updateCopy.downloadingPercent.replace('{percent}', String(downloadPercent))
+          : updateCopy.installing
 
   const downloadStatus =
     phase === 'preparing'
@@ -316,7 +315,9 @@ function UpdateAvailableModal({
                   style={{ width: installWidth }}
                 />
               </div>
-              <p className="mt-1.5 truncate text-[11px] font-medium text-ink-500">{installStatus}</p>
+              <p className="mt-1.5 truncate text-[11px] font-medium text-ink-500">
+                {installStatus}
+              </p>
             </div>
           </div>
         )}
@@ -348,7 +349,10 @@ function UpdateAvailableModal({
   )
 }
 
-function formatDownloadSize(received: number | undefined, total: number | undefined): string | undefined {
+function formatDownloadSize(
+  received: number | undefined,
+  total: number | undefined,
+): string | undefined {
   if (typeof received !== 'number' || received < 0) return undefined
   if (typeof total === 'number' && total > 0) {
     return `${formatBytes(received)} / ${formatBytes(total)}`
@@ -746,7 +750,9 @@ function PanelQuotaMeter({
             brand={brand}
             label={weeklyMeterLabel(meter.token, copy.weeklyQuota)}
             percent={sevenDay?.usedPercent}
-            detail={hasQuota ? formatQuotaReset(sevenDay?.resetsAt, now, locale) : copy.waitingQuota}
+            detail={
+              hasQuota ? formatQuotaReset(sevenDay?.resetsAt, now, locale) : copy.waitingQuota
+            }
           />
         )
       })}

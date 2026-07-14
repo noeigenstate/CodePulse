@@ -98,6 +98,7 @@ test('buildUpdateInfo still reports newer releases without a matching installer'
     '0.1.5',
   )
 
+  assert.equal(info?.releaseNotes, undefined)
   assert.deepEqual(info, {
     currentVersion: '0.1.5',
     version: '0.1.6',
@@ -107,7 +108,6 @@ test('buildUpdateInfo still reports newer releases without a matching installer'
     installerName: undefined,
     installerUrl: undefined,
   })
-  assert.equal(info?.releaseNotes, undefined)
 })
 
 test('buildUpdateInfo does not auto-install mismatched installer assets', () => {

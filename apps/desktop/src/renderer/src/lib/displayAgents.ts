@@ -319,17 +319,19 @@ function quotaCandidatesForAgent(agent: AgentRuntimeState): QuotaCandidate[] {
   if (bucketCandidates.length > 0) {
     if (!model) return bucketCandidates
 
-    // Strict family filter: gpt-5.6-sol → non-Spark buckets only; never emit a
-    // stripped Spark row that looks like a second 每周额度.
+    // gpt-5.6-sol → non-Spark buckets only (never show idle Spark 0% as a second weekly bar).
     const family = bucketCandidates.filter((candidate) =>
       meterMatchesModelFamily(candidate.token, model),
     )
-    return family
+    if (family.length > 0) return family
+
+    // Only Spark buckets stored while model is non-Spark: hide them (do not rebrand).
+    return []
   }
 
   if (!hasVisibleRateLimits(token, agent.agentType)) return []
 
-  // No multi-bucket map: only use this payload when its family matches the model.
+  // Single payload: hide Spark-tagged limits when the session model is not Spark.
   if (model && !meterMatchesModelFamily(token, model)) {
     return []
   }

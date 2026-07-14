@@ -118,6 +118,7 @@ export async function readCodexQuotaTokenFromFile(
 ): Promise<TokenPayload | undefined> {
   const lines = (await readTail(sourcePath)).trim().split(/\r?\n/)
   let tokenCount: Record<string, unknown> | undefined
+  let tokenCountWithLimits: Record<string, unknown> | undefined
   let taskStarted: Record<string, unknown> | undefined
 
   for (let i = lines.length - 1; i >= 0; i--) {
@@ -129,12 +130,37 @@ export async function readCodexQuotaTokenFromFile(
     }
     if (!isRecord(item) || item.type !== 'event_msg') continue
     const payload = isRecord(item.payload) ? item.payload : undefined
-    if (!tokenCount && payload?.type === 'token_count') tokenCount = payload
+    if (payload?.type === 'token_count') {
+      if (!tokenCount) tokenCount = payload
+      if (!tokenCountWithLimits && tokenCountPayloadHasRateLimits(payload)) {
+        tokenCountWithLimits = payload
+      }
+    }
     if (!taskStarted && payload?.type === 'task_started') taskStarted = payload
-    if (tokenCount && taskStarted) break
+    if (tokenCount && tokenCountWithLimits && taskStarted) break
   }
 
-  return tokenCount ? toCodexToken(tokenCount, taskStarted) : undefined
+  if (!tokenCount) return undefined
+  const token = toCodexToken(tokenCount, taskStarted)
+  if (!token) return undefined
+  if (tokenCountWithLimits && tokenCountWithLimits !== tokenCount) {
+    const withLimits = toCodexToken(tokenCountWithLimits, taskStarted)
+    if (withLimits?.rateLimits) {
+      token.rateLimits = withLimits.rateLimits
+      token.rateLimitId = withLimits.rateLimitId
+      token.rateLimitName = withLimits.rateLimitName
+    }
+  }
+  return token
+}
+
+function tokenCountPayloadHasRateLimits(payload: Record<string, unknown>): boolean {
+  const info = isRecord(payload.info) ? payload.info : undefined
+  const raw = payload.rate_limits ?? info?.rate_limits
+  if (!isRecord(raw)) return false
+  return Boolean(
+    raw.primary || raw.secondary || raw.five_hour || raw.fiveHour || raw.seven_day || raw.sevenDay,
+  )
 }
 
 async function readTail(file: string): Promise<string> {

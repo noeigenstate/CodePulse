@@ -473,6 +473,280 @@ test('Codex usage reader accepts rate limits under info', async () => {
   }
 })
 
+test('Codex usage reader ignores stale transcript_path after fork when model is non-Spark', async () => {
+  const home = join(tmpdir(), `codepulse-codex-stale-transcript-${Date.now()}`)
+  const day = join(home, 'sessions', '2026', '07', '14')
+  const parentId = '019f593c-aaaa-bbbb-cccc-parent00000001'
+  const forkId = '019f5fbb-dddd-eeee-ffff-fork0000000001'
+  const cwd = 'C:\\Users\\Administrator\\Desktop\\MetalMax_recovered_from_recycle_bin_20260708'
+  const parentFile = join(day, `rollout-2026-07-12T22-08-56-${parentId}.jsonl`)
+  const forkFile = join(day, `rollout-2026-07-14T04-25-22-${forkId}.jsonl`)
+
+  await mkdir(day, { recursive: true })
+  await writeFile(
+    parentFile,
+    [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: parentId, cwd, timestamp: '2026-07-12T22:08:56.000Z' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 256000,
+            last_token_usage: { input_tokens: 1000, output_tokens: 10, total_tokens: 1010 },
+          },
+          rate_limits: {
+            limit_id: 'codex_bengalfox',
+            limit_name: 'GPT-5.3-Codex-Spark',
+            primary: { used_percent: 0, window_minutes: 10080, resets_at: 1784623806 },
+            secondary: null,
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+  await writeFile(
+    forkFile,
+    [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { session_id: parentId, id: forkId, forked_from_id: parentId },
+      }),
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: parentId, cwd, timestamp: '2026-07-13T02:08:56.000Z' },
+      }),
+      JSON.stringify({
+        type: 'turn_context',
+        payload: { cwd, turn_id: 'turn-live' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 258400,
+            last_token_usage: { input_tokens: 90000, output_tokens: 200, total_tokens: 90200 },
+          },
+          rate_limits: {
+            limit_id: 'codex',
+            limit_name: null,
+            primary: { used_percent: 49, window_minutes: 10080, resets_at: 1784513490 },
+            secondary: null,
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+  const now = Date.now()
+  await utimes(parentFile, new Date(now - 30_000), new Date(now - 30_000))
+  await utimes(forkFile, new Date(now), new Date(now))
+
+  try {
+    // Real fork/resume hook shape: stale transcript_path + live session + non-Spark model.
+    const usage = await readLatestCodexUsage(
+      {
+        transcript_path: parentFile,
+        session_id: forkId,
+        cwd,
+        model: 'gpt-5.6-sol',
+      },
+      { codexHome: home },
+    )
+
+    assert.equal(usage.rate_limit_id, 'codex')
+    assert.equal(usage.rate_limit_name, undefined)
+    assert.deepEqual(usage.rate_limits?.seven_day, {
+      used_percentage: 49,
+      resets_at: 1784513490,
+      window_minutes: 10080,
+    })
+    assert.equal(usage.usage_source_path, forkFile)
+    assert.doesNotMatch(String(usage.rate_limit_id ?? ''), /bengalfox|spark/i)
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('Codex usage reader resolves forked session meta and prefers main weekly over idle Spark', async () => {
+  const home = join(tmpdir(), `codepulse-codex-fork-cwd-${Date.now()}`)
+  const day = join(home, 'sessions', '2026', '07', '14')
+  const parentId = '019f593c-1113-74f1-9526-c85e36f84960'
+  const forkId = '019f5fbb-0d51-7123-853b-619eb792f316'
+  const cwd = 'C:\\Users\\Administrator\\Desktop\\MetalMax_recovered_from_recycle_bin_20260708'
+  const parentFile = join(day, `rollout-2026-07-12T22-08-56-${parentId}.jsonl`)
+  const forkFile = join(day, `rollout-2026-07-14T04-25-22-${forkId}.jsonl`)
+
+  await mkdir(day, { recursive: true })
+  // Older parent session: Spark bucket at 0% (must not win for cwd lookup).
+  await writeFile(
+    parentFile,
+    [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: parentId, cwd, timestamp: '2026-07-12T22:08:56.000Z' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 256000,
+            last_token_usage: { input_tokens: 1000, output_tokens: 10, total_tokens: 1010 },
+          },
+          rate_limits: {
+            limit_id: 'codex_bengalfox',
+            limit_name: 'GPT-5.3-Codex-Spark',
+            primary: { used_percent: 0, window_minutes: 10080, resets_at: 1784623806 },
+            secondary: null,
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+  // Forked active session: first meta has no cwd (Codex fork header), second carries cwd.
+  await writeFile(
+    forkFile,
+    [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: {
+          session_id: parentId,
+          id: forkId,
+          forked_from_id: parentId,
+          timestamp: '2026-07-14T04:25:22.000Z',
+        },
+      }),
+      JSON.stringify({
+        type: 'session_meta',
+        payload: {
+          session_id: parentId,
+          id: parentId,
+          cwd,
+          timestamp: '2026-07-13T02:08:56.000Z',
+        },
+      }),
+      JSON.stringify({
+        type: 'turn_context',
+        payload: { cwd, turn_id: 'turn-1' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 258400,
+            last_token_usage: { input_tokens: 70000, output_tokens: 100, total_tokens: 70100 },
+          },
+          rate_limits: {
+            limit_id: 'codex',
+            limit_name: null,
+            primary: { used_percent: 47, window_minutes: 10080, resets_at: 1784513490 },
+            secondary: null,
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+  // Make fork file appear newer for mtime-based ranking.
+  const now = Date.now()
+  await utimes(parentFile, new Date(now - 60_000), new Date(now - 60_000))
+  await utimes(forkFile, new Date(now), new Date(now))
+
+  try {
+    const byCwd = await readLatestCodexUsage({ cwd }, { codexHome: home })
+    assert.equal(byCwd.rate_limit_id, 'codex')
+    assert.deepEqual(byCwd.rate_limits?.seven_day, {
+      used_percentage: 47,
+      resets_at: 1784513490,
+      window_minutes: 10080,
+    })
+    assert.match(byCwd.usage_source_path ?? '', new RegExp(forkId))
+
+    const bySession = await readLatestCodexUsage({ session_id: forkId }, { codexHome: home })
+    assert.equal(bySession.rate_limits?.seven_day?.used_percentage, 47)
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('Codex usage reader keeps quota from an earlier token_count when the latest only has context', async () => {
+  const home = join(tmpdir(), `codepulse-codex-quota-stale-context-${Date.now()}`)
+  const sessions = join(home, 'sessions', '2026', '07', '14')
+  const sessionId = 'session-quota-stale'
+  const rollout = join(sessions, `rollout-2026-07-14T10-00-00-${sessionId}.jsonl`)
+
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    rollout,
+    [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: sessionId, cwd: 'E:/project/quota-stale' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'task_started',
+          model_context_window: 256000,
+        },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 256000,
+            last_token_usage: { input_tokens: 1000, output_tokens: 10, total_tokens: 1010 },
+          },
+          rate_limits: {
+            limit_id: 'codex',
+            limit_name: null,
+            primary: {
+              used_percent: 43,
+              window_minutes: 10080,
+              resets_at: 1784513490,
+            },
+            secondary: null,
+          },
+        },
+      }),
+      // Later token_count updates context only — must not wipe weekly quota.
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 256000,
+            last_token_usage: { input_tokens: 80000, output_tokens: 200, total_tokens: 80200 },
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  try {
+    const usage = await readLatestCodexUsage({ session_id: sessionId }, { codexHome: home })
+    assert.ok(usage.context_used_percent > 30)
+    assert.deepEqual(usage.rate_limits?.seven_day, {
+      used_percentage: 43,
+      resets_at: 1784513490,
+      window_minutes: 10080,
+    })
+    assert.equal(usage.rate_limit_id, 'codex')
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
 test('Codex usage reader maps weekly-only primary rate limit to seven_day', async () => {
   const home = join(tmpdir(), `codepulse-codex-weekly-only-${Date.now()}`)
   const sessions = join(home, 'sessions', '2026', '07', '12')

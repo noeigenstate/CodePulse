@@ -6,6 +6,8 @@ export interface UpdateInfo {
   installable: boolean
   installerName?: string
   installerUrl?: string
+  /** Bullet lines from the GitHub Release body (user-facing changelog). */
+  releaseNotes?: string[]
 }
 
 /** Stages of the in-app update flow shown on the progress UI. */

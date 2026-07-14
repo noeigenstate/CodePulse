@@ -1,30 +1,26 @@
-import type { OverallState } from '@codepulse/shared'
-import { overallStyle } from '../lib/format.js'
-import { headerCopy, overallLabel, type Locale } from '../lib/i18n.js'
+import { headerCopy, type Locale } from '../lib/i18n.js'
 import codePulseIcon from '../assets/codepulse-icon.png'
 
 interface Props {
   locale: Locale
   muted: boolean
-  overall: OverallState
   onToggleLocale: () => void
   onToggleMute: () => void
+  onOpenStats: () => void
 }
 
 export function Header({
   locale,
   muted,
-  overall,
   onToggleLocale,
   onToggleMute,
+  onOpenStats,
 }: Props): JSX.Element {
   const copy = headerCopy(locale)
-  const style = overallStyle(overall)
 
   return (
     <header className="px-6 pb-3 pt-5">
       <div className="flex items-center justify-between gap-6">
-        {/* ① 顶部品牌区：清晰品牌 + 描述，右侧状态与功能按钮对齐 */}
         <div className="flex min-w-0 items-center gap-3.5">
           <img
             src={codePulseIcon}
@@ -43,10 +39,6 @@ export function Header({
         </div>
 
         <div className="flex shrink-0 items-center gap-2.5">
-          <span className="overall-status-chip" title={overallLabel(overall, locale)}>
-            <span className={`h-2 w-2 shrink-0 rounded-full ${style.dot}`} />
-            <span className={style.text}>{overallLabel(overall, locale)}</span>
-          </span>
           <button
             type="button"
             onClick={onToggleLocale}
@@ -66,6 +58,10 @@ export function Header({
           >
             {muted ? <BellOffIcon /> : <BellIcon />}
             <span>{muted ? copy.muted : copy.mute}</span>
+          </button>
+          <button type="button" onClick={onOpenStats} className="control-btn" title={copy.stats}>
+            <ChartIcon />
+            <span>{copy.stats}</span>
           </button>
         </div>
       </div>
@@ -101,6 +97,17 @@ function BellOffIcon(): JSX.Element {
       <path
         fill="currentColor"
         d="M3.3 2.2a.75.75 0 00-1.1 1L4.5 5.5A5 5 0 005 7v2.2c0 .5-.2 1-.5 1.4L3.3 12.5A1 1 0 004.1 14h9.3l2.3 2.3a.75.75 0 001.1-1L3.3 2.2zM15 10.6l1.2 1.9H15.5L15 10.6zM10 2a5 5 0 014.7 3.3l-1.3 1.3A3.5 3.5 0 0010 3.5V2zm0 14a2 2 0 01-1.7-1h3.4A2 2 0 0110 16z"
+      />
+    </svg>
+  )
+}
+
+function ChartIcon(): JSX.Element {
+  return (
+    <svg viewBox="0 0 20 20" className="h-4 w-4 shrink-0 opacity-70" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M3 3a1 1 0 011-1h1a1 1 0 011 1v14H4a1 1 0 01-1-1V3zm5 6a1 1 0 011-1h1a1 1 0 011 1v8H8V9zm5-4a1 1 0 011-1h1a1 1 0 011 1v12h-3V5z"
       />
     </svg>
   )

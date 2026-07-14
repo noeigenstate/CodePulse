@@ -38,6 +38,7 @@ interface ReleaseAsset {
 interface ReleasePayload {
   tag_name?: unknown
   html_url?: unknown
+  body?: unknown
   assets?: unknown
 }
 
@@ -72,6 +73,7 @@ export function buildUpdateInfo(release: unknown, currentVersion: string): Updat
   if (!tag || !version || !isNewerVersion(version, currentVersion)) return null
 
   const installer = findWindowsInstaller(payload.assets, version)
+  const releaseNotes = parseReleaseNotes(pickString(payload.body))
 
   return {
     currentVersion,
@@ -83,7 +85,64 @@ export function buildUpdateInfo(release: unknown, currentVersion: string): Updat
     installable: Boolean(installer),
     installerName: installer?.name,
     installerUrl: installer?.url,
+    ...(releaseNotes.length > 0 ? { releaseNotes } : {}),
   }
+}
+
+/**
+ * Turn a GitHub Release markdown body into short bullet lines for the update UI.
+ * Prefer `-` / `*` list items; fall back to non-heading paragraphs.
+ */
+export function parseReleaseNotes(body: string | undefined): string[] {
+  if (!body?.trim()) return []
+
+  const lines = body.replace(/\r\n/g, '\n').split('\n')
+  const bullets: string[] = []
+
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (!line) continue
+    const list = line.match(/^[-*+]\s+(.+)$/)
+    if (list?.[1]) {
+      const text = cleanMarkdownInline(list[1])
+      if (text) bullets.push(text)
+      continue
+    }
+  }
+
+  if (bullets.length > 0) return dedupeNotes(bullets)
+
+  // No list markers — keep short non-heading lines as a soft fallback.
+  const paragraphs: string[] = []
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (!line || line.startsWith('#')) continue
+    const text = cleanMarkdownInline(line)
+    if (text) paragraphs.push(text)
+  }
+  return dedupeNotes(paragraphs).slice(0, 12)
+}
+
+function cleanMarkdownInline(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function dedupeNotes(notes: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const note of notes) {
+    const key = note.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(note)
+  }
+  return out
 }
 
 export function compareVersions(a: string, b: string): -1 | 0 | 1 {

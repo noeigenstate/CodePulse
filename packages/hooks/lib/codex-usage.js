@@ -8,8 +8,10 @@ import { readdir, stat, open } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 
-const TAIL_BYTES = 1024 * 1024
-const MAX_ROLLOUT_FILES = 500
+/** Large multi-agent rollouts can bury the latest token_count past 1MB of tool noise. */
+const TAIL_BYTES = 4 * 1024 * 1024
+const META_HEAD_BYTES = 128 * 1024
+const MAX_ROLLOUT_FILES = 800
 const DEFAULT_CODEX_CONTEXT_WINDOW =
   parseTokenCount(process.env.CODEPULSE_CODEX_CONTEXT_WINDOW) ?? 256000
 
@@ -18,7 +20,10 @@ export async function readLatestCodexUsage(raw, options = {}) {
     const file = await findRolloutFile(raw, options)
     if (!file) return {}
     const lines = (await readTail(file)).trim().split(/\r?\n/)
+    // Latest token_count often has context % but omits rate_limits until later.
+    // Keep the newest event for context, and the newest event that still carries quota.
     let tokenCount = null
+    let tokenCountWithLimits = null
     let taskStarted = null
 
     for (let i = lines.length - 1; i >= 0; i--) {
@@ -30,68 +35,233 @@ export async function readLatestCodexUsage(raw, options = {}) {
       }
       if (item?.type !== 'event_msg') continue
       const payload = item.payload
-      if (!tokenCount && payload?.type === 'token_count') tokenCount = payload
+      if (payload?.type === 'token_count') {
+        if (!tokenCount) tokenCount = payload
+        if (!tokenCountWithLimits && tokenCountHasRateLimits(payload)) {
+          tokenCountWithLimits = payload
+        }
+      }
       if (!taskStarted && payload?.type === 'task_started') taskStarted = payload
-      if (tokenCount && taskStarted) break
+      if (tokenCount && tokenCountWithLimits && taskStarted) break
     }
 
-    return tokenCount ? { ...toUsagePatch(tokenCount, taskStarted), usage_source_path: file } : {}
+    if (!tokenCount) return {}
+    const patch = toUsagePatch(tokenCount, taskStarted)
+    if (tokenCountWithLimits && tokenCountWithLimits !== tokenCount) {
+      const limitPatch = toUsagePatch(tokenCountWithLimits, taskStarted)
+      if (limitPatch.rate_limits) {
+        patch.rate_limits = limitPatch.rate_limits
+        if (limitPatch.rate_limit_id) patch.rate_limit_id = limitPatch.rate_limit_id
+        if (limitPatch.rate_limit_name) patch.rate_limit_name = limitPatch.rate_limit_name
+      }
+    }
+    return { ...patch, usage_source_path: file }
   } catch {
     return {}
   }
 }
 
-async function findRolloutFile(raw, options) {
-  const directPath = stringValue(raw?.rollout_path) ?? stringValue(raw?.transcript_path)
-  if (directPath) return directPath
+function tokenCountHasRateLimits(payload) {
+  const raw = payload?.rate_limits ?? payload?.info?.rate_limits
+  if (!raw || typeof raw !== 'object') return false
+  return Boolean(
+    raw.primary || raw.secondary || raw.five_hour || raw.fiveHour || raw.seven_day || raw.sevenDay,
+  )
+}
 
+/**
+ * Resolve which rollout JSONL to read.
+ *
+ * IMPORTANT: `rollout_path` / `transcript_path` from Codex hooks are only
+ * **candidates**. After fork/resume they often still point at the parent
+ * session (e.g. Spark 0%) while the live thread has the real weekly bucket.
+ */
+async function findRolloutFile(raw, options) {
   const codexHome = options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex')
   const sessionsDir = join(codexHome, 'sessions')
-  const sessionId =
-    stringValue(raw?.session_id) ?? stringValue(raw?.sessionId) ?? stringValue(raw?.conversation_id)
+  const sessionIds = collectSessionIds(raw)
   const cwd = stringValue(raw?.cwd) ?? stringValue(raw?.workspace) ?? stringValue(raw?.project_dir)
+  const model = stringValue(raw?.model)
   const files = []
   await collectRolloutFiles(sessionsDir, files)
   files.sort((a, b) => b.mtimeMs - a.mtimeMs)
 
-  if (sessionId) {
+  const candidates = []
+  const seen = new Set()
+  const addCandidate = (path, mtimeMs = 0) => {
+    const key = normalizePath(path)
+    if (!key || seen.has(key)) return
+    seen.add(key)
+    candidates.push({ path, mtimeMs })
+  }
+
+  // 1) Hook-provided paths — candidates only, never absolute winners.
+  for (const key of ['rollout_path', 'transcript_path', 'token_source_path', 'usage_source_path']) {
+    const directPath = stringValue(raw?.[key])
+    if (!directPath) continue
+    try {
+      const info = await stat(directPath)
+      addCandidate(directPath, info.mtimeMs)
+    } catch {
+      // Path may be stale after resume; ignore.
+    }
+  }
+
+  // 2) Filename / meta session ids (fork thread id vs parent id).
+  for (const sessionId of sessionIds) {
     const matched = files.find((file) => basename(file.path).includes(sessionId))
-    if (matched) return matched.path
+    if (matched) addCandidate(matched.path, matched.mtimeMs)
   }
+
+  // 3) Same workspace cwd (forks share cwd with parent).
   if (cwd) {
-    const matched = await findByCwd(files, cwd)
-    if (matched) return matched
+    const target = normalizePath(cwd)
+    for (const file of files) {
+      const meta = await readRolloutMeta(file.path)
+      if (normalizePath(meta?.cwd) === target) addCandidate(file.path, file.mtimeMs)
+    }
   }
-  if (cwd || sessionId) return undefined
-  return files[0]?.path
+
+  if (candidates.length === 0) {
+    // Soft fallback only when the hook gave no binding at all.
+    if (sessionIds.length === 0 && !cwd) return files[0]?.path
+    return undefined
+  }
+
+  if (candidates.length === 1) return candidates[0].path
+
+  // Among candidates, pick the rollout that best matches the active model family
+  // and has fresh main-plan weekly data (not idle Spark 0% from a parent thread).
+  let best = null
+  for (const candidate of candidates) {
+    const score = await scoreRolloutForQuota(candidate.path, candidate.mtimeMs, model)
+    if (!best || score > best.score) best = { path: candidate.path, score }
+  }
+  return best?.path
 }
 
-async function findByCwd(files, cwd) {
-  const target = normalizePath(cwd)
-  for (const file of files) {
-    const meta = await readRolloutMeta(file.path)
-    if (normalizePath(meta?.cwd) === target) return file.path
+function collectSessionIds(raw) {
+  if (!raw || typeof raw !== 'object') return []
+  const keys = [
+    'session_id',
+    'sessionId',
+    'conversation_id',
+    'conversationId',
+    'thread_id',
+    'threadId',
+    'id',
+  ]
+  const ids = []
+  for (const key of keys) {
+    const value = stringValue(raw[key])
+    if (value) ids.push(value)
   }
-  return undefined
+  return [...new Set(ids)]
 }
 
+/**
+ * Forked sessions write a first session_meta without cwd, then another with cwd.
+ * Older code returned the first meta and broke cwd matching for forks.
+ */
 async function readRolloutMeta(file) {
-  const lines = (await readHead(file)).split(/\r?\n/)
+  const lines = (await readHead(file, META_HEAD_BYTES)).split(/\r?\n/)
+  let meta = {}
+  let sawEvent = false
+
   for (const line of lines) {
     if (!line.trim()) continue
     try {
       const item = JSON.parse(line)
-      if (item?.type === 'session_meta') return item.payload
-      if (item?.type === 'turn_context') return item.payload
-      if (item?.type === 'event_msg') return null
+      if (item?.type === 'session_meta' && item.payload && typeof item.payload === 'object') {
+        meta = { ...meta, ...item.payload }
+        continue
+      }
+      if (item?.type === 'turn_context' && item.payload && typeof item.payload === 'object') {
+        meta = { ...meta, ...item.payload }
+        if (meta.cwd) return meta
+        continue
+      }
+      if (item?.type === 'event_msg') {
+        sawEvent = true
+        // Enough header context once we have cwd after events start.
+        if (meta.cwd) return meta
+      }
+      if (sawEvent && meta.cwd) return meta
     } catch {
       continue
     }
   }
-  return null
+
+  return Object.keys(meta).length > 0 ? meta : null
 }
 
-async function readHead(file, maxBytes = 64 * 1024) {
+/**
+ * Score a rollout for quota display.
+ * @param {string} [model] Active Codex model id (e.g. gpt-5.6-sol / gpt-5.3-codex-spark).
+ */
+async function scoreRolloutForQuota(path, mtimeMs, model) {
+  // Newer mtime is the primary signal among same-cwd / candidate sessions.
+  let score = mtimeMs
+  const preferSpark = isSparkModelName(model)
+  try {
+    const lines = (await readTail(path, 512 * 1024)).trim().split(/\r?\n/)
+    for (let i = lines.length - 1; i >= 0; i--) {
+      let item
+      try {
+        item = JSON.parse(lines[i])
+      } catch {
+        continue
+      }
+      if (item?.type !== 'event_msg' || item?.payload?.type !== 'token_count') continue
+      const raw = item.payload.rate_limits ?? item.payload.info?.rate_limits
+      if (!raw || typeof raw !== 'object') continue
+
+      score += 1e11
+      const limitId = String(raw.limit_id ?? raw.limitId ?? '').toLowerCase()
+      const limitName = String(raw.limit_name ?? raw.limitName ?? '').toLowerCase()
+      const bucketSpark =
+        limitId.includes('bengalfox') ||
+        limitId.includes('spark') ||
+        limitName.includes('spark') ||
+        limitName.includes('bengalfox')
+      const primaryUsed = optionalNumber(
+        raw.primary?.used_percent ?? raw.primary?.used_percentage ?? raw.primary?.usedPercent,
+      )
+      const secondaryUsed = optionalNumber(
+        raw.secondary?.used_percent ?? raw.secondary?.used_percentage ?? raw.secondary?.usedPercent,
+      )
+      const used = Math.max(primaryUsed ?? 0, secondaryUsed ?? 0)
+
+      // Strongly prefer bucket family that matches the active model.
+      if (preferSpark) {
+        if (bucketSpark) score += 1e14
+        else score += 1e9
+      } else {
+        // Non-Spark models (gpt-5.6-sol, etc.): main codex weekly >> idle Spark 0%.
+        if (!bucketSpark && (limitId === 'codex' || !limitId || limitId === 'default')) {
+          score += 1e14
+        } else if (!bucketSpark) {
+          score += 1e13
+        } else {
+          // Spark bucket while not on Spark — heavy penalty so parent fork loses.
+          score -= 1e14
+        }
+      }
+      score += used * 1e7
+      break
+    }
+  } catch {
+    // ignore scoring failures
+  }
+  return score
+}
+
+function isSparkModelName(model) {
+  const value = String(model ?? '').toLowerCase()
+  return value.includes('spark') || value.includes('bengalfox')
+}
+
+async function readHead(file, maxBytes = META_HEAD_BYTES) {
   const handle = await open(file, 'r')
   try {
     const size = (await handle.stat()).size
@@ -129,11 +299,11 @@ async function collectRolloutFiles(dir, out) {
   }
 }
 
-async function readTail(file) {
+async function readTail(file, maxBytes = TAIL_BYTES) {
   const handle = await open(file, 'r')
   try {
     const size = (await handle.stat()).size
-    const length = Math.min(size, TAIL_BYTES)
+    const length = Math.min(size, maxBytes)
     const buffer = Buffer.alloc(length)
     await handle.read(buffer, 0, length, size - length)
     return buffer.toString('utf8')

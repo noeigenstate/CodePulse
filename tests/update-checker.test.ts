@@ -5,6 +5,7 @@ import {
   buildUpdateInfo,
   compareVersions,
   isNewerVersion,
+  parseReleaseNotes,
   planByteRanges,
 } from '../apps/desktop/src/main/update-checker.js'
 
@@ -26,6 +27,7 @@ test('buildUpdateInfo selects the latest Windows installer asset', () => {
     {
       tag_name: 'v0.1.6',
       html_url: 'https://github.com/noeigenstate/CodePulse/releases/tag/v0.1.6',
+      body: '## v0.1.6\n\n### 更新内容\n\n- 修复更新下载\n- 优化界面\n',
       assets: [
         {
           name: 'CodePulse_0.1.6_x64-setup.exe.blockmap',
@@ -48,7 +50,23 @@ test('buildUpdateInfo selects the latest Windows installer asset', () => {
     installable: true,
     installerName: 'CodePulse_0.1.6_x64-setup.exe',
     installerUrl: 'https://example.test/installer',
+    releaseNotes: ['修复更新下载', '优化界面'],
   })
+})
+
+test('parseReleaseNotes extracts markdown bullet lines', () => {
+  assert.deepEqual(
+    parseReleaseNotes(`## v1.0.2
+
+### 更新内容
+
+- 修复 Codex 额度显示
+- 保留 **ffmpeg** 依赖
+- 见 [文档](https://example.test)
+`),
+    ['修复 Codex 额度显示', '保留 ffmpeg 依赖', '见 文档'],
+  )
+  assert.deepEqual(parseReleaseNotes(''), [])
 })
 
 test('buildUpdateInfo returns null when release is not newer', () => {
@@ -89,6 +107,7 @@ test('buildUpdateInfo still reports newer releases without a matching installer'
     installerName: undefined,
     installerUrl: undefined,
   })
+  assert.equal(info?.releaseNotes, undefined)
 })
 
 test('buildUpdateInfo does not auto-install mismatched installer assets', () => {

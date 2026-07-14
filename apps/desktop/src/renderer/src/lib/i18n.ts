@@ -9,6 +9,8 @@ export interface HeaderCopy {
   mute: string
   muted: string
   languageToggle: string
+  /** Local stats / insights console */
+  stats: string
 }
 
 export interface UiCopy {
@@ -28,6 +30,27 @@ export interface UiCopy {
   updateAvailable: UpdateAvailableCopy
   contextStatus: ContextStatusCopy
   pathStatus: PathStatusCopy
+  stats: StatsCopy
+}
+
+export interface StatsCopy {
+  title: string
+  subtitle: string
+  close: string
+  overview: string
+  panels: string
+  projects: string
+  running: string
+  waiting: string
+  unread: string
+  models: string
+  byAgent: string
+  weeklyUsed: string
+  fiveHourUsed: string
+  noData: string
+  privacyNote: string
+  roadmapTitle: string
+  roadmap: string[]
 }
 
 export interface EmptyDashboardCopy {
@@ -60,6 +83,8 @@ export interface UpdateAvailableCopy {
   manualBody: string
   currentVersion: string
   latestVersion: string
+  /** Section title for release notes on the update dialog */
+  whatsNew: string
   later: string
   install: string
   openRelease: string
@@ -103,6 +128,7 @@ const HEADER_COPY: Record<Locale, HeaderCopy> = {
     mute: '静音 30 分钟',
     muted: '已静音',
     languageToggle: '英文',
+    stats: '后台',
   },
   en: {
     brandTag: '',
@@ -110,6 +136,7 @@ const HEADER_COPY: Record<Locale, HeaderCopy> = {
     mute: 'Mute 30 min',
     muted: 'Muted',
     languageToggle: 'Chinese',
+    stats: 'Insights',
   },
 }
 
@@ -165,6 +192,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
         'CodePulse 已发布新版本，但当前 Release 没有匹配的 Windows 安装包。你可以先打开发布页查看更新。',
       currentVersion: '当前版本',
       latestVersion: '最新版本',
+      whatsNew: '更新内容',
       later: '稍后',
       install: '立即更新',
       openRelease: '打开发布页',
@@ -191,6 +219,30 @@ const UI_COPY: Record<Locale, UiCopy> = {
       waitingProjectPath: '等待项目路径',
       waitingDirectory: '等待目录',
       projectRoot: '项目根目录',
+    },
+    stats: {
+      title: '使用统计',
+      subtitle: '基于本机实时状态的本地汇总，不上传云端。',
+      close: '关闭',
+      overview: '总览',
+      panels: '助手分屏',
+      projects: '活跃项目',
+      running: '进行中',
+      waiting: '等待你',
+      unread: '未读完成',
+      models: '模型',
+      byAgent: '按助手',
+      weeklyUsed: '每周已用',
+      fiveHourUsed: '5 小时已用',
+      noData: '暂无任务数据。开始 CLI 任务后这里会汇总项目与额度。',
+      privacyNote: '统计仅使用本机内存中的 Dashboard 状态，不会发送到服务器。',
+      roadmapTitle: '后续可扩展',
+      roadmap: [
+        '近 7 天完成轮次 / 工具调用趋势',
+        '按项目统计耗时与完成次数',
+        '额度告警阈值与静音策略',
+        '导出 CSV / 本地报告',
+      ],
     },
   },
   en: {
@@ -244,6 +296,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
         'A new CodePulse version is available, but this release has no matching Windows installer. Open the release page to review it.',
       currentVersion: 'Current',
       latestVersion: 'Latest',
+      whatsNew: "What's new",
       later: 'Later',
       install: 'Update now',
       openRelease: 'Open release',
@@ -270,6 +323,30 @@ const UI_COPY: Record<Locale, UiCopy> = {
       waitingProjectPath: 'Waiting for project path',
       waitingDirectory: 'Waiting for directory',
       projectRoot: 'Project root',
+    },
+    stats: {
+      title: 'Usage insights',
+      subtitle: 'Local summary from live dashboard state — nothing is uploaded.',
+      close: 'Close',
+      overview: 'Overview',
+      panels: 'Agent panes',
+      projects: 'Active projects',
+      running: 'Running',
+      waiting: 'Waiting on you',
+      unread: 'Unread done',
+      models: 'Models',
+      byAgent: 'By agent',
+      weeklyUsed: 'Weekly used',
+      fiveHourUsed: '5h used',
+      noData: 'No task data yet. Start a CLI task and this view will fill in.',
+      privacyNote: 'Stats use in-memory dashboard state only and never leave this machine.',
+      roadmapTitle: 'Possible next steps',
+      roadmap: [
+        '7-day completed turns / tool-call trends',
+        'Per-project time and completion counts',
+        'Quota alert history and mute policy',
+        'Export CSV / local reports',
+      ],
     },
   },
 }

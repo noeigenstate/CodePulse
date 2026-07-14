@@ -100,8 +100,63 @@ Fastify · better-sqlite3 · Drizzle ORM。
 下载安装包：
 
 - **Windows：** `CodePulse_*_x64-setup.exe`
-- **macOS Apple Silicon：** `CodePulse_*_mac-arm64.dmg`
+- **macOS Apple Silicon：** `CodePulse_*_mac-arm64.dmg`（M 系列芯片）
 - **macOS Intel：** `CodePulse_*_mac-x64.dmg`
+
+### macOS 首次打开（未签名构建）
+
+当前 Release 中的 macOS 安装包**未做 Apple 代码签名与公证**。用浏览器（如 Chrome）
+下载后，系统会加上隔离标记。双击时可能弹出：
+
+> “CodePulse” is damaged and can’t be opened. You should move it to the Trash.  
+> （“CodePulse”已损坏，无法打开。你应该将它移到废纸篓。）
+
+这**通常不是安装包真的损坏**，而是 Gatekeeper 对未签名 + 隔离 App 的拦截文案。
+「系统设置 → 隐私与安全性 → 仍要打开」对这种 **damaged** 提示**往往无效**。
+
+**推荐做法（终端）：**
+
+1. 打开 DMG，把 `CodePulse.app` 拖到「应用程序」。
+2. 打开「终端」，执行（路径按实际安装位置调整）：
+
+```bash
+xattr -cr /Applications/CodePulse.app
+open /Applications/CodePulse.app
+```
+
+若 App 还在 DMG 卷上，可先对挂载路径执行，例如：
+
+```bash
+xattr -cr /Volumes/CodePulse*/CodePulse.app
+```
+
+3. 之后可从启动台或「应用程序」正常打开。
+
+请按本机芯片选择对应 DMG（arm64 / Intel），架构不对也会打不开。
+
+### macOS 检测不到 Claude / Codex / Grok 命令行
+
+从「启动台 / Finder」打开的 App **不会加载** 终端里的 `~/.zshrc` PATH。  
+CLI 若装在 Homebrew（`/opt/homebrew/bin`）或 nvm/npm 全局目录，旧版可能误报「未检测到命令行工具」。
+
+当前版本会自动探测常见安装路径。若仍检测失败，可在终端确认 CLI 可用：
+
+```bash
+which claude codex grok
+claude --version
+codex --version
+grok --version
+```
+
+也可设置绝对路径后重启 CodePulse：
+
+```bash
+launchctl setenv CLAUDE_CLI_PATH "$(which claude)"
+launchctl setenv CODEX_CLI_PATH "$(which codex)"
+launchctl setenv GROK_CLI_PATH "$(which grok)"
+```
+
+（或在启动 CodePulse 的 shell 中 `export` 上述变量后再 `open -a CodePulse`。）
 
 ## 首次运行
 
@@ -224,8 +279,9 @@ Intel/Apple Silicon 双架构 DMG、Linux 用 AppImage）。原生模块 `better
 会保留在 asar 归档之外，以便运行时加载；非运行时源码和未使用的 Electron 语言资源会从
 安装包中排除。
 
-macOS CI 产物为**未签名**构建。首次打开若被拦截，可到「系统设置 → 隐私与安全性」
-选择「仍要打开」。
+macOS CI 产物为**未签名、未公证**构建。用户侧请按上文
+[macOS 首次打开](#macos-首次打开未签名构建) 用 `xattr -cr` 去除隔离标记；
+「隐私与安全性 → 仍要打开」对 “is damaged” 类弹窗通常无效。
 
 ### 发版流程
 
@@ -247,6 +303,22 @@ git push origin main vX.Y.Z
 ```
 
 ## 故障排查
+
+<details>
+<summary><b>macOS 提示 “CodePulse is damaged and can’t be opened”</b></summary>
+
+安装包一般没有损坏。当前 mac 构建未签名，下载后的隔离标记会触发该文案。
+请按 [macOS 首次打开](#macos-首次打开未签名构建) 执行：
+
+```bash
+xattr -cr /Applications/CodePulse.app
+open /Applications/CodePulse.app
+```
+
+「系统设置 → 隐私与安全性 → 仍要打开」对这种弹窗通常无效。请确认下载的是
+与本机芯片匹配的 DMG（`mac-arm64` / `mac-x64`）。
+
+</details>
 
 <details>
 <summary><b>Dashboard 一直停在“正在等待事件”</b></summary>

@@ -103,8 +103,12 @@ export function buildAgentPanels(agents: AgentRuntimeState[]): AgentPanel[] {
 
 /**
  * Collect quota bars for a pane.
- * Codex may expose multiple weekly buckets (default weekly vs Spark);
- * show only buckets matching models the user has used, or all if both were used.
+ *
+ * Codex may expose multiple weekly buckets (default weekly vs Spark). Display
+ * rules:
+ * - Prefer buckets that match **currently active** models (concurrent use → both bars).
+ * - If nothing is active, use only the **most recently used** model — do not keep
+ *   showing Spark just because an older session once used it.
  */
 export function collectQuotaMeters(
   agents: AgentRuntimeState[],
@@ -130,12 +134,18 @@ export function collectQuotaMeters(
   let meters = [...byId.values()]
   if (meters.length === 0) return []
 
-  const models = usedModels(agents)
-  if (models.length > 0 && meters.length > 1) {
+  const models = relevantQuotaModels(agents.filter((agent) => agent.agentType === agentType))
+  if (models.length > 0) {
     const matched = meters.filter((meter) =>
       models.some((model) => quotaMatchesPreferredModel(meter.token, model)),
     )
-    if (matched.length > 0) meters = matched
+    if (matched.length > 0) {
+      meters = matched
+    } else {
+      // Avoid showing the wrong family (e.g. Spark bar after switching to gpt-5.6).
+      const familyFiltered = filterMetersByModelFamily(meters, models)
+      if (familyFiltered.length > 0) meters = familyFiltered
+    }
   }
 
   return meters.sort(compareQuotaMeters)
@@ -348,13 +358,44 @@ function quotaPressure(token: TokenPayload | undefined, agentType: AgentType): n
 }
 
 function preferredQuotaModel(agents: AgentRuntimeState[]): string | undefined {
-  const latestActive = agents
-    .filter((agent) => isActiveState(agent.state) && agent.model)
-    .sort((a, b) => b.lastEventAt - a.lastEventAt)[0]
+  return relevantQuotaModels(agents)[0]
+}
+
+/**
+ * Models that should drive quota UI right now:
+ * 1. All models on **active** turns (user may run Spark + weekly models together).
+ * 2. Otherwise only the single **most recent** model — historical sessions must not
+ *    keep stale Spark (or weekly) bars visible after the user switched models.
+ */
+function relevantQuotaModels(agents: AgentRuntimeState[]): string[] {
+  const active = agents
+    .filter((agent) => isActiveState(agent.state) && Boolean(agent.model) && agent.lastEventAt > 0)
+    .sort((a, b) => b.lastEventAt - a.lastEventAt)
+    .map((agent) => agent.model!)
+
+  if (active.length > 0) return [...new Set(active)]
+
   const latest = [...agents]
-    .filter((agent) => agent.model)
+    .filter((agent) => Boolean(agent.model) && agent.lastEventAt > 0)
     .sort((a, b) => b.lastEventAt - a.lastEventAt)[0]
-  return latestActive?.model ?? latest?.model
+  return latest?.model ? [latest.model] : []
+}
+
+/** Drop Spark bars for non-Spark models (and the reverse) when id matching fails. */
+function filterMetersByModelFamily(
+  meters: QuotaMeterSource[],
+  models: string[],
+): QuotaMeterSource[] {
+  const wantSpark = models.some((model) => isSparkModel(normalizeModel(model)))
+  const wantNonSpark = models.some((model) => !isSparkModel(normalizeModel(model)))
+  return meters.filter((meter) => {
+    const spark = isSparkQuota(
+      normalizeModel(`${meter.token.rateLimitId ?? ''} ${meter.token.rateLimitName ?? ''}`),
+    )
+    if (spark && wantSpark) return true
+    if (!spark && wantNonSpark) return true
+    return false
+  })
 }
 
 function isActiveState(state: TurnState): boolean {
@@ -403,13 +444,6 @@ function isSparkQuota(value: string): boolean {
 /** Only true Spark models share the Spark weekly bucket — not every gpt-5.3 build. */
 function isSparkModel(value: string): boolean {
   return value.includes('spark') || value.includes('bengalfox')
-}
-
-function usedModels(agents: AgentRuntimeState[]): string[] {
-  const models = agents
-    .filter((agent) => Boolean(agent.model) && agent.lastEventAt > 0)
-    .map((agent) => agent.model!)
-  return [...new Set(models)]
 }
 
 function quotaMeterId(token: TokenPayload): string {

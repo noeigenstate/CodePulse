@@ -9,15 +9,43 @@ electronLanguages:
 directories:
   output: release
   buildResources: build
+# After pack: drop ffmpeg / swiftshader (dashboard has no media / soft-Vulkan need).
+afterPack: scripts/after-pack.cjs
 files:
-  - out/**
+  # Only app runtime outputs (never root-level preview screenshots under out/).
+  - out/main/**
+  - out/preload/**
+  - out/renderer/**
   - build/icon.png
   - package.json
+  # Keep installers lean — only native sqlite should remain under node_modules.
   - '!**/*.map'
   - '!**/*.d.ts'
+  - '!**/*.md'
+  - '!**/*.ts'
+  - '!**/README*'
+  - '!**/CHANGELOG*'
+  - '!**/LICENSE*'
+  - '!**/license*'
+  - '!**/tsconfig*.json'
+  - '!**/.github/**'
+  - '!**/test/**'
+  - '!**/tests/**'
+  - '!**/docs/**'
+  - '!**/example/**'
+  - '!**/examples/**'
+  - '!**/benchmark/**'
+  - '!**/benchmarks/**'
+  - '!**/*.markdown'
   - '!**/node_modules/better-sqlite3/deps/**'
   - '!**/node_modules/better-sqlite3/src/**'
   - '!**/node_modules/better-sqlite3/build/Release/obj/**'
+  - '!**/node_modules/better-sqlite3/build/Release/*.lib'
+  - '!**/node_modules/better-sqlite3/build/Release/*.exp'
+  - '!**/node_modules/better-sqlite3/build/Release/*.iobj'
+  - '!**/node_modules/better-sqlite3/build/Release/*.ipdb'
+  - '!**/node_modules/better-sqlite3/build/Release/*.pdb'
+  - '!**/node_modules/**/{prebuild-install,node-abi,napi-build-utils,tar-fs,tar-stream,rc,tunnel-agent,expand-template,github-from-package,simple-get,simple-concat,pump,bl,fs-constants,inherits,string_decoder,util-deprecate,buffer,base64-js,ieee754,minimist,deep-extend,ini,strip-json-comments,mkdirp-classic,chownr,detect-libc,bindings,file-uri-to-path}/**'
 extraResources:
   - from: ../../packages/hooks
     to: codepulse-hooks
@@ -59,5 +87,3 @@ nsis:
   include: build/installer.nsh
 dmg:
   artifactName: CodePulse_${version}_mac-${arch}.${ext}
-
-

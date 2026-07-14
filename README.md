@@ -106,8 +106,66 @@ Download installers from
 [GitHub Releases](https://github.com/noeigenstate/CodePulse/releases):
 
 - **Windows:** `CodePulse_*_x64-setup.exe`
-- **macOS Apple Silicon:** `CodePulse_*_mac-arm64.dmg`
+- **macOS Apple Silicon:** `CodePulse_*_mac-arm64.dmg` (M-series)
 - **macOS Intel:** `CodePulse_*_mac-x64.dmg`
+
+### macOS first open (unsigned builds)
+
+macOS builds on GitHub Releases are **not code-signed or notarized**. Browsers
+(e.g. Chrome) attach a quarantine flag after download. Double-clicking may show:
+
+> “CodePulse” is damaged and can’t be opened. You should move it to the Trash.
+
+The app is **usually not actually damaged** — Gatekeeper is blocking an unsigned,
+quarantined app. **System Settings → Privacy & Security → Open Anyway** often does
+**not** work for this _damaged_ dialog.
+
+**Recommended fix (Terminal):**
+
+1. Open the DMG and drag `CodePulse.app` into **Applications**.
+2. Run (adjust the path if you installed elsewhere):
+
+```bash
+xattr -cr /Applications/CodePulse.app
+open /Applications/CodePulse.app
+```
+
+If the app is still on the mounted DMG volume:
+
+```bash
+xattr -cr /Volumes/CodePulse*/CodePulse.app
+```
+
+3. Afterwards you can open it from Launchpad or Applications as usual.
+
+Use the DMG that matches your chip (`arm64` vs Intel); the wrong arch will not run.
+
+### macOS: CLIs not detected (Claude / Codex / Grok)
+
+Apps opened from Finder / Launchpad do **not** load your shell `PATH` from
+`~/.zshrc`. CLIs installed via Homebrew or nvm may be missing from that minimal
+environment, so older builds could report “CLI not detected” even when Terminal
+works.
+
+Current builds probe common install locations automatically. If detection still
+fails, verify in Terminal:
+
+```bash
+which claude codex grok
+claude --version
+codex --version
+grok --version
+```
+
+Or point CodePulse at absolute paths and relaunch:
+
+```bash
+launchctl setenv CLAUDE_CLI_PATH "$(which claude)"
+launchctl setenv CODEX_CLI_PATH "$(which codex)"
+launchctl setenv GROK_CLI_PATH "$(which grok)"
+```
+
+(Or `export` those variables in a shell and run `open -a CodePulse`.)
 
 ## First run
 
@@ -238,8 +296,10 @@ Windows, DMG on macOS for both Intel and Apple Silicon, AppImage on Linux).
 The native `better-sqlite3` addon is unpacked so it loads at runtime; non-runtime
 sources and unused Electron locales are excluded from the installer.
 
-macOS CI builds are **unsigned**. First open may require System Settings → Privacy
-& Security → “Open Anyway”.
+macOS CI builds are **unsigned and not notarized**. End users should follow
+[macOS first open](#macos-first-open-unsigned-builds) and clear quarantine with
+`xattr -cr`. Privacy & Security → “Open Anyway” usually does not help for the
+“is damaged” dialog.
 
 ### Release workflow
 
@@ -262,6 +322,23 @@ git push origin main vX.Y.Z
 ```
 
 ## Troubleshooting
+
+<details>
+<summary><b>macOS says “CodePulse is damaged and can’t be opened”</b></summary>
+
+The package is usually fine. Unsigned builds get a quarantine flag after download,
+and Gatekeeper shows a _damaged_ message. Follow
+[macOS first open](#macos-first-open-unsigned-builds):
+
+```bash
+xattr -cr /Applications/CodePulse.app
+open /Applications/CodePulse.app
+```
+
+Privacy & Security → Open Anyway usually does **not** work for this dialog. Also
+confirm you downloaded the DMG that matches your chip (`mac-arm64` vs `mac-x64`).
+
+</details>
 
 <details>
 <summary><b>The Dashboard never leaves "waiting for events"</b></summary>

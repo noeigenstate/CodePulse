@@ -3,7 +3,12 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { detectClaudeAgent, detectCodexAgent, detectGrokAgent } from '@codepulse/local-server'
+import {
+  commandCandidates,
+  detectClaudeAgent,
+  detectCodexAgent,
+  detectGrokAgent,
+} from '@codepulse/local-server'
 
 test('Claude detection falls back when the Windows cmd shim is broken', async () => {
   const commands: string[] = []
@@ -68,4 +73,38 @@ test('Grok detection reports installed CLI and CodePulse hook file', async () =>
   assert.equal(agent.configured, true)
   assert.equal(agent.type, 'grok')
   assert.equal(agent.version, 'grok 0.2.100')
+})
+
+test('macOS CLI candidates include Homebrew and bare command for GUI PATH gaps', async () => {
+  const candidates = await commandCandidates('claude', {
+    platform: 'darwin',
+    homeDir: '/Users/demo',
+    env: { PATH: '/usr/bin:/bin' },
+  })
+
+  assert.equal(candidates[0], 'claude')
+  assert.ok(candidates.includes('/opt/homebrew/bin/claude'))
+  assert.ok(candidates.includes('/usr/local/bin/claude'))
+  assert.ok(candidates.includes('/Users/demo/.local/bin/claude'))
+})
+
+test('darwin detection finds CLI via absolute Homebrew path when bare name fails', async () => {
+  const commands: string[] = []
+  const agent = await detectCodexAgent({
+    platform: 'darwin',
+    homeDir: '/Users/demo',
+    env: { PATH: '/usr/bin:/bin' },
+    runCommand: async (command) => {
+      commands.push(command)
+      if (command === '/opt/homebrew/bin/codex') {
+        return { ok: true, stdout: 'codex-cli 0.50.0' }
+      }
+      return { ok: false }
+    },
+  })
+
+  assert.equal(agent.installed, true)
+  assert.equal(agent.version, 'codex-cli 0.50.0')
+  assert.ok(commands.includes('codex'))
+  assert.ok(commands.includes('/opt/homebrew/bin/codex'))
 })

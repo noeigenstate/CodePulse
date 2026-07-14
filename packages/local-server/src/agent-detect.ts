@@ -4,9 +4,9 @@
  *
  * @module local-server/agent-detect
  */
-import { access, readFile } from 'node:fs/promises'
+import { access, readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join, posix } from 'node:path'
 import { execFile } from 'node:child_process'
 import type { Agent } from '@codepulse/shared'
 
@@ -39,12 +39,12 @@ export async function detectAgents(options: AgentDetectOptions = {}): Promise<Ag
  */
 export async function detectCodexAgent(options: AgentDetectOptions = {}): Promise<Agent> {
   const env = options.env ?? process.env
-  const runCommand = options.runCommand ?? runLocalCommand
+  const runCommand = options.runCommand ?? createLocalCommandRunner(options)
   const configPath = codexConfigPath(options)
   const hooksPath = codexHooksPath(options)
 
   const versionResult = await runFirstAvailableCommand(
-    env['CODEX_CLI_PATH'] ? [env['CODEX_CLI_PATH']] : commandCandidates('codex', options),
+    env['CODEX_CLI_PATH'] ? [env['CODEX_CLI_PATH']] : await commandCandidates('codex', options),
     ['--version'],
     runCommand,
   )
@@ -65,11 +65,11 @@ export async function detectCodexAgent(options: AgentDetectOptions = {}): Promis
 /** 检测 Claude Code CLI 及 CodePulse 的 hook/status-line 配置。 */
 export async function detectClaudeAgent(options: AgentDetectOptions = {}): Promise<Agent> {
   const env = options.env ?? process.env
-  const runCommand = options.runCommand ?? runLocalCommand
+  const runCommand = options.runCommand ?? createLocalCommandRunner(options)
   const configPath = claudeConfigPath(options)
 
   const versionResult = await runFirstAvailableCommand(
-    env['CLAUDE_CLI_PATH'] ? [env['CLAUDE_CLI_PATH']] : commandCandidates('claude', options),
+    env['CLAUDE_CLI_PATH'] ? [env['CLAUDE_CLI_PATH']] : await commandCandidates('claude', options),
     ['--version'],
     runCommand,
   )
@@ -93,11 +93,11 @@ export async function detectClaudeAgent(options: AgentDetectOptions = {}): Promi
 /** 检测 Grok Build CLI 及 CodePulse 的全局 hook 配置。 */
 export async function detectGrokAgent(options: AgentDetectOptions = {}): Promise<Agent> {
   const env = options.env ?? process.env
-  const runCommand = options.runCommand ?? runLocalCommand
+  const runCommand = options.runCommand ?? createLocalCommandRunner(options)
   const hooksPath = grokHooksPath(options)
 
   const versionResult = await runFirstAvailableCommand(
-    env['GROK_CLI_PATH'] ? [env['GROK_CLI_PATH']] : commandCandidates('grok', options),
+    env['GROK_CLI_PATH'] ? [env['GROK_CLI_PATH']] : await commandCandidates('grok', options),
     ['--version'],
     runCommand,
   )
@@ -165,10 +165,123 @@ function cleanVersion(stdout: string | undefined): string | undefined {
   return text ? text.split(/\r?\n/)[0] : undefined
 }
 
-function commandCandidates(command: string, options: AgentDetectOptions): string[] {
-  return (options.platform ?? process.platform) === 'win32'
-    ? [`${command}.cmd`, command, `${command}.exe`]
-    : [command]
+/**
+ * Build candidate executables for a CLI name.
+ *
+ * On macOS/Linux, GUI apps (Finder / Dock / DMG) inherit a minimal PATH and
+ * miss Homebrew / nvm / npm-global shims. Probe absolute paths under common
+ * bin directories in addition to the bare command name.
+ */
+export async function commandCandidates(
+  command: string,
+  options: AgentDetectOptions = {},
+): Promise<string[]> {
+  const platform = options.platform ?? process.platform
+  if (platform === 'win32') {
+    return [`${command}.cmd`, command, `${command}.exe`]
+  }
+
+  const home = options.homeDir ?? homedir()
+  const env = options.env ?? process.env
+  const dirs = await commonBinDirectories(home, env, platform)
+  const absolute = dirs.map((dir) => pathJoin(platform, dir, command))
+  // Bare name first (with augmented PATH in the runner), then fixed locations.
+  return uniqueStrings([command, ...absolute])
+}
+
+/** Exported for tests — directories prepended onto PATH for CLI probes. */
+export async function commonBinDirectories(
+  home: string,
+  env: Record<string, string | undefined> = process.env,
+  platform: NodeJS.Platform = process.platform,
+): Promise<string[]> {
+  const p = (...parts: string[]) => pathJoin(platform, ...parts)
+  const dirs = [
+    p('/opt/homebrew/bin'),
+    p('/opt/homebrew/sbin'),
+    p('/usr/local/bin'),
+    p('/usr/local/sbin'),
+    p(home, '.local', 'bin'),
+    p(home, '.npm-global', 'bin'),
+    p(home, '.yarn', 'bin'),
+    p(home, '.volta', 'bin'),
+    p(home, '.fnm', 'current', 'bin'),
+    p(home, '.cargo', 'bin'),
+    p(home, 'Library', 'pnpm'),
+    p(home, '.local', 'share', 'pnpm'),
+  ]
+
+  // nvm: ~/.nvm/versions/node/<ver>/bin
+  const nvmRoot = env['NVM_DIR'] ?? p(home, '.nvm')
+  const nvmVersions = p(nvmRoot, 'versions', 'node')
+  try {
+    const versions = await readdir(nvmVersions)
+    for (const version of versions) {
+      dirs.push(p(nvmVersions, version, 'bin'))
+    }
+  } catch {
+    // nvm not installed
+  }
+
+  // asdf shims
+  dirs.push(p(home, '.asdf', 'shims'))
+
+  // Existing PATH entries last so system / user PATH still participates.
+  const sep = platform === 'win32' ? ';' : ':'
+  const pathDirs = (env['PATH'] ?? '')
+    .split(sep)
+    .map((part) => part.trim())
+    .filter(Boolean)
+  dirs.push(...pathDirs)
+
+  return uniqueStrings(dirs)
+}
+
+export function buildAugmentedPath(
+  home: string,
+  env: Record<string, string | undefined> = process.env,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  if (platform === 'win32') return env['PATH'] ?? ''
+  const sep = ':'
+  // Synchronous subset for PATH — nvm versions are added via absolute candidates.
+  const p = (...parts: string[]) => pathJoin(platform, ...parts)
+  const staticDirs = [
+    p('/opt/homebrew/bin'),
+    p('/opt/homebrew/sbin'),
+    p('/usr/local/bin'),
+    p('/usr/local/sbin'),
+    p(home, '.local', 'bin'),
+    p(home, '.npm-global', 'bin'),
+    p(home, '.yarn', 'bin'),
+    p(home, '.volta', 'bin'),
+    p(home, '.fnm', 'current', 'bin'),
+    p(home, '.cargo', 'bin'),
+    p(home, 'Library', 'pnpm'),
+    p(home, '.local', 'share', 'pnpm'),
+    p(home, '.asdf', 'shims'),
+  ]
+  return uniqueStrings([...staticDirs, ...(env['PATH'] ?? '').split(sep).filter(Boolean)]).join(sep)
+}
+
+/**
+ * Join path segments for the *target* platform.
+ * When unit tests on Windows simulate darwin, Node's path.join would otherwise
+ * turn `/opt/homebrew` into `\opt\homebrew` and break absolute Unix paths.
+ */
+function pathJoin(platform: NodeJS.Platform, ...segments: string[]): string {
+  return platform === 'win32' ? join(...segments) : posix.join(...segments)
+}
+
+function uniqueStrings(values: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const value of values) {
+    if (!value || seen.has(value)) continue
+    seen.add(value)
+    out.push(value)
+  }
+  return out
 }
 
 async function runFirstAvailableCommand(
@@ -183,14 +296,36 @@ async function runFirstAvailableCommand(
   return { ok: false }
 }
 
+function createLocalCommandRunner(
+  options: AgentDetectOptions,
+): (command: string, args: string[]) => Promise<CommandResult> {
+  const env = options.env ?? process.env
+  const home = options.homeDir ?? homedir()
+  const platform = options.platform ?? process.platform
+  const path = buildAugmentedPath(home, env, platform)
+  const childEnv = { ...env, PATH: path }
+
+  return (command, args) => runLocalCommand(command, args, childEnv, platform)
+}
+
 /** 以 1.5 秒超时执行本地命令；从不抛出，失败时 `ok: false`。 */
-function runLocalCommand(command: string, args: string[]): Promise<CommandResult> {
+function runLocalCommand(
+  command: string,
+  args: string[],
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): Promise<CommandResult> {
   return new Promise((resolve) => {
     try {
       execFile(
         command,
         args,
-        { timeout: 1500, windowsHide: true, shell: process.platform === 'win32' },
+        {
+          timeout: 1500,
+          windowsHide: true,
+          shell: platform === 'win32',
+          env,
+        },
         (error, stdout) => {
           resolve({ ok: !error, stdout })
         },

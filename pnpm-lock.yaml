@@ -23,18 +23,9 @@ importers:
 
   apps/desktop:
     dependencies:
-      '@fastify/websocket':
-        specifier: ^11.0.2
-        version: 11.2.0
       better-sqlite3:
         specifier: ^11.8.1
         version: 11.10.0
-      drizzle-orm:
-        specifier: ^0.38.3
-        version: 0.38.4(@types/better-sqlite3@7.6.13)(@types/react@18.3.31)(better-sqlite3@11.10.0)(react@18.3.1)
-      fastify:
-        specifier: ^5.2.1
-        version: 5.8.5
     devDependencies:
       '@codepulse/adapters':
         specifier: workspace:*
@@ -51,6 +42,9 @@ importers:
       '@codepulse/storage':
         specifier: workspace:*
         version: link:../../packages/storage
+      '@fastify/websocket':
+        specifier: ^11.0.2
+        version: 11.2.0
       '@types/react':
         specifier: ^18.3.18
         version: 18.3.31
@@ -63,6 +57,9 @@ importers:
       autoprefixer:
         specifier: ^10.4.20
         version: 10.5.0(postcss@8.5.15)
+      drizzle-orm:
+        specifier: ^0.38.3
+        version: 0.38.4(@types/better-sqlite3@7.6.13)(@types/react@18.3.31)(better-sqlite3@11.10.0)(react@18.3.1)
       electron:
         specifier: ^33.3.1
         version: 33.4.11
@@ -72,6 +69,9 @@ importers:
       electron-vite:
         specifier: ^2.3.0
         version: 2.3.0(vite@5.4.21(@types/node@22.19.20))
+      fastify:
+        specifier: ^5.2.1
+        version: 5.8.5
       postcss:
         specifier: ^8.4.49
         version: 8.5.15

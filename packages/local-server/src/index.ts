@@ -81,6 +81,7 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
 }
 
 export {
+  commandCandidates,
   detectAgents,
   detectClaudeAgent,
   detectCodexAgent,

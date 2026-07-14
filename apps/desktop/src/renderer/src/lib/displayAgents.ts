@@ -506,12 +506,6 @@ function stripSparkBranding(token: TokenPayload): TokenPayload {
   return next
 }
 
-function isDefaultCodexQuota(value: string): boolean {
-  // Default Codex weekly bucket id/name is plain "codex", not Spark variants.
-  const tokens = value.split(/[\s/_-]+/).filter(Boolean)
-  return tokens.includes('codex') && !isSparkQuota(value)
-}
-
 function isSparkQuota(value: string): boolean {
   return value.includes('spark') || value.includes('bengalfox')
 }
@@ -535,10 +529,6 @@ function compareQuotaMeters(a: QuotaMeterSource, b: QuotaMeterSource): number {
   // Default weekly first, Spark (and other named buckets) below — matches Codex status line order.
   if (aSpark !== bSpark) return aSpark ? 1 : -1
   return b.updatedAt - a.updatedAt || a.id.localeCompare(b.id)
-}
-
-function extractGptVersion(value: string): string | undefined {
-  return value.match(/gpt[-_\s]*(\d+(?:\.\d+)?)/)?.[1]
 }
 
 function normalizeModel(value: string | undefined): string {

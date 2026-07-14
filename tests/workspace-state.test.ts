@@ -697,9 +697,11 @@ test('StatusHub only emits notifications for completed turns', () => {
   assert.match(notifications[0]?.title ?? '', /[💖💕✨🎉🌸🍀💝⭐]/u)
   assert.doesNotMatch(notifications[0]?.title ?? '', /一轮任务|Codex|Claude|Grok/)
   assert.doesNotMatch(notifications[0]?.body ?? '', /Codex|Claude|Grok|一轮任务/)
-  // Prompt summary is compact (≤8 chars) and drawn from the user question.
-  assert.equal((notifications[0]?.body ?? '').length <= 8, true)
-  assert.match(notifications[0]?.body ?? '', /修复更新超时/)
+  // Prompt summary is a complete short line (Chinese ≤15 汉字), not a mid-string cut.
+  assert.equal(notifications[0]?.body, '修复更新超时并优化下载')
+  assert.ok(
+    [...(notifications[0]?.body ?? '')].filter((ch) => /[\u3400-\u9fff]/u.test(ch)).length <= 15,
+  )
 })
 
 test('StatusHub keeps concurrent sessions in the same workspace separate', () => {

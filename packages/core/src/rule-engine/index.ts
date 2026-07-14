@@ -47,12 +47,12 @@ export class RuleEngine {
     const out: NotificationRequest[] = []
     const scope = agentScope(next)
     const project = projectLabel(next.workspacePath)
-    const promptSummary = summarizeUserPrompt(next.lastUserPrompt ?? previous.lastUserPrompt, 8)
+    const promptSummary = summarizeUserPrompt(next.lastUserPrompt ?? previous.lastUserPrompt, 15)
     this.push(out, now, {
       level: 'normal',
       // Project name is primary; no Claude/Codex branding in the toast.
       title: `${completionEmoji(project)} ${project} 已完成`,
-      // Body is a short summary of the user question (≤8 chars), not agent name.
+      // Body is a short word-capped summary of the user question, not agent name.
       body: promptSummary,
       dedupeKey: `done:${scope}:${
         next.externalTurnId ?? previous.externalTurnId ?? previous.turnStartedAt ?? now
@@ -119,33 +119,216 @@ function completionEmoji(project: string): string {
 }
 
 /**
- * Compact the user prompt into a short toast summary (default ≤8 graphemes).
- * Not an LLM summary — strip noise and truncate for glanceable notifications.
+ * Build a glanceable toast summary of the user prompt.
+ *
+ * Limit:
+ * - Chinese-heavy text: ≤15 汉字 (Han characters)
+ * - English-heavy text: ≤15 words
+ *
+ * Heuristic "summary" (not an LLM paraphrase):
+ * 1. strip wrappers, code, URLs and polite filler
+ * 2. keep the primary ask clause
+ * 3. cap so the OS toast second line can show a complete short line
  */
-export function summarizeUserPrompt(prompt: string | undefined, maxChars = 8): string {
+export function summarizeUserPrompt(prompt: string | undefined, maxUnits = 15): string {
   if (!prompt) return '任务完成'
+
   let text = prompt
+    // Drop fenced code / tags that drown the intent.
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/<user_query>\s*/gi, ' ')
+    .replace(/<\/user_query>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\bhttps?:\/\/\S+/gi, ' ')
+    .replace(/`([^`]+)`/g, '$1')
     .replace(/\r?\n+/g, ' ')
     .replace(/\s+/g, ' ')
     .replace(/^["'`“”‘’]+|["'`“”‘’]+$/g, '')
     .trim()
 
-  // Drop common chat wrappers / filler so the first content words fit in 8 chars.
-  text = text
-    .replace(/^<user_query>\s*/i, '')
-    .replace(/<\/user_query>[\s\S]*$/i, '')
-    .replace(/^(请你?|麻烦你?|帮我|帮忙|能否|可以|能不能|烦请)+/u, '')
-    .replace(/[。！？!?,，、.…]+$/u, '')
+  // Prefer the first sentence so multi-paragraph dumps collapse to one ask.
+  text = firstClause(text)
+
+  // Drop polite / chat filler so the remaining words are the ask itself.
+  text = stripLeadingFiller(text)
+    .replace(/[。！？!?,，、.…；;]+$/u, '')
     .trim()
 
   if (!text) return '任务完成'
-  return truncateGraphemes(text, maxChars)
+
+  if (isPrimarilyCjk(text)) {
+    return clipChineseSummary(text, maxUnits) || '任务完成'
+  }
+
+  const words = tokenizeWords(text)
+  if (words.length === 0) return '任务完成'
+  // Complete word units only — never cut mid-word for English.
+  return joinWords(words.slice(0, maxUnits)) || '任务完成'
 }
 
-function truncateGraphemes(text: string, maxChars: number): string {
+/** Prefer the Han-character budget when CJK dominates the cleaned prompt. */
+export function isPrimarilyCjk(text: string): boolean {
   const chars = [...text]
-  if (chars.length <= maxChars) return chars.join('')
-  return chars.slice(0, maxChars).join('')
+  let cjk = 0
+  let latin = 0
+  for (const ch of chars) {
+    if (isCjk(ch)) cjk += 1
+    else if (/[A-Za-z]/u.test(ch)) latin += 1
+  }
+  if (cjk === 0) return false
+  // Pure / mostly Chinese prompts use the 汉字 limit.
+  return cjk >= latin
+}
+
+/**
+ * Cap Chinese summaries by 汉字 count (default 15), not by 2-char "words".
+ * Embedded Latin tokens still appear but each word consumes 1 unit of the budget.
+ */
+export function clipChineseSummary(text: string, maxHan = 15): string {
+  const chars = [...text]
+  let units = 0
+  let out = ''
+  let i = 0
+
+  while (i < chars.length && units < maxHan) {
+    const ch = chars[i]!
+
+    if (/\s/u.test(ch)) {
+      if (out && !/\s$/u.test(out)) out += ' '
+      i += 1
+      continue
+    }
+
+    if (/[A-Za-z0-9]/u.test(ch)) {
+      let j = i + 1
+      while (j < chars.length && /[A-Za-z0-9''’.]/u.test(chars[j]!)) j += 1
+      if (units >= maxHan) break
+      out += chars.slice(i, j).join('')
+      units += 1
+      i = j
+      continue
+    }
+
+    if (isCjk(ch)) {
+      out += ch
+      units += 1
+      i += 1
+      continue
+    }
+
+    // Keep light punctuation between tokens when budget remains.
+    out += ch
+    i += 1
+  }
+
+  return out.replace(/\s+/g, ' ').trim()
+}
+
+function firstClause(text: string): string {
+  const match = text.match(/^(.+?)(?:[。！？!?](?=\s|$)|[；;](?=\s)|[|]{2})/u)
+  const clause = match?.[1]?.trim()
+  return clause && clause.length >= 2 ? clause : text
+}
+
+function stripLeadingFiller(text: string): string {
+  let current = text
+  // Repeat a few times for stacked openers like "Please help me 请帮我..."
+  for (let i = 0; i < 3; i++) {
+    const next = current
+      .replace(
+        /^(please\s+)?(can you|could you|would you|help me|help us|i need you to|i want you to|i'd like you to)\s+/i,
+        '',
+      )
+      .replace(/^(please|pls|plz)\s+/i, '')
+      .replace(/^(请你?|麻烦你?|烦请|拜托|帮我|帮忙|帮忙把|请帮我|请帮忙|能否|可以|能不能|麻烦)+/u, '')
+      .replace(/^(把|将|为|给我|帮|去)\s*/u, '')
+      .trim()
+    if (next === current) break
+    current = next
+  }
+  return current
+}
+
+/**
+ * Mixed EN/CJK tokenizer for toast length control.
+ * - Latin / numbers: whitespace-style words
+ * - CJK: ~2-char words, with common single-char particles kept separate
+ */
+export function tokenizeWords(text: string): string[] {
+  const tokens: string[] = []
+  const chars = [...text]
+  let i = 0
+
+  while (i < chars.length) {
+    const ch = chars[i]!
+    if (/\s/u.test(ch)) {
+      i += 1
+      continue
+    }
+
+    if (/[A-Za-z]/u.test(ch)) {
+      let j = i + 1
+      while (j < chars.length && /[A-Za-z''’]/u.test(chars[j]!)) j += 1
+      tokens.push(chars.slice(i, j).join(''))
+      i = j
+      continue
+    }
+
+    if (/\d/u.test(ch)) {
+      let j = i + 1
+      while (j < chars.length && /[\d.]/u.test(chars[j]!)) j += 1
+      tokens.push(chars.slice(i, j).join(''))
+      i = j
+      continue
+    }
+
+    if (isCjk(ch)) {
+      if (isCjkParticle(ch)) {
+        tokens.push(ch)
+        i += 1
+        continue
+      }
+      const next = chars[i + 1]
+      if (next && isCjk(next) && !isCjkParticle(next)) {
+        tokens.push(ch + next)
+        i += 2
+        continue
+      }
+      tokens.push(ch)
+      i += 1
+      continue
+    }
+
+    // Skip punctuation / symbols between words.
+    i += 1
+  }
+
+  return tokens
+}
+
+function joinWords(words: string[]): string {
+  let out = ''
+  for (const word of words) {
+    if (!out) {
+      out = word
+      continue
+    }
+    // Space only between Latin/numeric tokens; CJK joins tightly.
+    if (/[A-Za-z0-9]$/u.test(out) && /^[A-Za-z0-9]/u.test(word)) {
+      out += ` ${word}`
+    } else {
+      out += word
+    }
+  }
+  return out
+}
+
+function isCjk(ch: string): boolean {
+  return /[\u3400-\u9fff\uf900-\ufaff]/u.test(ch)
+}
+
+function isCjkParticle(ch: string): boolean {
+  return '的了吗呢吧啊嘛呀么与及并和且把将被在从对为向'.includes(ch)
 }
 
 function hashText(value: string): number {

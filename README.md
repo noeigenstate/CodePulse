@@ -7,7 +7,7 @@
 Know at a glance whether Codex, Claude Code, and Grok are working, waiting on
 you, finished, or stuck — without alt-tabbing back to a terminal.
 
-[![status](https://img.shields.io/badge/status-v1.0.0-brightgreen)](#features)
+[![status](https://img.shields.io/badge/status-v1.1.0-brightgreen)](#features)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue)](#download)
 [![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#development)
@@ -29,6 +29,9 @@ machine, and surfaces the result three ways:
 - 📊 **Live Dashboard** — light adaptive panes for Claude Code / Codex / Grok
   (only the CLIs you are using), with brand colors, project cards, context bars,
   and quota meters.
+- 📈 **Local analytics console** — open **Insights** (Chinese UI: **后台**) for
+  full-screen rollups of tokens, coding time, projects, model mix, and peak hours
+  from your local SQLite history; refresh anytime.
 - 🎨 **Color-coded tray icon** — the overall state of every agent, visible at
   all times.
 - 🔔 **Desktop notifications** — project-first completion toasts with a short
@@ -66,7 +69,39 @@ context window, and state badges. _(Sample data shown.)_
 | 🔔 **Glanceable toasts**            | Completion title is the project name; body is a cleaned prompt summary — no CLI branding noise.                                         |
 | 🕰️ **Stuck detection**              | A watchdog flags turns with no activity so silent failures don't burn your afternoon.                                                   |
 | 💾 **Local history**                | Events, sessions, turns, and token snapshots persisted to SQLite — yours to query or delete.                                            |
+| 📊 **Local analytics console**      | SQLite rollups of tokens, coding time, projects, and dialogs — today / 7d / 30d, with day / week / month trends.                        |
 | 🔌 **Open local API**               | Plain HTTP + WebSocket on `127.0.0.1:17888` for local integrations.                                                                     |
+
+## Local analytics console
+
+The live dashboard answers “what is running now.” The **local analytics console**
+answers “how much did I spend over this period.”
+
+1. On the live console, click **Insights** in the top-right (Chinese UI label:
+   **后台**).
+2. A full-screen analytics view opens. Metrics are aggregated from the on-disk
+   `codepulse.sqlite` via in-app IPC — **nothing is uploaded**.
+3. Pick **Today / Last 7 days / Last 30 days**, then **Refresh** when you want a
+   fresh rollup of the latest events.
+4. Trend charts can switch **Day / Week / Month**. Press `Esc` or **Exit** to
+   return to the live console.
+
+What you get:
+
+| Section                 | What it shows                                                                 |
+| ----------------------- | ----------------------------------------------------------------------------- |
+| **Overview KPIs**       | Total tokens, total / average daily coding time, project count, dialog count, with period-over-period deltas. |
+| **Trends**              | Token and coding-time curves so peak days stand out.                          |
+| **Model mix**           | Share of models in use (Claude / GPT / Gemini, etc.).                         |
+| **Peak hours**          | Weekday × hour heatmap of activity.                                           |
+| **Project ranking**     | Per-project tokens, duration, dialogs, and last activity.                     |
+| **Insights**            | Lightweight tips from local rollups (peak day, top model, efficiency hints).  |
+| **Distributions & score** | Project types, best-effort file types, tokens-per-dialog buckets, local efficiency score. |
+
+> Charts fill in after CLI tasks have been recorded in the local database. A
+> fresh install or wiped history will show empty-state hints until you run turns.  
+> During active Grok turns, context usage is read from the session’s
+> `updates.jsonl`; after a turn ends, `signals.json` is preferred when present.
 
 ## How it works
 
@@ -76,23 +111,24 @@ context window, and state badges. _(Sample data shown.)_
    ▼
  POST /api/events ──► adapters ──► StatusHub (pure reducer + rule engine)
  (Fastify, loopback)   normalize        │
-                                        ├─► SQLite (events / sessions / turns / tokens)
+                                        ├─► SQLite (events / sessions / turns / tokens / workspaces)
                                         ├─► tray icon update
                                         ├─► desktop notification
                                         └─► WebSocket / IPC push ──► Dashboard (React)
+                                                                  └─► Analytics (SQLite rollups)
 ```
 
 The repository is a `pnpm` workspace:
 
 ```
-apps/desktop/        Electron app (main / preload / renderer)
+apps/desktop/        Electron app (main / preload / renderer, incl. analytics UI)
 packages/
-  shared/            Domain types (Agent, Turn, AgentEvent, …) + constants
+  shared/            Domain types (Agent, Turn, AgentEvent, UsageStats, …) + constants
   core/              State machine, rule engine, aggregation, StatusHub
   adapters/          Codex / Claude / Grok raw payload → AgentEvent mapping
-  storage/           SQLite schema (Drizzle ORM) + repository
+  storage/           SQLite schema (Drizzle ORM), repository, usage-stats queries
   local-server/      Fastify HTTP + WebSocket routes
-  hooks/             Standalone hook scripts the agents invoke
+  hooks/             Standalone hook scripts the agents invoke (incl. usage readers)
 scripts/             Backend smoke test
 tests/               Unit tests
 ```
@@ -187,6 +223,8 @@ launchctl setenv GROK_CLI_PATH "$(which grok)"
    - `Stop`
 5. Run a Claude Code, Codex, or Grok task. Only panes for CLIs that report
    activity appear on the dashboard (adaptive layout).
+6. To review spend over time, open **Insights** in the top-right (see
+   [Local analytics console](#local-analytics-console)).
 
 CodePulse only manages CodePulse-owned hook and status-line entries. Existing
 user hooks, models, plugins, and preferences are preserved. On uninstall, the
@@ -247,9 +285,13 @@ CodePulse stores a single SQLite database in the Electron user-data directory:
 | macOS   | `~/Library/Application Support/CodePulse/codepulse.sqlite` |
 | Linux   | `~/.config/CodePulse/codepulse.sqlite`                     |
 
-It records events, sessions, turns, and token snapshots. Raw events and token
-snapshots older than 30 days are pruned automatically. Prompts are stored only
-as short previews, never in full. Delete the file to reset all history.
+It records events, sessions, turns, workspaces, and token snapshots. Raw events
+and token snapshots older than 30 days are pruned automatically. Prompts are
+stored only as short previews, never in full. Delete the file to reset all
+history.
+
+The **local analytics console** only reads this database on-device for rollups.
+Usage totals and project paths are never uploaded to a remote server.
 
 ## Development
 

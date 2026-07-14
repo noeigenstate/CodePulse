@@ -82,7 +82,9 @@ test('queryUsageStats aggregates tokens, turns, and projects from SQLite', async
       timestamp: now - day + 90_000,
     })
 
-    const stats = queryUsageStats(db, { range: '7d' }, now, { dbPath: join(home, 'codepulse.sqlite') })
+    const stats = queryUsageStats(db, { range: '7d' }, now, {
+      dbPath: join(home, 'codepulse.sqlite'),
+    })
 
     assert.equal(stats.hasData, true)
     assert.equal(stats.persistenceAvailable, true)

@@ -97,15 +97,15 @@ answers “how much did I spend over this period.”
 
 What you get:
 
-| Section                 | What it shows                                                                 |
-| ----------------------- | ----------------------------------------------------------------------------- |
-| **Overview KPIs**       | Total tokens, total / average daily coding time, project count, dialog count, with period-over-period deltas. |
-| **Trends**              | Token and coding-time curves so peak days stand out.                          |
-| **Model mix**           | Share of models in use (Claude / GPT / Gemini, etc.).                         |
-| **Peak hours**          | Weekday × hour heatmap of activity.                                           |
-| **Project ranking**     | Per-project tokens, duration, dialogs, and last activity.                     |
-| **Insights**            | Lightweight tips from local rollups (peak day, top model, efficiency hints).  |
-| **Distributions & score** | Project types, best-effort file types, tokens-per-dialog buckets, local efficiency score. |
+| Section                   | What it shows                                                                                                 |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Overview KPIs**         | Total tokens, total / average daily coding time, project count, dialog count, with period-over-period deltas. |
+| **Trends**                | Token and coding-time curves so peak days stand out.                                                          |
+| **Model mix**             | Share of models in use (Claude / GPT / Gemini, etc.).                                                         |
+| **Peak hours**            | Weekday × hour heatmap of activity.                                                                           |
+| **Project ranking**       | Per-project tokens, duration, dialogs, and last activity.                                                     |
+| **Insights**              | Lightweight tips from local rollups (peak day, top model, efficiency hints).                                  |
+| **Distributions & score** | Project types, best-effort file types, tokens-per-dialog buckets, local efficiency score.                     |
 
 > Charts fill in after CLI tasks have been recorded in the local database. A
 > fresh install or wiped history will show empty-state hints until you run turns.  

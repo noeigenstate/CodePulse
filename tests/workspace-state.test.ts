@@ -63,6 +63,86 @@ test('StatusHub routes workspace-less events back to the original session worksp
   assert.equal(codexAgents[0]?.state, 'DONE')
 })
 
+test('StatusHub keeps one card when the same session reports subdirectory cwd values', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+
+  hub.ingest({
+    id: 'prompt',
+    source: 'claude_code',
+    eventType: 'prompt_submit',
+    externalSessionId: 'session-root',
+    cwd: 'E:/共形项目/zsy_pipe_network/gitlab_single_pipe',
+    timestamp: 100,
+  })
+  hub.ingest({
+    id: 'tool-sub-a',
+    source: 'claude_code',
+    eventType: 'tool_start',
+    externalSessionId: 'session-root',
+    cwd: 'E:/共形项目/zsy_pipe_network/gitlab_single_pipe/flow_pattern/results',
+    toolName: 'Bash',
+    timestamp: 200,
+  })
+  hub.ingest({
+    id: 'tool-sub-b',
+    source: 'claude_code',
+    eventType: 'tool_start',
+    externalSessionId: 'session-root',
+    cwd: 'E:/共形项目/zsy_pipe_network/gitlab_single_pipe/flow_pattern_classifi',
+    toolName: 'Read',
+    timestamp: 300,
+  })
+
+  const claudeAgents = hub.snapshot().agents.filter((agent) => agent.agentType === 'claude_code')
+  assert.equal(claudeAgents.length, 1)
+  assert.equal(claudeAgents[0]?.state, TurnState.TOOL_RUNNING)
+  assert.equal(claudeAgents[0]?.workspacePath, 'E:/共形项目/zsy_pipe_network/gitlab_single_pipe')
+})
+
+test('display panels collapse nested workspace cards into the project root', () => {
+  const panels = buildAgentPanels([
+    {
+      agentType: 'claude_code',
+      state: TurnState.DONE,
+      toolCallCount: 1,
+      needPermission: false,
+      needUserInput: false,
+      unread: false,
+      lastEventAt: 100,
+      workspacePath: 'E:/共形项目/zsy_pipe_network/gitlab_single_pipe',
+    },
+    {
+      agentType: 'claude_code',
+      state: TurnState.TOOL_RUNNING,
+      toolCallCount: 2,
+      needPermission: false,
+      needUserInput: false,
+      unread: false,
+      lastEventAt: 200,
+      workspacePath: 'E:/共形项目/zsy_pipe_network/gitlab_single_pipe/flow_pattern/results',
+    },
+    {
+      agentType: 'claude_code',
+      state: TurnState.TOOL_RUNNING,
+      toolCallCount: 3,
+      needPermission: false,
+      needUserInput: false,
+      unread: false,
+      lastEventAt: 300,
+      workspacePath: 'E:/共形项目/zsy_pipe_network/gitlab_single_pipe/flow_pattern_classifi',
+    },
+  ])
+
+  assert.equal(panels.length, 1)
+  assert.equal(panels[0]?.workspaces.length, 1)
+  assert.equal(
+    panels[0]?.workspaces[0]?.workspacePath,
+    'E:/共形项目/zsy_pipe_network/gitlab_single_pipe',
+  )
+  assert.equal(panels[0]?.workspaces[0]?.agent.state, TurnState.TOOL_RUNNING)
+  assert.equal(panels[0]?.workspaces[0]?.name, 'gitlab_single_pipe')
+})
+
 test('StatusHub treats slash and backslash workspace paths as the same project', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
 
@@ -612,8 +692,11 @@ test('StatusHub only emits notifications for completed turns', () => {
   assert.equal(notifications.length, 1)
   assert.equal(notifications[0]?.level, 'normal')
   assert.equal(notifications[0]?.dedupeKey.startsWith('done:'), true)
-  assert.equal(notifications[0]?.title, 'a 一轮任务已完成')
-  assert.equal(notifications[0]?.body, 'Codex')
+  assert.match(notifications[0]?.title ?? '', /a 已完成/)
+  assert.match(notifications[0]?.title ?? '', /[💖💕✨🎉🌸🍀💝⭐]/u)
+  assert.doesNotMatch(notifications[0]?.title ?? '', /一轮任务/)
+  assert.match(notifications[0]?.body ?? '', /Codex/)
+  assert.match(notifications[0]?.body ?? '', /[✨💕🎉💖🌸]/u)
 })
 
 test('StatusHub keeps concurrent sessions in the same workspace separate', () => {

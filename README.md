@@ -8,7 +8,7 @@ Know at a glance whether Codex, Claude Code, and Grok are working, waiting on
 you, finished, or stuck — without alt-tabbing back to a terminal.
 
 [![status](https://img.shields.io/badge/status-v0.1%20MVP-orange)](#features)
-[![platform](https://img.shields.io/badge/platform-Windows-blue)](#download)
+[![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue)](#download)
 [![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#development)
 [![pnpm](https://img.shields.io/badge/pnpm-%E2%89%A59-F69220?logo=pnpm&logoColor=white)](#development)
@@ -93,9 +93,12 @@ Fastify · better-sqlite3 · Drizzle ORM.
 
 ## Download
 
-Download the Windows installer from
-[GitHub Releases](https://github.com/noeigenstate/CodePulse/releases), then run
-the `.exe` asset directly.
+Download installers from
+[GitHub Releases](https://github.com/noeigenstate/CodePulse/releases):
+
+- **Windows:** `CodePulse_*_x64-setup.exe`
+- **macOS Apple Silicon:** `CodePulse_*_mac-arm64.dmg`
+- **macOS Intel:** `CodePulse_*_mac-x64.dmg`
 
 ## First run
 
@@ -205,29 +208,36 @@ source directly, so there is no per-package compile step during development.
 
 ```bash
 pnpm build        # build packages, then bundle the app into apps/desktop/out
-pnpm dist         # package an installer into apps/desktop/release
+pnpm dist         # package an installer for the current OS into apps/desktop/release
+pnpm dist:win     # Windows NSIS installer (.exe)
+pnpm dist:mac     # macOS DMGs: separate arm64 + Intel x64 (not universal)
+pnpm dist:mac:arm64
+pnpm dist:mac:x64
 pnpm dist:dir     # unpacked build (faster, for local testing)
 ```
 
-`pnpm dist` uses the versions in `package.json` and
+`pnpm dist` / `dist:win` / `dist:mac` use the versions in `package.json` and
 `apps/desktop/package.json`. Keep them aligned with the release tag. Before
 publishing a tag, add or update `docs/release-notes/vX.Y.Z.md`; GitHub Releases
 will use that file as the release body. If user-facing behavior changes, update
 this README and `README.zh-CN.md` in the same change.
 
 Targets are configured in `apps/desktop/electron-builder.yml` (NSIS on
-Windows, DMG on macOS, AppImage on Linux). The native `better-sqlite3` addon
-is unpacked so it loads at runtime; non-runtime sources and unused Electron
-locales are excluded from the installer.
+Windows, DMG on macOS for both Intel and Apple Silicon, AppImage on Linux).
+The native `better-sqlite3` addon is unpacked so it loads at runtime; non-runtime
+sources and unused Electron locales are excluded from the installer.
+
+macOS CI builds are **unsigned**. First open may require System Settings → Privacy
+& Security → “Open Anyway”.
 
 ### Release workflow
 
 The repository has one GitHub Actions workflow: `Build and Release CodePulse`.
 
 It runs when you push a `v*` tag or start it manually from GitHub Actions. The
-workflow installs dependencies, runs `typecheck`, `test`, `smoke`, and `lint`,
-builds the Windows installer, uploads `.exe` / `.blockmap` / `latest.yml`, and
-creates or updates the GitHub Release.
+workflow builds **Windows** and **macOS** installers in parallel, runs
+`typecheck` / `test` / `smoke` / `lint` on each platform job, then publishes a
+single GitHub Release with `.exe`, `.dmg`, blockmaps, and release notes.
 
 Release notes come from `docs/release-notes/vX.Y.Z.md`. Keep them short and
 user-facing: list what changed, not the internal implementation log.

@@ -35,9 +35,19 @@ win:
     - nsis
 mac:
   icon: build/icon.png
-  target:
-    - dmg
+  # Separate installers per CPU (NOT universal):
+  #   CodePulse_<version>_mac-arm64.dmg  → Apple Silicon
+  #   CodePulse_<version>_mac-x64.dmg    → Intel
+  artifactName: CodePulse_${version}_mac-${arch}.${ext}
   category: public.app-category.developer-tools
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  # Force per-arch packages; do not merge into a single universal binary.
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
 linux:
   icon: build/icon.png
   target:
@@ -47,3 +57,7 @@ nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   include: build/installer.nsh
+dmg:
+  artifactName: CodePulse_${version}_mac-${arch}.${ext}
+
+

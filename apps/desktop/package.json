@@ -11,6 +11,10 @@
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "dist": "electron-vite build && electron-builder",
+    "dist:win": "electron-vite build && electron-builder --win",
+    "dist:mac": "electron-vite build && electron-builder --mac --arm64 --x64",
+    "dist:mac:arm64": "electron-vite build && electron-builder --mac --arm64",
+    "dist:mac:x64": "electron-vite build && electron-builder --mac --x64",
     "dist:dir": "electron-vite build && electron-builder --dir",
     "postinstall": "electron-builder install-app-deps"
   },

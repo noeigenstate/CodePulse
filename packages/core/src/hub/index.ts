@@ -253,12 +253,15 @@ export class StatusHub extends EventEmitter {
   }
 
   private keyForEvent(event: AgentEvent): string {
-    const workspace = event.workspacePath ?? event.cwd
-    if (workspace) return runtimeKey(event.source, workspace, event.externalSessionId)
+    // Prefer session identity so tool hooks that report a subdirectory cwd
+    // (common with Claude Code) stay on the same project card.
     if (event.externalSessionId) {
       const known = this.sessionKeys.get(sessionKey(event.source, event.externalSessionId))
       if (known) return known
+      return sessionRuntimeKey(event.source, event.externalSessionId)
     }
+    const workspace = event.workspacePath ?? event.cwd
+    if (workspace) return runtimeKey(event.source, workspace)
     return runtimeKey(event.source, '')
   }
 
@@ -269,13 +272,12 @@ export class StatusHub extends EventEmitter {
   }
 }
 
-function runtimeKey(
-  agentType: AgentType,
-  workspacePath: string,
-  externalSessionId?: string,
-): string {
-  const sessionScope = externalSessionId ? `\0${externalSessionId}` : ''
-  return `${agentType}\0${workspaceKey(workspacePath)}${sessionScope}`
+function runtimeKey(agentType: AgentType, workspacePath: string): string {
+  return `${agentType}\0${workspaceKey(workspacePath)}`
+}
+
+function sessionRuntimeKey(agentType: AgentType, externalSessionId: string): string {
+  return `${agentType}\0session:${externalSessionId}`
 }
 
 function canTimeoutState(state: TurnState): boolean {

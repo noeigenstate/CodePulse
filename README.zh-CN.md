@@ -8,7 +8,7 @@
 无需切回终端反复确认。
 
 [![status](https://img.shields.io/badge/status-v0.1%20MVP-orange)](#功能特性)
-[![platform](https://img.shields.io/badge/platform-Windows-blue)](#下载)
+[![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue)](#下载)
 [![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#开发)
 [![pnpm](https://img.shields.io/badge/pnpm-%E2%89%A59-F69220?logo=pnpm&logoColor=white)](#开发)
@@ -88,7 +88,11 @@ Fastify · better-sqlite3 · Drizzle ORM。
 ## 下载
 
 从 [GitHub Releases](https://github.com/noeigenstate/CodePulse/releases)
-下载 Windows 安装包，然后直接运行 Assets 里的 `.exe` 文件。
+下载安装包：
+
+- **Windows：** `CodePulse_*_x64-setup.exe`
+- **macOS Apple Silicon：** `CodePulse_*_mac-arm64.dmg`
+- **macOS Intel：** `CodePulse_*_mac-x64.dmg`
 
 ## 首次运行
 
@@ -192,26 +196,34 @@ workspace 内的包以 TypeScript **源码** 形式被消费（每个包的 `exp
 
 ```bash
 pnpm build        # 构建各包，再把应用打包进 apps/desktop/out
-pnpm dist         # 把安装包打到 apps/desktop/release
+pnpm dist         # 为当前操作系统打包安装包到 apps/desktop/release
+pnpm dist:win     # Windows NSIS 安装包（.exe）
+pnpm dist:mac     # macOS DMG：分别打 arm64 与 Intel x64（非 universal）
+pnpm dist:mac:arm64
+pnpm dist:mac:x64
 pnpm dist:dir     # 免安装目录（更快，便于本地测试）
 ```
 
-`pnpm dist` 使用 `package.json` 与 `apps/desktop/package.json` 里的版本号；
-发版前必须让它们与 tag 一致。推送 tag 前，请新增或更新
-`docs/release-notes/vX.Y.Z.md`，GitHub Release 会直接使用该文件作为发版说明。
+`pnpm dist` / `dist:win` / `dist:mac` 使用 `package.json` 与
+`apps/desktop/package.json` 里的版本号；发版前必须让它们与 tag 一致。推送 tag 前，
+请新增或更新 `docs/release-notes/vX.Y.Z.md`，GitHub Release 会直接使用该文件作为发版说明。
 如果用户可见行为发生变化，请在同一次改动里同步更新英文 README 和本中文版。
 
-打包目标在 `apps/desktop/electron-builder.yml` 中配置（Windows 用 NSIS、macOS 用 DMG、
-Linux 用 AppImage）。原生模块 `better-sqlite3` 会保留在 asar 归档之外，以便运行时加载；
-非运行时源码和未使用的 Electron 语言资源会从安装包中排除。
+打包目标在 `apps/desktop/electron-builder.yml` 中配置（Windows 用 NSIS、macOS 用
+Intel/Apple Silicon 双架构 DMG、Linux 用 AppImage）。原生模块 `better-sqlite3`
+会保留在 asar 归档之外，以便运行时加载；非运行时源码和未使用的 Electron 语言资源会从
+安装包中排除。
+
+macOS CI 产物为**未签名**构建。首次打开若被拦截，可到「系统设置 → 隐私与安全性」
+选择「仍要打开」。
 
 ### 发版流程
 
 仓库只保留一个 GitHub Actions workflow：`Build and Release CodePulse`。
 
-它会在推送 `v*` tag 或从 GitHub Actions 手动运行时触发。流程会安装依赖，执行
-`typecheck`、`test`、`smoke`、`lint`，构建 Windows 安装包，上传 `.exe` / `.blockmap` /
-`latest.yml`，并创建或更新 GitHub Release。
+它会在推送 `v*` tag 或从 GitHub Actions 手动运行时触发。流程会**并行**构建
+Windows 与 macOS 安装包，并在各平台任务中执行 `typecheck` / `test` / `smoke` /
+`lint`，最后汇总上传 `.exe`、`.dmg`、blockmap 与发版说明，创建或更新 GitHub Release。
 
 发版说明来自 `docs/release-notes/vX.Y.Z.md`。内容保持简短、面向用户：只写这版更新了什么，
 不要写内部实现流水账。

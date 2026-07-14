@@ -25,7 +25,8 @@ function notificationIconPath(): string {
 
 function compactNotificationBody(body: string): string {
   const firstSentence = body.split(/[。?!?；;]/)[0]?.trim()
-  return compactText(firstSentence || body, 24)
+  // Allow short cute completion lines with emoji without over-truncating.
+  return compactText(firstSentence || body, 40)
 }
 
 function compactText(text: string, maxLength: number): string {

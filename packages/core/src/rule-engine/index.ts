@@ -46,10 +46,12 @@ export class RuleEngine {
 
     const out: NotificationRequest[] = []
     const scope = agentScope(next)
+    const project = projectLabel(next.workspacePath)
     this.push(out, now, {
       level: 'normal',
-      title: `${projectLabel(next.workspacePath)} 一轮任务已完成`,
-      body: agentLabel(next.agentType),
+      // Lead with the project name — users care which repo finished, not "Codex 一轮任务".
+      title: `${completionEmoji(project)} ${project} 已完成`,
+      body: completionBody(project, next.agentType),
       dedupeKey: `done:${scope}:${
         next.externalTurnId ?? previous.externalTurnId ?? previous.turnStartedAt ?? now
       }`,
@@ -111,4 +113,32 @@ function projectLabel(workspacePath: string | undefined): string {
     .split(/[\\/]/)
     .filter(Boolean)
   return parts.at(-1) ?? '未知项目'
+}
+
+const COMPLETION_EMOJIS = ['💖', '💕', '✨', '🎉', '🌸', '🍀', '💝', '⭐'] as const
+const COMPLETION_BODIES = [
+  '可以去看看啦 ✨',
+  '这一波收工啦 💕',
+  '成果新鲜出炉 🎉',
+  '去瞅一眼吧 💖',
+  '漂亮收工 🌸',
+] as const
+
+/** Stable cute emoji so the same project doesn't jump styles every toast. */
+function completionEmoji(project: string): string {
+  return COMPLETION_EMOJIS[hashText(project) % COMPLETION_EMOJIS.length]!
+}
+
+function completionBody(project: string, agentType: string): string {
+  const cute = COMPLETION_BODIES[hashText(`${project}:${agentType}`) % COMPLETION_BODIES.length]!
+  // Keep agent as a quiet hint at the end — project remains the focus.
+  return `${cute} · ${agentLabel(agentType)}`
+}
+
+function hashText(value: string): number {
+  let hash = 0
+  for (let i = 0; i < value.length; i++) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0
+  }
+  return hash
 }

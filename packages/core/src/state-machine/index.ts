@@ -15,6 +15,7 @@ import {
   type TokenRateLimitWindow,
   TurnState,
   isTerminalState,
+  normalizeWorkspacePath,
 } from '@codepulse/shared'
 
 /**
@@ -78,7 +79,11 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
   if (!tokenOnlyQuotaRefresh) {
     if (event.externalSessionId) next.externalSessionId = event.externalSessionId
     if (event.externalTurnId) next.externalTurnId = event.externalTurnId
-    if (event.workspacePath ?? event.cwd) next.workspacePath = event.workspacePath ?? event.cwd
+    // Prefer the project root over tool-hook subdirectory cwd values.
+    const incomingWorkspace = event.workspacePath ?? event.cwd
+    if (incomingWorkspace) {
+      next.workspacePath = preferWorkspacePath(current.workspacePath, incomingWorkspace)
+    }
     if (event.model) next.model = event.model
   }
   if (event.token) next.token = mergeToken(current.token, event.token, event.timestamp)
@@ -372,6 +377,28 @@ function describeTool(event: AgentEvent): string | undefined {
   if (event.command) return `正在执行 ${event.command}`
   if (event.toolName) return `正在调用 ${event.toolName}`
   return undefined
+}
+
+/**
+ * Keep the project root for display when later tool hooks report a subdirectory cwd.
+ * If paths are unrelated, prefer the newer path.
+ */
+export function preferWorkspacePath(
+  current: string | undefined,
+  incoming: string | undefined,
+): string | undefined {
+  if (!incoming) return current
+  if (!current) return incoming
+  const currentKey = normalizeWorkspacePath(current)
+  const incomingKey = normalizeWorkspacePath(incoming)
+  if (!currentKey) return incoming
+  if (!incomingKey) return current
+  if (currentKey === incomingKey) return current
+  // Incoming is under the known project root → keep the root.
+  if (incomingKey.startsWith(`${currentKey}/`)) return current
+  // Current was a subdir of the newer path → promote to the wider root.
+  if (currentKey.startsWith(`${incomingKey}/`)) return incoming
+  return incoming
 }
 
 /**

@@ -15,8 +15,83 @@ permissions:
   contents: write
 
 jobs:
+  prepare:
+    name: Prepare release metadata
+    runs-on: ubuntu-latest
+    outputs:
+      package_version: ${{ steps.release.outputs.package_version }}
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      release_name: ${{ steps.release.outputs.release_name }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release version
+        id: release
+        shell: bash
+        run: |
+          package_version="$(node -p "require('./package.json').version")"
+          input_version="${{ inputs.version }}"
+
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            tag="$GITHUB_REF_NAME"
+          elif [ -n "${input_version// }" ]; then
+            tag="v${input_version#v}"
+          else
+            tag="v${package_version}"
+          fi
+
+          version="${tag#v}"
+          {
+            echo "package_version=${package_version}"
+            echo "version=${version}"
+            echo "tag=${tag}"
+            echo "release_name=CodePulse ${tag}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Apply release version
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          node <<'EOF'
+          const fs = require('node:fs')
+          for (const path of ['package.json', 'apps/desktop/package.json']) {
+            const json = JSON.parse(fs.readFileSync(path, 'utf8'))
+            json.version = process.env.RELEASE_VERSION
+            fs.writeFileSync(path, `${JSON.stringify(json, null, 2)}\n`)
+          }
+          EOF
+
+      - name: Write release notes
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          node scripts/write-release-notes.mjs
+          # Keep a stable path for artifact upload (script writes under RUNNER_TEMP).
+          cp "${RUNNER_TEMP}/codepulse-release-notes.md" ./codepulse-release-notes.md
+
+      - name: Upload release notes
+        uses: actions/upload-artifact@v4
+        with:
+          name: codepulse-release-notes-${{ steps.release.outputs.tag }}
+          if-no-files-found: error
+          path: codepulse-release-notes.md
+
+      - name: Upload versioned package manifests
+        uses: actions/upload-artifact@v4
+        with:
+          name: codepulse-versioned-manifests-${{ steps.release.outputs.tag }}
+          if-no-files-found: error
+          path: |
+            package.json
+            apps/desktop/package.json
+
   windows:
     name: Build Windows installer
+    needs: prepare
     runs-on: windows-latest
 
     steps:
@@ -36,42 +111,11 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: Resolve release version
-        id: release
-        shell: pwsh
-        run: |
-          $packageVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          $inputVersion = '${{ inputs.version }}'
-
-          if ($env:GITHUB_REF_TYPE -eq 'tag') {
-            $tag = $env:GITHUB_REF_NAME
-          } elseif ($inputVersion.Trim().Length -gt 0) {
-            $tag = "v$($inputVersion.TrimStart('v'))"
-          } else {
-            $tag = "v$packageVersion"
-          }
-
-          $version = $tag.TrimStart('v')
-          "package_version=$packageVersion" >> $env:GITHUB_OUTPUT
-          "version=$version" >> $env:GITHUB_OUTPUT
-          "tag=$tag" >> $env:GITHUB_OUTPUT
-          "release_name=CodePulse $tag" >> $env:GITHUB_OUTPUT
-
-      - name: Apply release version
-        shell: pwsh
-        env:
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
-        run: |
-          $script = @'
-          const fs = require('node:fs')
-
-          for (const path of ['package.json', 'apps/desktop/package.json']) {
-            const json = JSON.parse(fs.readFileSync(path, 'utf8'))
-            json.version = process.env.RELEASE_VERSION
-            fs.writeFileSync(path, `${JSON.stringify(json, null, 2)}\n`)
-          }
-          '@
-          node -e $script
+      - name: Restore versioned package manifests
+        uses: actions/download-artifact@v4
+        with:
+          name: codepulse-versioned-manifests-${{ needs.prepare.outputs.tag }}
+          path: .
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -87,61 +131,175 @@ jobs:
         shell: pwsh
         run: Remove-Item -Path 'apps/desktop/release' -Recurse -Force -ErrorAction SilentlyContinue
 
-      - name: Build installer
-        run: pnpm dist
+      - name: Build Windows installer
+        run: pnpm dist:win
 
-      - name: Write release notes
-        id: notes
-        shell: pwsh
-        env:
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
-        run: |
-          node scripts/write-release-notes.mjs
-
-      - name: Upload installer artifact
+      - name: Upload Windows installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: codepulse-windows-${{ steps.release.outputs.tag }}
+          name: codepulse-windows-${{ needs.prepare.outputs.tag }}
           if-no-files-found: error
           path: |
             apps/desktop/release/*.exe
             apps/desktop/release/*.blockmap
             apps/desktop/release/latest.yml
 
+  macos:
+    name: Build macOS installer
+    needs: prepare
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Restore versioned package manifests
+        uses: actions/download-artifact@v4
+        with:
+          name: codepulse-versioned-manifests-${{ needs.prepare.outputs.tag }}
+          path: .
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify
+        run: |
+          pnpm typecheck
+          pnpm test
+          pnpm smoke
+          pnpm lint
+
+      - name: Clean release output
+        run: rm -rf apps/desktop/release
+
+      - name: Build macOS installers (arm64 + Intel x64)
+        env:
+          # Unsigned CI builds; users can still open the app via System Settings.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        # Explicit dual-arch flags produce two separate apps/DMGs (not universal).
+        run: pnpm dist:mac
+
+      - name: Verify both CPU architecture DMGs exist
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          release_dir="apps/desktop/release"
+          arm64_dmg="${release_dir}/CodePulse_${RELEASE_VERSION}_mac-arm64.dmg"
+          x64_dmg="${release_dir}/CodePulse_${RELEASE_VERSION}_mac-x64.dmg"
+
+          echo "Release directory contents:"
+          ls -lah "${release_dir}"
+
+          if [ ! -f "${arm64_dmg}" ]; then
+            echo "Missing Apple Silicon installer: ${arm64_dmg}"
+            exit 1
+          fi
+          if [ ! -f "${x64_dmg}" ]; then
+            echo "Missing Intel installer: ${x64_dmg}"
+            exit 1
+          fi
+
+          echo "OK arm64 DMG: ${arm64_dmg} ($(wc -c < "${arm64_dmg}") bytes)"
+          echo "OK x64 DMG:   ${x64_dmg} ($(wc -c < "${x64_dmg}") bytes)"
+
+      - name: Upload macOS installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: codepulse-macos-${{ needs.prepare.outputs.tag }}
+          if-no-files-found: error
+          path: |
+            apps/desktop/release/*_mac-arm64.dmg
+            apps/desktop/release/*_mac-x64.dmg
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest-mac.yml
+
+  publish:
+    name: Publish GitHub release
+    needs: [prepare, windows, macos]
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: codepulse-windows-${{ needs.prepare.outputs.tag }}
+          path: release-assets/windows
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: codepulse-macos-${{ needs.prepare.outputs.tag }}
+          path: release-assets/macos
+
+      - name: Download release notes
+        uses: actions/download-artifact@v4
+        with:
+          name: codepulse-release-notes-${{ needs.prepare.outputs.tag }}
+          path: release-assets/notes
+
       - name: Create or update GitHub release
-        if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
-        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
-          RELEASE_NAME: ${{ steps.release.outputs.release_name }}
-          RELEASE_NOTES: ${{ steps.notes.outputs.path }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_NAME: ${{ needs.prepare.outputs.release_name }}
         run: |
-          $releaseDir = 'apps/desktop/release'
-          $assets = @(
-            Get-ChildItem -Path $releaseDir -Filter '*.exe' -File
-            Get-ChildItem -Path $releaseDir -Filter '*.blockmap' -File
-            Get-ChildItem -Path $releaseDir -Filter 'latest.yml' -File -ErrorAction SilentlyContinue
+          set -euo pipefail
+          notes_file="$(find release-assets/notes -type f -name 'codepulse-release-notes.md' | head -n 1)"
+          if [ -z "${notes_file}" ]; then
+            echo "Release notes file not found."
+            exit 1
+          fi
+
+          mapfile -t assets < <(
+            find release-assets/windows release-assets/macos -type f \( \
+              -name '*.exe' -o \
+              -name '*.dmg' -o \
+              -name '*.zip' -o \
+              -name '*.blockmap' -o \
+              -name 'latest.yml' -o \
+              -name 'latest-mac.yml' \
+            \) | sort
           )
 
-          if ($assets.Count -eq 0) {
-            throw "No release assets found in $releaseDir."
-          }
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No release assets found."
+            exit 1
+          fi
 
-          $assetPaths = $assets | ForEach-Object { $_.FullName }
-          gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY *> $null
+          echo "Publishing ${#assets[@]} asset(s) for ${RELEASE_TAG}"
+          printf ' - %s\n' "${assets[@]}"
 
-          if ($LASTEXITCODE -eq 0) {
-            gh release edit $env:RELEASE_TAG `
-              --repo $env:GITHUB_REPOSITORY `
-              --title $env:RELEASE_NAME `
-              --notes-file $env:RELEASE_NOTES `
+          if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release edit "${RELEASE_TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${RELEASE_NAME}" \
+              --notes-file "${notes_file}" \
               --latest
-            gh release upload $env:RELEASE_TAG $assetPaths --repo $env:GITHUB_REPOSITORY --clobber
-          } else {
-            gh release create $env:RELEASE_TAG $assetPaths `
-              --repo $env:GITHUB_REPOSITORY `
-              --title $env:RELEASE_NAME `
-              --notes-file $env:RELEASE_NOTES `
+            gh release upload "${RELEASE_TAG}" "${assets[@]}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --clobber
+          else
+            gh release create "${RELEASE_TAG}" "${assets[@]}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${RELEASE_NAME}" \
+              --notes-file "${notes_file}" \
               --latest
-          }
+          fi

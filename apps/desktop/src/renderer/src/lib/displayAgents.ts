@@ -4,6 +4,7 @@ import {
   type AgentType,
   type TokenPayload,
   type TokenQuotaBucket,
+  normalizeWorkspacePath,
   workspaceKey,
 } from '@codepulse/shared'
 import { visibleRateLimitWindows } from './panelFormat.js'
@@ -156,22 +157,69 @@ function buildAgentWorkspaceItems(
     grouped.set(key, [...(grouped.get(key) ?? []), agent])
   }
 
-  return [...grouped.entries()]
-    .map(([key, groupAgents]) => {
-      const latest =
-        [...groupAgents].sort((a, b) => b.lastEventAt - a.lastEventAt)[0] ?? idleAgent(agentType)
-      const workspacePath =
-        latest.workspacePath ?? groupAgents.find((agent) => agent.workspacePath)?.workspacePath
+  const items = [...grouped.entries()].map(([key, groupAgents]) => {
+    const latest =
+      [...groupAgents].sort((a, b) => b.lastEventAt - a.lastEventAt)[0] ?? idleAgent(agentType)
+    const workspacePath =
+      latest.workspacePath ?? groupAgents.find((agent) => agent.workspacePath)?.workspacePath
 
-      return {
-        id: `${agentType}:${key || 'unknown'}`,
-        name: workspacePath ? workspaceName(workspacePath) : '',
-        workspacePath,
-        updatedAt: latest.lastEventAt,
-        agent: workspacePath && !latest.workspacePath ? { ...latest, workspacePath } : latest,
-      }
+    return {
+      id: `${agentType}:${key || 'unknown'}`,
+      name: workspacePath ? workspaceName(workspacePath) : '',
+      workspacePath,
+      updatedAt: latest.lastEventAt,
+      agent: workspacePath && !latest.workspacePath ? { ...latest, workspacePath } : latest,
+    }
+  })
+
+  // Collapse nested project cards (subdir cwd noise) into the parent root card.
+  return coalesceNestedWorkspaceItems(items).sort(
+    (a, b) => b.updatedAt - a.updatedAt || a.name.localeCompare(b.name),
+  )
+}
+
+/**
+ * When one workspace path is a subdirectory of another, keep a single card for
+ * the parent path and surface the freshest activity state on it.
+ */
+export function coalesceNestedWorkspaceItems(items: AgentWorkspaceItem[]): AgentWorkspaceItem[] {
+  if (items.length <= 1) return items
+
+  const byPathLength = [...items].sort((a, b) => {
+    const ap = normalizeWorkspacePath(a.workspacePath)?.length ?? 0
+    const bp = normalizeWorkspacePath(b.workspacePath)?.length ?? 0
+    return ap - bp
+  })
+
+  const kept: AgentWorkspaceItem[] = []
+  for (const item of byPathLength) {
+    const path = normalizeWorkspacePath(item.workspacePath) ?? ''
+    const parentIndex = kept.findIndex((candidate) => {
+      const parentPath = normalizeWorkspacePath(candidate.workspacePath) ?? ''
+      if (!path || !parentPath) return false
+      return path === parentPath || path.startsWith(`${parentPath}/`)
     })
-    .sort((a, b) => b.updatedAt - a.updatedAt || a.name.localeCompare(b.name))
+
+    if (parentIndex < 0) {
+      kept.push(item)
+      continue
+    }
+
+    const parent = kept[parentIndex]!
+    if (item.updatedAt < parent.updatedAt) continue
+
+    kept[parentIndex] = {
+      ...parent,
+      updatedAt: item.updatedAt,
+      agent: {
+        ...item.agent,
+        // Keep the root path for the card title/badge.
+        workspacePath: parent.workspacePath ?? item.agent.workspacePath,
+      },
+    }
+  }
+
+  return kept
 }
 
 function visibleTaskAgents(agents: AgentRuntimeState[]): AgentRuntimeState[] {

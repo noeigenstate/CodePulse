@@ -40,6 +40,8 @@ export interface AgentRuntimeState {
   needUserInput: boolean
   /** AI 最后一条消息的摘要（如有捕获）。 */
   lastAssistantMessage?: string
+  /** 本轮用户提问摘要（来自 prompt_submit 预览，供完成通知展示）。 */
+  lastUserPrompt?: string
   /** 最新的 token/上下文用量（如已知）。 */
   token?: TokenPayload
   /** 当前轮次开始时间（epoch 毫秒，有活动轮次时存在）。 */

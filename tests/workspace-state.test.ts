@@ -672,6 +672,7 @@ test('StatusHub only emits notifications for completed turns', () => {
     externalSessionId: 'running-session',
     externalTurnId: 'turn-a',
     cwd: 'E:/project/a',
+    message: '请帮我修复更新超时并优化下载',
     timestamp: startedAt + 2,
   })
   ;(hub as unknown as { tick(now?: number): void }).tick(startedAt + STUCK_VISIBLE_MS + 3)
@@ -694,9 +695,11 @@ test('StatusHub only emits notifications for completed turns', () => {
   assert.equal(notifications[0]?.dedupeKey.startsWith('done:'), true)
   assert.match(notifications[0]?.title ?? '', /a 已完成/)
   assert.match(notifications[0]?.title ?? '', /[💖💕✨🎉🌸🍀💝⭐]/u)
-  assert.doesNotMatch(notifications[0]?.title ?? '', /一轮任务/)
-  assert.match(notifications[0]?.body ?? '', /Codex/)
-  assert.match(notifications[0]?.body ?? '', /[✨💕🎉💖🌸]/u)
+  assert.doesNotMatch(notifications[0]?.title ?? '', /一轮任务|Codex|Claude|Grok/)
+  assert.doesNotMatch(notifications[0]?.body ?? '', /Codex|Claude|Grok|一轮任务/)
+  // Prompt summary is compact (≤8 chars) and drawn from the user question.
+  assert.equal((notifications[0]?.body ?? '').length <= 8, true)
+  assert.match(notifications[0]?.body ?? '', /修复更新超时/)
 })
 
 test('StatusHub keeps concurrent sessions in the same workspace separate', () => {

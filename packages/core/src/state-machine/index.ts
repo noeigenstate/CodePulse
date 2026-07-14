@@ -107,6 +107,8 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       next.terminalAt = undefined
       next.activity = 'AI 正在处理任务'
       next.lastAssistantMessage = undefined
+      // Privacy-friendly prompt preview from hooks — used for completion toast copy.
+      if (event.message) next.lastUserPrompt = event.message
       break
 
     case 'tool_start':

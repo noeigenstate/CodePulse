@@ -47,11 +47,13 @@ export class RuleEngine {
     const out: NotificationRequest[] = []
     const scope = agentScope(next)
     const project = projectLabel(next.workspacePath)
+    const promptSummary = summarizeUserPrompt(next.lastUserPrompt ?? previous.lastUserPrompt, 8)
     this.push(out, now, {
       level: 'normal',
-      // Lead with the project name — users care which repo finished, not "Codex 一轮任务".
+      // Project name is primary; no Claude/Codex branding in the toast.
       title: `${completionEmoji(project)} ${project} 已完成`,
-      body: completionBody(project, next.agentType),
+      // Body is a short summary of the user question (≤8 chars), not agent name.
+      body: promptSummary,
       dedupeKey: `done:${scope}:${
         next.externalTurnId ?? previous.externalTurnId ?? previous.turnStartedAt ?? now
       }`,
@@ -96,12 +98,6 @@ export class RuleEngine {
   }
 }
 
-function agentLabel(agent: string): string {
-  if (agent === 'codex') return 'Codex'
-  if (agent === 'grok') return 'Grok'
-  return 'Claude Code'
-}
-
 function agentScope(agent: AgentRuntimeState): string {
   return `${agent.agentType}:${workspaceKey(agent.workspacePath)}`
 }
@@ -116,23 +112,40 @@ function projectLabel(workspacePath: string | undefined): string {
 }
 
 const COMPLETION_EMOJIS = ['💖', '💕', '✨', '🎉', '🌸', '🍀', '💝', '⭐'] as const
-const COMPLETION_BODIES = [
-  '可以去看看啦 ✨',
-  '这一波收工啦 💕',
-  '成果新鲜出炉 🎉',
-  '去瞅一眼吧 💖',
-  '漂亮收工 🌸',
-] as const
 
 /** Stable cute emoji so the same project doesn't jump styles every toast. */
 function completionEmoji(project: string): string {
   return COMPLETION_EMOJIS[hashText(project) % COMPLETION_EMOJIS.length]!
 }
 
-function completionBody(project: string, agentType: string): string {
-  const cute = COMPLETION_BODIES[hashText(`${project}:${agentType}`) % COMPLETION_BODIES.length]!
-  // Keep agent as a quiet hint at the end — project remains the focus.
-  return `${cute} · ${agentLabel(agentType)}`
+/**
+ * Compact the user prompt into a short toast summary (default ≤8 graphemes).
+ * Not an LLM summary — strip noise and truncate for glanceable notifications.
+ */
+export function summarizeUserPrompt(prompt: string | undefined, maxChars = 8): string {
+  if (!prompt) return '任务完成'
+  let text = prompt
+    .replace(/\r?\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^["'`“”‘’]+|["'`“”‘’]+$/g, '')
+    .trim()
+
+  // Drop common chat wrappers / filler so the first content words fit in 8 chars.
+  text = text
+    .replace(/^<user_query>\s*/i, '')
+    .replace(/<\/user_query>[\s\S]*$/i, '')
+    .replace(/^(请你?|麻烦你?|帮我|帮忙|能否|可以|能不能|烦请)+/u, '')
+    .replace(/[。！？!?,，、.…]+$/u, '')
+    .trim()
+
+  if (!text) return '任务完成'
+  return truncateGraphemes(text, maxChars)
+}
+
+function truncateGraphemes(text: string, maxChars: number): string {
+  const chars = [...text]
+  if (chars.length <= maxChars) return chars.join('')
+  return chars.slice(0, maxChars).join('')
 }
 
 function hashText(value: string): number {

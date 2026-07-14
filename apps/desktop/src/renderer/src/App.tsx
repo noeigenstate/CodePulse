@@ -78,6 +78,7 @@ export function App(): JSX.Element {
     dismissedAgentCheckId,
     codexTrustAcknowledged,
   )
+  const now = useNow(30_000)
 
   useEffect(() => init(), [init])
 
@@ -97,14 +98,15 @@ export function App(): JSX.Element {
   }
 
   return (
-    <div className="app-shell flex h-full flex-col text-slate-950">
+    <div className="app-shell flex h-full flex-col text-ink">
       <Header
         locale={locale}
         muted={muted}
+        overall={snapshot.overall}
         onToggleLocale={toggleLocale}
         onToggleMute={toggleMute}
       />
-      <div className="min-h-0 flex-1 overflow-hidden px-4 pb-4">
+      <div className="min-h-0 flex-1 overflow-hidden px-5 pb-3">
         <main className="h-full min-w-0 overflow-x-auto overflow-y-hidden pr-1">
           {panels.length === 0 ? (
             <EmptyDashboard copy={copy} />
@@ -123,6 +125,20 @@ export function App(): JSX.Element {
           )}
         </main>
       </div>
+      <footer className="footer-strip flex shrink-0 items-center justify-between gap-3 px-6 py-2.5">
+        <span>
+          {panels.length === 0
+            ? copy.emptyDashboard.title
+            : locale === 'zh'
+              ? `${panels.length} 个助手分屏 · ${snapshot.agents.length} 个会话`
+              : `${panels.length} panels · ${snapshot.agents.length} sessions`}
+        </span>
+        <span className="tabular-nums">
+          {locale === 'zh'
+            ? `同步 ${formatRelative(snapshot.updatedAt, now, locale)}`
+            : `Synced ${formatRelative(snapshot.updatedAt, now, locale)}`}
+        </span>
+      </footer>
       {showSetupReminder && (
         <AgentSetupReminderModal
           copy={copy}
@@ -178,34 +194,32 @@ function UpdateAvailableModal({
         : '0%'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/18 px-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-sm">
       <section
         aria-modal="true"
-        className="liquid-glass w-full max-w-[28rem] rounded-[1.35rem] p-5 shadow-[0_24px_80px_rgb(15_23_42_/_0.2)]"
+        className="liquid-glass w-full max-w-[28rem] p-5 shadow-card-hover"
         role="dialog"
       >
         <div className="flex items-start gap-3">
           <img
             src={codePulseIcon}
             alt=""
-            className="h-12 w-12 shrink-0 rounded-full object-contain"
+            className="h-12 w-12 shrink-0 rounded-full object-contain shadow-soft"
           />
           <div className="min-w-0">
-            <h2 className="text-xl font-semibold text-slate-950">{updateCopy.title}</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
+            <h2 className="text-xl font-semibold text-ink">{updateCopy.title}</h2>
+            <p className="mt-2 text-sm leading-6 text-ink-500">
               {update.installable ? updateCopy.body : updateCopy.manualBody}
             </p>
           </div>
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-2">
-          <div className="rounded-xl border border-white/65 bg-white/48 px-3 py-2.5 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.65)]">
-            <p className="text-xs font-medium text-slate-500">{updateCopy.currentVersion}</p>
-            <p className="mt-1 truncate text-sm font-semibold text-slate-950">
-              v{update.currentVersion}
-            </p>
+          <div className="stat-pill">
+            <p className="text-xs font-medium text-ink-500">{updateCopy.currentVersion}</p>
+            <p className="mt-1 truncate text-sm font-semibold text-ink">v{update.currentVersion}</p>
           </div>
-          <div className="rounded-xl border border-emerald-200/70 bg-emerald-50/70 px-3 py-2.5 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.65)]">
+          <div className="stat-pill border-emerald-200 bg-emerald-50/80">
             <p className="text-xs font-medium text-emerald-700">{updateCopy.latestVersion}</p>
             <p className="mt-1 truncate text-sm font-semibold text-emerald-900">{update.tag}</p>
           </div>
@@ -213,15 +227,15 @@ function UpdateAvailableModal({
 
         {installing && (
           <div className="mt-3">
-            <div className="mb-1.5 flex items-center justify-between gap-2 text-xs text-slate-500">
+            <div className="mb-1.5 flex items-center justify-between gap-2 text-xs text-ink-500">
               <span>{updateCopy.downloadingHint}</span>
               {typeof progress?.percent === 'number' && (
-                <span className="font-semibold text-slate-700">{progress.percent}%</span>
+                <span className="font-semibold text-ink-700">{progress.percent}%</span>
               )}
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-slate-200/80 ring-1 ring-white/80">
+            <div className="meter-track">
               <div
-                className={`h-full rounded-full bg-emerald-500 transition-[width] duration-200 ${
+                className={`meter-fill brand-grok ${
                   typeof progress?.percent === 'number' ? '' : 'animate-pulse'
                 }`}
                 style={{ width: progressWidth }}
@@ -231,21 +245,21 @@ function UpdateAvailableModal({
         )}
 
         {error && (
-          <p className="mt-3 rounded-xl border border-red-200/70 bg-red-50/80 px-3 py-2 text-sm leading-6 text-red-700">
+          <p className="mt-3 rounded-badge border border-red-200 bg-red-50 px-3 py-2 text-sm leading-6 text-red-700">
             {updateCopy.failed} {error}
           </p>
         )}
 
         <div className="mt-5 grid grid-cols-[0.8fr_1.2fr] gap-2">
           <button
-            className="rounded-xl border border-white/70 bg-white/55 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-white/75 active:translate-y-px disabled:opacity-60"
+            className="control-btn h-11 justify-center"
             disabled={installing}
             onClick={onDismiss}
           >
             {updateCopy.later}
           </button>
           <button
-            className="rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_28px_rgb(15_23_42_/_0.18)] transition hover:bg-slate-800 active:translate-y-px disabled:cursor-wait disabled:bg-slate-700"
+            className="inline-flex h-11 items-center justify-center rounded-badge bg-ink px-4 text-sm font-semibold text-white shadow-soft transition hover:bg-ink-700 active:translate-y-px disabled:cursor-wait disabled:bg-ink-500"
             disabled={installing}
             onClick={onInstall}
           >
@@ -279,24 +293,24 @@ function AgentSetupReminderModal({
     })),
   ]
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/18 px-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-sm">
       <section
         aria-modal="true"
-        className="liquid-glass flex max-h-[min(calc(100vh-2rem),42rem)] w-full max-w-[30rem] flex-col overflow-hidden rounded-[1.35rem] border border-white/75 shadow-[0_24px_80px_rgb(15_23_42_/_0.2)]"
+        className="liquid-glass flex max-h-[min(calc(100vh-2rem),42rem)] w-full max-w-[30rem] flex-col overflow-hidden shadow-card-hover"
         role="dialog"
       >
         <div className="min-h-0 flex-1 overflow-y-auto p-5 pr-4">
           <div className="flex items-start gap-3">
-            <span className="agent-brand-icon flex h-12 w-12 shrink-0 items-center justify-center rounded-[1rem] border border-indigo-200/70 bg-white/70 shadow-[0_12px_30px_rgb(79_70_229_/_0.12)]">
+            <span className="agent-brand-icon" data-agent="codex">
               <CodexLogo />
             </span>
             <div className="min-w-0">
-              <h2 className="text-xl font-semibold text-slate-950">{setup.title}</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-600">{setup.body}</p>
+              <h2 className="text-xl font-semibold text-ink">{setup.title}</h2>
+              <p className="mt-2 text-sm leading-6 text-ink-500">{setup.body}</p>
             </div>
           </div>
 
-          <div className="mt-4 grid gap-2 rounded-xl border border-white/65 bg-white/48 px-3 py-3 text-sm leading-6 text-slate-700 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.65)]">
+          <div className="mt-4 grid gap-2 rounded-card border border-line bg-white px-3 py-3 text-sm leading-6 text-ink-700 shadow-soft">
             <p>{setup.firstRunNotice}</p>
             <p>{setup.cleanupNotice}</p>
           </div>
@@ -305,11 +319,11 @@ function AgentSetupReminderModal({
             <div className="mt-4 grid gap-2.5">
               {issues.map((issue) => (
                 <div
-                  className="flex items-center justify-between gap-3 rounded-xl border border-white/65 bg-white/48 px-3 py-2.5 text-sm shadow-[inset_0_1px_0_rgb(255_255_255_/_0.65)]"
+                  className="flex items-center justify-between gap-3 rounded-badge border border-line bg-white px-3 py-2.5 text-sm shadow-soft"
                   key={`${issue.agent}:${issue.label}`}
                 >
-                  <span className="font-medium text-slate-700">{issue.label}</span>
-                  <span className="rounded-full bg-slate-950 px-2.5 py-1 text-xs font-semibold text-white">
+                  <span className="font-medium text-ink-700">{issue.label}</span>
+                  <span className="rounded-full bg-ink px-2.5 py-1 text-xs font-semibold text-white">
                     {agentName(issue.agent)}
                   </span>
                 </div>
@@ -319,16 +333,14 @@ function AgentSetupReminderModal({
 
           {reminder.needsCodexTrust && (
             <>
-              <div className="mt-4 rounded-xl border border-indigo-100/80 bg-white/50 px-3 py-3">
-                <h3 className="text-sm font-semibold text-slate-950">{tutorial.title}</h3>
-                <p className="mt-1.5 text-sm leading-6 text-slate-600">{tutorial.body}</p>
+              <div className="mt-4 rounded-card border border-line bg-white px-3 py-3 shadow-soft">
+                <h3 className="text-sm font-semibold text-ink">{tutorial.title}</h3>
+                <p className="mt-1.5 text-sm leading-6 text-ink-500">{tutorial.body}</p>
               </div>
 
-              <div className="mt-3 rounded-xl border border-white/65 bg-white/48 px-3 py-3 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.65)]">
-                <h4 className="text-sm font-semibold text-slate-950">
-                  {tutorial.permissionsTitle}
-                </h4>
-                <ul className="mt-2 grid gap-1.5 text-sm leading-6 text-slate-700">
+              <div className="mt-3 rounded-card border border-line bg-white px-3 py-3 shadow-soft">
+                <h4 className="text-sm font-semibold text-ink">{tutorial.permissionsTitle}</h4>
+                <ul className="mt-2 grid gap-1.5 text-sm leading-6 text-ink-700">
                   {tutorial.permissions.map((permission) => (
                     <li key={permission}>{permission}</li>
                   ))}
@@ -338,10 +350,10 @@ function AgentSetupReminderModal({
               <ol className="mt-3 grid gap-2.5">
                 {tutorial.steps.map((step, index) => (
                   <li
-                    className="flex gap-3 rounded-xl border border-white/65 bg-white/48 px-3 py-2.5 text-sm text-slate-700 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.65)]"
+                    className="flex gap-3 rounded-badge border border-line bg-white px-3 py-2.5 text-sm text-ink-700 shadow-soft"
                     key={step}
                   >
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-xs font-semibold text-indigo-600 ring-1 ring-indigo-100">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-xs font-semibold text-brand-codex ring-1 ring-indigo-100">
                       {index + 1}
                     </span>
                     <span className="leading-6">{step}</span>
@@ -349,16 +361,16 @@ function AgentSetupReminderModal({
                 ))}
               </ol>
 
-              <p className="mt-3 rounded-xl border border-amber-200/70 bg-amber-50/70 px-3 py-2 text-sm leading-6 text-amber-800">
+              <p className="mt-3 rounded-badge border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-800">
                 {tutorial.warning}
               </p>
             </>
           )}
         </div>
 
-        <div className="shrink-0 border-t border-white/65 bg-white/40 p-5 pt-4">
+        <div className="shrink-0 border-t border-line bg-white/70 p-5 pt-4">
           <button
-            className="w-full rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_28px_rgb(15_23_42_/_0.18)] transition hover:bg-slate-800 active:translate-y-px"
+            className="inline-flex h-11 w-full items-center justify-center rounded-badge bg-ink px-4 text-sm font-semibold text-white shadow-soft transition hover:bg-ink-700 active:translate-y-px"
             onClick={onConfirm}
           >
             {tutorial.action}
@@ -386,9 +398,9 @@ function panelGridClass(count: number): string {
 
 function EmptyDashboard({ copy }: { copy: UiCopy }): JSX.Element {
   return (
-    <div className="liquid-glass flex h-full min-h-0 flex-col items-center justify-center rounded-[1.35rem] px-6 text-center">
-      <p className="text-lg font-semibold text-slate-950">{copy.emptyDashboard.title}</p>
-      <p className="mt-2 max-w-md text-sm leading-6 text-slate-600">{copy.emptyDashboard.body}</p>
+    <div className="agent-panel flex h-full min-h-0 flex-col items-center justify-center px-6 text-center">
+      <p className="text-lg font-semibold text-ink">{copy.emptyDashboard.title}</p>
+      <p className="mt-2 max-w-md text-sm leading-6 text-ink-500">{copy.emptyDashboard.body}</p>
     </div>
   )
 }
@@ -407,23 +419,22 @@ const AgentPanelView = memo(function AgentPanelView({
   const latest = panel.workspaces[0]?.agent
   const style = turnStateStyle(latest?.state ?? TurnState.IDLE)
   const projectCount = panel.workspaces.filter((item) => item.agent.lastEventAt > 0).length
+  const brand = brandClass(panel.agentType)
 
   return (
-    <section className="liquid-glass agent-panel flex min-h-0 flex-col rounded-[1.35rem] p-3">
-      <div className="mb-3 flex flex-col gap-2.5">
+    <section className="agent-panel flex min-h-0 flex-col p-3.5" data-agent={panel.agentType}>
+      <div className="mb-3 flex flex-col gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="agent-brand-icon relative flex h-11 w-11 shrink-0 items-center justify-center rounded-[1rem] border border-amber-300/30 bg-white/55 shadow-[0_10px_24px_rgb(61_80_111_/_0.1)]">
+          <span className="agent-brand-icon relative" data-agent={panel.agentType}>
             <AgentLogo agentType={panel.agentType} />
             <span
-              className={`absolute bottom-1.5 right-1.5 h-2.5 w-2.5 rounded-full ring-2 ring-white/80 ${style.dot}`}
+              className={`absolute bottom-1 right-1 h-2.5 w-2.5 rounded-full ring-2 ring-white ${style.dot}`}
             />
           </span>
           <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-center gap-2.5">
-              <h2 className="truncate text-xl font-semibold text-slate-950">{panel.name}</h2>
-              <span
-                className={`rounded-full px-2 py-0.5 text-xs ${stateChipClass(latest?.state ?? TurnState.IDLE)}`}
-              >
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <h2 className="truncate text-module text-ink">{panel.name}</h2>
+              <span className={`status-badge ${stateChipClass(latest?.state ?? TurnState.IDLE)}`}>
                 {turnStateLabel(latest?.state ?? TurnState.IDLE, locale)}
               </span>
             </div>
@@ -438,16 +449,18 @@ const AgentPanelView = memo(function AgentPanelView({
         </div>
         <PanelQuotaMeter
           agentType={panel.agentType}
+          brand={brand}
           token={panel.quotaToken}
           locale={locale}
           copy={copy}
         />
       </div>
-      <div className="agent-project-list grid min-h-0 flex-1 content-start gap-2 overflow-y-auto pr-1">
+      <div className="agent-project-list grid min-h-0 flex-1 content-start gap-2.5 overflow-y-auto pr-1">
         {panel.workspaces.map((item) => (
           <ProjectTile
             key={item.id}
             item={item}
+            brand={brand}
             locale={locale}
             copy={copy}
             onAck={() => onAck(panel.agentType, item.workspacePath)}
@@ -509,7 +522,7 @@ function GrokLogo(): JSX.Element {
     <svg viewBox="0 0 24 24" role="img" aria-label="Grok" className="h-7 w-7">
       <path
         fill="currentColor"
-        className="text-slate-900"
+        className="text-ink"
         d="M6.227 3.5h3.12l4.38 7.12L18.13 3.5H21.3l-6.02 9.05L21.5 20.5h-3.13l-4.62-7.42-4.63 7.42H6.01l6.24-8.01L6.227 3.5zm-.85 0L12 12.35 5.12 20.5H2.5l6.9-8.19L2.5 3.5h2.877z"
       />
     </svg>
@@ -518,11 +531,13 @@ function GrokLogo(): JSX.Element {
 
 const ProjectTile = memo(function ProjectTile({
   item,
+  brand,
   locale,
   copy,
   onAck,
 }: {
   item: AgentWorkspaceItem
+  brand: BrandClass
   locale: Locale
   copy: UiCopy
   onAck: () => void
@@ -533,7 +548,7 @@ const ProjectTile = memo(function ProjectTile({
   const contextWindow = effectiveContextWindow(agent)
 
   return (
-    <article className="glass-subtle project-tile rounded-xl px-3 py-2.5">
+    <article className="project-tile px-3.5 py-3">
       <div className="grid gap-2.5">
         <div className="flex min-w-0 items-center justify-between gap-3">
           <div className="min-w-0">
@@ -546,13 +561,13 @@ const ProjectTile = memo(function ProjectTile({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
-            <span className={`rounded-full px-2 py-1 text-xs ${stateChipClass(agent.state)}`}>
+            <span className={`status-badge ${stateChipClass(agent.state)}`}>
               {turnStateLabel(agent.state, locale)}
             </span>
             {agent.unread && (
               <button
                 onClick={onAck}
-                className="rounded-full border border-emerald-300/50 bg-emerald-50/80 px-2 py-1 text-xs text-emerald-700 transition hover:bg-emerald-100 active:translate-y-px"
+                className="status-badge border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 active:translate-y-px"
               >
                 {copy.read}
               </button>
@@ -568,7 +583,7 @@ const ProjectTile = memo(function ProjectTile({
           />
         </div>
 
-        <ContextMeter token={token} contextWindow={contextWindow} copy={copy} />
+        <ContextMeter brand={brand} token={token} contextWindow={contextWindow} copy={copy} />
       </div>
     </article>
   )
@@ -576,11 +591,13 @@ const ProjectTile = memo(function ProjectTile({
 
 function PanelQuotaMeter({
   agentType,
+  brand,
   token,
   locale,
   copy,
 }: {
   agentType: AgentType
+  brand: BrandClass
   token: TokenPayload | undefined
   locale: Locale
   copy: UiCopy
@@ -601,6 +618,7 @@ function PanelQuotaMeter({
     >
       {showFiveHour && (
         <TokenMeter
+          brand={brand}
           label={copy.fiveHourQuota}
           percent={fiveHour?.usedPercent}
           detail={quotaDetail(
@@ -610,6 +628,7 @@ function PanelQuotaMeter({
         />
       )}
       <TokenMeter
+        brand={brand}
         label={copy.weeklyQuota}
         percent={sevenDay?.usedPercent}
         detail={quotaDetail(
@@ -654,10 +673,12 @@ function ElapsedTime({
 }
 
 function ContextMeter({
+  brand,
   token,
   contextWindow,
   copy,
 }: {
+  brand: BrandClass
   token: TokenPayload | undefined
   contextWindow: number | undefined
   copy: UiCopy
@@ -668,14 +689,14 @@ function ContextMeter({
   const width = hasPercent ? `${Math.min(100, Math.max(2, usedPercent))}%` : '0%'
 
   return (
-    <div className="rounded-xl border border-white/70 bg-white/45 px-3 py-2 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.7)]">
+    <div className="rounded-badge border border-line bg-[#F8FAFC] px-3 py-2">
       <div className="mb-1.5 flex min-w-0 items-center justify-between gap-2 text-xs">
-        <span className="shrink-0 font-medium text-slate-500">{copy.contextWindow}</span>
-        <span className="truncate font-semibold text-slate-900">{status.text}</span>
+        <span className="shrink-0 font-medium text-ink-500">{copy.contextWindow}</span>
+        <span className="truncate font-semibold text-ink">{status.text}</span>
       </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-slate-200/80 ring-1 ring-white/80">
+      <div className="meter-track">
         <div
-          className={`h-full rounded-full ${hasPercent ? tokenBarColor(usedPercent) : 'bg-slate-300'}`}
+          className={`meter-fill ${hasPercent ? meterFillClass(usedPercent, brand) : 'idle'}`}
           style={{ width }}
         />
       </div>
@@ -684,51 +705,43 @@ function ContextMeter({
 }
 
 function TokenMeter({
+  brand,
   label,
   percent,
   detail,
-  compact = false,
 }: {
+  brand: BrandClass
   label: string
   percent: number | undefined
   detail: string
-  compact?: boolean
 }): JSX.Element {
   const hasPercent = typeof percent === 'number'
   const width = hasPercent ? `${Math.min(100, Math.max(2, percent))}%` : '0%'
 
   return (
-    <div className="rounded-xl border border-white/70 bg-white/45 px-3 py-1.5 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.7)]">
+    <div className="rounded-badge border border-line bg-[#F8FAFC] px-3 py-2">
       <div className="mb-1 flex items-center justify-between gap-2 text-xs">
-        <span className="font-medium text-slate-500">{label}</span>
-        <span
-          className={`font-semibold ${hasPercent ? tokenTextColor(percent) : 'text-slate-400'}`}
-        >
+        <span className="font-medium text-ink-500">{label}</span>
+        <span className={`font-semibold ${hasPercent ? tokenTextColor(percent) : 'text-ink-400'}`}>
           {formatTokenPercent(percent)}
         </span>
       </div>
-      <div
-        className={`${compact ? 'h-1.5' : 'h-2'} overflow-hidden rounded-full bg-slate-200/80 ring-1 ring-white/80`}
-      >
+      <div className="meter-track">
         <div
-          className={`neon-progress h-full rounded-full ${hasPercent ? tokenBarColor(percent) : 'bg-slate-300'}`}
+          className={`meter-fill ${hasPercent ? meterFillClass(percent, brand) : 'idle'}`}
           style={{ width }}
         />
       </div>
-      <p
-        className={`${compact ? 'mt-1' : 'mt-1.5'} truncate text-[11px] font-medium text-slate-500`}
-      >
-        {detail}
-      </p>
+      <p className="mt-1.5 truncate text-[11px] font-medium text-ink-500">{detail}</p>
     </div>
   )
 }
 
 function InlineMetric({ label, value }: { label: string; value: ReactNode }): JSX.Element {
   return (
-    <div className="min-w-0 rounded-xl border border-white/65 bg-white/42 px-2.5 py-1.5 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.58)]">
-      <p className="text-[10px] font-medium text-slate-500">{label}</p>
-      <p className="mt-0.5 truncate text-[13px] font-semibold text-slate-950">{value}</p>
+    <div className="stat-pill min-w-0">
+      <p className="text-[10px] font-medium text-ink-500">{label}</p>
+      <p className="mt-0.5 truncate text-[13px] font-semibold text-ink">{value}</p>
     </div>
   )
 }
@@ -743,17 +756,23 @@ function Metric({
   className?: string
 }): JSX.Element {
   return (
-    <div
-      className={`min-w-0 rounded-xl border border-white/70 bg-white/40 px-2.5 py-1.5 ${className}`}
-    >
-      <p className="text-[10px] text-slate-500">{label}</p>
-      <p className="mt-0.5 truncate text-[13px] font-semibold text-slate-950">{value}</p>
+    <div className={`stat-pill min-w-0 ${className}`}>
+      <p className="text-[10px] text-ink-500">{label}</p>
+      <p className="mt-0.5 truncate text-[13px] font-semibold text-ink">{value}</p>
     </div>
   )
 }
 
 function effectiveContextWindow(agent: AgentRuntimeState): number | undefined {
   return agent.token?.contextWindow ?? (agent.agentType === 'codex' ? 256_000 : undefined)
+}
+
+type BrandClass = 'brand-claude' | 'brand-codex' | 'brand-grok'
+
+function brandClass(agentType: AgentType): BrandClass {
+  if (agentType === 'codex') return 'brand-codex'
+  if (agentType === 'grok') return 'brand-grok'
+  return 'brand-claude'
 }
 
 function stateChipClass(state: AgentRuntimeState['state']): string {
@@ -777,14 +796,15 @@ function stateChipClass(state: AgentRuntimeState['state']): string {
   }
 }
 
-function tokenBarColor(pct: number): string {
-  if (pct >= 95) return 'bg-red-500 text-red-500'
-  if (pct >= 80) return 'bg-amber-400 text-amber-400'
-  return 'bg-amber-500 text-amber-500'
+/** 设计指引：正常用量用品牌色，≥80% 警告黄，≥95% 危险红。 */
+function meterFillClass(pct: number, brand: BrandClass): string {
+  if (pct >= 95) return 'danger'
+  if (pct >= 80) return 'warn'
+  return brand
 }
 
 function tokenTextColor(pct: number): string {
   if (pct >= 95) return 'text-red-600'
   if (pct >= 80) return 'text-amber-700'
-  return 'text-amber-700'
+  return 'text-ink'
 }

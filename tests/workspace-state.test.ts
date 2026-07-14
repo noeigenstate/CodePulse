@@ -1443,7 +1443,7 @@ test('latest quota token selects the matching bucket when one token carries mult
   assert.equal(quota?.rateLimits?.sevenDay?.usedPercent, 16)
 })
 
-test('latest quota token strips Spark branding when only Spark data exists for a non-Spark model', () => {
+test('latest quota token ignores Spark-only payload while the active model is non-Spark', () => {
   const quota = latestQuotaToken(
     [
       {
@@ -1468,10 +1468,8 @@ test('latest quota token strips Spark branding when only Spark data exists for a
     'gpt-5.5',
   )
 
-  // Keep usage numbers, but do not advertise Spark while the session model is gpt-5.5.
-  assert.equal(quota?.rateLimits?.sevenDay?.usedPercent, 1)
-  assert.equal(quota?.rateLimitId, undefined)
-  assert.equal(quota?.rateLimitName, undefined)
+  // No compatible non-Spark quota → nothing to show for this session model.
+  assert.equal(quota, undefined)
 })
 
 test('latest quota token accepts Spark quota when the active Codex model is Spark', () => {
@@ -1588,11 +1586,19 @@ test('collectQuotaMeters hides Spark while an active non-Spark model is running 
         workspacePath: 'E:/project/metalmax',
         model: 'gpt-5.6-sol',
         token: {
-          // Sticky Spark identity from an earlier token_count must not win.
+          // Sticky Spark-only buckets must not become a second 每周额度 bar.
           rateLimitId: 'codex_bengalfox',
           rateLimitName: 'GPT-5.3-Codex-Spark',
           rateLimits: { sevenDay: { usedPercent: 0, resetsAt: 9_000, windowMinutes: 10_080 } },
           quotaBuckets: {
+            codex: {
+              rateLimitId: 'codex',
+              rateLimitName: 'Codex',
+              rateLimits: {
+                sevenDay: { usedPercent: 43, resetsAt: 8_000, windowMinutes: 10_080 },
+              },
+              updatedAt: 400,
+            },
             codex_bengalfox: {
               rateLimitId: 'codex_bengalfox',
               rateLimitName: 'GPT-5.3-Codex-Spark',
@@ -1609,12 +1615,85 @@ test('collectQuotaMeters hides Spark while an active non-Spark model is running 
     'codex',
   )
 
-  // Prefer a neutral weekly bar (no Spark label) over showing the wrong family.
   assert.equal(meters.length, 1)
+  assert.equal(meters[0]?.id, 'codex')
+  assert.equal(meters[0]?.token.rateLimits?.sevenDay?.usedPercent, 43)
   assert.doesNotMatch(
     `${meters[0]?.token.rateLimitId ?? ''} ${meters[0]?.token.rateLimitName ?? ''}`,
     /spark|bengalfox/i,
   )
+})
+
+test('collectQuotaMeters does not show twin weekly bars from Spark + default for non-Spark models', () => {
+  const meters = collectQuotaMeters(
+    [
+      {
+        agentType: 'codex',
+        state: TurnState.DONE,
+        toolCallCount: 0,
+        needPermission: false,
+        needUserInput: false,
+        activity: 'done',
+        lastEventAt: 100,
+        unread: false,
+        workspacePath: 'E:/project/spark-old',
+        model: 'gpt-5.3-codex-spark',
+        token: {
+          rateLimitId: 'codex_bengalfox',
+          rateLimitName: 'GPT-5.3-Codex-Spark',
+          rateLimits: { sevenDay: { usedPercent: 0, windowMinutes: 10_080 } },
+          quotaBuckets: {
+            codex: {
+              rateLimitId: 'codex',
+              rateLimits: { sevenDay: { usedPercent: 43, windowMinutes: 10_080 } },
+              updatedAt: 50,
+            },
+            codex_bengalfox: {
+              rateLimitId: 'codex_bengalfox',
+              rateLimitName: 'GPT-5.3-Codex-Spark',
+              rateLimits: { sevenDay: { usedPercent: 0, windowMinutes: 10_080 } },
+              updatedAt: 100,
+            },
+          },
+          accuracy: 'estimated',
+        },
+      },
+      {
+        agentType: 'codex',
+        state: TurnState.TOOL_RUNNING,
+        toolCallCount: 1,
+        needPermission: false,
+        needUserInput: false,
+        activity: 'running',
+        lastEventAt: 200,
+        unread: false,
+        workspacePath: 'E:/project/weekly-now',
+        model: 'gpt-5.6-sol',
+        token: {
+          rateLimitId: 'codex',
+          rateLimits: { sevenDay: { usedPercent: 43, windowMinutes: 10_080 } },
+          quotaBuckets: {
+            codex: {
+              rateLimitId: 'codex',
+              rateLimits: { sevenDay: { usedPercent: 43, windowMinutes: 10_080 } },
+              updatedAt: 200,
+            },
+            codex_bengalfox: {
+              rateLimitId: 'codex_bengalfox',
+              rateLimitName: 'GPT-5.3-Codex-Spark',
+              rateLimits: { sevenDay: { usedPercent: 0, windowMinutes: 10_080 } },
+              updatedAt: 150,
+            },
+          },
+          accuracy: 'estimated',
+        },
+      },
+    ],
+    'codex',
+  )
+
+  assert.equal(meters.length, 1)
+  assert.equal(meters[0]?.token.rateLimits?.sevenDay?.usedPercent, 43)
 })
 
 test('collectQuotaMeters follows the latest model and hides stale Spark after switching to weekly models', () => {

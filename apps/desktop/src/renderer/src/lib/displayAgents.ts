@@ -106,9 +106,9 @@ export function buildAgentPanels(agents: AgentRuntimeState[]): AgentPanel[] {
  *
  * Codex may expose multiple weekly buckets (default weekly vs Spark). Display
  * rules:
- * - Prefer buckets that match **currently active** models (concurrent use → both bars).
- * - If nothing is active, use only the **most recently used** model — do not keep
- *   showing Spark just because an older session once used it.
+ * - Active models drive which families appear (Spark + weekly only if both models run).
+ * - Idle / latest model only: one family — never keep Spark bars after switching away.
+ * - Never "rebrand" Spark as a second generic 每周额度 (that caused twin weekly bars).
  */
 export function collectQuotaMeters(
   agents: AgentRuntimeState[],
@@ -136,16 +136,11 @@ export function collectQuotaMeters(
 
   const models = relevantQuotaModels(agents.filter((agent) => agent.agentType === agentType))
   if (models.length > 0) {
-    const matched = meters.filter((meter) =>
-      models.some((model) => quotaMatchesPreferredModel(meter.token, model)),
-    )
-    if (matched.length > 0) {
-      meters = matched
-    } else {
-      // Never fall back to the wrong family (e.g. Spark while on gpt-5.6-sol).
-      meters = filterMetersByModelFamily(meters, models)
-    }
+    meters = filterMetersByModelFamily(meters, models)
   }
+
+  // One bar per family is enough (multiple non-Spark bucket ids all labeled 每周额度).
+  meters = collapseMetersPerFamily(meters)
 
   return meters.sort(compareQuotaMeters)
 }
@@ -322,47 +317,23 @@ function quotaCandidatesForAgent(agent: AgentRuntimeState): QuotaCandidate[] {
 
   const model = agent.model
   if (bucketCandidates.length > 0) {
-    if (model) {
-      const matched = bucketCandidates.filter((candidate) =>
-        quotaMatchesPreferredModel(candidate.token, model),
-      )
-      if (matched.length > 0) return matched
+    if (!model) return bucketCandidates
 
-      // gpt-5.6 / non-Spark must not surface Spark buckets from an earlier turn.
-      const family = bucketCandidates.filter((candidate) =>
-        meterMatchesModelFamily(candidate.token, model),
-      )
-      if (family.length > 0) return family
-
-      // Only Spark data left while model is non-Spark: show weekly numbers without Spark branding.
-      if (!isSparkModel(normalizeModel(model)) && hasVisibleRateLimits(token, agent.agentType)) {
-        return [
-          {
-            agent,
-            token: stripSparkBranding(token),
-            updatedAt: agent.lastEventAt,
-          },
-        ]
-      }
-      return []
-    }
-    return bucketCandidates
+    // Strict family filter: gpt-5.6-sol → non-Spark buckets only; never emit a
+    // stripped Spark row that looks like a second 每周额度.
+    const family = bucketCandidates.filter((candidate) =>
+      meterMatchesModelFamily(candidate.token, model),
+    )
+    return family
   }
 
   if (!hasVisibleRateLimits(token, agent.agentType)) return []
 
-  // Single payload without buckets: drop Spark branding when the session model is not Spark.
-  const displayToken =
-    model && !isSparkModel(normalizeModel(model)) && tokenLooksLikeSpark(token)
-      ? stripSparkBranding(token)
-      : token
-  if (model && !quotaMatchesPreferredModel(displayToken, model) && tokenLooksLikeSpark(token)) {
-    // Still Spark-only metadata with a non-Spark model — show neutral weekly bar.
-    return isSparkModel(normalizeModel(model))
-      ? [{ agent, token: displayToken, updatedAt: agent.lastEventAt }]
-      : [{ agent, token: stripSparkBranding(token), updatedAt: agent.lastEventAt }]
+  // No multi-bucket map: only use this payload when its family matches the model.
+  if (model && !meterMatchesModelFamily(token, model)) {
+    return []
   }
-  return [{ agent, token: displayToken, updatedAt: agent.lastEventAt }]
+  return [{ agent, token, updatedAt: agent.lastEventAt }]
 }
 
 function quotaCandidateFromBucket(
@@ -429,7 +400,7 @@ function relevantQuotaModels(agents: AgentRuntimeState[]): string[] {
   return latest?.model ? [latest.model] : []
 }
 
-/** Drop Spark bars for non-Spark models (and the reverse) when id matching fails. */
+/** Drop Spark bars for non-Spark models (and the reverse). */
 function filterMetersByModelFamily(
   meters: QuotaMeterSource[],
   models: string[],
@@ -437,13 +408,36 @@ function filterMetersByModelFamily(
   const wantSpark = models.some((model) => isSparkModel(normalizeModel(model)))
   const wantNonSpark = models.some((model) => !isSparkModel(normalizeModel(model)))
   return meters.filter((meter) => {
-    const spark = isSparkQuota(
-      normalizeModel(`${meter.token.rateLimitId ?? ''} ${meter.token.rateLimitName ?? ''}`),
-    )
+    const spark = tokenLooksLikeSpark(meter.token)
     if (spark && wantSpark) return true
     if (!spark && wantNonSpark) return true
     return false
   })
+}
+
+/**
+ * Collapse multiple non-Spark (or multiple Spark) rows into one each.
+ * Otherwise codex + default + stripped rows all render as duplicate 每周额度.
+ */
+function collapseMetersPerFamily(meters: QuotaMeterSource[]): QuotaMeterSource[] {
+  const spark: QuotaMeterSource[] = []
+  const weekly: QuotaMeterSource[] = []
+  for (const meter of meters) {
+    if (tokenLooksLikeSpark(meter.token)) spark.push(meter)
+    else weekly.push(meter)
+  }
+  const pickBest = (group: QuotaMeterSource[]): QuotaMeterSource | undefined => {
+    if (group.length === 0) return undefined
+    return [...group].sort((a, b) => {
+      const pressure =
+        quotaPressure(b.token, 'codex') - quotaPressure(a.token, 'codex') ||
+        b.updatedAt - a.updatedAt
+      return pressure
+    })[0]
+  }
+  return [pickBest(weekly), pickBest(spark)].filter((meter): meter is QuotaMeterSource =>
+    Boolean(meter),
+  )
 }
 
 function isActiveState(state: TurnState): boolean {
@@ -464,19 +458,7 @@ function quotaMatchesPreferredModel(
   token: TokenPayload | undefined,
   preferredModel: string,
 ): boolean {
-  const preferred = normalizeModel(preferredModel)
-  const preferredSpark = isSparkModel(preferred)
-  const bucketSpark = tokenLooksLikeSpark(token)
-
-  // Hard rule: Spark buckets only for Spark models (and vice versa for default weekly).
-  if (bucketSpark !== preferredSpark) return false
-
-  const bucket = normalizeModel(`${token?.rateLimitId ?? ''} ${token?.rateLimitName ?? ''}`)
-  if (!bucket) return true
-
-  // Do not require GPT version equality between model id and quota bucket name —
-  // gpt-5.6-sol uses the shared non-Spark weekly bucket (often unlabeled or "Codex").
-  return true
+  return meterMatchesModelFamily(token ?? { accuracy: 'unknown' }, preferredModel)
 }
 
 function meterMatchesModelFamily(token: TokenPayload, model: string): boolean {
@@ -486,24 +468,6 @@ function meterMatchesModelFamily(token: TokenPayload, model: string): boolean {
 function tokenLooksLikeSpark(token: TokenPayload | undefined): boolean {
   if (!token) return false
   return isSparkQuota(normalizeModel(`${token.rateLimitId ?? ''} ${token.rateLimitName ?? ''}`))
-}
-
-/** Keep usage numbers but remove Spark limit labels for non-Spark sessions. */
-function stripSparkBranding(token: TokenPayload): TokenPayload {
-  const next: TokenPayload = { ...token }
-  delete next.rateLimitId
-  delete next.rateLimitName
-  // Drop Spark-only buckets so they are not re-expanded later.
-  if (next.quotaBuckets) {
-    const kept: NonNullable<TokenPayload['quotaBuckets']> = {}
-    for (const [key, bucket] of Object.entries(next.quotaBuckets)) {
-      const label = normalizeModel(`${bucket.rateLimitId ?? ''} ${bucket.rateLimitName ?? key}`)
-      if (isSparkQuota(label)) continue
-      kept[key] = bucket
-    }
-    next.quotaBuckets = Object.keys(kept).length > 0 ? kept : undefined
-  }
-  return next
 }
 
 function isSparkQuota(value: string): boolean {

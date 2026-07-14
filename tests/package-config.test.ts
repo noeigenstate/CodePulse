@@ -18,6 +18,10 @@ test('desktop installer uses maximum compression without unpacking native packag
   assert.match(config, /^\s+- '!\*\*\/node_modules\/better-sqlite3\/deps\/\*\*'$/m)
   assert.match(config, /^\s+- '!\*\*\/node_modules\/better-sqlite3\/src\/\*\*'$/m)
   assert.doesNotMatch(config, /^\s+- '\*\*\/better-sqlite3\/\*\*'$/m)
+  // better-sqlite3 requires these at runtime — must not be stripped from the installer.
+  assert.doesNotMatch(config, /\{[^}]*\bbindings\b[^}]*\}/)
+  assert.doesNotMatch(config, /\{[^}]*\bfile-uri-to-path\b[^}]*\}/)
+  assert.match(config, /node_modules\/better-sqlite3\/\*\*/)
   // Pure JS server/ORM deps are bundled; only the native addon is a runtime dependency.
   assert.equal(
     Object.keys(desktopPackage.dependencies ?? {})

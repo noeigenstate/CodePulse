@@ -4,6 +4,7 @@
  *
  * @module storage/sqlite/db
  */
+import { createRequire } from 'node:module'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import Database from 'better-sqlite3'
@@ -22,6 +23,24 @@ export interface OpenDbResult {
 }
 
 /**
+ * Resolve the native addon path explicitly.
+ *
+ * better-sqlite3 defaults to `require('bindings')(...)`. Installers that strip
+ * the `bindings` package then fail to open SQLite even though the .node file
+ * is present. Passing `nativeBinding` avoids that dependency.
+ */
+function openSqlite(file: string): Database.Database {
+  try {
+    const req = createRequire(import.meta.url)
+    const nativeBinding = req.resolve('better-sqlite3/build/Release/better_sqlite3.node')
+    return new Database(file, { nativeBinding })
+  } catch {
+    // Dev / unpackaged fallback: let better-sqlite3 load via bindings.
+    return new Database(file)
+  }
+}
+
+/**
  * 打开（必要时创建）位于 `file` 的 SQLite 数据库并确保 schema 存在。
  *
  * 表通过幂等的 `CREATE TABLE IF NOT EXISTS` DDL 引导创建，使 MVP
@@ -35,7 +54,7 @@ export interface OpenDbResult {
  */
 export function openDb(file: string): OpenDbResult {
   mkdirSync(dirname(file), { recursive: true })
-  const sqlite = new Database(file)
+  const sqlite = openSqlite(file)
   sqlite.pragma('journal_mode = WAL')
   sqlite.pragma('foreign_keys = ON')
   ensureSchema(sqlite)

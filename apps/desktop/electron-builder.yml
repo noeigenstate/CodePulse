@@ -45,7 +45,10 @@ files:
   - '!**/node_modules/better-sqlite3/build/Release/*.iobj'
   - '!**/node_modules/better-sqlite3/build/Release/*.ipdb'
   - '!**/node_modules/better-sqlite3/build/Release/*.pdb'
-  - '!**/node_modules/**/{prebuild-install,node-abi,napi-build-utils,tar-fs,tar-stream,rc,tunnel-agent,expand-template,github-from-package,simple-get,simple-concat,pump,bl,fs-constants,inherits,string_decoder,util-deprecate,buffer,base64-js,ieee754,minimist,deep-extend,ini,strip-json-comments,mkdirp-classic,chownr,detect-libc,bindings,file-uri-to-path}/**'
+  # NOTE: Do NOT exclude `bindings` / `file-uri-to-path` — better-sqlite3 loads
+  # the native addon via `require('bindings')('better_sqlite3.node')`. Stripping
+  # them leaves the installer's SQLite dead (live UI works, analytics empty).
+  - '!**/node_modules/**/{prebuild-install,node-abi,napi-build-utils,tar-fs,tar-stream,rc,tunnel-agent,expand-template,github-from-package,simple-get,simple-concat,pump,bl,fs-constants,inherits,string_decoder,util-deprecate,buffer,base64-js,ieee754,minimist,deep-extend,ini,strip-json-comments,mkdirp-classic,chownr,detect-libc}/**'
 extraResources:
   - from: ../../packages/hooks
     to: codepulse-hooks
@@ -56,6 +59,7 @@ extraResources:
 # Native addon must stay unpacked from the asar archive so it can be dlopen'd.
 asarUnpack:
   - '**/*.node'
+  - '**/node_modules/better-sqlite3/**'
 win:
   icon: build/icon.png
   artifactName: CodePulse_${version}_${arch}-setup.${ext}

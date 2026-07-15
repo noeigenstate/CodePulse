@@ -12,6 +12,8 @@ import { formatQuotaDetail } from '../apps/desktop/src/renderer/src/lib/quotaFor
 test('token counts use decimal M as one million tokens', () => {
   assert.equal(formatTokenCount(1_000_000), '1M')
   assert.equal(formatTokenCount(1_250_000), '1.25M')
+  assert.equal(formatTokenCount(1_000_000_000), '1B')
+  assert.equal(formatTokenCount(24_318_970_000), '24.32B')
   assert.equal(formatTokenUsage({ accuracy: 'estimated', total: 1_000_000 }), '总计 1M token')
 })
 

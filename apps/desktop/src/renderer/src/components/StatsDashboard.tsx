@@ -128,8 +128,8 @@ export function StatsDashboard({ locale, copy, onClose }: Props): JSX.Element {
           </div>
         </header>
 
-        {/* Body */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        {/* Body — clip horizontal overflow so 30d charts cannot blow the shell width */}
+        <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-4">
           {loading && !stats ? (
             <div className="flex h-full min-h-[20rem] items-center justify-center text-sm text-ink-500">
               {s.loading}
@@ -184,10 +184,10 @@ function StatsBody({
   const vsLabel = stats.rangePreset === '7d' ? s.vsPrevWeek : s.vsPrev
 
   return (
-    <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-4">
+    <div className="mx-auto flex w-full min-w-0 max-w-[1400px] flex-col gap-4">
       {/* Section head */}
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <div>
+      <div className="flex min-w-0 flex-wrap items-end justify-between gap-2">
+        <div className="min-w-0">
           <h2 className="flex items-center gap-2 text-module text-ink">
             <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
               <SparkIcon />
@@ -196,7 +196,9 @@ function StatsBody({
           </h2>
           <p className="mt-1 text-meta text-ink-500">{s.pageSubtitle}</p>
         </div>
-        <p className="text-meta text-ink-400">{s.overviewHint}</p>
+        <p className="max-w-full shrink text-meta text-ink-400 sm:max-w-[18rem] sm:text-right">
+          {s.overviewHint}
+        </p>
       </div>
 
       {!stats.hasData && (
@@ -221,7 +223,7 @@ function StatsBody({
       )}
 
       {/* KPI row */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+      <div className="grid min-w-0 grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <KpiCard
           icon={<TokenIcon />}
           iconClass="bg-violet-50 text-violet-600"
@@ -273,8 +275,8 @@ function StatsBody({
         />
       </div>
 
-      {/* Trends + model + heatmap */}
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.15fr_1.15fr_0.9fr]">
+      {/* Trends + model + heatmap — min-w-0 prevents 30-day label rows from exploding width */}
+      <div className="grid min-w-0 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1.15fr)_minmax(0,0.9fr)]">
         <SurfaceCard
           title={s.tokenTrendTitle}
           action={<GranularityToggle value={granularity} labels={s} onChange={onGranularity} />}
@@ -301,7 +303,7 @@ function StatsBody({
           />
         </SurfaceCard>
 
-        <div className="flex flex-col gap-3">
+        <div className="flex min-w-0 flex-col gap-3">
           <SurfaceCard title={s.modelMixTitle}>
             <ModelDonut
               models={stats.models}
@@ -316,7 +318,7 @@ function StatsBody({
       </div>
 
       {/* Project rank + insights */}
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.55fr_0.9fr]">
+      <div className="grid min-w-0 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,0.9fr)]">
         <SurfaceCard title={s.projectRankTitle}>
           <ProjectTable stats={stats} s={s} locale={locale} />
         </SurfaceCard>
@@ -326,7 +328,7 @@ function StatsBody({
       </div>
 
       {/* Bottom distributions */}
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         <SurfaceCard title={s.projectTypeTitle}>
           <CategoryDonut
             items={stats.projectTypes.map((p) => ({
@@ -376,11 +378,14 @@ function KpiCard({
   absolute?: boolean
 }): JSX.Element {
   return (
-    <div className="surface-card surface-card-hover px-3.5 py-3">
+    <div className="surface-card surface-card-hover min-w-0 px-3.5 py-3">
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="text-meta text-ink-500">{label}</p>
-          <p className="mt-1 truncate text-xl font-bold tracking-tight text-ink tabular-nums">
+          <p
+            className="mt-1 truncate text-lg font-bold tracking-tight text-ink tabular-nums sm:text-xl"
+            title={value}
+          >
             {value}
           </p>
         </div>
@@ -390,7 +395,7 @@ function KpiCard({
           {icon}
         </span>
       </div>
-      <p className="mt-2 text-[11px] font-medium">
+      <p className="mt-2 truncate text-[11px] font-medium">
         <DeltaText delta={delta} vsLabel={vsLabel} absolute={absolute} />
       </p>
     </div>
@@ -438,12 +443,12 @@ function SurfaceCard({
   children: ReactNode
 }): JSX.Element {
   return (
-    <section className="surface-card flex min-h-0 flex-col p-4">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-ink">{title}</h3>
-        {action}
+    <section className="surface-card flex min-h-0 min-w-0 flex-col overflow-hidden p-4">
+      <div className="mb-3 flex min-w-0 items-center justify-between gap-2">
+        <h3 className="min-w-0 truncate text-sm font-semibold text-ink">{title}</h3>
+        {action ? <div className="shrink-0">{action}</div> : null}
       </div>
-      <div className="min-h-0 flex-1">{children}</div>
+      <div className="min-h-0 min-w-0 flex-1 overflow-hidden">{children}</div>
     </section>
   )
 }
@@ -547,9 +552,13 @@ function AreaTrendChart({
     coords[0] ?? { x: 0, y: 0, p: points[0]!, v: 0 },
   )
 
+  // 30 天按日时 thrash 所有标签会撑破卡片；只保留首尾 + 均匀抽样。
+  const axisLabels = pickAxisLabels(points)
+  const peakLeftPct = peak ? Math.min(92, Math.max(8, (peak.x / w) * 100)) : 50
+
   return (
-    <div className="relative">
-      <svg viewBox={`0 0 ${w} ${h}`} className="h-40 w-full" preserveAspectRatio="none">
+    <div className="relative min-w-0 overflow-hidden">
+      <svg viewBox={`0 0 ${w} ${h}`} className="h-40 w-full max-w-full" preserveAspectRatio="none">
         <defs>
           <linearGradient id={`grad-${color.replace('#', '')}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={color} stopOpacity="0.35" />
@@ -576,20 +585,52 @@ function AreaTrendChart({
         )}
       </svg>
       {peak && peak.v > 0 && (
-        <div className="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2 rounded-lg border border-line bg-white px-2 py-1 text-[11px] shadow-soft">
-          <p className="font-semibold text-ink">{peak.p.label}</p>
-          <p className="tabular-nums text-ink-500">{formatValue(peak.v)}</p>
+        <div
+          className="pointer-events-none absolute top-2 max-w-[9rem] -translate-x-1/2 rounded-lg border border-line bg-white px-2 py-1 text-[11px] shadow-soft"
+          style={{ left: `${peakLeftPct}%` }}
+        >
+          <p className="truncate font-semibold text-ink">{peak.p.label}</p>
+          <p className="truncate tabular-nums text-ink-500">{formatValue(peak.v)}</p>
         </div>
       )}
-      <div className="mt-1 flex justify-between gap-1 text-[10px] text-ink-400">
-        {points.map((p) => (
-          <span key={p.bucketStart} className="min-w-0 flex-1 truncate text-center tabular-nums">
-            {p.label}
-          </span>
-        ))}
+      <div className="relative mt-1 h-4 w-full overflow-hidden text-[10px] text-ink-400">
+        {axisLabels.map((item) => {
+          const left =
+            n <= 1 ? 50 : (item.index / Math.max(1, n - 1)) * 100
+          return (
+            <span
+              key={`${item.bucketStart}-${item.index}`}
+              className="absolute top-0 -translate-x-1/2 tabular-nums whitespace-nowrap"
+              style={{ left: `${left}%` }}
+            >
+              {item.label}
+            </span>
+          )
+        })}
       </div>
     </div>
   )
+}
+
+/** Thin x-axis labels so 30 daily points never overflow the chart card. */
+function pickAxisLabels(
+  points: StatsTrendPoint[],
+  maxLabels = 6,
+): Array<{ label: string; index: number; bucketStart: number }> {
+  const n = points.length
+  if (n === 0) return []
+  if (n <= maxLabels) {
+    return points.map((p, index) => ({ label: p.label, index, bucketStart: p.bucketStart }))
+  }
+  const out: Array<{ label: string; index: number; bucketStart: number }> = []
+  const last = n - 1
+  for (let k = 0; k < maxLabels; k++) {
+    const index = k === maxLabels - 1 ? last : Math.round((k * last) / (maxLabels - 1))
+    if (out.some((item) => item.index === index)) continue
+    const p = points[index]!
+    out.push({ label: p.label, index, bucketStart: p.bucketStart })
+  }
+  return out
 }
 
 function ModelDonut({
@@ -696,8 +737,8 @@ function Heatmap({
   }, [cells])
 
   return (
-    <div>
-      <div className="grid grid-cols-[2rem_1fr] gap-1">
+    <div className="min-w-0 overflow-hidden">
+      <div className="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)] gap-1">
         <div />
         <div className="grid grid-cols-6 gap-0.5 text-[9px] text-ink-400">
           {[0, 4, 8, 12, 16, 20].map((h) => (
@@ -708,9 +749,9 @@ function Heatmap({
         </div>
         {weekdayLabels.map((label, weekday) => (
           <div key={label} className="contents">
-            <span className="self-center text-[10px] text-ink-500">{label}</span>
+            <span className="self-center truncate text-[10px] text-ink-500">{label}</span>
             <div
-              className="grid grid-cols-24 gap-0.5"
+              className="grid min-w-0 gap-0.5"
               style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}
             >
               {Array.from({ length: 24 }, (_, hour) => {
@@ -764,8 +805,8 @@ function ProjectTable({
   }
   const maxTokens = Math.max(1, ...stats.projectRank.map((p) => p.tokens))
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[36rem] border-collapse text-left text-meta">
+    <div className="min-w-0 max-w-full overflow-x-auto">
+      <table className="w-full min-w-[32rem] border-collapse text-left text-meta">
         <thead>
           <tr className="text-ink-400">
             <th className="pb-2 font-medium">{s.colRank}</th>

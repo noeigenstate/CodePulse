@@ -36,7 +36,8 @@ export function formatTokenCount(n: number | undefined): string {
   if (n == null) return '—'
   if (n < 1000) return String(n)
   if (n < 1_000_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`
-  return `${(n / 1_000_000).toFixed(2).replace(/\.?0+$/, '')}M`
+  if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(2).replace(/\.?0+$/, '')}M`
+  return `${(n / 1_000_000_000).toFixed(2).replace(/\.?0+$/, '')}B`
 }
 
 export function formatTokenCountWithUnit(n: number | undefined): string {

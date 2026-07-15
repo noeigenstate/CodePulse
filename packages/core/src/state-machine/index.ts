@@ -434,12 +434,59 @@ function mergeRateLimitWindow(
   patch: TokenRateLimitWindow | undefined,
 ): TokenRateLimitWindow | undefined {
   if (!patch) return current
+  if (!current) {
+    return {
+      ...(patch.usedPercent !== undefined ? { usedPercent: patch.usedPercent } : {}),
+      ...(patch.resetsAt !== undefined ? { resetsAt: patch.resetsAt } : {}),
+      ...(patch.windowMinutes !== undefined ? { windowMinutes: patch.windowMinutes } : {}),
+    }
+  }
+
+  const curResetMs = normalizeResetAtMs(current.resetsAt)
+  const patchResetMs = normalizeResetAtMs(patch.resetsAt)
+
+  // A newer billing window fully replaces the previous one (usage may drop to ~0).
+  if (patchResetMs != null && curResetMs != null && patchResetMs > curResetMs) {
+    return {
+      ...current,
+      ...(patch.usedPercent !== undefined ? { usedPercent: patch.usedPercent } : {}),
+      ...(patch.resetsAt !== undefined ? { resetsAt: patch.resetsAt } : {}),
+      ...(patch.windowMinutes !== undefined ? { windowMinutes: patch.windowMinutes } : {}),
+    }
+  }
+
+  // An older window must never clobber a newer one (stale rollout / hook race).
+  if (patchResetMs != null && curResetMs != null && patchResetMs < curResetMs) {
+    return current
+  }
+
+  // Same window (or missing resetsAt): account usage only rises until official reset.
+  // Exception: when the window is already expired, soft-reset may publish 0%.
+  const nowMs = Date.now()
+  const windowExpired =
+    (patchResetMs != null && patchResetMs <= nowMs) || (curResetMs != null && curResetMs <= nowMs)
+
+  let usedPercent = current.usedPercent
+  if (patch.usedPercent !== undefined) {
+    if (windowExpired || current.usedPercent === undefined) {
+      usedPercent = patch.usedPercent
+    } else {
+      usedPercent = Math.max(current.usedPercent, patch.usedPercent)
+    }
+  }
+
   return {
     ...current,
-    ...(patch.usedPercent !== undefined ? { usedPercent: patch.usedPercent } : {}),
+    ...(patch.usedPercent !== undefined ? { usedPercent } : {}),
     ...(patch.resetsAt !== undefined ? { resetsAt: patch.resetsAt } : {}),
     ...(patch.windowMinutes !== undefined ? { windowMinutes: patch.windowMinutes } : {}),
   }
+}
+
+/** Normalize resets_at that may be seconds or milliseconds. */
+function normalizeResetAtMs(resetsAt: number | undefined): number | undefined {
+  if (typeof resetsAt !== 'number' || !Number.isFinite(resetsAt)) return undefined
+  return resetsAt < 1_000_000_000_000 ? resetsAt * 1000 : resetsAt
 }
 
 /**

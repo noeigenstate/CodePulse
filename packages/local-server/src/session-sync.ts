@@ -264,10 +264,20 @@ export class SessionSyncService {
       }
     }
 
+    // Account weekly/5h quotas are global — never trust stale per-project rollouts.
+    // Prefer the most authoritative *non-Spark* snapshot: same window keeps the
+    // highest used% (usage only rises), not merely the file with the latest mtime.
+    // Spark files often have fresher mtimes but 0% on a different bucket — overlaying
+    // them used to make the main weekly bar flip to 0/2%.
+    const accountQuota = pickSharedCodexAccountQuota([...byCwd.values()])
+
     for (const { file, meta, token } of byCwd.values()) {
       const sessionId = meta.sessionId ?? sessionIdFromRolloutName(file.path)
       const cwd = meta.cwd!
-      const payloadToken = token ?? { accuracy: 'unknown' as const, contextWindow: 256_000 }
+      const payloadToken = withSharedCodexAccountQuota(
+        token ?? { accuracy: 'unknown' as const, contextWindow: 256_000 },
+        accountQuota?.token,
+      )
       const mapKey = `codex:${sessionId}`
       if (
         this.shouldSkipUnchanged(
@@ -289,7 +299,8 @@ export class SessionSyncService {
         cwd,
         model: meta.model,
         token: payloadToken,
-        tokenSourcePath: file.path,
+        // Prefer account quota source path so QuotaRefreshWatcher re-reads the freshest file.
+        tokenSourcePath: accountQuota?.path ?? file.path,
         now,
       })
       count += 1
@@ -715,6 +726,87 @@ function sessionIdFromRolloutName(file: string): string {
   const name = basename(file)
   const m = name.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i)
   return m?.[1] ?? name.replace(/\.jsonl$/i, '')
+}
+
+/**
+ * Context is per-project; rate limits are account-wide.
+ * Overlay the authoritative account quota onto each project's context snapshot so
+ * idle/stale rollouts cannot publish outdated weekly %.
+ */
+function withSharedCodexAccountQuota(
+  project: TokenPayload,
+  account: TokenPayload | undefined,
+): TokenPayload {
+  if (!account?.rateLimits) return project
+  return {
+    ...project,
+    rateLimits: account.rateLimits,
+    rateLimitId: account.rateLimitId ?? project.rateLimitId,
+    rateLimitName: account.rateLimitName ?? project.rateLimitName,
+    // Drop project-local bucket maps — they may carry stale Spark/main samples.
+    quotaBuckets: undefined,
+  }
+}
+
+type CodexQuotaRow = { file: RolloutFile; token?: TokenPayload }
+
+/**
+ * Choose one account-wide rate-limit snapshot to share across all live projects.
+ * - Ignore Spark/bengalfox buckets when a main `codex` sample exists.
+ * - Prefer later resetsAt (new window).
+ * - Within the same window, prefer higher used% (never go backwards).
+ * - mtime is only a tiebreaker.
+ */
+function pickSharedCodexAccountQuota(
+  rows: CodexQuotaRow[],
+): { token: TokenPayload; mtimeMs: number; path: string } | undefined {
+  const withLimits = rows.filter((row) => row.token?.rateLimits)
+  if (withLimits.length === 0) return undefined
+
+  const nonSpark = withLimits.filter((row) => !tokenLooksLikeSpark(row.token))
+  const pool = nonSpark.length > 0 ? nonSpark : withLimits
+
+  let best: { token: TokenPayload; mtimeMs: number; path: string } | undefined
+  for (const row of pool) {
+    const token = row.token!
+    const candidate = { token, mtimeMs: row.file.mtimeMs, path: row.file.path }
+    if (!best || compareAccountQuotaSnapshots(candidate, best) > 0) {
+      best = candidate
+    }
+  }
+  return best
+}
+
+/** Positive when `a` is a better account-wide snapshot than `b`. */
+function compareAccountQuotaSnapshots(
+  a: { token: TokenPayload; mtimeMs: number },
+  b: { token: TokenPayload; mtimeMs: number },
+): number {
+  const aSeven = a.token.rateLimits?.sevenDay
+  const bSeven = b.token.rateLimits?.sevenDay
+  const aFive = a.token.rateLimits?.fiveHour
+  const bFive = b.token.rateLimits?.fiveHour
+
+  const aReset = Math.max(normalizeResetAtMs(aSeven?.resetsAt), normalizeResetAtMs(aFive?.resetsAt))
+  const bReset = Math.max(normalizeResetAtMs(bSeven?.resetsAt), normalizeResetAtMs(bFive?.resetsAt))
+  if (aReset !== bReset) return aReset - bReset
+
+  const aUsed = Math.max(aSeven?.usedPercent ?? -1, aFive?.usedPercent ?? -1)
+  const bUsed = Math.max(bSeven?.usedPercent ?? -1, bFive?.usedPercent ?? -1)
+  if (aUsed !== bUsed) return aUsed - bUsed
+
+  return a.mtimeMs - b.mtimeMs
+}
+
+function tokenLooksLikeSpark(token: TokenPayload | undefined): boolean {
+  if (!token) return false
+  const s = `${token.rateLimitId ?? ''} ${token.rateLimitName ?? ''}`.toLowerCase()
+  return s.includes('spark') || s.includes('bengalfox')
+}
+
+function normalizeResetAtMs(resetsAt: number | undefined): number {
+  if (typeof resetsAt !== 'number' || !Number.isFinite(resetsAt)) return 0
+  return resetsAt < 1_000_000_000_000 ? resetsAt * 1000 : resetsAt
 }
 
 // ─── Claude Code ─────────────────────────────────────────────────────────────

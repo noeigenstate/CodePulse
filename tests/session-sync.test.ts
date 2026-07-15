@@ -526,6 +526,131 @@ test('SessionSyncService skips unchanged fingerprint on second scan', async () =
   }
 })
 
+test('SessionSyncService shares highest same-window weekly % across projects (not stale mtime)', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-quota-share-')
+  const sessions = join(home, 'sessions', '2026', '07', '15')
+  const futureReset = Math.floor(Date.now() / 1000) + 86_400
+  const staleId = '019f8000-aaaa-bbbb-cccc-ddddeeeeff01'
+  const freshId = '019f8000-aaaa-bbbb-cccc-ddddeeeeff02'
+  const sparkId = '019f8000-aaaa-bbbb-cccc-ddddeeeeff03'
+  const staleCwd = 'E:/work/stale-2pct'
+  const freshCwd = 'E:/work/fresh-35pct'
+  const sparkCwd = 'E:/work/spark-0pct'
+
+  await mkdir(sessions, { recursive: true })
+
+  async function writeRollout(
+    sessionId: string,
+    cwd: string,
+    usedPercent: number,
+    limitId: string,
+    limitName: string | null,
+    mtimeOffsetSec: number,
+  ) {
+    const file = join(sessions, `rollout-2026-07-15T12-00-00-${sessionId}.jsonl`)
+    await writeFile(
+      file,
+      [
+        JSON.stringify({
+          type: 'session_meta',
+          payload: { id: sessionId, cwd, model: 'gpt-5.3-codex' },
+        }),
+        JSON.stringify({
+          type: 'event_msg',
+          payload: {
+            type: 'token_count',
+            info: {
+              model_context_window: 256000,
+              last_token_usage: { input_tokens: 1000, output_tokens: 1, total_tokens: 1001 },
+            },
+            rate_limits: {
+              limit_id: limitId,
+              ...(limitName ? { limit_name: limitName } : {}),
+              primary: {
+                used_percent: usedPercent,
+                window_minutes: 10080,
+                resets_at: futureReset,
+              },
+            },
+          },
+        }),
+      ].join('\n'),
+      'utf8',
+    )
+    const t = new Date(Date.now() + mtimeOffsetSec * 1000)
+    await utimes(file, t, t)
+  }
+
+  // Freshest mtime is Spark 0% — must NOT win over main weekly 35%.
+  await writeRollout(staleId, staleCwd, 2, 'codex', null, -30)
+  await writeRollout(freshId, freshCwd, 35, 'codex', null, -10)
+  await writeRollout(sparkId, sparkCwd, 0, 'codex_bengalfox', 'GPT-5.3-Codex-Spark', 0)
+
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    codexHome: home,
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    codexProcessAlive: () => true,
+  })
+
+  try {
+    await sync.syncNow()
+    const agents = hub.snapshot().agents.filter((a) => a.agentType === 'codex')
+    assert.ok(agents.length >= 2, `expected multiple codex projects, got ${agents.length}`)
+    for (const agent of agents) {
+      // Shared main weekly — even the project whose own file only had 2%.
+      assert.equal(
+        agent.token?.rateLimits?.sevenDay?.usedPercent,
+        35,
+        `${agent.workspacePath} should show shared 35% weekly, not stale/spark`,
+      )
+    }
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('StatusHub does not let same-window weekly % go backwards from stale snapshots', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const future = Math.floor(Date.now() / 1000) + 86_400
+
+  hub.ingest({
+    id: 'high',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    cwd: 'E:/work/a',
+    timestamp: 100,
+    token: {
+      accuracy: 'estimated',
+      rateLimitId: 'codex',
+      rateLimits: {
+        sevenDay: { usedPercent: 35, resetsAt: future, windowMinutes: 10_080 },
+      },
+    },
+  })
+  hub.ingest({
+    id: 'stale-low',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    cwd: 'E:/work/a',
+    timestamp: 200,
+    token: {
+      accuracy: 'estimated',
+      rateLimitId: 'codex',
+      rateLimits: {
+        sevenDay: { usedPercent: 2, resetsAt: future, windowMinutes: 10_080 },
+      },
+    },
+  })
+
+  const codex = hub.snapshot().agents.find((a) => a.agentType === 'codex')
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 35)
+})
+
 async function mkdtempJoin(prefix: string): Promise<string> {
   const { mkdtemp } = await import('node:fs/promises')
   return mkdtemp(join(tmpdir(), prefix))

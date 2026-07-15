@@ -46,10 +46,21 @@ if (officialContextWindow) {
   }
 }
 
-// 尽力转发 —— 不让它把状态行拖慢超过约 600 毫秒。
+// 尽力转发：保留 Claude 下发的 rate_limits（额度），并合并上下文补丁。
+// 超时略放宽，避免本机认证 + 写盘后 600ms 内丢额度快照。
 await postEvent(
-  { source: 'claude_code', channel: 'statusline', ...data, ...tokenPatch },
-  { timeoutMs: 600 },
+  {
+    source: 'claude_code',
+    channel: 'statusline',
+    ...data,
+    ...tokenPatch,
+    // Explicitly re-assert rate_limits after tokenPatch merge (tokenPatch has no rate_limits).
+    ...(data?.rate_limits != null ? { rate_limits: data.rate_limits } : {}),
+    ...(data?.rate_limits_available != null
+      ? { rate_limits_available: data.rate_limits_available }
+      : {}),
+  },
+  { timeoutMs: 1_500 },
 )
 
 const model = data?.model?.display_name ?? data?.model?.id ?? 'Claude'

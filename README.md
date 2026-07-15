@@ -7,7 +7,7 @@
 Know at a glance whether Codex, Claude Code, and Grok are working, waiting on
 you, finished, or stuck — without alt-tabbing back to a terminal.
 
-[![status](https://img.shields.io/badge/status-v1.2.1-brightgreen)](#features)
+[![status](https://img.shields.io/badge/status-v1.2.2-brightgreen)](#features)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue)](#download)
 [![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#development)

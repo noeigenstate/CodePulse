@@ -8,6 +8,8 @@ import { cleanupAgents, configureAgents } from '@codepulse/local-server'
 test('agent auto configuration creates missing Claude and Codex config files', async () => {
   const home = await mkdtemp(join(tmpdir(), 'codepulse-agent-config-'))
   const hookBinDir = join(home, 'CodePulse App', 'resources', 'codepulse-hooks', 'bin')
+  // Agent configs must point at stable ~/.codepulse/hooks/bin, not the install drive.
+  const stableBin = join(home, '.codepulse', 'hooks', 'bin')
 
   const result = await configureAgents({ homeDir: home, hookBinDir })
 
@@ -15,20 +17,27 @@ test('agent auto configuration creates missing Claude and Codex config files', a
   assert.equal(result.codex.changed, true)
   assert.equal(result.grok.changed, true)
 
+  const runtime = JSON.parse(await readFile(join(home, '.codepulse', 'hook-runtime.json'), 'utf8'))
+  assert.equal(runtime.hookBinDir, hookBinDir)
+  assert.match(
+    await readFile(join(stableBin, 'claude-statusline.js'), 'utf8'),
+    /hook-runtime\.json/,
+  )
+
   const claudeSettings = JSON.parse(await readFile(join(home, '.claude', 'settings.json'), 'utf8'))
   assert.equal(
     claudeSettings.hooks.SessionStart[0].hooks[0].command,
-    `node "${join(hookBinDir, 'claude-hook.js')}"`,
+    `node "${join(stableBin, 'claude-hook.js')}"`,
   )
   assert.equal(
     claudeSettings.statusLine.command,
-    `node "${join(hookBinDir, 'claude-statusline.js')}"`,
+    `node "${join(stableBin, 'claude-statusline.js')}"`,
   )
 
   const codexHooks = JSON.parse(await readFile(join(home, '.codex', 'hooks.json'), 'utf8'))
   assert.equal(
     codexHooks.hooks.Stop[0].hooks[0].command,
-    `node "${join(hookBinDir, 'codex-hook.js')}"`,
+    `node "${join(stableBin, 'codex-hook.js')}"`,
   )
 
   const codexConfig = await readFile(join(home, '.codex', 'config.toml'), 'utf8')
@@ -39,7 +48,7 @@ test('agent auto configuration creates missing Claude and Codex config files', a
   )
   assert.equal(
     grokHooks.hooks.Stop[0].hooks[0].command,
-    `node "${join(hookBinDir, 'grok-hook.js')}"`,
+    `node "${join(stableBin, 'grok-hook.js')}"`,
   )
 })
 
@@ -113,13 +122,14 @@ test('agent auto configuration is idempotent and preserves non-CodePulse hooks',
   const claudeStopHooks = claudeSettings.hooks.Stop[0].hooks.map(
     (hook: { command: string }) => hook.command,
   )
+  const stableBin = join(home, '.codepulse', 'hooks', 'bin')
   assert.deepEqual(claudeStopHooks, [
     'echo keep-me',
-    `node "${join(hookBinDir, 'claude-hook.js')}"`,
+    `node "${join(stableBin, 'claude-hook.js')}"`,
   ])
   assert.equal(
     claudeSettings.statusLine.command,
-    `node "${join(hookBinDir, 'claude-statusline.js')}"`,
+    `node "${join(stableBin, 'claude-statusline.js')}"`,
   )
 
   const codexHooks = JSON.parse(await readFile(join(codexDir, 'hooks.json'), 'utf8'))
@@ -128,7 +138,7 @@ test('agent auto configuration is idempotent and preserves non-CodePulse hooks',
   )
   assert.deepEqual(codexStopHooks, [
     'echo keep-me-too',
-    `node "${join(hookBinDir, 'codex-hook.js')}"`,
+    `node "${join(stableBin, 'codex-hook.js')}"`,
   ])
 
   const codexConfig = await readFile(join(codexDir, 'config.toml'), 'utf8')
@@ -173,7 +183,7 @@ test('Claude hook configuration does not append global hooks into matcher groups
   )
   assert.equal(
     preToolUse.find((group: { matcher?: string }) => group.matcher == null).hooks[0].command,
-    `node "${join(hookBinDir, 'claude-hook.js')}"`,
+    `node "${join(home, '.codepulse', 'hooks', 'bin', 'claude-hook.js')}"`,
   )
 })
 

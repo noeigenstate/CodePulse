@@ -5,7 +5,15 @@
  * @module adapters/claude-code
  */
 import type { AgentEventInput, AgentEventType } from '@codepulse/shared'
-import { asRecord, pickNumber, pickRateLimits, pickString, preview } from '../util.js'
+import {
+  asRecord,
+  pickNumber,
+  pickRateLimitId,
+  pickRateLimitName,
+  pickRateLimits,
+  pickString,
+  preview,
+} from '../util.js'
 
 /**
  * 把 Claude Code 的 hook 载荷映射为 {@link AgentEventInput}。
@@ -215,6 +223,10 @@ export function fromClaudeStatusLine(raw: unknown): AgentEventInput | null {
     pickNumber(usageSource, 'context_used_percent', 'contextUsedPercent') ??
     percentOf(fallbackContextInput, contextWindowSize)
 
+  const rateLimits = pickRateLimits(r)
+  const rateLimitId = pickRateLimitId(r)
+  const rateLimitName = pickRateLimitName(r)
+
   return {
     source: 'claude_code',
     eventType: 'token_snapshot',
@@ -236,7 +248,9 @@ export function fromClaudeStatusLine(raw: unknown): AgentEventInput | null {
         pickNumber(contextUsage ?? {}, 'cache_creation_input_tokens', 'cacheCreationInputTokens'),
       ),
       reasoningOutput: pickNumber(usageSource, 'reasoning_output_tokens', 'reasoningOutputTokens'),
-      rateLimits: pickRateLimits(r),
+      rateLimits,
+      rateLimitId,
+      rateLimitName,
       costUsd: cost ? pickNumber(cost, 'total_cost_usd', 'total_cost') : pickNumber(r, 'cost_usd'),
       accuracy: 'exact',
     },

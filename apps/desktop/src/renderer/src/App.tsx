@@ -763,8 +763,27 @@ function PanelQuotaMeter({
   const now = useNow()
   const showFiveHour = showsFiveHourQuota(agentType)
 
-  // No quota yet — keep a single waiting weekly bar so the pane layout stays stable.
+  // No quota yet — keep waiting bars so pane layout stays stable.
+  // Claude uses 5h + weekly; Codex/Grok only weekly.
   if (meters.length === 0) {
+    if (showFiveHour) {
+      return (
+        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
+          <TokenMeter
+            brand={brand}
+            label={copy.fiveHourQuota}
+            percent={undefined}
+            detail={copy.waitingQuota}
+          />
+          <TokenMeter
+            brand={brand}
+            label={copy.weeklyQuota}
+            percent={undefined}
+            detail={copy.waitingQuota}
+          />
+        </div>
+      )
+    }
     return (
       <div className="grid grid-cols-1 gap-2">
         <TokenMeter

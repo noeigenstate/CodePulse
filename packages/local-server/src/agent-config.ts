@@ -49,6 +49,11 @@ export interface AgentConfigurationOptions {
   env?: Record<string, string | undefined>
   homeDir?: string
   hookBinDir: string
+  /**
+   * 本机 API 共享密钥。写入 hook 启动命令的环境变量，
+   * 避免 local-server 开启认证后 statusline/hook 401 导致额度不更新。
+   */
+  localAuthToken?: string
 }
 
 export interface AgentConfigurationStatus {
@@ -80,13 +85,87 @@ interface HookCommand {
   [key: string]: unknown
 }
 
+/**
+ * 将当前安装目录的 hook 发布为用户主目录下的稳定入口：
+ * `~/.codepulse/hooks/bin/*.js` + `~/.codepulse/hook-runtime.json`
+ *
+ * Claude/Codex/Grok 配置只指向稳定路径；CodePulse 每次启动更新 runtime
+ * 指针，换盘/重装后无需手工改 CLI 配置。
+ */
+export async function publishStableHookLaunchers(
+  options: AgentConfigurationOptions,
+): Promise<string> {
+  const home = options.homeDir ?? homedir()
+  const stableBin = join(home, '.codepulse', 'hooks', 'bin')
+  const runtimePath = join(home, '.codepulse', 'hook-runtime.json')
+  const realBin = options.hookBinDir
+
+  await mkdir(stableBin, { recursive: true })
+  await writeText(
+    runtimePath,
+    `${JSON.stringify(
+      {
+        hookBinDir: realBin,
+        updatedAt: Date.now(),
+      },
+      null,
+      2,
+    )}\n`,
+  )
+
+  for (const name of HOOK_LAUNCHER_NAMES) {
+    await writeText(join(stableBin, name), buildHookLauncherScript(name))
+  }
+  return stableBin
+}
+
+const HOOK_LAUNCHER_NAMES = [
+  'claude-hook.js',
+  'claude-statusline.js',
+  'codex-hook.js',
+  'grok-hook.js',
+] as const
+
+/** Tiny ESM shim: read sibling hook-runtime.json and run the real install script. */
+function buildHookLauncherScript(scriptName: string): string {
+  // Self-contained: runtime lives at ~/.codepulse/hook-runtime.json next to hooks/.
+  // Resolve relative to this file so tests can use an isolated homeDir.
+  return `#!/usr/bin/env node
+import { spawn } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const here = dirname(fileURLToPath(import.meta.url))
+const runtimePath = join(here, '..', '..', 'hook-runtime.json')
+let hookBinDir
+try {
+  hookBinDir = JSON.parse(readFileSync(runtimePath, 'utf8')).hookBinDir
+} catch {
+  console.error('[codepulse] missing hook-runtime.json — open CodePulse once to repair hooks')
+  process.exit(0)
+}
+const target = join(String(hookBinDir), ${JSON.stringify(scriptName)})
+const child = spawn(process.execPath, [target], { stdio: 'inherit' })
+child.on('error', () => process.exit(0))
+child.on('exit', (code, signal) => {
+  if (signal) process.exit(0)
+  process.exit(code ?? 0)
+})
+`
+}
+
 export async function configureAgents(
   options: AgentConfigurationOptions,
 ): Promise<AgentConfigurationResult> {
+  // Publish stable launchers first so agent configs never hard-code install drive.
+  const stableBin = await publishStableHookLaunchers(options)
+  const resolved = { ...options, hookBinDir: stableBin }
+
   const [claude, codex, grok] = await Promise.all([
-    configureClaudeAgent(options),
-    configureCodexAgent(options),
-    configureGrokAgent(options),
+    configureClaudeAgent(resolved),
+    configureCodexAgent(resolved),
+    configureGrokAgent(resolved),
   ])
   return { claude, codex, grok }
 }
@@ -106,8 +185,11 @@ export async function configureClaudeAgent(
   options: AgentConfigurationOptions,
 ): Promise<AgentConfigurationStatus> {
   const path = claudeConfigPath(options)
-  const command = nodeCommand(join(options.hookBinDir, 'claude-hook.js'))
-  const statusLineCommand = nodeCommand(join(options.hookBinDir, 'claude-statusline.js'))
+  const command = nodeCommand(join(options.hookBinDir, 'claude-hook.js'), options.localAuthToken)
+  const statusLineCommand = nodeCommand(
+    join(options.hookBinDir, 'claude-statusline.js'),
+    options.localAuthToken,
+  )
   try {
     const before = await readTextIfExists(path)
     const settings = parseJsonObject(before)
@@ -171,7 +253,7 @@ export async function configureCodexAgent(
 ): Promise<AgentConfigurationStatus> {
   const hooksPath = codexHooksPath(options)
   const configPath = codexConfigPath(options)
-  const command = nodeCommand(join(options.hookBinDir, 'codex-hook.js'))
+  const command = nodeCommand(join(options.hookBinDir, 'codex-hook.js'), options.localAuthToken)
   try {
     const beforeHooks = await readTextIfExists(hooksPath)
     const hooksJson = parseJsonObject(beforeHooks)
@@ -424,8 +506,22 @@ function hookMatcherMatches(groupMatcher: unknown, matcher: string | undefined):
   return normalizedGroupMatcher === matcher
 }
 
-function nodeCommand(scriptPath: string): string {
-  return `node ${quoteArg(scriptPath)}`
+/**
+ * Build the shell command that Claude/Codex/Grok will execute for hooks.
+ *
+ * Auth token is intentionally NOT embedded here: nested `cmd /c "… node "path""`
+ * quoting breaks on Windows and prevents statusline/hooks from running at all
+ * (Claude quota then stuck on「等待命令行同步额度」while disk sync still works).
+ *
+ * Hooks read `~/.codepulse/local-auth` via packages/hooks/lib/post.js instead.
+ * `localAuthToken` is accepted for API compatibility / future non-Windows use
+ * but only injected on non-Windows where `VAR=value cmd` is reliable.
+ */
+function nodeCommand(scriptPath: string, localAuthToken?: string): string {
+  const run = `node ${quoteArg(scriptPath)}`
+  const token = localAuthToken?.trim()
+  if (!token || process.platform === 'win32') return run
+  return `CODEPULSE_TOKEN=${token} ${run}`
 }
 
 function quoteArg(value: string): string {
@@ -436,9 +532,11 @@ function isCodePulseCommand(command: string, name: string): boolean {
   const lower = command.toLowerCase().replace(/\\/g, '/')
   return (
     lower.includes(name.toLowerCase()) &&
-    lower.includes('codepulse') &&
+    (lower.includes('codepulse') || lower.includes('/.codepulse/hooks/')) &&
     (lower.includes('/codepulse-hooks/') ||
       lower.includes('/packages/hooks/') ||
+      lower.includes('/.codepulse/hooks/') ||
+      lower.includes('/hooks/bin/') ||
       lower.includes('/hooks/'))
   )
 }
@@ -473,7 +571,7 @@ export async function configureGrokAgent(
   options: AgentConfigurationOptions,
 ): Promise<AgentConfigurationStatus> {
   const path = grokHooksPath(options)
-  const command = nodeCommand(join(options.hookBinDir, 'grok-hook.js'))
+  const command = nodeCommand(join(options.hookBinDir, 'grok-hook.js'), options.localAuthToken)
   try {
     const before = await readTextIfExists(path)
     const hooksJson = parseJsonObject(before)

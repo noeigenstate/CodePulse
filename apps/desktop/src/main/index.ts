@@ -418,7 +418,12 @@ function trayStatusKey(snapshot: StatusSnapshot): string {
 }
 
 async function configureLocalAgents(): Promise<void> {
-  const result = await configureAgents({ hookBinDir: hookBinDir() })
+  // Prefer the token the local server is actually enforcing; fall back to disk.
+  const localAuthToken = server?.authToken
+  const result = await configureAgents({
+    hookBinDir: hookBinDir(),
+    ...(localAuthToken ? { localAuthToken } : {}),
+  })
   for (const [agent, status] of Object.entries(result)) {
     if (status.error) {
       console.error(`[codepulse] failed to configure ${agent}`, status.error)

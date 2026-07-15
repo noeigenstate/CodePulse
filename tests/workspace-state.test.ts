@@ -1528,6 +1528,54 @@ test('latest quota token prefers the active model quota when model sessions over
   assert.equal(quota?.rateLimits?.sevenDay?.usedPercent, 12)
 })
 
+test('collectQuotaMeters prefers higher same-window weekly % over active stale session', () => {
+  const future = Math.floor(Date.now() / 1000) + 86_400
+  const meters = collectQuotaMeters(
+    [
+      {
+        agentType: 'codex',
+        state: TurnState.TOOL_RUNNING,
+        toolCallCount: 1,
+        needPermission: false,
+        needUserInput: false,
+        activity: 'running',
+        lastEventAt: 900,
+        unread: false,
+        workspacePath: 'E:/work/active-stale',
+        model: 'gpt-5.3-codex',
+        token: {
+          accuracy: 'estimated',
+          rateLimitId: 'codex',
+          rateLimits: {
+            sevenDay: { usedPercent: 2, resetsAt: future, windowMinutes: 10_080 },
+          },
+        },
+      },
+      {
+        agentType: 'codex',
+        state: TurnState.IDLE,
+        toolCallCount: 0,
+        needPermission: false,
+        needUserInput: false,
+        lastEventAt: 100,
+        unread: false,
+        workspacePath: 'E:/work/idle-correct',
+        model: 'gpt-5.3-codex',
+        token: {
+          accuracy: 'estimated',
+          rateLimitId: 'codex',
+          rateLimits: {
+            sevenDay: { usedPercent: 35, resetsAt: future, windowMinutes: 10_080 },
+          },
+        },
+      },
+    ],
+    'codex',
+  )
+
+  assert.equal(meters[0]?.token.rateLimits?.sevenDay?.usedPercent, 35)
+})
+
 test('latest quota token selects the matching bucket when one token carries multiple Codex buckets', () => {
   const quota = latestQuotaToken(
     [

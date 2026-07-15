@@ -170,6 +170,12 @@ export class QuotaRefreshWatcher {
       return
     }
 
+    // Never re-publish a strictly worse same-window snapshot from a stale rollout.
+    // Hub merge is also monotonic, but skipping avoids lastEventAt thrash across agents.
+    if (isDominatedByCurrentHubQuota(this.hub, binding, token)) {
+      return
+    }
+
     this.hub.ingest({
       id: `quota-refresh:${binding.source}:${workspaceKey(binding.workspacePath ?? binding.cwd)}:${this.now()}`,
       source: binding.source,
@@ -184,6 +190,74 @@ export class QuotaRefreshWatcher {
       timestamp: this.now(),
     })
   }
+}
+
+/**
+ * True when every window on `incoming` is the same resetsAt as some live codex
+ * agent but at a strictly lower used% — classic stale-rollout noise.
+ */
+function isDominatedByCurrentHubQuota(
+  hub: StatusHub,
+  binding: BoundQuotaSource,
+  incoming: TokenPayload,
+): boolean {
+  const next = incoming.rateLimits
+  if (!next) return false
+
+  const agents = hub.snapshot().agents.filter((agent) => agent.agentType === 'codex')
+  if (agents.length === 0) return false
+
+  // Prefer matching the same workspace/session when present.
+  const scoped =
+    agents.find(
+      (agent) =>
+        binding.externalSessionId &&
+        agent.externalSessionId &&
+        agent.externalSessionId === binding.externalSessionId,
+    ) ??
+    agents.find((agent) => {
+      const key = workspaceKey(binding.workspacePath ?? binding.cwd)
+      return key && workspaceKey(agent.workspacePath) === key
+    })
+
+  const pool = scoped ? [scoped, ...agents] : agents
+  for (const agent of pool) {
+    const cur = agent.token?.rateLimits
+    if (!cur) continue
+    if (rateLimitsDominate(cur, next)) return true
+  }
+  return false
+}
+
+/** True when `current` is at least as high as `incoming` on every shared *active* window. */
+function rateLimitsDominate(
+  current: NonNullable<TokenPayload['rateLimits']>,
+  incoming: NonNullable<TokenPayload['rateLimits']>,
+  nowMs = Date.now(),
+): boolean {
+  let compared = false
+  for (const key of ['fiveHour', 'sevenDay'] as const) {
+    const c = current[key]
+    const n = incoming[key]
+    if (n?.usedPercent === undefined) continue
+    if (!c) return false
+    if (!sameResetAtValue(c.resetsAt, n.resetsAt)) return false
+    // Expired windows may soft-reset to 0% — never treat that as "dominated".
+    const resetRaw = n.resetsAt ?? c.resetsAt
+    if (typeof resetRaw === 'number' && Number.isFinite(resetRaw)) {
+      if (normalizeResetAt(resetRaw) <= nowMs) return false
+    }
+    compared = true
+    if ((c.usedPercent ?? 0) < (n.usedPercent ?? 0)) return false
+  }
+  return compared
+}
+
+function sameResetAtValue(a: number | undefined, b: number | undefined): boolean {
+  if (a == null || b == null) return false
+  const am = a < 1_000_000_000_000 ? a * 1000 : a
+  const bm = b < 1_000_000_000_000 ? b * 1000 : b
+  return am === bm
 }
 
 export async function readCodexQuotaTokenFromFile(

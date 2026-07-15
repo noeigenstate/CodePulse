@@ -116,19 +116,21 @@ export function collectQuotaMeters(
 ): QuotaMeterSource[] {
   const byId = new Map<string, QuotaMeterSource>()
 
-  for (const agent of agents) {
-    if (agent.agentType !== agentType) continue
-    for (const candidate of quotaCandidatesForAgent(agent)) {
-      const id = quotaMeterId(candidate.token)
-      const previous = byId.get(id)
-      if (!previous || candidate.updatedAt >= previous.updatedAt) {
-        byId.set(id, {
-          id,
-          token: candidate.token,
-          updatedAt: candidate.updatedAt,
-        })
-      }
-    }
+  // Best-first so equal bucket timestamps cannot let idle/stale sessions overwrite
+  // the active turn's account weekly % (Codex rate limits are account-wide).
+  const ranked = agents
+    .filter((agent) => agent.agentType === agentType)
+    .flatMap((agent) => quotaCandidatesForAgent(agent))
+    .sort(compareQuotaCandidates)
+
+  for (const candidate of ranked) {
+    const id = quotaMeterId(candidate.token)
+    if (byId.has(id)) continue
+    byId.set(id, {
+      id,
+      token: candidate.token,
+      updatedAt: candidate.updatedAt,
+    })
   }
 
   let meters = [...byId.values()]
@@ -364,10 +366,51 @@ function quotaCandidateFromBucket(
 }
 
 function compareQuotaCandidates(a: QuotaCandidate, b: QuotaCandidate): number {
+  // Same account window: higher used% is always more recent truth (usage only rises).
+  // Rank this before active/lastEventAt so an idle project at 35% beats an active
+  // fork still carrying a stale 2% snapshot from an older rollout.
+  const sameWindow = compareSameWindowPressure(a.token, b.token, a.agent.agentType)
+  if (sameWindow !== 0) return sameWindow
+
+  const aActive = isActiveState(a.agent.state) ? 1 : 0
+  const bActive = isActiveState(b.agent.state) ? 1 : 0
   return (
+    bActive - aActive ||
+    b.agent.lastEventAt - a.agent.lastEventAt ||
     b.updatedAt - a.updatedAt ||
     quotaPressure(b.token, b.agent.agentType) - quotaPressure(a.token, a.agent.agentType)
   )
+}
+
+/**
+ * When two candidates share the same resetsAt on a window, prefer higher used%.
+ * Array.sort: negative ⇒ `a` before `b` (higher usage first).
+ */
+function compareSameWindowPressure(
+  a: TokenPayload,
+  b: TokenPayload,
+  agentType: AgentType,
+): number {
+  const aWindows = visibleRateLimitWindows(a, agentType)
+  const bWindows = visibleRateLimitWindows(b, agentType)
+  for (const key of ['sevenDay', 'fiveHour'] as const) {
+    const aw = aWindows[key]
+    const bw = bWindows[key]
+    if (!aw || !bw) continue
+    if (!sameResetAt(aw.resetsAt, bw.resetsAt)) continue
+    const ap = normalizedPercent(aw.usedPercent)
+    const bp = normalizedPercent(bw.usedPercent)
+    if (ap < 0 || bp < 0) continue
+    if (ap !== bp) return bp - ap
+  }
+  return 0
+}
+
+function sameResetAt(a: number | undefined, b: number | undefined): boolean {
+  if (a == null || b == null) return false
+  const am = a < 1_000_000_000_000 ? a * 1000 : a
+  const bm = b < 1_000_000_000_000 ? b * 1000 : b
+  return am === bm
 }
 
 function quotaPressure(token: TokenPayload | undefined, agentType: AgentType): number {

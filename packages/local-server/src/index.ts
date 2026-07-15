@@ -158,6 +158,7 @@ export {
   cleanupClaudeAgent,
   cleanupCodexAgent,
   cleanupGrokAgent,
+  publishStableHookLaunchers,
   type AgentConfigurationOptions,
   type AgentConfigurationResult,
   type AgentConfigurationStatus,

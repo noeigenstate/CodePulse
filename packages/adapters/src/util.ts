@@ -76,7 +76,12 @@ export function pickRateLimits(raw: Record<string, unknown>): TokenPayload['rate
   if (!rateLimits) return undefined
 
   const explicitFive = readRateLimitWindow(rateLimits.five_hour ?? rateLimits.fiveHour)
-  const explicitSeven = readRateLimitWindow(rateLimits.seven_day ?? rateLimits.sevenDay)
+  // Claude may only fill model-family weekly windows (opus/sonnet) while seven_day is null.
+  const explicitSeven =
+    readRateLimitWindow(rateLimits.seven_day ?? rateLimits.sevenDay) ??
+    readRateLimitWindow(rateLimits.seven_day_opus ?? rateLimits.sevenDayOpus) ??
+    readRateLimitWindow(rateLimits.seven_day_sonnet ?? rateLimits.sevenDaySonnet) ??
+    readRateLimitWindow(rateLimits.seven_day_oauth_apps ?? rateLimits.sevenDayOauthApps)
   if (explicitFive || explicitSeven) {
     return { fiveHour: explicitFive, sevenDay: explicitSeven }
   }

@@ -4,6 +4,7 @@
  * 只同步「用户正从这个项目开着 CLI」的槽位，不把磁盘上沉寂/历史项目拉出来：
  * - Grok：仅 `active_sessions.json` 且进程仍存活
  * - Codex：仅近期仍在写入的 rollout（CLI 开着才会持续写盘），且本机有 codex 进程
+ * - Claude：仅 `~/.claude/sessions/{pid}.json` 且 pid 仍存活；上下文从 projects transcript 尾部读取
  *
  * 其它：启动 await 首扫、稳态轮询、目录监听、指纹增量 ingest。
  *
@@ -41,24 +42,31 @@ const WATCH_DEBOUNCE_MS = 600
 /** 指纹未变时仍定期刷新 lastEventAt，避免 IDLE 槽位被 hub 5min 回收。 */
 const KEEPALIVE_MS = 2 * 60_000
 const GROK_BILLING_MSG = 'billing: fetched credits config'
+const CLAUDE_TRANSCRIPT_TAIL = 512 * 1024
+const DEFAULT_CLAUDE_CONTEXT_WINDOW =
+  pickNumberEnv(process.env.CODEPULSE_CONTEXT_WINDOW) ?? 200_000
 
 export interface SessionSyncOptions {
   hub: StatusHub
   codexHome?: string
   grokHome?: string
+  claudeHome?: string
   now?: () => number
   /** 测试时可关闭文件监听 */
   disableWatch?: boolean
   /** 测试注入：是否视为本机有 Codex CLI 进程 */
   codexProcessAlive?: () => boolean | Promise<boolean>
-  /** 测试注入：Grok active_sessions 的 pid 是否存活 */
+  /** 测试注入：Grok/Claude session 的 pid 是否存活 */
   isPidAlive?: (pid: number) => boolean
 }
+
+type SyncSource = 'codex' | 'grok' | 'claude_code'
 
 export class SessionSyncService {
   private readonly hub: StatusHub
   private readonly codexHome: string
   private readonly grokHome: string
+  private readonly claudeHome: string
   private readonly now: () => number
   private readonly disableWatch: boolean
   private readonly codexProcessAlive: () => boolean | Promise<boolean>
@@ -82,6 +90,8 @@ export class SessionSyncService {
     this.hub = options.hub
     this.codexHome = options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex')
     this.grokHome = options.grokHome ?? process.env.GROK_HOME ?? join(homedir(), '.grok')
+    this.claudeHome =
+      options.claudeHome ?? process.env.CLAUDE_HOME ?? join(homedir(), '.claude')
     this.now = options.now ?? Date.now
     this.disableWatch = options.disableWatch ?? false
     this.codexProcessAlive = options.codexProcessAlive ?? (() => isCliProcessAlive('codex'))
@@ -159,6 +169,8 @@ export class SessionSyncService {
       join(this.grokHome, 'sessions'),
       join(this.grokHome, 'active_sessions.json'),
       join(this.grokHome, 'logs'),
+      join(this.claudeHome, 'sessions'),
+      join(this.claudeHome, 'projects'),
     ]
     for (const root of roots) {
       try {
@@ -193,11 +205,15 @@ export class SessionSyncService {
     this.running = true
     const t0 = this.now()
     try {
-      const [codexCount, grokCount] = await Promise.all([this.syncCodex(), this.syncGrok()])
+      const [codexCount, grokCount, claudeCount] = await Promise.all([
+        this.syncCodex(),
+        this.syncGrok(),
+        this.syncClaude(),
+      ])
       const elapsed = this.now() - t0
       if (reason !== 'steady' || this.now() - this.lastLogAt > 60_000) {
         console.log(
-          `[codepulse] session-sync (${reason}): codex=${codexCount} grok=${grokCount} in ${elapsed}ms`,
+          `[codepulse] session-sync (${reason}): codex=${codexCount} grok=${grokCount} claude=${claudeCount} in ${elapsed}ms`,
         )
         this.lastLogAt = this.now()
       }
@@ -366,12 +382,87 @@ export class SessionSyncService {
   }
 
   /**
+   * Claude Code：`~/.claude/sessions/{pid}.json` 列出当前交互会话。
+   * 仅同步 pid 仍存活的条目；上下文从 projects transcript 尾部读取。
+   */
+  private async syncClaude(): Promise<number> {
+    const now = this.now()
+    const active = await readClaudeActiveSessions(this.claudeHome)
+    let count = 0
+    const byCwd = new Map<
+      string,
+      { sessionId: string; cwd: string; updatedAt: number; pid?: number }
+    >()
+
+    for (const row of active) {
+      if (row.pid != null && !this.pidAlive(row.pid)) continue
+      // Prefer freshest session per project root.
+      const key = normalizePathKey(row.cwd)
+      const prev = byCwd.get(key)
+      if (!prev || row.updatedAt >= prev.updatedAt) {
+        byCwd.set(key, row)
+      }
+    }
+
+    for (const row of byCwd.values()) {
+      if (await this.ingestClaudeSession(row.sessionId, row.cwd, now, row.updatedAt)) {
+        count += 1
+      }
+    }
+    return count
+  }
+
+  private async ingestClaudeSession(
+    sessionId: string,
+    cwd: string,
+    now: number,
+    updatedAt: number,
+  ): Promise<boolean> {
+    try {
+      const transcript = await findClaudeTranscript(this.claudeHome, sessionId)
+      const usage = transcript
+        ? await readClaudeTranscriptUsage(transcript)
+        : undefined
+      const token = claudeUsageToToken(usage) ?? { accuracy: 'unknown' as const }
+      const model = usage?.model
+      const mapKey = `claude_code:${sessionId}`
+      if (
+        this.shouldSkipUnchanged(
+          mapKey,
+          'claude_code',
+          sessionId,
+          cwd,
+          updatedAt,
+          token,
+          model,
+        )
+      ) {
+        return false
+      }
+
+      this.ingestHydrate({
+        source: 'claude_code',
+        sessionId,
+        cwd,
+        model,
+        token,
+        tokenSourcePath: transcript,
+        now,
+      })
+      return true
+    } catch (err) {
+      console.error('[codepulse] session-sync claude failed', sessionId, err)
+      return false
+    }
+  }
+
+  /**
    * Skip only when data is unchanged, the hub still has the slot, and a recent
    * keep-alive already refreshed lastEventAt. Otherwise re-ingest.
    */
   private shouldSkipUnchanged(
     mapKey: string,
-    source: 'codex' | 'grok',
+    source: SyncSource,
     sessionId: string,
     cwd: string,
     mtimeMs: number,
@@ -393,7 +484,7 @@ export class SessionSyncService {
     return true
   }
 
-  private hubHasSession(source: 'codex' | 'grok', sessionId: string): boolean {
+  private hubHasSession(source: SyncSource, sessionId: string): boolean {
     return this.hub
       .snapshot()
       .agents.some((a) => a.agentType === source && a.externalSessionId === sessionId)
@@ -404,7 +495,7 @@ export class SessionSyncService {
    * Later: token_snapshot only (avoids markContextStale on every poll).
    */
   private ingestHydrate(args: {
-    source: 'codex' | 'grok'
+    source: SyncSource
     sessionId: string
     cwd: string
     model?: string
@@ -641,6 +732,169 @@ function sessionIdFromRolloutName(file: string): string {
   const name = basename(file)
   const m = name.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i)
   return m?.[1] ?? name.replace(/\.jsonl$/i, '')
+}
+
+// ─── Claude Code ─────────────────────────────────────────────────────────────
+
+interface ClaudeActiveSession {
+  sessionId: string
+  cwd: string
+  pid?: number
+  updatedAt: number
+}
+
+/**
+ * Claude Code writes one `{pid}.json` per interactive process under `~/.claude/sessions`.
+ * Fields: pid, sessionId, cwd, status, updatedAt, …
+ */
+async function readClaudeActiveSessions(claudeHome: string): Promise<ClaudeActiveSession[]> {
+  const root = join(claudeHome, 'sessions')
+  let names: string[]
+  try {
+    names = await readdir(root)
+  } catch {
+    return []
+  }
+  const out: ClaudeActiveSession[] = []
+  for (const name of names) {
+    if (!name.endsWith('.json')) continue
+    try {
+      const raw = JSON.parse(await readFile(join(root, name), 'utf8')) as Record<string, unknown>
+      const sessionId = stringVal(raw.sessionId) ?? stringVal(raw.session_id)
+      const cwd = stringVal(raw.cwd)
+      if (!sessionId || !cwd) continue
+      const pid = num(raw.pid) ?? num(basename(name).replace(/\.json$/i, ''))
+      const updatedAt = num(raw.updatedAt) ?? num(raw.statusUpdatedAt) ?? 0
+      out.push({ sessionId, cwd, pid, updatedAt })
+    } catch {
+      // ignore corrupt session files
+    }
+  }
+  return out
+}
+
+/** Locate session transcript under claudeHome/projects by session id. */
+async function findClaudeTranscript(
+  claudeHome: string,
+  sessionId: string,
+): Promise<string | undefined> {
+  const projectsRoot = join(claudeHome, 'projects')
+  const target = `${sessionId}.jsonl`
+  return walkFindFile(projectsRoot, target, 0)
+}
+
+async function walkFindFile(
+  dir: string,
+  fileName: string,
+  depth: number,
+): Promise<string | undefined> {
+  if (depth > 4) return undefined
+  let entries
+  try {
+    entries = await readdir(dir, { withFileTypes: true })
+  } catch {
+    return undefined
+  }
+  for (const entry of entries) {
+    const full = join(dir, entry.name)
+    if (entry.isFile() && entry.name === fileName) return full
+    if (entry.isDirectory()) {
+      const hit = await walkFindFile(full, fileName, depth + 1)
+      if (hit) return hit
+    }
+  }
+  return undefined
+}
+
+interface ClaudeTranscriptUsage {
+  model?: string
+  input?: number
+  output?: number
+  total?: number
+  cachedInput?: number
+  contextUsedPercent?: number
+  contextWindow?: number
+}
+
+async function readClaudeTranscriptUsage(
+  transcriptPath: string,
+): Promise<ClaudeTranscriptUsage | undefined> {
+  try {
+    const text = await readTailFile(transcriptPath, CLAUDE_TRANSCRIPT_TAIL)
+    const lines = text.trim().split(/\r?\n/)
+    for (let i = lines.length - 1; i >= 0; i--) {
+      let item: {
+        type?: string
+        message?: { usage?: Record<string, unknown>; model?: string }
+        usage?: Record<string, unknown>
+        model?: string
+      }
+      try {
+        item = JSON.parse(lines[i] ?? '')
+      } catch {
+        continue
+      }
+      const usage = asRecord(item.message?.usage) ?? asRecord(item.usage)
+      if (!usage) continue
+      const inputTokens = num(usage.input_tokens)
+      if (inputTokens == null && num(usage.cache_read_input_tokens) == null) continue
+
+      const cacheRead = num(usage.cache_read_input_tokens) ?? 0
+      const cacheCreate = num(usage.cache_creation_input_tokens) ?? 0
+      const freshInput = inputTokens ?? 0
+      // Current context footprint ≈ new input + cache read + cache write (statusline formula).
+      const contextInput = freshInput + cacheRead + cacheCreate
+      const output = num(usage.output_tokens)
+      const model = stringVal(item.message?.model) ?? stringVal(item.model)
+      // Prefer 1M window when context clearly exceeds classic 200k.
+      const contextWindow =
+        contextInput > DEFAULT_CLAUDE_CONTEXT_WINDOW
+          ? Math.max(1_000_000, DEFAULT_CLAUDE_CONTEXT_WINDOW)
+          : DEFAULT_CLAUDE_CONTEXT_WINDOW
+      const contextUsedPercent =
+        contextWindow > 0 ? Math.min(100, (contextInput / contextWindow) * 100) : undefined
+
+      return {
+        model,
+        input: contextInput,
+        output,
+        total: output != null ? contextInput + output : contextInput,
+        cachedInput: cacheRead + cacheCreate,
+        contextUsedPercent,
+        contextWindow,
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return undefined
+}
+
+function claudeUsageToToken(usage: ClaudeTranscriptUsage | undefined): TokenPayload | undefined {
+  if (!usage) return undefined
+  if (
+    usage.contextUsedPercent == null &&
+    usage.input == null &&
+    usage.output == null &&
+    usage.contextWindow == null
+  ) {
+    return undefined
+  }
+  return {
+    input: usage.input,
+    output: usage.output,
+    total: usage.total,
+    cachedInput: usage.cachedInput,
+    contextUsedPercent: usage.contextUsedPercent,
+    contextWindow: usage.contextWindow,
+    accuracy: 'estimated',
+  }
+}
+
+function pickNumberEnv(value: string | undefined): number | undefined {
+  if (!value?.trim()) return undefined
+  const n = Number(value.trim())
+  return Number.isFinite(n) && n > 0 ? n : undefined
 }
 
 // ─── Grok ────────────────────────────────────────────────────────────────────
@@ -924,7 +1178,7 @@ function mergeGrokToken(
 // ─── utils ───────────────────────────────────────────────────────────────────
 
 function fingerprint(
-  source: string,
+  source: SyncSource | string,
   sessionId: string,
   cwd: string,
   mtimeMs: number,

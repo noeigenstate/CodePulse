@@ -51,6 +51,7 @@ test('SessionSyncService hydrates Codex project from local rollout within one sc
     hub,
     codexHome: home,
     grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
     disableWatch: true,
     codexProcessAlive: () => true,
   })
@@ -111,6 +112,7 @@ test('SessionSyncService start() resolves after first disk hydrate', async () =>
     hub,
     codexHome: home,
     grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
     disableWatch: true,
     codexProcessAlive: () => true,
   })
@@ -175,6 +177,7 @@ test('SessionSyncService ignores dormant Codex rollouts and closed CLI', async (
     hub,
     codexHome: home,
     grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
     disableWatch: true,
     codexProcessAlive: () => true,
   })
@@ -194,6 +197,7 @@ test('SessionSyncService ignores dormant Codex rollouts and closed CLI', async (
     hub: hub2,
     codexHome: home,
     grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
     disableWatch: true,
     codexProcessAlive: () => false,
   })
@@ -274,6 +278,7 @@ test('SessionSyncService hydrates Grok only from live active_sessions', async ()
     hub,
     codexHome: join(home, 'no-codex'),
     grokHome: home,
+    claudeHome: join(home, 'no-claude'),
     disableWatch: true,
     isPidAlive: (pid) => pid === 42_424,
   })
@@ -325,6 +330,7 @@ test('SessionSyncService skips Grok active_sessions with dead pid', async () => 
     hub,
     codexHome: join(home, 'no-codex'),
     grokHome: home,
+    claudeHome: join(home, 'no-claude'),
     disableWatch: true,
     isPidAlive: () => false,
   })
@@ -335,6 +341,116 @@ test('SessionSyncService skips Grok active_sessions with dead pid', async () => 
       hub.snapshot().agents.filter((a) => a.agentType === 'grok').length,
       0,
       'dead pid must not hydrate a project card',
+    )
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService hydrates Claude from live sessions pid + transcript', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-claude-')
+  const sessionId = '0e5de746-68eb-49f7-a119-2a869bf38864'
+  const cwd = 'E:\\work\\claude-open'
+  const sessionsDir = join(home, 'sessions')
+  const projectDir = join(home, 'projects', 'E-------work-claude-open')
+  const transcript = join(projectDir, `${sessionId}.jsonl`)
+
+  await mkdir(sessionsDir, { recursive: true })
+  await mkdir(projectDir, { recursive: true })
+  await writeFile(
+    join(sessionsDir, '424242.json'),
+    JSON.stringify({
+      pid: 424_242,
+      sessionId,
+      cwd,
+      status: 'idle',
+      updatedAt: Date.now(),
+    }),
+    'utf8',
+  )
+  await writeFile(
+    transcript,
+    [
+      JSON.stringify({ type: 'mode', mode: 'normal', sessionId }),
+      JSON.stringify({
+        type: 'assistant',
+        cwd,
+        sessionId,
+        message: {
+          model: 'claude-opus-4',
+          usage: {
+            input_tokens: 100,
+            cache_read_input_tokens: 40_000,
+            cache_creation_input_tokens: 500,
+            output_tokens: 200,
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    codexHome: join(home, 'no-codex'),
+    grokHome: join(home, 'no-grok'),
+    claudeHome: home,
+    disableWatch: true,
+    isPidAlive: (pid) => pid === 424_242,
+  })
+
+  try {
+    await sync.syncNow()
+    const claude = hub.snapshot().agents.find((a) => a.agentType === 'claude_code')
+    assert.ok(claude, 'expected claude_code agent after disk sync')
+    assert.equal(claude?.workspacePath?.replace(/\\/g, '/'), cwd.replace(/\\/g, '/'))
+    assert.equal(claude?.model, 'claude-opus-4')
+    // contextInput = 100+40000+500 = 40600 / 200000 ≈ 20.3%
+    assert.ok(
+      (claude?.token?.contextUsedPercent ?? 0) > 15,
+      `expected context % from transcript usage, got ${claude?.token?.contextUsedPercent}`,
+    )
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService skips Claude sessions with dead pid', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-claude-dead-')
+  const sessionId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+  const cwd = 'E:\\work\\claude-dead'
+  await mkdir(join(home, 'sessions'), { recursive: true })
+  await writeFile(
+    join(home, 'sessions', '999991.json'),
+    JSON.stringify({
+      pid: 999_991,
+      sessionId,
+      cwd,
+      status: 'idle',
+      updatedAt: Date.now(),
+    }),
+    'utf8',
+  )
+
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    codexHome: join(home, 'no-codex'),
+    grokHome: join(home, 'no-grok'),
+    claudeHome: home,
+    disableWatch: true,
+    isPidAlive: () => false,
+  })
+
+  try {
+    await sync.syncNow()
+    assert.equal(
+      hub.snapshot().agents.filter((a) => a.agentType === 'claude_code').length,
+      0,
+      'dead claude pid must not hydrate a project card',
     )
   } finally {
     sync.stop()
@@ -389,6 +505,7 @@ test('SessionSyncService skips unchanged fingerprint on second scan', async () =
     hub,
     codexHome: home,
     grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
     disableWatch: true,
     codexProcessAlive: () => true,
   })

@@ -12,6 +12,7 @@ import { registerAgentRoutes } from './routes/agents.js'
 import { registerEventRoutes } from './routes/events.js'
 import { registerStatusRoutes } from './routes/status.js'
 import { QuotaRefreshWatcher } from './quota-watcher.js'
+import { SessionSyncService } from './session-sync.js'
 import { registerWebSocket } from './websocket/index.js'
 
 /**
@@ -26,6 +27,8 @@ export interface LocalServerOptions {
   port?: number
   /** 启用 Fastify 请求日志（默认关闭）。 */
   logger?: boolean
+  /** 禁用本机 CLI 会话主动扫描（测试用）。 */
+  disableSessionSync?: boolean
 }
 
 /**
@@ -36,6 +39,8 @@ export interface LocalServer {
   app: FastifyInstance
   /** 服务器监听的基础 URL。 */
   url: string
+  /** 立即再扫一轮本机 CLI 会话（窗口聚焦时调用）。 */
+  syncSessions: () => Promise<void>
   /** 停止服务器并释放端口。 */
   close: () => Promise<void>
 }
@@ -62,6 +67,11 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
   }
   options.hub.on('event', onHubEvent)
 
+  const sessionSync = options.disableSessionSync
+    ? undefined
+    : new SessionSyncService({ hub: options.hub })
+  sessionSync?.start()
+
   registerWebSocket(app, options.hub)
   registerAgentRoutes(app)
   registerEventRoutes(app, options.hub)
@@ -72,7 +82,11 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
   return {
     app,
     url: `http://${host}:${port}`,
+    syncSessions: async () => {
+      await sessionSync?.syncNow()
+    },
     close: async () => {
+      sessionSync?.stop()
       quotaWatcher.stop()
       options.hub.off('event', onHubEvent)
       await app.close()
@@ -103,3 +117,4 @@ export {
 } from './agent-config.js'
 export { registerAgentRoutes, registerEventRoutes, registerStatusRoutes, registerWebSocket }
 export { QuotaRefreshWatcher, readCodexQuotaTokenFromFile } from './quota-watcher.js'
+export { SessionSyncService, type SessionSyncOptions } from './session-sync.js'

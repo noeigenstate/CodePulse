@@ -63,12 +63,15 @@ function showWindow(): void {
   if (!mainWindow) {
     createWindow()
     void refreshLocalAgents()
+    void server?.syncSessions()
     return
   }
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.show()
   mainWindow.focus()
   void refreshLocalAgents()
+  // 聚焦时立即扫描本机 CLI 会话，避免一直「等待命令行同步」。
+  void server?.syncSessions()
 }
 
 function appIconPath(): string {

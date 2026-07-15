@@ -281,7 +281,12 @@ test('GET /ws sends the initial snapshot and pushes later status changes', async
 
 async function createApi(): Promise<{ base: string; hub: StatusHub }> {
   const hub = new StatusHub({ sessionThrottleMs: 0, permissionThrottleMs: 0 })
-  const server = await startLocalServer({ hub, host: HOST, port: await freePort() })
+  const server = await startLocalServer({
+    hub,
+    host: HOST,
+    port: await freePort(),
+    disableSessionSync: true,
+  })
   openServers.push(server)
   return { base: server.url, hub }
 }

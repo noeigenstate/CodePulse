@@ -14,6 +14,7 @@ import { fromGrokHook } from './grok/index.js'
 export * from './codex/index.js'
 export * from './claude-code/index.js'
 export * from './grok/index.js'
+export * from './util.js'
 
 /**
  * 根据载荷的 `source` 与 `channel` 派发到正确的适配器。

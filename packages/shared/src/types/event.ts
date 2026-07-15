@@ -68,6 +68,11 @@ export interface AgentEvent {
   internal?: {
     /** Token-only quota refreshes must not update project recency or runtime model. */
     quotaRefresh?: boolean
+    /**
+     * Disk session scan on app open / interval. Still updates project lastEventAt
+     * so background CLI tasks appear within seconds, without waiting for a hook.
+     */
+    sessionSync?: boolean
   }
 
   /** 原始未修改的载荷，保留用于调试/持久化。 */

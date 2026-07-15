@@ -595,8 +595,7 @@ function AreaTrendChart({
       )}
       <div className="relative mt-1 h-4 w-full overflow-hidden text-[10px] text-ink-400">
         {axisLabels.map((item) => {
-          const left =
-            n <= 1 ? 50 : (item.index / Math.max(1, n - 1)) * 100
+          const left = n <= 1 ? 50 : (item.index / Math.max(1, n - 1)) * 100
           return (
             <span
               key={`${item.bucketStart}-${item.index}`}

@@ -7,9 +7,14 @@ import {
 } from '@codepulse/shared'
 import type { StatusHub } from '@codepulse/core'
 
-const TAIL_BYTES = 1024 * 1024
+/** Large multi-agent rollouts bury token_count under tool noise — keep a deep tail. */
+const TAIL_BYTES = 4 * 1024 * 1024
 const DEFAULT_CODEX_CONTEXT_WINDOW = 256_000
 const DEFAULT_SCHEDULE_OFFSETS_MS = [1_000, 5_000, 15_000, 30_000, 60_000] as const
+/** After a reset (or soft-reset), keep re-reading the bound file for fresh CLI writes. */
+const POST_RESET_RETRY_MS = [2_000, 8_000, 20_000, 45_000, 90_000, 180_000] as const
+/** Steady re-read of remembered rollout paths while CLI may still write after idle. */
+const STEADY_POLL_MS = 12_000
 const MAX_TIMEOUT_MS = 2_147_483_647
 type QuotaWindowKey = 'fiveHour' | 'sevenDay'
 
@@ -27,6 +32,8 @@ export interface QuotaRefreshWatcherOptions {
   now?: () => number
   scheduleOffsetsMs?: readonly number[]
   readToken?: (sourcePath: string) => Promise<TokenPayload | undefined>
+  /** Disable steady poll (tests). */
+  disableSteadyPoll?: boolean
 }
 
 export class QuotaRefreshWatcher {
@@ -34,17 +41,23 @@ export class QuotaRefreshWatcher {
   private readonly now: () => number
   private readonly scheduleOffsetsMs: readonly number[]
   private readonly readToken: (sourcePath: string) => Promise<TokenPayload | undefined>
+  private readonly disableSteadyPoll: boolean
   private readonly timers = new Map<string, NodeJS.Timeout>()
+  private readonly bindings = new Map<string, BoundQuotaSource>()
+  private steady?: NodeJS.Timeout
 
   constructor(options: QuotaRefreshWatcherOptions) {
     this.hub = options.hub
     this.now = options.now ?? Date.now
     this.scheduleOffsetsMs = options.scheduleOffsetsMs ?? DEFAULT_SCHEDULE_OFFSETS_MS
     this.readToken = options.readToken ?? readCodexQuotaTokenFromFile
+    this.disableSteadyPoll = options.disableSteadyPoll ?? false
   }
 
   observe(event: AgentEvent): void {
-    if (event.source !== 'codex' || !event.tokenSourcePath || !event.token?.rateLimits) return
+    if (event.source !== 'codex' || !event.tokenSourcePath) return
+    // Remember path even when rateLimits were soft-stripped — still need post-reset poll.
+    if (!event.token) return
 
     const binding: BoundQuotaSource = {
       source: 'codex',
@@ -54,15 +67,47 @@ export class QuotaRefreshWatcher {
       workspacePath: event.workspacePath,
       cwd: event.cwd,
     }
+    this.remember(binding)
 
-    for (const reset of resetWindows(event.token)) {
-      this.schedule(binding, reset.window, reset.resetAt)
+    if (event.token.rateLimits) {
+      for (const reset of resetWindows(event.token)) {
+        this.schedule(binding, reset.window, reset.resetAt)
+      }
+      // If any window already past reset, immediately arm post-reset retries.
+      for (const reset of resetWindows(event.token)) {
+        const resetMs = normalizeResetAt(reset.resetAt)
+        if (resetMs <= this.now()) {
+          this.schedulePostResetRetries(binding, reset.window, reset.resetAt)
+        }
+      }
     }
   }
 
   stop(): void {
     for (const timer of this.timers.values()) clearTimeout(timer)
     this.timers.clear()
+    if (this.steady) clearInterval(this.steady)
+    this.steady = undefined
+    this.bindings.clear()
+  }
+
+  private remember(binding: BoundQuotaSource): void {
+    this.bindings.set(binding.sourcePath, binding)
+    this.ensureSteadyPoll()
+  }
+
+  private ensureSteadyPoll(): void {
+    if (this.disableSteadyPoll || this.steady) return
+    this.steady = setInterval(() => {
+      void this.pollAll()
+    }, STEADY_POLL_MS)
+    this.steady.unref?.()
+  }
+
+  private async pollAll(): Promise<void> {
+    for (const binding of this.bindings.values()) {
+      await this.refresh(binding, 'sevenDay', this.now(), { force: true })
+    }
   }
 
   private schedule(binding: BoundQuotaSource, window: QuotaWindowKey, resetAt: number): void {
@@ -81,8 +126,27 @@ export class QuotaRefreshWatcher {
 
       const timer = setTimeout(() => {
         this.timers.delete(key)
-        void this.refresh(binding, window, runAt)
+        void this.refresh(binding, window, runAt).then(() => {
+          this.schedulePostResetRetries(binding, window, resetAt)
+        })
       }, delay)
+      timer.unref?.()
+      this.timers.set(key, timer)
+    }
+  }
+
+  private schedulePostResetRetries(
+    binding: BoundQuotaSource,
+    window: QuotaWindowKey,
+    resetAt: number,
+  ): void {
+    for (const offset of POST_RESET_RETRY_MS) {
+      const key = `retry\0${binding.sourcePath}\0${window}\0${resetAt}\0${offset}`
+      if (this.timers.has(key)) continue
+      const timer = setTimeout(() => {
+        this.timers.delete(key)
+        void this.refresh(binding, window, normalizeResetAt(resetAt), { force: true })
+      }, offset)
       timer.unref?.()
       this.timers.set(key, timer)
     }
@@ -92,10 +156,19 @@ export class QuotaRefreshWatcher {
     binding: BoundQuotaSource,
     window: QuotaWindowKey,
     scheduledResetAt: number,
+    options: { force?: boolean } = {},
   ): Promise<void> {
     const token = await this.readToken(binding.sourcePath)
-    if (!token?.rateLimits) return
-    if (hasExpiredResetTimestamp(token, window, scheduledResetAt)) return
+    if (!token) return
+
+    // Non-force path: skip re-applying the same pre-reset snapshot (tests + avoid churn).
+    if (
+      !options.force &&
+      token.rateLimits &&
+      hasUnchangedPreResetSnapshot(token, window, scheduledResetAt)
+    ) {
+      return
+    }
 
     this.hub.ingest({
       id: `quota-refresh:${binding.source}:${workspaceKey(binding.workspacePath ?? binding.cwd)}:${this.now()}`,
@@ -125,7 +198,7 @@ export async function readCodexQuotaTokenFromFile(
   for (let i = lines.length - 1; i >= 0; i--) {
     let item: unknown
     try {
-      item = JSON.parse(lines[i])
+      item = JSON.parse(lines[i]!)
     } catch {
       continue
     }
@@ -156,12 +229,37 @@ export async function readCodexQuotaTokenFromFile(
       token.rateLimitName = withLimits.rateLimitName
     }
   } else if (token.rateLimits && !tokenRateLimitsAreActive(token.rateLimits, nowMs)) {
-    // Drop expired pre-reset snapshots so UI does not keep flashing old weekly %.
-    delete token.rateLimits
-    delete token.rateLimitId
-    delete token.rateLimitName
+    // Soft-reset: CLI has not written post-reset token_count yet.
+    // Show 0% + past resetsAt ("可刷新") instead of wiping limits → "等待命令行同步额度".
+    token.rateLimits = softResetExpiredRateLimits(token.rateLimits, nowMs)
   }
   return token
+}
+
+type RateWindow = NonNullable<NonNullable<TokenPayload['rateLimits']>['fiveHour']>
+
+function softResetExpiredRateLimits(
+  rateLimits: NonNullable<TokenPayload['rateLimits']>,
+  nowMs: number,
+): NonNullable<TokenPayload['rateLimits']> {
+  return {
+    fiveHour: softResetWindow(rateLimits.fiveHour, nowMs),
+    sevenDay: softResetWindow(rateLimits.sevenDay, nowMs),
+  }
+}
+
+function softResetWindow(
+  window: RateWindow | undefined,
+  nowMs: number,
+): RateWindow | undefined {
+  if (!window) return undefined
+  const resetsAt = window.resetsAt
+  if (typeof resetsAt !== 'number' || !Number.isFinite(resetsAt)) {
+    return { ...window, usedPercent: 0 }
+  }
+  const resetMs = resetsAt < 1_000_000_000_000 ? resetsAt * 1000 : resetsAt
+  if (resetMs > nowMs) return window
+  return { ...window, usedPercent: 0 }
 }
 
 function payloadRateLimitsAreActive(payload: Record<string, unknown>, nowMs: number): boolean {
@@ -204,7 +302,7 @@ async function readTail(file: string): Promise<string> {
     const size = (await handle.stat()).size
     const length = Math.min(size, TAIL_BYTES)
     const buffer = Buffer.alloc(length)
-    await handle.read(buffer, 0, length, size - length)
+    await handle.read(buffer, 0, length, Math.max(0, size - length))
     return buffer.toString('utf8')
   } finally {
     await handle.close()
@@ -345,13 +443,20 @@ function resetWindows(token: TokenPayload): Array<{ window: QuotaWindowKey; rese
   )
 }
 
-function hasExpiredResetTimestamp(
+/**
+ * True when the file still only has the pre-reset high-usage snapshot for this window
+ * (same resets_at, not a new post-reset period).
+ */
+function hasUnchangedPreResetSnapshot(
   token: TokenPayload,
   window: QuotaWindowKey,
   scheduledResetAt: number,
 ): boolean {
   const resetAt = token.rateLimits?.[window]?.resetsAt
-  return resetAt !== undefined && normalizeResetAt(resetAt) <= scheduledResetAt
+  if (resetAt === undefined) return false
+  const normalized = normalizeResetAt(resetAt)
+  // Still the same period marker that just fired → not a fresh post-reset write.
+  return normalized <= scheduledResetAt && (token.rateLimits?.[window]?.usedPercent ?? 0) > 0
 }
 
 function normalizeResetAt(value: number): number {

@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
-import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, powerMonitor, shell } from 'electron'
 import {
   type Agent,
   type AgentType,
@@ -40,6 +40,8 @@ const EVENT_PRUNE_INTERVAL_MS = 24 * 60 * 60_000
 let mainWindow: BrowserWindow | null = null
 let tray: TrayController | null = null
 let server: LocalServer | null = null
+/** 本地 HTTP 服务是否已成功监听（失败时禁止配置 Hook，避免打到其它进程）。 */
+let localServerReady = false
 let db: DB | null = null
 /** 本机 SQLite 路径；统计后台只读此库（与实时 StatusHub 内存态分离）。 */
 let dbPath: string | null = null
@@ -175,6 +177,11 @@ function registerIpc(): void {
       openError: dbOpenError,
     }),
   )
+  /** 渲染进程主动触发本机 CLI 会话扫盘（不依赖 hook / 用户发消息）。 */
+  ipcMain.handle('codepulse:sync-sessions', async () => {
+    await server?.syncSessions()
+    return hub.snapshot()
+  })
 }
 
 async function bootstrap(): Promise<void> {
@@ -198,15 +205,38 @@ async function bootstrap(): Promise<void> {
   registerIpc()
 
   try {
+    // startLocalServer awaits SessionSyncService first disk scan + writes local-auth token.
     server = await startLocalServer({ hub })
+    localServerReady = true
     console.log(`[codepulse] local server listening on ${server.url}`)
+    console.log(
+      `[codepulse] session-sync ready: ${hub.snapshot().agents.length} agent slot(s) from disk`,
+    )
   } catch (err) {
-    console.error('[codepulse] failed to start local server', err)
+    localServerReady = false
+    server = null
+    console.error('[codepulse] failed to start local server — hooks will NOT be configured', err)
   }
-  await refreshLocalAgents()
+  // Only wire CLI hooks when our loopback server owns the port.
+  if (localServerReady) {
+    await refreshLocalAgents()
+  } else {
+    console.warn(
+      '[codepulse] skipped agent hook configuration because local server is not listening',
+    )
+  }
 
   hub.startWatchdog()
   startMaintenanceTimers()
+
+  // Wake from sleep / lid open: CLI may have advanced while we were frozen.
+  try {
+    powerMonitor.on('resume', () => {
+      void server?.syncSessions()
+    })
+  } catch {
+    // powerMonitor unavailable in some environments
+  }
 
   tray = new TrayController({
     onOpen: showWindow,
@@ -217,6 +247,8 @@ async function bootstrap(): Promise<void> {
   })
 
   createWindow()
+  // Safety net: rescan after the window is up (covers late-arriving rollouts).
+  void server?.syncSessions()
   void checkForUpdatesOnce()
 }
 
@@ -408,6 +440,11 @@ async function cleanupLocalAgents(): Promise<void> {
 }
 
 async function refreshLocalAgents(): Promise<Agent[]> {
+  if (!localServerReady) {
+    const agents = await detectAgents()
+    broadcast('codepulse:agents', agents)
+    return agents
+  }
   await configureLocalAgents()
   const agents = await detectAgents()
   broadcast('codepulse:agents', agents)

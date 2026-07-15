@@ -1,9 +1,8 @@
+import { createHash } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import { mkdir, open, rename, stat, unlink } from 'node:fs/promises'
-import { request as httpRequest, type IncomingMessage } from 'node:http'
-import { request as httpsRequest } from 'node:https'
-import { Agent as HttpAgent } from 'node:http'
-import { Agent as HttpsAgent } from 'node:https'
+import { type IncomingMessage } from 'node:http'
+import { request as httpsRequest, Agent as HttpsAgent } from 'node:https'
 import { join } from 'node:path'
 import { URL } from 'node:url'
 import type { UpdateInfo } from '@codepulse/shared'
@@ -21,6 +20,26 @@ const PARALLEL_CONNECTIONS = 6
 /** How long to wait when racing mirrors for the first usable probe. */
 const MIRROR_RACE_MS = 6_000
 
+/**
+ * Hosts allowed for update metadata + installer downloads / redirects.
+ * Third-party CDN mirrors are opt-in only (CODEPULSE_UPDATE_ALLOW_MIRRORS=1).
+ */
+const OFFICIAL_UPDATE_HOSTS = new Set([
+  'github.com',
+  'api.github.com',
+  'objects.githubusercontent.com',
+  'release-assets.githubusercontent.com',
+  'github-releases.githubusercontent.com',
+  'cdn.githubraw.com',
+])
+
+/** Known acceleration mirrors — only used when CODEPULSE_UPDATE_ALLOW_MIRRORS=1. */
+const OPTIONAL_MIRROR_PREFIXES = [
+  'https://ghfast.top/',
+  'https://gh-proxy.com/',
+  'https://ghproxy.net/',
+] as const
+
 export interface DownloadProgress {
   phase?: 'preparing' | 'downloading' | 'verifying' | 'launching'
   received: number
@@ -33,6 +52,8 @@ export type DownloadProgressListener = (progress: DownloadProgress) => void
 interface ReleaseAsset {
   name?: unknown
   browser_download_url?: unknown
+  /** GitHub may expose "sha256:<hex>" on release assets. */
+  digest?: unknown
 }
 
 interface ReleasePayload {
@@ -48,11 +69,6 @@ interface ProbeResult {
   acceptRanges: boolean
 }
 
-const httpAgent = new HttpAgent({
-  keepAlive: true,
-  maxSockets: PARALLEL_CONNECTIONS + 2,
-  keepAliveMsecs: 15_000,
-})
 const httpsAgent = new HttpsAgent({
   keepAlive: true,
   maxSockets: PARALLEL_CONNECTIONS + 2,
@@ -61,7 +77,12 @@ const httpsAgent = new HttpsAgent({
 
 export async function checkForUpdate(currentVersion: string): Promise<UpdateInfo | null> {
   const release = await requestJson(LATEST_RELEASE_URL)
-  return buildUpdateInfo(release, currentVersion)
+  const info = buildUpdateInfo(release, currentVersion)
+  if (!info?.installable || info.installerSha256) return info
+  // Best-effort: pull sibling .sha256 asset when GitHub digest field is absent.
+  const sha = await fetchSiblingSha256(release, info.installerName).catch(() => undefined)
+  if (!sha || !info) return info
+  return { ...info, installerSha256: sha }
 }
 
 export function buildUpdateInfo(release: unknown, currentVersion: string): UpdateInfo | null {
@@ -85,6 +106,7 @@ export function buildUpdateInfo(release: unknown, currentVersion: string): Updat
     installable: Boolean(installer),
     installerName: installer?.name,
     installerUrl: installer?.url,
+    ...(installer?.sha256 ? { installerSha256: installer.sha256 } : {}),
     ...(releaseNotes.length > 0 ? { releaseNotes } : {}),
   }
 }
@@ -168,22 +190,63 @@ export function isNewerVersion(latestVersion: string, currentVersion: string): b
 /**
  * Candidate download URLs.
  *
- * Acceleration mirrors are listed **before** official GitHub: direct
- * github.com / objects.githubusercontent.com downloads often stall or time out
- * in regions with poor GitHub connectivity. Official URL stays as the last fallback.
+ * Default: **official GitHub hosts only** (supply-chain safe).
+ * Set `CODEPULSE_UPDATE_ALLOW_MIRRORS=1` to append third-party acceleration
+ * mirrors after the official URL (for regions where GitHub is unreachable).
  */
-export function buildDownloadCandidates(installerUrl: string): string[] {
+export function buildDownloadCandidates(
+  installerUrl: string,
+  options: { allowMirrors?: boolean } = {},
+): string[] {
   const original = installerUrl.trim()
   if (!original) return []
+  if (!isAllowedUpdateUrl(original)) {
+    throw new Error(`Installer URL host is not on the CodePulse allowlist: ${original}`)
+  }
+  const allowMirrors =
+    options.allowMirrors ?? process.env.CODEPULSE_UPDATE_ALLOW_MIRRORS === '1'
+  if (!allowMirrors) return [original]
   if (!/^https:\/\/(github\.com|objects\.githubusercontent\.com)\//i.test(original)) {
     return [original]
   }
-  return [
-    `https://ghfast.top/${original}`,
-    `https://gh-proxy.com/${original}`,
-    `https://ghproxy.net/${original}`,
-    original,
-  ]
+  // Official first; mirrors only as fallbacks when explicitly enabled.
+  return [original, ...OPTIONAL_MIRROR_PREFIXES.map((prefix) => `${prefix}${original}`)]
+}
+
+/** True when URL is https and hostname is on the official (or enabled-mirror) allowlist. */
+export function isAllowedUpdateUrl(url: string, allowMirrors = mirrorsEnabled()): boolean {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'https:') return false
+    const host = parsed.hostname.toLowerCase()
+    if (OFFICIAL_UPDATE_HOSTS.has(host)) return true
+    if (!allowMirrors) return false
+    return (
+      host === 'ghfast.top' ||
+      host === 'gh-proxy.com' ||
+      host === 'ghproxy.net' ||
+      host.endsWith('.ghproxy.net')
+    )
+  } catch {
+    return false
+  }
+}
+
+function mirrorsEnabled(): boolean {
+  return process.env.CODEPULSE_UPDATE_ALLOW_MIRRORS === '1'
+}
+
+/** Parse `sha256:<hex>` or bare 64-char hex. */
+export function parseSha256Digest(value: string | undefined): string | undefined {
+  if (!value) return undefined
+  const trimmed = value.trim().toLowerCase()
+  const prefixed = trimmed.match(/^sha256:([a-f0-9]{64})$/)
+  if (prefixed?.[1]) return prefixed[1]
+  if (/^[a-f0-9]{64}$/.test(trimmed)) return trimmed
+  // Common checksum file line: "<hex>  filename" or "<hex> *filename"
+  const line = trimmed.match(/^([a-f0-9]{64})(\s+\S+)?$/)
+  if (line?.[1]) return line[1]
+  return undefined
 }
 
 /** Split a file into contiguous byte ranges for parallel download. */
@@ -213,10 +276,14 @@ export async function downloadInstaller(
   if (!update.installable || !update.installerName || !update.installerUrl) {
     throw new Error('No matching Windows installer is available for this release.')
   }
+  if (!isAllowedUpdateUrl(update.installerUrl)) {
+    throw new Error(`Installer URL is not allowlisted: ${update.installerUrl}`)
+  }
 
   await mkdir(directory, { recursive: true })
   const destination = join(directory, sanitizeInstallerName(update.installerName))
   const candidates = buildDownloadCandidates(update.installerUrl)
+  const expectedSha = update.installerSha256?.toLowerCase()
 
   onProgress?.({ phase: 'preparing', received: 0, percent: 0 })
 
@@ -236,6 +303,7 @@ export async function downloadInstaller(
       total,
       percent: 100,
     })
+    await verifyDownloadedFile(destination, quickProbe?.total, expectedSha)
     return destination
   }
 
@@ -246,6 +314,9 @@ export async function downloadInstaller(
 
   for (const url of ordered) {
     try {
+      if (!isAllowedUpdateUrl(url)) {
+        throw new Error(`Download host not allowlisted: ${url}`)
+      }
       await unlink(destination).catch(() => undefined)
       const probe = await probeUrl(url)
       await downloadWithHardTimeout(probe, destination, (progress) => {
@@ -260,7 +331,7 @@ export async function downloadInstaller(
         total: probe.total,
         percent: 100,
       })
-      await verifyDownloadedFile(destination, probe.total)
+      await verifyDownloadedFile(destination, probe.total, expectedSha)
       return destination
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -579,16 +650,25 @@ function openResponse(
       return
     }
 
+    if (!isAllowedUpdateUrl(url)) {
+      reject(new Error(`Blocked non-allowlisted update URL: ${url}`))
+      return
+    }
+
     const parsed = new URL(url)
     const isHttps = parsed.protocol === 'https:'
-    const request = isHttps ? httpsRequest : httpRequest
-    const agent = isHttps ? httpsAgent : httpAgent
+    if (!isHttps) {
+      reject(new Error(`Update downloads require HTTPS: ${url}`))
+      return
+    }
+    const request = httpsRequest
+    const agent = httpsAgent
 
     const req = request(
       {
         protocol: parsed.protocol,
         hostname: parsed.hostname,
-        port: parsed.port || (isHttps ? 443 : 80),
+        port: parsed.port || 443,
         path: `${parsed.pathname}${parsed.search}`,
         method,
         headers,
@@ -605,6 +685,10 @@ function openResponse(
             return
           }
           const redirected = new URL(location, parsed).toString()
+          if (!isAllowedUpdateUrl(redirected)) {
+            reject(new Error(`Blocked redirect to non-allowlisted host: ${redirected}`))
+            return
+          }
           openResponse(redirected, headers, redirects - 1, method, signal).then(resolve, reject)
           return
         }
@@ -661,7 +745,11 @@ async function isCompleteCachedFile(
   }
 }
 
-async function verifyDownloadedFile(path: string, expectedSize: number | undefined): Promise<void> {
+export async function verifyDownloadedFile(
+  path: string,
+  expectedSize: number | undefined,
+  expectedSha256?: string,
+): Promise<void> {
   const info = await stat(path)
   if (info.size <= 0) {
     throw new Error('Downloaded installer is empty.')
@@ -676,6 +764,34 @@ async function verifyDownloadedFile(path: string, expectedSize: number | undefin
       `Downloaded installer size mismatch (got ${info.size}, expected ${expectedSize}).`,
     )
   }
+  if (expectedSha256) {
+    const actual = await sha256File(path)
+    if (actual !== expectedSha256.toLowerCase()) {
+      throw new Error(
+        `Installer SHA-256 mismatch (got ${actual}, expected ${expectedSha256.toLowerCase()}). Refusing to launch.`,
+      )
+    }
+  } else {
+    console.warn(
+      '[codepulse] installer has no published SHA-256 digest; verified size only. Prefer signed releases with digests.',
+    )
+  }
+}
+
+async function sha256File(path: string): Promise<string> {
+  const hash = createHash('sha256')
+  const handle = await open(path, 'r')
+  try {
+    const buffer = Buffer.alloc(1024 * 1024)
+    while (true) {
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, null)
+      if (bytesRead <= 0) break
+      hash.update(buffer.subarray(0, bytesRead))
+    }
+  } finally {
+    await handle.close()
+  }
+  return hash.digest('hex')
 }
 
 function asReleasePayload(value: unknown): ReleasePayload | null {
@@ -686,17 +802,58 @@ function asReleasePayload(value: unknown): ReleasePayload | null {
 function findWindowsInstaller(
   assets: unknown,
   version: string,
-): { name: string; url: string } | null {
+): { name: string; url: string; sha256?: string } | null {
   if (!Array.isArray(assets)) return null
+
   for (const rawAsset of assets) {
     const asset = rawAsset as ReleaseAsset
     const name = pickString(asset.name)
     const url = pickString(asset.browser_download_url)
     if (!name || !url) continue
+    if (!isAllowedUpdateUrl(url)) continue
     const lower = name.toLowerCase()
-    if (lower.endsWith('.exe') && lower.includes(version.toLowerCase())) return { name, url }
+    if (lower.endsWith('.exe') && lower.includes(version.toLowerCase())) {
+      return {
+        name,
+        url,
+        sha256: parseSha256Digest(pickString(asset.digest)),
+      }
+    }
   }
   return null
+}
+
+function findSiblingSha256Url(assets: unknown, installerName: string | undefined): string | undefined {
+  if (!installerName || !Array.isArray(assets)) return undefined
+  const base = installerName.toLowerCase()
+  const candidates = new Set([`${base}.sha256`, `${base}.sha256.txt`, `${base}.sha256sum`])
+  for (const rawAsset of assets) {
+    const asset = rawAsset as ReleaseAsset
+    const name = pickString(asset.name)?.toLowerCase()
+    const url = pickString(asset.browser_download_url)
+    if (!name || !url || !isAllowedUpdateUrl(url)) continue
+    if (candidates.has(name)) return url
+  }
+  return undefined
+}
+
+async function fetchSiblingSha256(
+  release: unknown,
+  installerName: string | undefined,
+): Promise<string | undefined> {
+  const payload = asReleasePayload(release)
+  if (!payload) return undefined
+  const url = findSiblingSha256Url(payload.assets, installerName)
+  if (!url) return undefined
+  const response = await openResponse(url, downloadHeaders(), MAX_REDIRECTS, 'GET')
+  const text = await readResponseText(response)
+  if ((response.statusCode ?? 0) < 200 || (response.statusCode ?? 0) >= 300) return undefined
+  // First non-empty line may be "<hex>  filename"
+  for (const line of text.split(/\r?\n/)) {
+    const digest = parseSha256Digest(line.trim())
+    if (digest) return digest
+  }
+  return undefined
 }
 
 function pickString(value: unknown): string | undefined {

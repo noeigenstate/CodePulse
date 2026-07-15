@@ -23,6 +23,7 @@ export interface CodePulseApi {
   getUpdate: () => Promise<UpdateInfo | null>
   installUpdate: () => Promise<UpdateInstallResult>
   getStats: (query?: UsageStatsQuery) => Promise<UsageStatsSnapshot>
+  syncSessions: () => Promise<StatusSnapshot>
   onStatus: (cb: (snapshot: StatusSnapshot) => void) => Unsubscribe
   onAgents: (cb: (agents: Agent[]) => void) => Unsubscribe
   onMute: (cb: (muted: boolean) => void) => Unsubscribe

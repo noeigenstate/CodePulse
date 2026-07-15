@@ -75,7 +75,7 @@ export interface AgentEvent {
     sessionSync?: boolean
   }
 
-  /** 原始未修改的载荷，保留用于调试/持久化。 */
+  /** 原始 Hook 载荷，仅供进程内归一化/调试，禁止持久化到 SQLite。 */
   raw?: unknown
   /** 事件发生时间（epoch 毫秒，缺失时在归一化阶段分配）。 */
   timestamp: number

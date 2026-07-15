@@ -59,7 +59,12 @@ export const useStore = create<CodePulseStore>((set, get) => ({
       set((state) => ({ agents, agentCheckId: state.agentCheckId + 1 }))
     }
 
-    void api.getStatus().then((snapshot) => applySnapshot(snapshot, true))
+    // Prefer an active disk rescan so cards fill even when hooks never fired.
+    // Fall back to getStatus if preload is older than this build.
+    const bootstrapStatus = api.syncSessions
+      ? api.syncSessions().catch(() => api.getStatus())
+      : api.getStatus()
+    void bootstrapStatus.then((snapshot) => applySnapshot(snapshot, true))
     void api.detectAgents().then(applyAgents)
     void api.getUpdate().then((updateInfo) => {
       if (updateInfo) set({ updateInfo, updateError: undefined })

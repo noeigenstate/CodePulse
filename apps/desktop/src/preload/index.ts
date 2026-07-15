@@ -31,6 +31,8 @@ const api = {
   installUpdate: (): Promise<UpdateInstallResult> => ipcRenderer.invoke('codepulse:install-update'),
   getStats: (query?: UsageStatsQuery): Promise<UsageStatsSnapshot> =>
     ipcRenderer.invoke('codepulse:get-stats', query),
+  /** 主动扫本机 Codex/Grok 会话目录，返回最新 StatusHub 快照。 */
+  syncSessions: (): Promise<StatusSnapshot> => ipcRenderer.invoke('codepulse:sync-sessions'),
   onStatus: (cb: (snapshot: StatusSnapshot) => void): Unsubscribe =>
     subscribe('codepulse:status', cb),
   onAgents: (cb: (agents: Agent[]) => void): Unsubscribe => subscribe('codepulse:agents', cb),

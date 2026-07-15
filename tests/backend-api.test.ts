@@ -286,6 +286,7 @@ async function createApi(): Promise<{ base: string; hub: StatusHub }> {
     host: HOST,
     port: await freePort(),
     disableSessionSync: true,
+    authToken: false,
   })
   openServers.push(server)
   return { base: server.url, hub }

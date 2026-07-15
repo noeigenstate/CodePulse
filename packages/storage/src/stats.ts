@@ -21,7 +21,7 @@ import type {
   UsageStatsQuery,
   UsageStatsSnapshot,
 } from '@codepulse/shared'
-import type { DB } from './sqlite/db.js'
+import { healStorageSchema, type DB } from './sqlite/db.js'
 import { events, sessions, tokenSnapshots, turns } from './sqlite/schema.js'
 
 const MS_DAY = 24 * 60 * 60_000
@@ -64,6 +64,8 @@ export function queryUsageStats(
   if (!db) return empty
 
   try {
+    // Old installs may predate privacy columns (file_type_hints). Self-heal before aggregate.
+    healStorageSchema(db)
     const started = Date.now()
     const current = collectPeriod(db, range.start, range.end, now)
     const prevStart = range.start - (range.end - range.start)
@@ -514,22 +516,39 @@ function buildHeatmap(db: DB, start: number, end: number): StatsHeatCell[] {
 function buildFileTypes(db: DB, start: number, end: number): StatsCategoryShare[] {
   // 仅用 tool 相关短字段，避免把 message 全文扫进内存（大库上会导致统计卡住/失败）。
   // 取最近一批即可反映分布，不必全量扫描。
-  const rows = db
-    .select({
-      toolName: events.toolName,
-      command: events.command,
-    })
-    .from(events)
-    .where(and(gte(events.timestamp, start), lt(events.timestamp, end)))
-    .orderBy(desc(events.timestamp))
-    .limit(8_000)
-    .all()
+  // 旧库若尚无 file_type_hints，降级为只读 tool_name，避免整页统计失败。
+  let rows: Array<{ toolName: string | null; fileTypeHints?: string | null }>
+  try {
+    rows = db
+      .select({
+        toolName: events.toolName,
+        fileTypeHints: events.fileTypeHints,
+      })
+      .from(events)
+      .where(and(gte(events.timestamp, start), lt(events.timestamp, end)))
+      .orderBy(desc(events.timestamp))
+      .limit(8_000)
+      .all()
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (!/file_type_hints/i.test(message)) throw err
+    console.warn('[codepulse] file_type_hints missing; file-type stats use tool_name only')
+    rows = db
+      .select({
+        toolName: events.toolName,
+      })
+      .from(events)
+      .where(and(gte(events.timestamp, start), lt(events.timestamp, end)))
+      .orderBy(desc(events.timestamp))
+      .limit(8_000)
+      .all()
+  }
 
   const counts = new Map<string, number>()
   const extRe = /\.([a-zA-Z0-9]{1,8})\b/g
   for (const row of rows) {
-    if (!row.toolName && !row.command) continue
-    const text = `${row.toolName ?? ''} ${row.command ?? ''}`
+    if (!row.toolName && !row.fileTypeHints) continue
+    const text = `${row.toolName ?? ''} ${row.fileTypeHints ?? ''}`
     let match: RegExpExecArray | null
     const seen = new Set<string>()
     while ((match = extRe.exec(text)) !== null) {

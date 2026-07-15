@@ -4,8 +4,10 @@ import {
   buildDownloadCandidates,
   buildUpdateInfo,
   compareVersions,
+  isAllowedUpdateUrl,
   isNewerVersion,
   parseReleaseNotes,
+  parseSha256Digest,
   planByteRanges,
 } from '../apps/desktop/src/main/update-checker.js'
 
@@ -23,6 +25,8 @@ test('isNewerVersion rejects equal, older, and malformed versions', () => {
 })
 
 test('buildUpdateInfo selects the latest Windows installer asset', () => {
+  const installerUrl =
+    'https://github.com/noeigenstate/CodePulse/releases/download/v0.1.6/CodePulse_0.1.6_x64-setup.exe'
   const info = buildUpdateInfo(
     {
       tag_name: 'v0.1.6',
@@ -31,11 +35,13 @@ test('buildUpdateInfo selects the latest Windows installer asset', () => {
       assets: [
         {
           name: 'CodePulse_0.1.6_x64-setup.exe.blockmap',
-          browser_download_url: 'https://example.test/blockmap',
+          browser_download_url:
+            'https://github.com/noeigenstate/CodePulse/releases/download/v0.1.6/CodePulse_0.1.6_x64-setup.exe.blockmap',
         },
         {
           name: 'CodePulse_0.1.6_x64-setup.exe',
-          browser_download_url: 'https://example.test/installer',
+          browser_download_url: installerUrl,
+          digest: 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
         },
       ],
     },
@@ -49,7 +55,8 @@ test('buildUpdateInfo selects the latest Windows installer asset', () => {
     releaseUrl: 'https://github.com/noeigenstate/CodePulse/releases/tag/v0.1.6',
     installable: true,
     installerName: 'CodePulse_0.1.6_x64-setup.exe',
-    installerUrl: 'https://example.test/installer',
+    installerUrl,
+    installerSha256: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
     releaseNotes: ['修复更新下载', '优化界面'],
   })
 })
@@ -78,7 +85,8 @@ test('buildUpdateInfo returns null when release is not newer', () => {
         assets: [
           {
             name: 'CodePulse_0.1.5_x64-setup.exe',
-            browser_download_url: 'https://example.test/installer',
+            browser_download_url:
+              'https://github.com/noeigenstate/CodePulse/releases/download/v0.1.5/CodePulse_0.1.5_x64-setup.exe',
           },
         ],
       },
@@ -93,7 +101,13 @@ test('buildUpdateInfo still reports newer releases without a matching installer'
     {
       tag_name: 'v0.1.6',
       html_url: 'https://github.com/noeigenstate/CodePulse/releases/tag/v0.1.6',
-      assets: [{ name: 'latest.yml', browser_download_url: 'https://example.test/latest.yml' }],
+      assets: [
+        {
+          name: 'latest.yml',
+          browser_download_url:
+            'https://github.com/noeigenstate/CodePulse/releases/download/v0.1.6/latest.yml',
+        },
+      ],
     },
     '0.1.5',
   )
@@ -118,7 +132,8 @@ test('buildUpdateInfo does not auto-install mismatched installer assets', () => 
       assets: [
         {
           name: 'CodePulse_0.1.5_x64-setup.exe',
-          browser_download_url: 'https://example.test/installer',
+          browser_download_url:
+            'https://github.com/noeigenstate/CodePulse/releases/download/v0.1.6/CodePulse_0.1.5_x64-setup.exe',
         },
       ],
     },
@@ -130,16 +145,29 @@ test('buildUpdateInfo does not auto-install mismatched installer assets', () => 
   assert.equal(info?.installerUrl, undefined)
 })
 
-test('buildDownloadCandidates prefers GitHub mirrors before official URL', () => {
+test('buildDownloadCandidates defaults to official URL only', () => {
   const url =
     'https://github.com/noeigenstate/CodePulse/releases/download/v0.1.9/CodePulse_0.1.9_x64-setup.exe'
-  const candidates = buildDownloadCandidates(url)
-  assert.ok(candidates[0]?.includes('ghfast.top'))
-  assert.ok(candidates.some((item) => item.includes('gh-proxy.com')))
-  assert.equal(candidates.at(-1), url)
-  assert.deepEqual(buildDownloadCandidates('https://example.test/app.exe'), [
-    'https://example.test/app.exe',
-  ])
+  assert.deepEqual(buildDownloadCandidates(url, { allowMirrors: false }), [url])
+  assert.deepEqual(buildDownloadCandidates(url, { allowMirrors: true })[0], url)
+  assert.ok(buildDownloadCandidates(url, { allowMirrors: true }).some((u) => u.includes('gh-proxy.com')))
+  assert.throws(() => buildDownloadCandidates('https://example.test/app.exe'), /allowlist/i)
+})
+
+test('isAllowedUpdateUrl and parseSha256Digest', () => {
+  assert.equal(isAllowedUpdateUrl('https://github.com/noeigenstate/CodePulse/releases/x'), true)
+  assert.equal(isAllowedUpdateUrl('http://github.com/x'), false)
+  assert.equal(isAllowedUpdateUrl('https://evil.example/x'), false)
+  assert.equal(isAllowedUpdateUrl('https://gh-proxy.com/x', true), true)
+  assert.equal(isAllowedUpdateUrl('https://gh-proxy.com/x', false), false)
+  assert.equal(
+    parseSha256Digest('sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'),
+    '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+  )
+  assert.equal(
+    parseSha256Digest('0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef  file.exe'),
+    '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+  )
 })
 
 test('planByteRanges covers the full installer without gaps or overlaps', () => {

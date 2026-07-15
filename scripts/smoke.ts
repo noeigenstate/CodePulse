@@ -25,7 +25,12 @@ const hub = new StatusHub()
 const notifications: NotificationRequest[] = []
 hub.on('notification', (n) => notifications.push(n))
 
-const server = await startLocalServer({ hub, port: 17999, disableSessionSync: true })
+const server = await startLocalServer({
+  hub,
+  port: 17999,
+  disableSessionSync: true,
+  authToken: false,
+})
 const base = server.url
 
 async function post(payload: unknown): Promise<void> {

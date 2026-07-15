@@ -9,6 +9,7 @@ import { and, desc, eq, lt } from 'drizzle-orm'
 import { TurnState, isActiveState, type AgentEvent } from '@codepulse/shared'
 import type { DB } from './sqlite/db.js'
 import { events, sessions, tokenSnapshots, turns, workspaces } from './sqlite/schema.js'
+import { toPersistedFileTypeHints, toPersistedPreview } from './privacy.js'
 
 /**
  * 持久化一个归一化事件，并推进派生的会话/轮次/token 行。
@@ -22,35 +23,44 @@ import { events, sessions, tokenSnapshots, turns, workspaces } from './sqlite/sc
  * @param event 待持久化的归一化事件。
  */
 export function persistEvent(db: DB, event: AgentEvent): void {
+  const persistedEvent: AgentEvent = {
+    ...event,
+    command: undefined,
+    message: toPersistedPreview(event.message),
+    raw: undefined,
+  }
+  const fileTypeHints = toPersistedFileTypeHints(event.command)
+
   db.transaction((tx) => {
     tx.insert(events)
       .values({
-        id: event.id,
-        source: event.source,
-        eventType: event.eventType,
-        externalSessionId: event.externalSessionId,
-        externalTurnId: event.externalTurnId,
-        workspacePath: event.workspacePath ?? event.cwd,
-        model: event.model,
-        toolName: event.toolName,
-        command: event.command,
-        message: event.message,
-        raw: event.raw === undefined ? null : JSON.stringify(event.raw),
-        timestamp: event.timestamp,
+        id: persistedEvent.id,
+        source: persistedEvent.source,
+        eventType: persistedEvent.eventType,
+        externalSessionId: persistedEvent.externalSessionId,
+        externalTurnId: persistedEvent.externalTurnId,
+        workspacePath: persistedEvent.workspacePath ?? persistedEvent.cwd,
+        model: persistedEvent.model,
+        toolName: persistedEvent.toolName,
+        command: null,
+        message: persistedEvent.message,
+        fileTypeHints,
+        raw: null,
+        timestamp: persistedEvent.timestamp,
       })
       .run()
 
-    const sessionId = ensureSession(tx, event)
+    const sessionId = ensureSession(tx, persistedEvent)
 
-    if (event.eventType === 'prompt_submit') {
+    if (persistedEvent.eventType === 'prompt_submit') {
       tx.insert(turns)
         .values({
           id: randomUUID(),
           sessionId,
-          externalTurnId: event.externalTurnId,
+          externalTurnId: persistedEvent.externalTurnId,
           state: 'PROMPT_SUBMITTED',
-          promptPreview: event.message,
-          startedAt: event.timestamp,
+          promptPreview: persistedEvent.message,
+          startedAt: persistedEvent.timestamp,
           toolCallCount: 0,
           needPermission: false,
           needUserInput: false,
@@ -59,30 +69,30 @@ export function persistEvent(db: DB, event: AgentEvent): void {
     }
 
     if (
-      event.eventType === 'turn_stop' ||
-      event.eventType === 'turn_error' ||
-      event.eventType === 'turn_cancelled' ||
-      event.eventType === 'turn_timeout' ||
-      event.eventType === 'usage_limited'
+      persistedEvent.eventType === 'turn_stop' ||
+      persistedEvent.eventType === 'turn_error' ||
+      persistedEvent.eventType === 'turn_cancelled' ||
+      persistedEvent.eventType === 'turn_timeout' ||
+      persistedEvent.eventType === 'usage_limited'
     ) {
-      closeLatestTurn(tx, sessionId, event)
+      closeLatestTurn(tx, sessionId, persistedEvent)
     }
 
-    if (event.token) {
-      const turnId = findLatestTurnId(tx, sessionId, event.externalTurnId)
+    if (persistedEvent.token) {
+      const turnId = findLatestTurnId(tx, sessionId, persistedEvent.externalTurnId)
       tx.insert(tokenSnapshots)
         .values({
           id: randomUUID(),
           sessionId,
           turnId,
-          agentType: event.source,
-          inputTokens: event.token.input,
-          outputTokens: event.token.output,
-          totalTokens: event.token.total,
-          contextUsedPercent: event.token.contextUsedPercent,
-          costUsd: event.token.costUsd,
-          accuracy: event.token.accuracy,
-          capturedAt: event.timestamp,
+          agentType: persistedEvent.source,
+          inputTokens: persistedEvent.token.input,
+          outputTokens: persistedEvent.token.output,
+          totalTokens: persistedEvent.token.total,
+          contextUsedPercent: persistedEvent.token.contextUsedPercent,
+          costUsd: persistedEvent.token.costUsd,
+          accuracy: persistedEvent.token.accuracy,
+          capturedAt: persistedEvent.timestamp,
         })
         .run()
     }

@@ -70,6 +70,7 @@ test('QuotaRefreshWatcher refreshes only the bound Codex quota source', async ()
     hub,
     now: () => 1_000_000,
     scheduleOffsetsMs: [0],
+    disableSteadyPoll: true,
     readToken: async () => ({
       contextUsedPercent: 2,
       rateLimits: {
@@ -126,6 +127,7 @@ test('QuotaRefreshWatcher allows weekly refresh when only the five-hour reset is
     hub,
     now: () => 9_000_000,
     scheduleOffsetsMs: [0],
+    disableSteadyPoll: true,
     readToken: async () => ({
       contextUsedPercent: 2,
       rateLimits: {
@@ -175,6 +177,7 @@ test('QuotaRefreshWatcher skips stale reset reads from unchanged rollout data', 
     hub,
     now: () => 1_000_000,
     scheduleOffsetsMs: [0],
+    disableSteadyPoll: true,
     readToken: async () => ({
       contextUsedPercent: 90,
       rateLimits: {
@@ -216,5 +219,41 @@ test('QuotaRefreshWatcher skips stale reset reads from unchanged rollout data', 
     assert.equal(codex?.token?.rateLimits?.fiveHour?.resetsAt, 1_000)
   } finally {
     watcher.stop()
+  }
+})
+
+test('readCodexQuotaTokenFromFile soft-resets expired limits to 0% instead of stripping', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'codepulse-quota-soft-'))
+  const file = join(dir, 'rollout.jsonl')
+  const past = Math.floor(Date.now() / 1000) - 3_600
+  try {
+    await writeFile(
+      file,
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 256_000,
+            last_token_usage: { input_tokens: 10_000, total_tokens: 10_100 },
+          },
+          rate_limits: {
+            limit_id: 'codex',
+            primary: {
+              used_percent: 87,
+              resets_at: past,
+              window_minutes: 10_080,
+            },
+          },
+        },
+      }) + '\n',
+    )
+
+    const token = await readCodexQuotaTokenFromFile(file)
+    assert.equal(token?.rateLimits?.sevenDay?.usedPercent, 0)
+    assert.equal(token?.rateLimits?.sevenDay?.resetsAt, past)
+    assert.ok(token?.rateLimits, 'must keep rateLimits so UI is not "等待命令行同步额度"')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
   }
 })

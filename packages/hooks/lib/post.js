@@ -6,9 +6,13 @@
  *
  * @module hooks/lib/post
  */
+import { readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 
 /** 本地 CodePulse 服务器的默认基础 URL。 */
 const DEFAULT_URL = 'http://127.0.0.1:17888'
+const AUTH_HEADER = 'x-codepulse-token'
 
 /**
  * 读取全部 stdin 并解析为 JSON。
@@ -65,7 +69,7 @@ async function postEventOnce(payload, timeoutMs) {
   try {
     const res = await fetch(`${serverUrl()}/api/events`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: buildHeaders(),
       body: JSON.stringify(payload),
       signal: controller.signal,
     })
@@ -75,6 +79,30 @@ async function postEventOnce(payload, timeoutMs) {
   } finally {
     clearTimeout(timer)
   }
+}
+
+/**
+ * 认证头：优先 `CODEPULSE_TOKEN` 环境变量，否则读 `~/.codepulse/local-auth`。
+ * 与桌面端 local-server 共用同一文件。
+ */
+export function resolveLocalAuthToken() {
+  const fromEnv = process.env.CODEPULSE_TOKEN?.trim()
+  if (fromEnv) return fromEnv
+  try {
+    const file = process.env.CODEPULSE_AUTH_FILE || join(homedir(), '.codepulse', 'local-auth')
+    const value = readFileSync(file, 'utf8').trim()
+    return value.length >= 16 ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function buildHeaders() {
+  /** @type {Record<string, string>} */
+  const headers = { 'content-type': 'application/json' }
+  const token = resolveLocalAuthToken()
+  if (token) headers[AUTH_HEADER] = token
+  return headers
 }
 
 function delay(ms) {

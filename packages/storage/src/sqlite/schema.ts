@@ -101,8 +101,12 @@ export const events = sqliteTable(
     workspacePath: text('workspace_path'),
     model: text('model'),
     toolName: text('tool_name'),
+    /** Legacy privacy-disabled column. New writes and migrations always keep it null. */
     command: text('command'),
     message: text('message'),
+    /** Allowlisted extensions derived from commands; never contains paths or arguments. */
+    fileTypeHints: text('file_type_hints'),
+    /** Legacy privacy-disabled column. A database trigger rejects non-null writes. */
     raw: text('raw'),
     timestamp: integer('timestamp').notNull(),
     createdAt: integer('created_at')

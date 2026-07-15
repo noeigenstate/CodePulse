@@ -14,6 +14,11 @@ import { registerStatusRoutes } from './routes/status.js'
 import { QuotaRefreshWatcher } from './quota-watcher.js'
 import { SessionSyncService } from './session-sync.js'
 import { registerWebSocket } from './websocket/index.js'
+import {
+  defaultLocalAuthPath,
+  loadOrCreateLocalAuthToken,
+  registerLocalAuthGuard,
+} from './local-auth.js'
 
 /**
  * {@link startLocalServer} 的选项。
@@ -29,6 +34,15 @@ export interface LocalServerOptions {
   logger?: boolean
   /** 禁用本机 CLI 会话主动扫描（测试用）。 */
   disableSessionSync?: boolean
+  /**
+   * 本机 API 认证：
+   * - 省略：生成/复用 `~/.codepulse/local-auth` 中的 token（生产默认）
+   * - string：使用给定 token
+   * - false：关闭认证（仅测试）
+   */
+  authToken?: string | false
+  /** 覆盖 local-auth 文件路径（测试）。 */
+  authTokenPath?: string
 }
 
 /**
@@ -39,6 +53,8 @@ export interface LocalServer {
   app: FastifyInstance
   /** 服务器监听的基础 URL。 */
   url: string
+  /** 本机 API token；auth 关闭时为 undefined。 */
+  authToken?: string
   /** 立即再扫一轮本机 CLI 会话（窗口聚焦时调用）。 */
   syncSessions: () => Promise<void>
   /** 停止服务器并释放端口。 */
@@ -53,15 +69,31 @@ export interface LocalServer {
  *
  * @param options hub 加可选的主机/端口/日志覆盖项。
  * @returns 运行中的服务器、其 URL 及 `close` 函数。
+ * @throws 端口绑定失败时抛出（调用方不得再配置 Hook）。
  */
 export async function startLocalServer(options: LocalServerOptions): Promise<LocalServer> {
   const host = options.host ?? DEFAULT_SERVER_HOST
   const port = options.port ?? DEFAULT_SERVER_PORT
 
+  const authToken =
+    options.authToken === false
+      ? undefined
+      : typeof options.authToken === 'string'
+        ? options.authToken
+        : loadOrCreateLocalAuthToken(options.authTokenPath ?? defaultLocalAuthPath())
+
   const app = Fastify({ logger: options.logger ?? false })
 
+  if (authToken) {
+    registerLocalAuthGuard(app, authToken)
+  }
+
   await app.register(websocket)
-  const quotaWatcher = new QuotaRefreshWatcher({ hub: options.hub })
+  const quotaWatcher = new QuotaRefreshWatcher({
+    hub: options.hub,
+    // Production: keep re-reading bound rollouts after reset / idle wait.
+    // Tests inject their own watcher options via direct construction.
+  })
   const onHubEvent = (event: Parameters<typeof quotaWatcher.observe>[0]): void => {
     quotaWatcher.observe(event)
   }
@@ -70,18 +102,33 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
   const sessionSync = options.disableSessionSync
     ? undefined
     : new SessionSyncService({ hub: options.hub })
-  sessionSync?.start()
+  // Await first disk scan so the main process can open the window with
+  // already-hydrated projects (no need for the user to start a chat first).
+  if (sessionSync) await sessionSync.start()
 
   registerWebSocket(app, options.hub)
   registerAgentRoutes(app)
   registerEventRoutes(app, options.hub)
   registerStatusRoutes(app, options.hub)
 
-  await app.listen({ host, port })
+  try {
+    await app.listen({ host, port })
+  } catch (err) {
+    sessionSync?.stop()
+    quotaWatcher.stop()
+    options.hub.off('event', onHubEvent)
+    try {
+      await app.close()
+    } catch {
+      // ignore
+    }
+    throw err
+  }
 
   return {
     app,
     url: `http://${host}:${port}`,
+    authToken,
     syncSessions: async () => {
       await sessionSync?.syncNow()
     },
@@ -118,3 +165,11 @@ export {
 export { registerAgentRoutes, registerEventRoutes, registerStatusRoutes, registerWebSocket }
 export { QuotaRefreshWatcher, readCodexQuotaTokenFromFile } from './quota-watcher.js'
 export { SessionSyncService, type SessionSyncOptions } from './session-sync.js'
+export {
+  defaultLocalAuthPath,
+  generateLocalAuthToken,
+  loadOrCreateLocalAuthToken,
+  readLocalAuthToken,
+  LOCAL_AUTH_HEADER,
+  LOCAL_AUTH_QUERY,
+} from './local-auth.js'

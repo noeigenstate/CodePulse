@@ -134,7 +134,11 @@ function extractCodexToken(raw: Record<string, unknown>): AgentEventInput['token
   const input = pickNumber(usage ?? {}, 'input_tokens', 'inputTokens')
   const cachedInput = pickNumber(usage ?? {}, 'cached_input_tokens', 'cachedInputTokens')
   const output = pickNumber(usage ?? {}, 'output_tokens', 'outputTokens')
-  const reasoningOutput = pickNumber(usage ?? {}, 'reasoning_output_tokens', 'reasoningOutputTokens')
+  const reasoningOutput = pickNumber(
+    usage ?? {},
+    'reasoning_output_tokens',
+    'reasoningOutputTokens',
+  )
   const total = pickNumber(usage ?? {}, 'total_tokens', 'totalTokens')
   const contextWindow =
     pickNumber(raw, 'context_window_size', 'contextWindowSize') ??

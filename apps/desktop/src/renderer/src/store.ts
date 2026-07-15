@@ -98,6 +98,8 @@ export const useStore = create<CodePulseStore>((set, get) => ({
   },
 
   dismissUpdate: () => {
+    // Persist 24h snooze in main so the hourly background check stays silent.
+    void window.codepulse.dismissUpdate()
     set({
       updateInfo: null,
       updateError: undefined,

@@ -21,6 +21,7 @@ export interface CodePulseApi {
   setLocale: (locale: UiLocale) => Promise<UiLocale>
   detectAgents: () => Promise<Agent[]>
   getUpdate: () => Promise<UpdateInfo | null>
+  dismissUpdate: () => Promise<boolean>
   installUpdate: () => Promise<UpdateInstallResult>
   getStats: (query?: UsageStatsQuery) => Promise<UsageStatsSnapshot>
   syncSessions: () => Promise<StatusSnapshot>

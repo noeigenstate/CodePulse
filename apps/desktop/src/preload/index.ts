@@ -28,6 +28,8 @@ const api = {
     ipcRenderer.invoke('codepulse:set-locale', locale),
   detectAgents: (): Promise<Agent[]> => ipcRenderer.invoke('codepulse:detect-agents'),
   getUpdate: (): Promise<UpdateInfo | null> => ipcRenderer.invoke('codepulse:get-update'),
+  /** User dismissed the update modal — main process snoozes checks for 24h. */
+  dismissUpdate: (): Promise<boolean> => ipcRenderer.invoke('codepulse:dismiss-update'),
   installUpdate: (): Promise<UpdateInstallResult> => ipcRenderer.invoke('codepulse:install-update'),
   getStats: (query?: UsageStatsQuery): Promise<UsageStatsSnapshot> =>
     ipcRenderer.invoke('codepulse:get-stats', query),

@@ -10,6 +10,21 @@ import type { UpdateInfo } from '@codepulse/shared'
 
 const LATEST_RELEASE_URL = 'https://api.github.com/repos/noeigenstate/CodePulse/releases/latest'
 const USER_AGENT = 'CodePulse-Desktop'
+
+/** Background GitHub release poll while the app is running. */
+export const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60_000
+/** After the user dismisses an update prompt, skip checks + prompts for this long. */
+export const UPDATE_SNOOZE_MS = 24 * 60 * 60_000
+
+/** True when `snoozeUntil` is a finite timestamp still in the future. */
+export function isUpdateSnoozed(snoozeUntil: number | undefined | null, now = Date.now()): boolean {
+  return typeof snoozeUntil === 'number' && Number.isFinite(snoozeUntil) && snoozeUntil > now
+}
+
+/** Absolute epoch ms until which update checks should stay silent. */
+export function computeUpdateSnoozeUntil(now = Date.now(), durationMs = UPDATE_SNOOZE_MS): number {
+  return now + durationMs
+}
 const MAX_REDIRECTS = 8
 /** Idle socket timeout while waiting for headers / next chunk (slow links need headroom). */
 const REQUEST_IDLE_TIMEOUT_MS = 120_000

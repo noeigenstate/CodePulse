@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { readFileSync, writeFileSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain, Menu, powerMonitor, shell } from 'electron'
 import {
@@ -29,11 +30,16 @@ import {
 } from '@codepulse/local-server'
 import { TrayController } from './tray.js'
 import { showNotification } from './notifications.js'
-import { checkForUpdate, downloadInstaller } from './update-checker.js'
+import {
+  checkForUpdate,
+  computeUpdateSnoozeUntil,
+  downloadInstaller,
+  isUpdateSnoozed,
+  UPDATE_CHECK_INTERVAL_MS,
+} from './update-checker.js'
 
 const MUTE_DURATION_MS = 30 * 60_000
 const DISABLE_UPDATE_CHECK_ENV = 'CODEPULSE_DISABLE_UPDATE_CHECKS'
-const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60_000
 const EVENT_RETENTION_MS = 30 * 24 * 60 * 60_000
 const EVENT_PRUNE_INTERVAL_MS = 24 * 60 * 60_000
 
@@ -169,7 +175,18 @@ function registerIpc(): void {
   })
   ipcMain.handle('codepulse:set-locale', (_event, locale: unknown) => setLocale(locale))
   ipcMain.handle('codepulse:detect-agents', () => refreshLocalAgents())
-  ipcMain.handle('codepulse:get-update', () => latestUpdate)
+  ipcMain.handle('codepulse:get-update', () => {
+    // Respect 24h "later" snooze even if a previous check still has cached info.
+    if (isUpdateSnoozed(readUpdateSnoozeUntil())) {
+      latestUpdate = null
+      return null
+    }
+    return latestUpdate
+  })
+  ipcMain.handle('codepulse:dismiss-update', () => {
+    dismissUpdateForSnooze()
+    return true
+  })
   ipcMain.handle('codepulse:install-update', () => installLatestUpdate())
   ipcMain.handle('codepulse:get-stats', (_event, query?: UsageStatsQuery) =>
     queryUsageStats(db, query ?? {}, Date.now(), {
@@ -294,6 +311,11 @@ async function checkForUpdatesOnce(): Promise<UpdateInfo | null> {
   checkingUpdate = true
   try {
     const update = await checkForUpdate(app.getVersion())
+    // Snooze may have been set while the network request was in flight.
+    if (isUpdateSnoozed(readUpdateSnoozeUntil())) {
+      latestUpdate = null
+      return null
+    }
     latestUpdate = update
     if (update) broadcast('codepulse:update-available', update)
     return update
@@ -305,11 +327,53 @@ async function checkForUpdatesOnce(): Promise<UpdateInfo | null> {
   }
 }
 
+/** User chose not to update now — suppress checks + prompts for 24 hours. */
+function dismissUpdateForSnooze(): void {
+  latestUpdate = null
+  writeUpdateSnoozeUntil(computeUpdateSnoozeUntil())
+  console.log('[codepulse] update check snoozed for 24h after user dismiss')
+}
+
+function updateSnoozePath(): string {
+  return join(app.getPath('userData'), 'update-snooze.json')
+}
+
+function readUpdateSnoozeUntil(): number | undefined {
+  try {
+    const raw = JSON.parse(readFileSync(updateSnoozePath(), 'utf8')) as { until?: unknown }
+    return typeof raw.until === 'number' && Number.isFinite(raw.until) ? raw.until : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function writeUpdateSnoozeUntil(until: number): void {
+  try {
+    writeFileSync(
+      updateSnoozePath(),
+      `${JSON.stringify({ until, updatedAt: Date.now() }, null, 2)}\n`,
+      'utf8',
+    )
+  } catch (err) {
+    console.error('[codepulse] failed to write update snooze', err)
+  }
+}
+
+function clearUpdateSnooze(): void {
+  try {
+    unlinkSync(updateSnoozePath())
+  } catch {
+    // missing file is fine
+  }
+}
+
 async function installLatestUpdate(): Promise<UpdateInstallResult> {
   if (installingUpdate) return { ok: false, error: 'Update installation is already running.' }
   installingUpdate = true
 
   try {
+    // Installing means the user is acting on an update — lift any prior snooze.
+    clearUpdateSnooze()
     const update = latestUpdate ?? (await checkForUpdatesOnce())
     if (!update) return { ok: false, error: 'No update is available.' }
 
@@ -403,7 +467,10 @@ export function launchInstallerDetached(installerPath: string): void {
 }
 
 function shouldCheckForUpdates(): boolean {
-  return process.env[DISABLE_UPDATE_CHECK_ENV] !== '1'
+  if (process.env[DISABLE_UPDATE_CHECK_ENV] === '1') return false
+  // User tapped "later" — no network poll and no modal for 24h.
+  if (isUpdateSnoozed(readUpdateSnoozeUntil())) return false
+  return true
 }
 
 function sleep(ms: number): Promise<void> {

@@ -4,10 +4,28 @@ import {
   buildDownloadCandidates,
   buildUpdateInfo,
   compareVersions,
+  computeUpdateSnoozeUntil,
   isNewerVersion,
+  isUpdateSnoozed,
   parseReleaseNotes,
   planByteRanges,
+  UPDATE_CHECK_INTERVAL_MS,
+  UPDATE_SNOOZE_MS,
 } from '../apps/desktop/src/main/update-checker.js'
+
+test('update check policy is every 6h with 24h dismiss snooze', () => {
+  assert.equal(UPDATE_CHECK_INTERVAL_MS, 6 * 60 * 60_000)
+  assert.equal(UPDATE_SNOOZE_MS, 24 * 60 * 60_000)
+
+  const now = 1_000_000_000_000
+  const until = computeUpdateSnoozeUntil(now)
+  assert.equal(until, now + UPDATE_SNOOZE_MS)
+  assert.equal(isUpdateSnoozed(until, now), true)
+  assert.equal(isUpdateSnoozed(until, now + UPDATE_SNOOZE_MS - 1), true)
+  assert.equal(isUpdateSnoozed(until, now + UPDATE_SNOOZE_MS), false)
+  assert.equal(isUpdateSnoozed(undefined, now), false)
+  assert.equal(isUpdateSnoozed(NaN, now), false)
+})
 
 test('compareVersions handles multi-digit semver parts', () => {
   assert.equal(compareVersions('0.1.10', '0.1.9'), 1)

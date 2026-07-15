@@ -144,6 +144,45 @@ test('display panels collapse nested workspace cards into the project root', () 
   assert.equal(panels[0]?.workspaces[0]?.name, 'gitlab_single_pipe')
 })
 
+test('display panels do not collapse Desktop projects under the user profile path', () => {
+  const panels = buildAgentPanels([
+    {
+      agentType: 'codex',
+      state: TurnState.IDLE,
+      toolCallCount: 0,
+      needPermission: false,
+      needUserInput: false,
+      unread: false,
+      lastEventAt: 100,
+      workspacePath: 'C:\\Users\\Administrator',
+      model: 'gpt-5.6-sol',
+    },
+    {
+      agentType: 'codex',
+      state: TurnState.TOOL_RUNNING,
+      toolCallCount: 2,
+      needPermission: false,
+      needUserInput: false,
+      unread: false,
+      lastEventAt: 500,
+      workspacePath:
+        'C:\\Users\\Administrator\\Desktop\\MetalMax_recovered_from_recycle_bin_20260708',
+      model: 'gpt-5.6-sol',
+    },
+  ])
+
+  assert.equal(panels.length, 1)
+  const names = panels[0]?.workspaces.map((w) => w.name).sort() ?? []
+  assert.deepEqual(names, ['Administrator', 'MetalMax_recovered_from_recycle_bin_20260708'])
+  const metal = panels[0]?.workspaces.find((w) => w.name.startsWith('MetalMax'))
+  assert.ok(metal)
+  assert.match(
+    metal?.workspacePath?.replace(/\\/g, '/') ?? '',
+    /Desktop\/MetalMax_recovered_from_recycle_bin_20260708$/i,
+  )
+  assert.equal(metal?.agent.state, TurnState.TOOL_RUNNING)
+})
+
 test('StatusHub treats slash and backslash workspace paths as the same project', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
 
@@ -380,6 +419,72 @@ test('StatusHub removes idle projects after five minutes', () => {
   assert.equal(hub.snapshot(idleAt + idleRetentionMs - 1).agents[0]?.state, TurnState.IDLE)
   ;(hub as unknown as { tick(now?: number): void }).tick(idleAt + idleRetentionMs)
   assert.equal(hub.snapshot(idleAt + idleRetentionMs).agents.length, 0)
+})
+
+test('StatusHub idle retention is not extended by quota-only sessionSync snapshots', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const startedAt = 1_000_000
+  const idleRetentionMs = 5 * 60_000
+
+  hub.ingest({
+    id: 'start',
+    source: 'codex',
+    eventType: 'session_start',
+    externalSessionId: 'session-idle',
+    cwd: 'E:/project/idle-card',
+    timestamp: startedAt,
+    internal: { sessionSync: true },
+  })
+  hub.ingest({
+    id: 'token',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'session-idle',
+    cwd: 'E:/project/idle-card',
+    timestamp: startedAt + 100,
+    token: {
+      accuracy: 'estimated',
+      rateLimits: {
+        sevenDay: { usedPercent: 10, resetsAt: startedAt / 1000 + 86_400, windowMinutes: 10_080 },
+      },
+    },
+    internal: { sessionSync: true },
+  })
+
+  // Idle clock starts at last activity (token at +100). Quota-only must not extend it.
+  const idleAnchor = startedAt + 100
+  hub.ingest({
+    id: 'quota-tick',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'session-idle',
+    cwd: 'E:/project/idle-card',
+    timestamp: idleAnchor + idleRetentionMs - 1_000,
+    token: {
+      accuracy: 'estimated',
+      rateLimits: {
+        sevenDay: { usedPercent: 11, resetsAt: startedAt / 1000 + 86_400, windowMinutes: 10_080 },
+      },
+    },
+    internal: { sessionSync: true, quotaRefresh: true },
+  })
+  ;(hub as unknown as { tick(now?: number): void }).tick(idleAnchor + idleRetentionMs - 1)
+  assert.equal(
+    hub.snapshot(idleAnchor + idleRetentionMs - 1).agents.some((a) => !a.taskHidden),
+    true,
+    'still visible just before 5 minutes',
+  )
+  ;(hub as unknown as { tick(now?: number): void }).tick(idleAnchor + idleRetentionMs)
+  const agents = hub
+    .snapshot(idleAnchor + idleRetentionMs)
+    .agents.filter((a) => a.agentType === 'codex')
+  const visible = agents.filter((a) => !a.taskHidden)
+  assert.equal(visible.length, 0, 'idle project must be pruned after 5 minutes')
+  // Quota shell may remain as taskHidden when rate limits are retained.
+  assert.ok(
+    agents.length === 0 || agents.every((a) => a.taskHidden),
+    'remaining codex slots must be taskHidden quota shells',
+  )
 })
 
 test('StatusHub keeps quota visible after removing idle project rows', () => {
@@ -1350,6 +1455,52 @@ test('display panels keep quota-only agent after projects are hidden', () => {
   assert.equal(panels[0]?.agentType, 'codex')
   assert.equal(panels[0]?.workspaces.length, 0)
   assert.equal(panels[0]?.quotaToken?.rateLimits?.fiveHour?.usedPercent, 40)
+})
+
+test('display panels do not show pathless agents as unknown project cards', () => {
+  const panels = buildAgentPanels([
+    {
+      agentType: 'claude_code',
+      state: TurnState.IDLE,
+      toolCallCount: 0,
+      needPermission: false,
+      needUserInput: false,
+      lastEventAt: 300,
+      unread: false,
+      // No workspacePath — quota shell / probe event.
+      token: {
+        accuracy: 'estimated',
+        rateLimits: {
+          fiveHour: { usedPercent: 5, resetsAt: 2_000 },
+          sevenDay: { usedPercent: 20, resetsAt: 9_000 },
+        },
+      },
+    },
+    {
+      agentType: 'codex',
+      state: TurnState.IDLE,
+      toolCallCount: 0,
+      needPermission: false,
+      needUserInput: false,
+      lastEventAt: 400,
+      unread: false,
+      token: {
+        accuracy: 'estimated',
+        rateLimits: {
+          sevenDay: { usedPercent: 12, resetsAt: 9_000 },
+        },
+      },
+    },
+  ])
+
+  const claude = panels.find((panel) => panel.agentType === 'claude_code')
+  const codex = panels.find((panel) => panel.agentType === 'codex')
+  assert.ok(claude, 'Claude pane kept for quota')
+  assert.ok(codex, 'Codex pane kept for quota')
+  assert.equal(claude?.workspaces.length, 0)
+  assert.equal(codex?.workspaces.length, 0)
+  assert.equal(claude?.quotaToken?.rateLimits?.fiveHour?.usedPercent, 5)
+  assert.equal(codex?.quotaToken?.rateLimits?.sevenDay?.usedPercent, 12)
 })
 
 test('display panels keep Codex projects inside one panel', () => {

@@ -89,13 +89,22 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
   if (event.token) {
     next.token = mergeToken(current.token, event.token, event.timestamp, event.model ?? next.model)
   }
-  if (!tokenOnlyQuotaRefresh && event.eventType !== 'token_snapshot') next.taskHidden = false
+  // Real activity unhides idle-pruned project cards. Pure quota refreshes do not.
+  if (!tokenOnlyQuotaRefresh) {
+    if (event.eventType !== 'token_snapshot') next.taskHidden = false
+    else if (event.internal?.sessionSync) {
+      next.taskHidden = false
+      // Disk activity while still IDLE restarts the 5-minute idle retention clock.
+      if (next.state === TurnState.IDLE) next.terminalAt = event.timestamp
+    }
+  }
 
   switch (event.eventType) {
     case 'session_start':
       next.state = TurnState.IDLE
       next.unread = false
-      next.terminalAt = undefined
+      // Count idle retention from first sighting so disk-hydrated cards expire in 5 min.
+      next.terminalAt = event.timestamp
       if (!hasContextSnapshot(event.token)) next.token = markContextStale(next.token)
       break
 
@@ -207,7 +216,8 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       next.needUserInput = false
       next.toolName = undefined
       next.activity = undefined
-      next.terminalAt = undefined
+      // Start the 5-minute idle retention clock when the session ends.
+      next.terminalAt = event.timestamp
       if (!hasContextSnapshot(event.token)) next.token = markContextStale(next.token)
       break
 
@@ -429,58 +439,104 @@ function isZeroOnlyRateLimits(rateLimits: TokenPayload['rateLimits']): boolean {
   )
 }
 
+/** Weekly plan windows are ≤7d; farther timestamps are almost always bad data. */
+const MAX_REASONABLE_RESET_AHEAD_MS = 10 * 24 * 60 * 60_000
+
 function mergeRateLimitWindow(
   current: TokenRateLimitWindow | undefined,
   patch: TokenRateLimitWindow | undefined,
 ): TokenRateLimitWindow | undefined {
   if (!patch) return current
-  if (!current) {
+  const nowMs = Date.now()
+  const sanePatch = sanitizeRateLimitWindow(patch, nowMs)
+  if (!sanePatch) return current
+  if (!current) return sanePatch
+
+  const saneCurrent = sanitizeRateLimitWindow(current, nowMs) ?? current
+  const curResetMs = normalizeResetAtMs(saneCurrent.resetsAt)
+  const patchResetMs = normalizeResetAtMs(sanePatch.resetsAt)
+
+  // Prefer a reasonable reset over an absurd far-future placeholder (e.g. 2000000000).
+  const curAbsurd = isAbsurdResetMs(curResetMs, nowMs)
+  const patchAbsurd = isAbsurdResetMs(patchResetMs, nowMs)
+  if (curAbsurd && !patchAbsurd) {
     return {
-      ...(patch.usedPercent !== undefined ? { usedPercent: patch.usedPercent } : {}),
-      ...(patch.resetsAt !== undefined ? { resetsAt: patch.resetsAt } : {}),
-      ...(patch.windowMinutes !== undefined ? { windowMinutes: patch.windowMinutes } : {}),
+      ...saneCurrent,
+      ...sanePatch,
+      usedPercent:
+        sanePatch.usedPercent !== undefined ? sanePatch.usedPercent : saneCurrent.usedPercent,
     }
   }
-
-  const curResetMs = normalizeResetAtMs(current.resetsAt)
-  const patchResetMs = normalizeResetAtMs(patch.resetsAt)
+  if (patchAbsurd && !curAbsurd) {
+    // Keep current reset; still allow usage to rise on the real window.
+    let usedPercent = saneCurrent.usedPercent
+    if (sanePatch.usedPercent !== undefined) {
+      usedPercent =
+        usedPercent === undefined
+          ? sanePatch.usedPercent
+          : Math.max(usedPercent, sanePatch.usedPercent)
+    }
+    return {
+      ...saneCurrent,
+      ...(sanePatch.usedPercent !== undefined ? { usedPercent } : {}),
+      ...(sanePatch.windowMinutes !== undefined ? { windowMinutes: sanePatch.windowMinutes } : {}),
+    }
+  }
 
   // A newer billing window fully replaces the previous one (usage may drop to ~0).
   if (patchResetMs != null && curResetMs != null && patchResetMs > curResetMs) {
     return {
-      ...current,
-      ...(patch.usedPercent !== undefined ? { usedPercent: patch.usedPercent } : {}),
-      ...(patch.resetsAt !== undefined ? { resetsAt: patch.resetsAt } : {}),
-      ...(patch.windowMinutes !== undefined ? { windowMinutes: patch.windowMinutes } : {}),
+      ...saneCurrent,
+      ...sanePatch,
     }
   }
 
   // An older window must never clobber a newer one (stale rollout / hook race).
   if (patchResetMs != null && curResetMs != null && patchResetMs < curResetMs) {
-    return current
+    return saneCurrent
   }
 
   // Same window (or missing resetsAt): account usage only rises until official reset.
   // Exception: when the window is already expired, soft-reset may publish 0%.
-  const nowMs = Date.now()
   const windowExpired =
     (patchResetMs != null && patchResetMs <= nowMs) || (curResetMs != null && curResetMs <= nowMs)
 
-  let usedPercent = current.usedPercent
-  if (patch.usedPercent !== undefined) {
-    if (windowExpired || current.usedPercent === undefined) {
-      usedPercent = patch.usedPercent
+  let usedPercent = saneCurrent.usedPercent
+  if (sanePatch.usedPercent !== undefined) {
+    if (windowExpired || saneCurrent.usedPercent === undefined) {
+      usedPercent = sanePatch.usedPercent
     } else {
-      usedPercent = Math.max(current.usedPercent, patch.usedPercent)
+      usedPercent = Math.max(saneCurrent.usedPercent, sanePatch.usedPercent)
     }
   }
 
   return {
-    ...current,
-    ...(patch.usedPercent !== undefined ? { usedPercent } : {}),
-    ...(patch.resetsAt !== undefined ? { resetsAt: patch.resetsAt } : {}),
-    ...(patch.windowMinutes !== undefined ? { windowMinutes: patch.windowMinutes } : {}),
+    ...saneCurrent,
+    ...(sanePatch.usedPercent !== undefined ? { usedPercent } : {}),
+    ...(sanePatch.resetsAt !== undefined ? { resetsAt: sanePatch.resetsAt } : {}),
+    ...(sanePatch.windowMinutes !== undefined ? { windowMinutes: sanePatch.windowMinutes } : {}),
   }
+}
+
+function sanitizeRateLimitWindow(
+  window: TokenRateLimitWindow,
+  nowMs: number,
+): TokenRateLimitWindow | undefined {
+  const resetMs = normalizeResetAtMs(window.resetsAt)
+  if (isAbsurdResetMs(resetMs, nowMs)) {
+    // Keep usedPercent / windowMinutes; drop bogus resetsAt.
+    if (window.usedPercent === undefined && window.windowMinutes === undefined) return undefined
+    return {
+      ...(window.usedPercent !== undefined ? { usedPercent: window.usedPercent } : {}),
+      ...(window.windowMinutes !== undefined ? { windowMinutes: window.windowMinutes } : {}),
+    }
+  }
+  return window
+}
+
+function isAbsurdResetMs(resetMs: number | undefined, nowMs: number): boolean {
+  if (resetMs == null) return false
+  return resetMs - nowMs > MAX_REASONABLE_RESET_AHEAD_MS
 }
 
 /** Normalize resets_at that may be seconds or milliseconds. */

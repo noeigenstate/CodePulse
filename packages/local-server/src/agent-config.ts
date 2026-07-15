@@ -146,7 +146,12 @@ try {
   process.exit(0)
 }
 const target = join(String(hookBinDir), ${JSON.stringify(scriptName)})
-const child = spawn(process.execPath, [target], { stdio: 'inherit' })
+// inherit: forward Claude's statusline stdin JSON + stdout status text.
+// (Windows pipe+exit races can assert in libuv; inherit is reliable here.)
+const child = spawn(process.execPath, [target], {
+  stdio: 'inherit',
+  windowsHide: true,
+})
 child.on('error', () => process.exit(0))
 child.on('exit', (code, signal) => {
   if (signal) process.exit(0)

@@ -24,23 +24,22 @@ import {
   pickRateLimits,
 } from '@codepulse/adapters'
 import { readCodexQuotaTokenFromFile } from './quota-watcher.js'
+import { mergeClaudeContextWithQuota, resolveClaudeAccountQuota } from './claude-quota.js'
 
 const MAX_CODEX_FILES = 80
 const CODEX_META_HEAD = 512 * 1024
 const CODEX_TAIL = 2 * 1024 * 1024
 /**
- * Codex 无 active_sessions：用 rollout mtime 近似「CLI 仍开着」。
- * 等额度重置时 CLI 可能数小时不写盘，窗口需明显宽于 30 分钟。
+ * Codex 无 active_sessions：用 rollout mtime 近似「CLI 仍活跃」。
+ * 与 StatusHub 空闲 5 分钟剔除对齐——超过该窗口的 rollout 不再拉起项目卡片。
  * 仍要求本机有 codex 进程，避免把历史沉寂项目拉出来。
  */
-const CODEX_LIVE_MS = 12 * 60 * 60_000
-/** 进程在线但完全无近期写入时，仍取最近一份 rollout 做额度壳（不扫 48h 多项目）。 */
+const CODEX_LIVE_MS = 5 * 60_000
+/** 进程在线但完全无近期写入时，取最近一份 rollout 只刷新账号额度（不复活多项目卡片）。 */
 const CODEX_QUOTA_FALLBACK_MS = 48 * 60 * 60_000
 const BOOT_OFFSETS_MS = [0, 800, 2_000, 4_000, 6_000] as const
 const STEADY_INTERVAL_MS = 8_000
 const WATCH_DEBOUNCE_MS = 600
-/** 指纹未变时仍定期刷新 lastEventAt，避免 IDLE 槽位被 hub 5min 回收。 */
-const KEEPALIVE_MS = 2 * 60_000
 const GROK_BILLING_MSG = 'billing: fetched credits config'
 const CLAUDE_TRANSCRIPT_TAIL = 512 * 1024
 const DEFAULT_CLAUDE_CONTEXT_WINDOW = pickNumberEnv(process.env.CODEPULSE_CONTEXT_WINDOW) ?? 200_000
@@ -50,6 +49,11 @@ export interface SessionSyncOptions {
   codexHome?: string
   grokHome?: string
   claudeHome?: string
+  /**
+   * 用户主目录（OAuth credentials + `~/.codepulse/claude-quota.json`）。
+   * 测试传入临时目录以免读到本机真实额度缓存。
+   */
+  userHome?: string
   now?: () => number
   /** 测试时可关闭文件监听 */
   disableWatch?: boolean
@@ -66,6 +70,7 @@ export class SessionSyncService {
   private readonly codexHome: string
   private readonly grokHome: string
   private readonly claudeHome: string
+  private readonly userHome: string
   private readonly now: () => number
   private readonly disableWatch: boolean
   private readonly codexProcessAlive: () => boolean | Promise<boolean>
@@ -77,19 +82,21 @@ export class SessionSyncService {
   private running = false
   private stopped = false
   private lastLogAt = 0
-  /** sessionKey → fingerprint of last ingested payload */
+  /** sessionKey → full fingerprint (activity + quota) of last ingested payload */
   private fingerprints = new Map<string, string>()
-  /** sessionKey → last keep-alive emit time */
-  private keepAliveAt = new Map<string, number>()
+  /** sessionKey → activity-only fingerprint (mtime/context; excludes rate limits) */
+  private activityFingerprints = new Map<string, string>()
   private firstSync: Promise<void>
   private resolveFirstSync!: () => void
   private firstSyncDone = false
 
   constructor(options: SessionSyncOptions) {
     this.hub = options.hub
-    this.codexHome = options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex')
-    this.grokHome = options.grokHome ?? process.env.GROK_HOME ?? join(homedir(), '.grok')
-    this.claudeHome = options.claudeHome ?? process.env.CLAUDE_HOME ?? join(homedir(), '.claude')
+    this.userHome = options.userHome ?? homedir()
+    this.codexHome = options.codexHome ?? process.env.CODEX_HOME ?? join(this.userHome, '.codex')
+    this.grokHome = options.grokHome ?? process.env.GROK_HOME ?? join(this.userHome, '.grok')
+    this.claudeHome =
+      options.claudeHome ?? process.env.CLAUDE_HOME ?? join(this.userHome, '.claude')
     this.now = options.now ?? Date.now
     this.disableWatch = options.disableWatch ?? false
     this.codexProcessAlive = options.codexProcessAlive ?? (() => isCliProcessAlive('codex'))
@@ -228,15 +235,19 @@ export class SessionSyncService {
 
     const sessionsRoot = join(this.codexHome, 'sessions')
     let files = await listLiveCodexRollouts(sessionsRoot, this.now(), CODEX_LIVE_MS)
-    // Waiting for weekly reset: CLI process is up but may not have written for hours.
-    // Fall back to the single freshest rollout (quota shell), not a multi-project sweep.
+    // No recently-active projects: still refresh account quota from the freshest
+    // rollout, but do not resurrect multi-project cards from hours-old sessions.
+    let quotaOnlyFallback = false
     if (files.length === 0) {
       const fallback = await listLiveCodexRollouts(
         sessionsRoot,
         this.now(),
         CODEX_QUOTA_FALLBACK_MS,
       )
-      if (fallback[0]) files = [fallback[0]]
+      if (fallback[0]) {
+        files = [fallback[0]]
+        quotaOnlyFallback = true
+      }
     }
     const now = this.now()
     let count = 0
@@ -271,6 +282,25 @@ export class SessionSyncService {
     // them used to make the main weekly bar flip to 0/2%.
     const accountQuota = pickSharedCodexAccountQuota([...byCwd.values()])
 
+    if (quotaOnlyFallback) {
+      const token = accountQuota?.token
+      if (!token?.rateLimits) return 0
+      const mapKey = 'codex:quota-only'
+      const fp = fingerprint('codex', 'quota-only', '', 0, token, undefined)
+      if (this.fingerprints.get(mapKey) === fp) return 0
+      this.fingerprints.set(mapKey, fp)
+      this.hub.ingest({
+        id: `session-sync:codex:quota:${now}`,
+        source: 'codex',
+        eventType: 'token_snapshot',
+        token,
+        tokenSourcePath: accountQuota?.path,
+        timestamp: now,
+        internal: { sessionSync: true, quotaRefresh: true },
+      })
+      return 1
+    }
+
     for (const { file, meta, token } of byCwd.values()) {
       const sessionId = meta.sessionId ?? sessionIdFromRolloutName(file.path)
       const cwd = meta.cwd!
@@ -279,19 +309,16 @@ export class SessionSyncService {
         accountQuota?.token,
       )
       const mapKey = `codex:${sessionId}`
-      if (
-        this.shouldSkipUnchanged(
-          mapKey,
-          'codex',
-          sessionId,
-          cwd,
-          file.mtimeMs,
-          payloadToken,
-          meta.model,
-        )
-      ) {
-        continue
-      }
+      const skip = this.classifyUnchanged(
+        mapKey,
+        'codex',
+        sessionId,
+        cwd,
+        file.mtimeMs,
+        payloadToken,
+        meta.model,
+      )
+      if (skip === 'skip') continue
 
       this.ingestHydrate({
         source: 'codex',
@@ -302,6 +329,8 @@ export class SessionSyncService {
         // Prefer account quota source path so QuotaRefreshWatcher re-reads the freshest file.
         tokenSourcePath: accountQuota?.path ?? file.path,
         now,
+        // Quota-only churn must not refresh lastEventAt or unhide idle project cards.
+        quotaOnly: skip === 'quota',
       })
       count += 1
     }
@@ -320,7 +349,9 @@ export class SessionSyncService {
       if (row.pid != null && !this.pidAlive(row.pid)) continue
       const key = normalizePathKey(row.cwd)
       // Active list is authoritative; last write wins if duplicates.
-      byCwd.set(key, { sessionId: row.sessionId, cwd: row.cwd, mtimeMs: now })
+      // Do not use wall-clock as mtime — that would refresh lastEventAt every poll
+      // and prevent the hub's 5-minute idle project pruning.
+      byCwd.set(key, { sessionId: row.sessionId, cwd: row.cwd, mtimeMs: 0 })
     }
 
     let count = 0
@@ -368,9 +399,16 @@ export class SessionSyncService {
 
       const payloadToken = token ?? { accuracy: 'unknown' as const }
       const mapKey = `grok:${sessionId}`
-      if (this.shouldSkipUnchanged(mapKey, 'grok', sessionId, cwd, mtimeMs, payloadToken, model)) {
-        return false
-      }
+      const skip = this.classifyUnchanged(
+        mapKey,
+        'grok',
+        sessionId,
+        cwd,
+        mtimeMs,
+        payloadToken,
+        model,
+      )
+      if (skip === 'skip') return false
 
       this.ingestHydrate({
         source: 'grok',
@@ -380,6 +418,7 @@ export class SessionSyncService {
         token: payloadToken,
         tokenSourcePath: sourcePath,
         now,
+        quotaOnly: skip === 'quota',
       })
       return true
     } catch (err) {
@@ -394,6 +433,13 @@ export class SessionSyncService {
    */
   private async syncClaude(): Promise<number> {
     const now = this.now()
+    // Account-wide quota (OAuth usage or statusline cache) — independent of transcripts.
+    const quota = await resolveClaudeAccountQuota({
+      home: this.userHome,
+      now: () => this.now(),
+      timeoutMs: 1_200,
+    }).catch(() => undefined)
+
     const active = await readClaudeActiveSessions(this.claudeHome)
     let count = 0
     const byCwd = new Map<
@@ -412,7 +458,26 @@ export class SessionSyncService {
     }
 
     for (const row of byCwd.values()) {
-      if (await this.ingestClaudeSession(row.sessionId, row.cwd, now, row.updatedAt)) {
+      if (await this.ingestClaudeSession(row.sessionId, row.cwd, now, row.updatedAt, quota)) {
+        count += 1
+      }
+    }
+
+    // No open project but we have account quota → quota-only shell (same as Grok).
+    if (count === 0 && quota?.rateLimits) {
+      const mapKey = 'claude_code:quota-only'
+      const token = mergeClaudeContextWithQuota(undefined, quota)
+      const fp = fingerprint('claude_code', 'quota-only', '', 0, token, undefined)
+      if (this.fingerprints.get(mapKey) !== fp) {
+        this.fingerprints.set(mapKey, fp)
+        this.hub.ingest({
+          id: `session-sync:claude:quota:${now}`,
+          source: 'claude_code',
+          eventType: 'token_snapshot',
+          token,
+          timestamp: now,
+          internal: { sessionSync: true, quotaRefresh: true },
+        })
         count += 1
       }
     }
@@ -424,18 +489,25 @@ export class SessionSyncService {
     cwd: string,
     now: number,
     updatedAt: number,
+    accountQuota?: Awaited<ReturnType<typeof resolveClaudeAccountQuota>>,
   ): Promise<boolean> {
     try {
       const transcript = await findClaudeTranscript(this.claudeHome, sessionId)
       const usage = transcript ? await readClaudeTranscriptUsage(transcript) : undefined
-      const token = claudeUsageToToken(usage) ?? { accuracy: 'unknown' as const }
+      const contextToken = claudeUsageToToken(usage)
+      const token = mergeClaudeContextWithQuota(contextToken, accountQuota)
       const model = usage?.model
       const mapKey = `claude_code:${sessionId}`
-      if (
-        this.shouldSkipUnchanged(mapKey, 'claude_code', sessionId, cwd, updatedAt, token, model)
-      ) {
-        return false
-      }
+      const skip = this.classifyUnchanged(
+        mapKey,
+        'claude_code',
+        sessionId,
+        cwd,
+        updatedAt,
+        token,
+        model,
+      )
+      if (skip === 'skip') return false
 
       this.ingestHydrate({
         source: 'claude_code',
@@ -445,6 +517,8 @@ export class SessionSyncService {
         token,
         tokenSourcePath: transcript,
         now,
+        // Quota-only churn (account %) must not refresh project idle clock.
+        quotaOnly: skip === 'quota',
       })
       return true
     } catch (err) {
@@ -454,10 +528,12 @@ export class SessionSyncService {
   }
 
   /**
-   * Skip only when data is unchanged, the hub still has the slot, and a recent
-   * keep-alive already refreshed lastEventAt. Otherwise re-ingest.
+   * Decide whether disk data needs re-ingest.
+   * - skip: nothing changed
+   * - activity: mtime/context/model changed (refresh recency, show project)
+   * - quota: only rate-limit fields changed (keep lastEventAt / taskHidden)
    */
-  private shouldSkipUnchanged(
+  private classifyUnchanged(
     mapKey: string,
     source: SyncSource,
     sessionId: string,
@@ -465,20 +541,19 @@ export class SessionSyncService {
     mtimeMs: number,
     token: TokenPayload,
     model: string | undefined,
-  ): boolean {
-    const fp = fingerprint(source, sessionId, cwd, mtimeMs, token, model)
-    const prev = this.fingerprints.get(mapKey)
+  ): 'skip' | 'activity' | 'quota' {
+    const full = fingerprint(source, sessionId, cwd, mtimeMs, token, model)
+    const activity = activityFingerprint(source, sessionId, cwd, mtimeMs, token, model)
+    const prevFull = this.fingerprints.get(mapKey)
+    const prevActivity = this.activityFingerprints.get(mapKey)
     const inHub = this.hubHasSession(source, sessionId)
-    if (prev !== fp || !inHub) {
-      this.fingerprints.set(mapKey, fp)
-      return false
-    }
-    const lastKa = this.keepAliveAt.get(mapKey) ?? 0
-    if (this.now() - lastKa >= KEEPALIVE_MS) {
-      this.fingerprints.set(mapKey, fp)
-      return false
-    }
-    return true
+
+    this.fingerprints.set(mapKey, full)
+    this.activityFingerprints.set(mapKey, activity)
+
+    if (!inHub || prevActivity !== activity) return 'activity'
+    if (prevFull !== full) return 'quota'
+    return 'skip'
   }
 
   private hubHasSession(source: SyncSource, sessionId: string): boolean {
@@ -499,11 +574,15 @@ export class SessionSyncService {
     token: TokenPayload
     tokenSourcePath?: string
     now: number
+    /** True when only account rate limits changed — do not bump project recency. */
+    quotaOnly?: boolean
   }): void {
     const startKey = `started:${args.source}:${args.sessionId}`
     const alreadyStarted = this.fingerprints.has(startKey)
+    const quotaOnly = args.quotaOnly === true
 
-    if (!alreadyStarted) {
+    // Quota-only updates never open a new project card.
+    if (!alreadyStarted && !quotaOnly) {
       this.fingerprints.set(startKey, '1')
       this.hub.ingest({
         id: `session-sync:${args.source}:start:${args.sessionId}:${args.now}`,
@@ -516,6 +595,15 @@ export class SessionSyncService {
         timestamp: args.now,
         internal: { sessionSync: true },
       })
+    } else if (!alreadyStarted && quotaOnly) {
+      // Remember start key so a later activity path can still session_start once.
+      // (Do not mark started yet — first activity should open the card.)
+    }
+
+    if (!alreadyStarted && quotaOnly) {
+      // No existing slot and no activity: skip creating a hidden orphan agent.
+      // Account quota is still applied on other live projects / quota-only shell.
+      return
     }
 
     this.hub.ingest({
@@ -529,9 +617,11 @@ export class SessionSyncService {
       token: args.token,
       tokenSourcePath: args.tokenSourcePath,
       timestamp: args.now,
-      internal: { sessionSync: true },
+      internal: {
+        sessionSync: true,
+        ...(quotaOnly ? { quotaRefresh: true } : {}),
+      },
     })
-    this.keepAliveAt.set(`${args.source}:${args.sessionId}`, args.now)
   }
 }
 
@@ -1256,7 +1346,30 @@ function mergeGrokToken(
 
 // ─── utils ───────────────────────────────────────────────────────────────────
 
+/** Full payload identity including account rate limits. */
 function fingerprint(
+  source: SyncSource | string,
+  sessionId: string,
+  cwd: string,
+  mtimeMs: number,
+  token: TokenPayload | undefined,
+  model: string | undefined,
+): string {
+  return [
+    activityFingerprint(source, sessionId, cwd, mtimeMs, token, model),
+    token?.rateLimits?.fiveHour?.usedPercent ?? '',
+    token?.rateLimits?.fiveHour?.resetsAt ?? '',
+    token?.rateLimits?.sevenDay?.usedPercent ?? '',
+    token?.rateLimits?.sevenDay?.resetsAt ?? '',
+    token?.rateLimitId ?? '',
+  ].join('|')
+}
+
+/**
+ * Project activity identity — excludes rate limits so account-wide quota ticks
+ * do not refresh lastEventAt or resurrect idle project cards.
+ */
+function activityFingerprint(
   source: SyncSource | string,
   sessionId: string,
   cwd: string,
@@ -1273,11 +1386,7 @@ function fingerprint(
     token?.contextUsedPercent ?? '',
     token?.contextWindow ?? '',
     token?.input ?? '',
-    token?.rateLimits?.fiveHour?.usedPercent ?? '',
-    token?.rateLimits?.fiveHour?.resetsAt ?? '',
-    token?.rateLimits?.sevenDay?.usedPercent ?? '',
-    token?.rateLimits?.sevenDay?.resetsAt ?? '',
-    token?.rateLimitId ?? '',
+    token?.total ?? '',
   ].join('|')
 }
 

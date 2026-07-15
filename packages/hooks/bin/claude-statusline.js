@@ -19,6 +19,7 @@
  */
 import { statSync, openSync, readSync, closeSync } from 'node:fs'
 import { readStdinJson, postEvent } from '../lib/post.js'
+import { resolveClaudeRateLimitsForStatusline } from '../lib/claude-quota.js'
 
 /** 默认模型上下文窗口，可通过 CODEPULSE_CONTEXT_WINDOW 覆盖。 */
 const CONTEXT_WINDOW = parseTokenCount(process.env.CODEPULSE_CONTEXT_WINDOW) ?? 200000
@@ -46,21 +47,25 @@ if (officialContextWindow) {
   }
 }
 
-// 尽力转发：保留 Claude 下发的 rate_limits（额度），并合并上下文补丁。
-// 超时略放宽，避免本机认证 + 写盘后 600ms 内丢额度快照。
+// 额度：stdin rate_limits → OAuth usage → 本地缓存（主动补齐「等待命令行同步额度」）。
+const quota = await resolveClaudeRateLimitsForStatusline(data ?? {}, { timeoutMs: 900 })
+
+// 尽力转发：合并上下文补丁 + 解析后的额度。
+// 超时略放宽，避免本机认证 + 额度拉取后 600ms 内丢快照。
 await postEvent(
   {
     source: 'claude_code',
     channel: 'statusline',
     ...data,
     ...tokenPatch,
-    // Explicitly re-assert rate_limits after tokenPatch merge (tokenPatch has no rate_limits).
-    ...(data?.rate_limits != null ? { rate_limits: data.rate_limits } : {}),
+    ...(quota?.rate_limits != null ? { rate_limits: quota.rate_limits } : {}),
+    ...(quota?.rate_limit_id != null ? { rate_limit_id: quota.rate_limit_id } : {}),
+    ...(quota?.rate_limit_name != null ? { rate_limit_name: quota.rate_limit_name } : {}),
     ...(data?.rate_limits_available != null
       ? { rate_limits_available: data.rate_limits_available }
       : {}),
   },
-  { timeoutMs: 1_500 },
+  { timeoutMs: 2_000 },
 )
 
 const model = data?.model?.display_name ?? data?.model?.id ?? 'Claude'

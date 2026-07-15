@@ -33,6 +33,9 @@ function formatQuotaWindow(
   )}`
 }
 
+/** Weekly Claude/Codex windows are ≤7 days; anything farther is bad/stale test data. */
+const MAX_REASONABLE_RESET_REMAINING_MS = 10 * 24 * 60 * 60_000
+
 export function formatQuotaReset(
   resetsAt: number | undefined,
   now = Date.now(),
@@ -42,6 +45,10 @@ export function formatQuotaReset(
   const resetAtMs = resetsAt < 1_000_000_000_000 ? resetsAt * 1000 : resetsAt
   const remaining = resetAtMs - now
   if (remaining <= 0) return locale === 'zh' ? '可刷新' : 'Ready'
+  // Guard against bogus far-future resets_at (e.g. 2000000000 → "2498 天").
+  if (remaining > MAX_REASONABLE_RESET_REMAINING_MS) {
+    return locale === 'zh' ? '刷新 —' : 'Refresh —'
+  }
   return `${locale === 'zh' ? '刷新' : 'Refresh'} ${formatResetDuration(remaining, locale)}`
 }
 

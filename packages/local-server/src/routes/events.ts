@@ -7,6 +7,7 @@
 import type { FastifyInstance } from 'fastify'
 import { normalizeEvent, type StatusHub } from '@codepulse/core'
 import { normalizeRawEvent } from '@codepulse/adapters'
+import { writeClaudeQuotaCache } from '../claude-quota.js'
 
 const MAX_EVENT_BATCH = 1000
 
@@ -39,7 +40,17 @@ export function registerEventRoutes(app: FastifyInstance, hub: StatusHub): void 
         ignored.push(item)
         continue
       }
-      hub.ingest(normalizeEvent(input))
+      const event = normalizeEvent(input)
+      hub.ingest(event)
+      // Persist Claude account quota so session-sync can re-apply it without statusline.
+      if (event.source === 'claude_code' && event.token?.rateLimits) {
+        void writeClaudeQuotaCache({
+          rateLimits: event.token.rateLimits,
+          rateLimitId: event.token.rateLimitId,
+          rateLimitName: event.token.rateLimitName,
+          source: 'statusline',
+        })
+      }
       accepted += 1
     }
 

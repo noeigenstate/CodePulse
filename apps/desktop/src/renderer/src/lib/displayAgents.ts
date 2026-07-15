@@ -212,7 +212,11 @@ function buildAgentWorkspaceItems(
   const grouped = new Map<string, AgentRuntimeState[]>()
 
   for (const agent of agents) {
+    // Quota-only / pathless shells must not become "未识别项目" cards.
+    // They still feed collectQuotaMeters via the full agent list.
+    if (!agent.workspacePath?.trim()) continue
     const key = workspaceKey(agent.workspacePath)
+    if (!key) continue
     grouped.set(key, [...(grouped.get(key) ?? []), agent])
   }
 
@@ -223,7 +227,7 @@ function buildAgentWorkspaceItems(
       latest.workspacePath ?? groupAgents.find((agent) => agent.workspacePath)?.workspacePath
 
     return {
-      id: `${agentType}:${key || 'unknown'}`,
+      id: `${agentType}:${key}`,
       name: workspacePath ? workspaceName(workspacePath) : '',
       workspacePath,
       updatedAt: latest.lastEventAt,
@@ -240,6 +244,9 @@ function buildAgentWorkspaceItems(
 /**
  * When one workspace path is a subdirectory of another, keep a single card for
  * the parent path and surface the freshest activity state on it.
+ *
+ * Never treat home / Desktop / Users 等通用目录 as a "project root" that absorbs
+ * real projects underneath (that turned MetalMax into a card named "Administrator").
  */
 export function coalesceNestedWorkspaceItems(items: AgentWorkspaceItem[]): AgentWorkspaceItem[] {
   if (items.length <= 1) return items
@@ -256,7 +263,10 @@ export function coalesceNestedWorkspaceItems(items: AgentWorkspaceItem[]): Agent
     const parentIndex = kept.findIndex((candidate) => {
       const parentPath = normalizeWorkspacePath(candidate.workspacePath) ?? ''
       if (!path || !parentPath) return false
-      return path === parentPath || path.startsWith(`${parentPath}/`)
+      if (path !== parentPath && !path.startsWith(`${parentPath}/`)) return false
+      // Generic roots (profile, Desktop, …) must not swallow real project cards.
+      if (isGenericWorkspaceRoot(candidate.workspacePath)) return false
+      return true
     })
 
     if (parentIndex < 0) {
@@ -279,6 +289,49 @@ export function coalesceNestedWorkspaceItems(items: AgentWorkspaceItem[]): Agent
   }
 
   return kept
+}
+
+/**
+ * Paths that are containers for many unrelated projects, not a single project root.
+ * Matching is case-insensitive via {@link normalizeWorkspacePath}.
+ */
+export function isGenericWorkspaceRoot(path: string | undefined): boolean {
+  const normalized = normalizeWorkspacePath(path)
+  if (!normalized) return true
+
+  const parts = normalized.split('/').filter(Boolean)
+  if (parts.length <= 1) return true
+
+  const last = parts[parts.length - 1] ?? ''
+  const genericLeaf = new Set([
+    'users',
+    'home',
+    'desktop',
+    'documents',
+    'downloads',
+    'pictures',
+    'music',
+    'videos',
+    'onedrive',
+    'appdata',
+    'temp',
+    'tmp',
+    'public',
+    'library',
+    'workspaces',
+    'projects',
+    'repos',
+    'code',
+    'dev',
+    'src',
+  ])
+  if (genericLeaf.has(last)) return true
+
+  // C:/Users/<name> or /Users/<name> — user profile root.
+  const usersIdx = parts.findIndex((part) => part === 'users' || part === 'home')
+  if (usersIdx >= 0 && parts.length === usersIdx + 2) return true
+
+  return false
 }
 
 function visibleTaskAgents(agents: AgentRuntimeState[]): AgentRuntimeState[] {

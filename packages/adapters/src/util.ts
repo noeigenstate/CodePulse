@@ -158,9 +158,44 @@ export function pickRateLimitName(raw: Record<string, unknown>): string | undefi
 function readRateLimitWindow(value: unknown): RateLimitWindowPayload {
   const record = asRecord(value)
   if (!record) return undefined
-  const usedPercent = pickNumber(record, 'used_percentage', 'usedPercent', 'used_percent')
-  const resetsAt = pickNumber(record, 'resets_at', 'resetsAt')
+  // Prefer explicit percent fields; `utilization` from OAuth is often 0–1 fraction.
+  let usedPercent = pickNumber(record, 'used_percentage', 'usedPercent', 'used_percent')
+  if (usedPercent == null) {
+    const utilization = pickNumber(record, 'utilization')
+    if (utilization != null) {
+      usedPercent = utilization >= 0 && utilization <= 1 ? utilization * 100 : utilization
+    }
+  }
+  const resetsAt = pickResetsAt(record, 'resets_at', 'resetsAt')
   const windowMinutes = pickNumber(record, 'window_minutes', 'windowMinutes')
   if (usedPercent == null && resetsAt == null && windowMinutes == null) return undefined
-  return { usedPercent, resetsAt, windowMinutes }
+  return {
+    ...(usedPercent != null ? { usedPercent: Math.min(100, Math.max(0, usedPercent)) } : {}),
+    ...(resetsAt != null ? { resetsAt } : {}),
+    ...(windowMinutes != null ? { windowMinutes } : {}),
+  }
+}
+
+/** Unix seconds, ms, or ISO-8601 date strings. Drops absurd far-future values. */
+function pickResetsAt(raw: Record<string, unknown>, ...keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = raw[key]
+    let seconds: number | undefined
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      seconds = value > 1_000_000_000_000 ? Math.floor(value / 1000) : value
+    } else if (typeof value === 'string' && value.trim()) {
+      const ms = Date.parse(value)
+      if (Number.isFinite(ms)) seconds = Math.floor(ms / 1000)
+      else {
+        const n = Number(value)
+        if (Number.isFinite(n)) seconds = n > 1_000_000_000_000 ? Math.floor(n / 1000) : n
+      }
+    }
+    if (seconds == null) continue
+    // Weekly windows ≤ ~7d; reject placeholders like 2000000000 (~year 2033).
+    const remainingMs = seconds * 1000 - Date.now()
+    if (remainingMs > 10 * 24 * 60 * 60_000) continue
+    return seconds
+  }
+  return undefined
 }

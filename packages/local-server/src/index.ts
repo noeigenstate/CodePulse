@@ -167,6 +167,16 @@ export { registerAgentRoutes, registerEventRoutes, registerStatusRoutes, registe
 export { QuotaRefreshWatcher, readCodexQuotaTokenFromFile } from './quota-watcher.js'
 export { SessionSyncService, type SessionSyncOptions } from './session-sync.js'
 export {
+  claudeQuotaCachePath,
+  fetchClaudeOauthUsage,
+  mergeClaudeContextWithQuota,
+  normalizeClaudeRateLimitsPayload,
+  readClaudeQuotaCache,
+  resolveClaudeAccountQuota,
+  writeClaudeQuotaCache,
+  type ClaudeQuotaSnapshot,
+} from './claude-quota.js'
+export {
   defaultLocalAuthPath,
   generateLocalAuthToken,
   loadOrCreateLocalAuthToken,

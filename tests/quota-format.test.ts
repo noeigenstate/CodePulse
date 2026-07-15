@@ -7,7 +7,10 @@ import {
   formatWorkspaceLocation,
   visibleRateLimitWindows,
 } from '../apps/desktop/src/renderer/src/lib/panelFormat.js'
-import { formatQuotaDetail } from '../apps/desktop/src/renderer/src/lib/quotaFormat.js'
+import {
+  formatQuotaDetail,
+  formatQuotaReset,
+} from '../apps/desktop/src/renderer/src/lib/quotaFormat.js'
 
 test('token counts use decimal M as one million tokens', () => {
   assert.equal(formatTokenCount(1_000_000), '1M')
@@ -58,6 +61,15 @@ test('quota detail keeps weekly window visible when reset data is missing', () =
   )
 
   assert.equal(detail, '每周 — · 刷新 —')
+})
+
+test('formatQuotaReset hides absurd far-future resets_at (e.g. debug placeholder 2000000000)', () => {
+  const now = 1_784_100_000_000 // ~2026-07
+  // 2000000000 s ≈ year 2033 → thousands of days away
+  assert.equal(formatQuotaReset(2_000_000_000, now, 'zh'), '刷新 —')
+  assert.equal(formatQuotaReset(2_000_000_000, now, 'en'), 'Refresh —')
+  // Normal weekly-ish window still formats
+  assert.match(formatQuotaReset(now / 1000 + 3 * 24 * 3600, now, 'zh'), /刷新 3 天/)
 })
 
 test('token quota notice is weekly-only for Codex', () => {

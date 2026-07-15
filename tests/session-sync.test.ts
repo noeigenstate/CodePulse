@@ -49,6 +49,7 @@ test('SessionSyncService hydrates Codex project from local rollout within one sc
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const sync = new SessionSyncService({
     hub,
+    userHome: home,
     codexHome: home,
     grokHome: join(home, 'no-grok'),
     claudeHome: join(home, 'no-claude'),
@@ -114,6 +115,7 @@ test('SessionSyncService start() resolves after first disk hydrate', async () =>
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const sync = new SessionSyncService({
     hub,
+    userHome: home,
     codexHome: home,
     grokHome: join(home, 'no-grok'),
     claudeHome: join(home, 'no-claude'),
@@ -172,13 +174,14 @@ test('SessionSyncService ignores dormant Codex rollouts and closed CLI', async (
   await writeFile(liveRollout, body(liveId, liveCwd), 'utf8')
   await writeFile(dormantRollout, body(dormantId, dormantCwd), 'utf8')
   await utimes(liveRollout, new Date(), new Date())
-  // 20 hours ago — outside CODEX_LIVE_MS (12h), still inside 48h fallback only if alone
-  const old = new Date(Date.now() - 20 * 60 * 60_000)
+  // 20 minutes ago — outside CODEX_LIVE_MS (5m), still inside 48h quota fallback only if alone
+  const old = new Date(Date.now() - 20 * 60_000)
   await utimes(dormantRollout, old, old)
 
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const sync = new SessionSyncService({
     hub,
+    userHome: home,
     codexHome: home,
     grokHome: join(home, 'no-grok'),
     claudeHome: join(home, 'no-claude'),
@@ -199,6 +202,7 @@ test('SessionSyncService ignores dormant Codex rollouts and closed CLI', async (
   const hub2 = new StatusHub({ sessionThrottleMs: 0 })
   const sync2 = new SessionSyncService({
     hub: hub2,
+    userHome: home,
     codexHome: home,
     grokHome: join(home, 'no-grok'),
     claudeHome: join(home, 'no-claude'),
@@ -280,6 +284,7 @@ test('SessionSyncService hydrates Grok only from live active_sessions', async ()
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const sync = new SessionSyncService({
     hub,
+    userHome: home,
     codexHome: join(home, 'no-codex'),
     grokHome: home,
     claudeHome: join(home, 'no-claude'),
@@ -332,6 +337,7 @@ test('SessionSyncService skips Grok active_sessions with dead pid', async () => 
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const sync = new SessionSyncService({
     hub,
+    userHome: home,
     codexHome: join(home, 'no-codex'),
     grokHome: home,
     claudeHome: join(home, 'no-claude'),
@@ -398,6 +404,7 @@ test('SessionSyncService hydrates Claude from live sessions pid + transcript', a
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const sync = new SessionSyncService({
     hub,
+    userHome: home,
     codexHome: join(home, 'no-codex'),
     grokHome: join(home, 'no-grok'),
     claudeHome: home,
@@ -442,6 +449,7 @@ test('SessionSyncService skips Claude sessions with dead pid', async () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const sync = new SessionSyncService({
     hub,
+    userHome: home,
     codexHome: join(home, 'no-codex'),
     grokHome: join(home, 'no-grok'),
     claudeHome: home,
@@ -507,6 +515,7 @@ test('SessionSyncService skips unchanged fingerprint on second scan', async () =
   })
   const sync = new SessionSyncService({
     hub,
+    userHome: home,
     codexHome: home,
     grokHome: join(home, 'no-grok'),
     claudeHome: join(home, 'no-claude'),
@@ -589,6 +598,7 @@ test('SessionSyncService shares highest same-window weekly % across projects (no
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const sync = new SessionSyncService({
     hub,
+    userHome: home,
     codexHome: home,
     grokHome: join(home, 'no-grok'),
     claudeHome: join(home, 'no-claude'),

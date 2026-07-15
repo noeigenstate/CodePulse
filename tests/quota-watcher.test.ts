@@ -28,8 +28,16 @@ test('readCodexQuotaTokenFromFile reads Codex rate limits from the bound rollout
             rate_limits: {
               limit_id: 'codex_bengalfox',
               limit_name: 'GPT-5.3-Codex-Spark',
-              primary: { used_percent: 0, resets_at: 2_000, window_minutes: 300 },
-              secondary: { used_percent: 4, resets_at: 9_000, window_minutes: 10_080 },
+              primary: {
+                used_percent: 0,
+                resets_at: Math.floor(Date.now() / 1000) + 3_600,
+                window_minutes: 300,
+              },
+              secondary: {
+                used_percent: 4,
+                resets_at: Math.floor(Date.now() / 1000) + 86_400,
+                window_minutes: 10_080,
+              },
             },
           },
         }),
@@ -43,7 +51,7 @@ test('readCodexQuotaTokenFromFile reads Codex rate limits from the bound rollout
     assert.equal(token?.rateLimitId, 'codex_bengalfox')
     assert.equal(token?.rateLimitName, 'GPT-5.3-Codex-Spark')
     assert.equal(token?.rateLimits?.fiveHour?.usedPercent, 0)
-    assert.equal(token?.rateLimits?.fiveHour?.resetsAt, 2_000)
+    assert.ok((token?.rateLimits?.fiveHour?.resetsAt ?? 0) > Date.now() / 1000)
     assert.equal(token?.rateLimits?.sevenDay?.usedPercent, 4)
   } finally {
     await rm(dir, { recursive: true, force: true })

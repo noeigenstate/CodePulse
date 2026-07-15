@@ -21,10 +21,13 @@ export async function readLatestCodexUsage(raw, options = {}) {
     if (!file) return {}
     const lines = (await readTail(file)).trim().split(/\r?\n/)
     // Latest token_count often has context % but omits rate_limits until later.
-    // Keep the newest event for context, and the newest event that still carries quota.
+    // Keep the newest event for context, and the newest *still-active* quota snapshot
+    // for rate_limits. Never backfill limits whose resets_at are already past — that
+    // re-applies pre-reset high usage and makes the UI jump after official reset.
     let tokenCount = null
     let tokenCountWithLimits = null
     let taskStarted = null
+    const nowMs = Date.now()
 
     for (let i = lines.length - 1; i >= 0; i--) {
       let item
@@ -37,7 +40,11 @@ export async function readLatestCodexUsage(raw, options = {}) {
       const payload = item.payload
       if (payload?.type === 'token_count') {
         if (!tokenCount) tokenCount = payload
-        if (!tokenCountWithLimits && tokenCountHasRateLimits(payload)) {
+        if (
+          !tokenCountWithLimits &&
+          tokenCountHasRateLimits(payload) &&
+          rateLimitSnapshotIsActive(payload, nowMs)
+        ) {
           tokenCountWithLimits = payload
         }
       }
@@ -47,13 +54,20 @@ export async function readLatestCodexUsage(raw, options = {}) {
 
     if (!tokenCount) return {}
     const patch = toUsagePatch(tokenCount, taskStarted)
-    if (tokenCountWithLimits && tokenCountWithLimits !== tokenCount) {
+    // Prefer limits on the latest event; only backfill from an earlier *active* snapshot.
+    if (!patch.rate_limits && tokenCountWithLimits && tokenCountWithLimits !== tokenCount) {
       const limitPatch = toUsagePatch(tokenCountWithLimits, taskStarted)
-      if (limitPatch.rate_limits) {
+      if (limitPatch.rate_limits && rateLimitPatchIsActive(limitPatch.rate_limits, nowMs)) {
         patch.rate_limits = limitPatch.rate_limits
         if (limitPatch.rate_limit_id) patch.rate_limit_id = limitPatch.rate_limit_id
         if (limitPatch.rate_limit_name) patch.rate_limit_name = limitPatch.rate_limit_name
       }
+    } else if (patch.rate_limits && !rateLimitPatchIsActive(patch.rate_limits, nowMs)) {
+      // Latest event still carries expired limits — drop them so we do not keep
+      // flashing pre-reset percentages after the plan has rolled over.
+      delete patch.rate_limits
+      delete patch.rate_limit_id
+      delete patch.rate_limit_name
     }
     return { ...patch, usage_source_path: file }
   } catch {
@@ -67,6 +81,38 @@ function tokenCountHasRateLimits(payload) {
   return Boolean(
     raw.primary || raw.secondary || raw.five_hour || raw.fiveHour || raw.seven_day || raw.sevenDay,
   )
+}
+
+/**
+ * True when at least one window still has a future resets_at (plan not rolled over),
+ * or windows omit resets_at entirely (treat as usable). False when every known
+ * resets_at is already in the past — that snapshot is pre-reset stale data.
+ */
+function rateLimitSnapshotIsActive(payload, nowMs = Date.now()) {
+  if (!tokenCountHasRateLimits(payload)) return false
+  const patch = toUsagePatch(payload, null)
+  return rateLimitPatchIsActive(patch.rate_limits, nowMs)
+}
+
+function rateLimitPatchIsActive(rateLimits, nowMs = Date.now()) {
+  if (!rateLimits || typeof rateLimits !== 'object') return false
+  const windows = [rateLimits.five_hour, rateLimits.seven_day, rateLimits.fiveHour, rateLimits.sevenDay].filter(
+    Boolean,
+  )
+  if (windows.length === 0) return false
+
+  let sawReset = false
+  for (const window of windows) {
+    const resetsAt = window.resets_at ?? window.resetsAt
+    if (typeof resetsAt !== 'number' || !Number.isFinite(resetsAt)) continue
+    sawReset = true
+    const resetMs = resetsAt < 1_000_000_000_000 ? resetsAt * 1000 : resetsAt
+    if (resetMs > nowMs) return true
+  }
+  // No resets_at on any window → cannot prove expiry; allow (legacy payloads).
+  if (!sawReset) return true
+  // Every known reset is in the past → stale pre-reset snapshot.
+  return false
 }
 
 /**
@@ -134,7 +180,7 @@ async function findRolloutFile(raw, options) {
   // and has fresh main-plan weekly data (not idle Spark 0% from a parent thread).
   let best = null
   for (const candidate of candidates) {
-    const score = await scoreRolloutForQuota(candidate.path, candidate.mtimeMs, model)
+    const score = await scoreRolloutForQuota(candidate.path, candidate.mtimeMs, model, sessionIds)
     if (!best || score > best.score) best = { path: candidate.path, score }
   }
   return best?.path
@@ -198,11 +244,20 @@ async function readRolloutMeta(file) {
 /**
  * Score a rollout for quota display.
  * @param {string} [model] Active Codex model id (e.g. gpt-5.6-sol / gpt-5.3-codex-spark).
+ * @param {string[]} [sessionIds] Hook session / conversation ids — path match wins.
  */
-async function scoreRolloutForQuota(path, mtimeMs, model) {
-  // Newer mtime is the primary signal among same-cwd / candidate sessions.
+async function scoreRolloutForQuota(path, mtimeMs, model, sessionIds = []) {
+  // Newer mtime is a weak signal among same-cwd / candidate sessions.
   let score = mtimeMs
   const preferSpark = isSparkModelName(model)
+  const base = basename(path)
+  for (const sessionId of sessionIds) {
+    if (sessionId && base.includes(sessionId)) {
+      // Explicit session binding beats mtime / sibling cwd rollouts.
+      score += 1e15
+      break
+    }
+  }
   try {
     const lines = (await readTail(path, 512 * 1024)).trim().split(/\r?\n/)
     for (let i = lines.length - 1; i >= 0; i--) {
@@ -224,13 +279,6 @@ async function scoreRolloutForQuota(path, mtimeMs, model) {
         limitId.includes('spark') ||
         limitName.includes('spark') ||
         limitName.includes('bengalfox')
-      const primaryUsed = optionalNumber(
-        raw.primary?.used_percent ?? raw.primary?.used_percentage ?? raw.primary?.usedPercent,
-      )
-      const secondaryUsed = optionalNumber(
-        raw.secondary?.used_percent ?? raw.secondary?.used_percentage ?? raw.secondary?.usedPercent,
-      )
-      const used = Math.max(primaryUsed ?? 0, secondaryUsed ?? 0)
 
       // Strongly prefer bucket family that matches the active model.
       if (preferSpark) {
@@ -247,7 +295,9 @@ async function scoreRolloutForQuota(path, mtimeMs, model) {
           score -= 1e14
         }
       }
-      score += used * 1e7
+      // Prefer *active* (not yet reset) snapshots — never prefer higher used%
+      // (that made pre-reset 80% sessions beat post-reset 5% ones).
+      if (rateLimitSnapshotIsActive(item.payload, Date.now())) score += 5e12
       break
     }
   } catch {

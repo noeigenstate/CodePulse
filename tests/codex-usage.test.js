@@ -47,8 +47,8 @@ test('Codex usage reader extracts latest token_count from rollout JSONL', async 
             },
           },
           rate_limits: {
-            primary: { used_percent: 34, window_minutes: 300, resets_at: 1781160358 },
-            secondary: { used_percent: 5, window_minutes: 10080, resets_at: 1781747174 },
+            primary: { used_percent: 34, window_minutes: 300, resets_at: 1924905600 },
+            secondary: { used_percent: 5, window_minutes: 10080, resets_at: 1925510400 },
           },
         },
       }),
@@ -77,8 +77,8 @@ test('Codex usage reader extracts latest token_count from rollout JSONL', async 
       context_window_size: 200000,
       context_used_percent: 1,
       rate_limits: {
-        five_hour: { used_percentage: 34, resets_at: 1781160358, window_minutes: 300 },
-        seven_day: { used_percentage: 5, resets_at: 1781747174, window_minutes: 10080 },
+        five_hour: { used_percentage: 34, resets_at: 1924905600, window_minutes: 300 },
+        seven_day: { used_percentage: 5, resets_at: 1925510400, window_minutes: 10080 },
       },
       usage_source_path: rollout,
     })
@@ -172,7 +172,7 @@ test('Codex usage reader prefers session id over cwd when model sessions share a
             last_token_usage: { input_tokens: 3000, output_tokens: 250, total_tokens: 3250 },
           },
           rate_limits: {
-            primary: { used_percent: 55, window_minutes: 300, resets_at: 1781160358 },
+            primary: { used_percent: 55, window_minutes: 300, resets_at: 1924905600 },
           },
         },
       }),
@@ -196,7 +196,7 @@ test('Codex usage reader prefers session id over cwd when model sessions share a
             last_token_usage: { input_tokens: 2000, output_tokens: 150, total_tokens: 2150 },
           },
           rate_limits: {
-            primary: { used_percent: 3, window_minutes: 300, resets_at: 1781160358 },
+            primary: { used_percent: 3, window_minutes: 300, resets_at: 1924905600 },
           },
         },
       }),
@@ -456,7 +456,7 @@ test('Codex usage reader accepts rate limits under info', async () => {
             total_token_usage: { input_tokens: 2000, output_tokens: 100, total_tokens: 2100 },
             last_token_usage: { input_tokens: 2000, output_tokens: 100, total_tokens: 2100 },
             rate_limits: {
-              primary: { used_percent: 57, window_minutes: 300, resets_at: 1781160358 },
+              primary: { used_percent: 57, window_minutes: 300, resets_at: 1924905600 },
             },
           },
         },
@@ -535,7 +535,7 @@ test('Codex usage reader ignores stale transcript_path after fork when model is 
           rate_limits: {
             limit_id: 'codex',
             limit_name: null,
-            primary: { used_percent: 49, window_minutes: 10080, resets_at: 1784513490 },
+            primary: { used_percent: 49, window_minutes: 10080, resets_at: 1926115200 },
             secondary: null,
           },
         },
@@ -563,7 +563,7 @@ test('Codex usage reader ignores stale transcript_path after fork when model is 
     assert.equal(usage.rate_limit_name, undefined)
     assert.deepEqual(usage.rate_limits?.seven_day, {
       used_percentage: 49,
-      resets_at: 1784513490,
+      resets_at: 1926115200,
       window_minutes: 10080,
     })
     assert.equal(usage.usage_source_path, forkFile)
@@ -647,7 +647,7 @@ test('Codex usage reader resolves forked session meta and prefers main weekly ov
           rate_limits: {
             limit_id: 'codex',
             limit_name: null,
-            primary: { used_percent: 47, window_minutes: 10080, resets_at: 1784513490 },
+            primary: { used_percent: 47, window_minutes: 10080, resets_at: 1926115200 },
             secondary: null,
           },
         },
@@ -665,7 +665,7 @@ test('Codex usage reader resolves forked session meta and prefers main weekly ov
     assert.equal(byCwd.rate_limit_id, 'codex')
     assert.deepEqual(byCwd.rate_limits?.seven_day, {
       used_percentage: 47,
-      resets_at: 1784513490,
+      resets_at: 1926115200,
       window_minutes: 10080,
     })
     assert.match(byCwd.usage_source_path ?? '', new RegExp(forkId))
@@ -682,6 +682,8 @@ test('Codex usage reader keeps quota from an earlier token_count when the latest
   const sessions = join(home, 'sessions', '2026', '07', '14')
   const sessionId = 'session-quota-stale'
   const rollout = join(sessions, `rollout-2026-07-14T10-00-00-${sessionId}.jsonl`)
+  // Far-future reset so the earlier quota snapshot is still the active plan.
+  const futureReset = Math.floor(Date.now() / 1000) + 7 * 24 * 3600
 
   await mkdir(sessions, { recursive: true })
   await writeFile(
@@ -712,7 +714,7 @@ test('Codex usage reader keeps quota from an earlier token_count when the latest
             primary: {
               used_percent: 43,
               window_minutes: 10080,
-              resets_at: 1784513490,
+              resets_at: futureReset,
             },
             secondary: null,
           },
@@ -738,10 +740,67 @@ test('Codex usage reader keeps quota from an earlier token_count when the latest
     assert.ok(usage.context_used_percent > 30)
     assert.deepEqual(usage.rate_limits?.seven_day, {
       used_percentage: 43,
-      resets_at: 1784513490,
+      resets_at: futureReset,
       window_minutes: 10080,
     })
     assert.equal(usage.rate_limit_id, 'codex')
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('Codex usage reader does not backfill pre-reset high weekly usage after reset time', async () => {
+  const home = join(tmpdir(), `codepulse-codex-quota-expired-${Date.now()}`)
+  const sessions = join(home, 'sessions', '2026', '07', '14')
+  const sessionId = 'session-quota-expired'
+  const rollout = join(sessions, `rollout-2026-07-14T12-00-00-${sessionId}.jsonl`)
+  // Reset already passed — this is a pre-reset snapshot that must not stick.
+  const pastReset = Math.floor(Date.now() / 1000) - 3600
+
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    rollout,
+    [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: sessionId, cwd: 'E:/project/quota-expired' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            last_token_usage: { input_tokens: 1000, total_tokens: 1000 },
+          },
+          rate_limits: {
+            limit_id: 'codex',
+            primary: {
+              used_percent: 88,
+              window_minutes: 10080,
+              resets_at: pastReset,
+            },
+            secondary: null,
+          },
+        },
+      }),
+      // Latest event is context-only (common right after reset / mid-turn).
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            last_token_usage: { input_tokens: 5000, total_tokens: 5000 },
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  try {
+    const usage = await readLatestCodexUsage({ session_id: sessionId }, { codexHome: home })
+    assert.equal(usage.rate_limits, undefined)
+    assert.equal(usage.rate_limit_id, undefined)
   } finally {
     await rm(home, { recursive: true, force: true })
   }
@@ -784,7 +843,7 @@ test('Codex usage reader maps weekly-only primary rate limit to seven_day', asyn
             primary: {
               used_percent: 2,
               window_minutes: 10080,
-              resets_at: 1784513490,
+              resets_at: 1926115200,
             },
             secondary: null,
             plan_type: 'prolite',
@@ -800,7 +859,7 @@ test('Codex usage reader maps weekly-only primary rate limit to seven_day', asyn
     assert.equal(usage.rate_limits?.five_hour, undefined)
     assert.deepEqual(usage.rate_limits?.seven_day, {
       used_percentage: 2,
-      resets_at: 1784513490,
+      resets_at: 1926115200,
       window_minutes: 10080,
     })
   } finally {
@@ -833,8 +892,8 @@ test('Codex usage reader exposes quota bucket identity from rollout rate limits'
           rate_limits: {
             limit_id: 'codex_bengalfox',
             limit_name: 'GPT-5.3-Codex-Spark',
-            primary: { used_percent: 2, window_minutes: 300, resets_at: 1781160358 },
-            secondary: { used_percent: 1, window_minutes: 10080, resets_at: 1781747174 },
+            primary: { used_percent: 2, window_minutes: 300, resets_at: 1924905600 },
+            secondary: { used_percent: 1, window_minutes: 10080, resets_at: 1925510400 },
           },
         },
       }),

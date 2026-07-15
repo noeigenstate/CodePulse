@@ -120,11 +120,12 @@ export async function readCodexQuotaTokenFromFile(
   let tokenCount: Record<string, unknown> | undefined
   let tokenCountWithLimits: Record<string, unknown> | undefined
   let taskStarted: Record<string, unknown> | undefined
+  const nowMs = Date.now()
 
   for (let i = lines.length - 1; i >= 0; i--) {
     let item: unknown
     try {
-      item = JSON.parse(lines[i] ?? '')
+      item = JSON.parse(lines[i])
     } catch {
       continue
     }
@@ -132,7 +133,11 @@ export async function readCodexQuotaTokenFromFile(
     const payload = isRecord(item.payload) ? item.payload : undefined
     if (payload?.type === 'token_count') {
       if (!tokenCount) tokenCount = payload
-      if (!tokenCountWithLimits && tokenCountPayloadHasRateLimits(payload)) {
+      if (
+        !tokenCountWithLimits &&
+        tokenCountPayloadHasRateLimits(payload) &&
+        payloadRateLimitsAreActive(payload, nowMs)
+      ) {
         tokenCountWithLimits = payload
       }
     }
@@ -143,15 +148,45 @@ export async function readCodexQuotaTokenFromFile(
   if (!tokenCount) return undefined
   const token = toCodexToken(tokenCount, taskStarted)
   if (!token) return undefined
-  if (tokenCountWithLimits && tokenCountWithLimits !== tokenCount) {
+  if (!token.rateLimits && tokenCountWithLimits && tokenCountWithLimits !== tokenCount) {
     const withLimits = toCodexToken(tokenCountWithLimits, taskStarted)
-    if (withLimits?.rateLimits) {
+    if (withLimits?.rateLimits && tokenRateLimitsAreActive(withLimits.rateLimits, nowMs)) {
       token.rateLimits = withLimits.rateLimits
       token.rateLimitId = withLimits.rateLimitId
       token.rateLimitName = withLimits.rateLimitName
     }
+  } else if (token.rateLimits && !tokenRateLimitsAreActive(token.rateLimits, nowMs)) {
+    // Drop expired pre-reset snapshots so UI does not keep flashing old weekly %.
+    delete token.rateLimits
+    delete token.rateLimitId
+    delete token.rateLimitName
   }
   return token
+}
+
+function payloadRateLimitsAreActive(payload: Record<string, unknown>, nowMs: number): boolean {
+  const token = toCodexToken(payload, undefined)
+  return tokenRateLimitsAreActive(token?.rateLimits, nowMs)
+}
+
+function tokenRateLimitsAreActive(
+  rateLimits: TokenPayload['rateLimits'] | undefined,
+  nowMs: number,
+): boolean {
+  if (!rateLimits) return false
+  const windows = [rateLimits.fiveHour, rateLimits.sevenDay].filter(Boolean)
+  if (windows.length === 0) return false
+
+  let sawReset = false
+  for (const window of windows) {
+    const resetsAt = window?.resetsAt
+    if (typeof resetsAt !== 'number' || !Number.isFinite(resetsAt)) continue
+    sawReset = true
+    const resetMs = resetsAt < 1_000_000_000_000 ? resetsAt * 1000 : resetsAt
+    if (resetMs > nowMs) return true
+  }
+  if (!sawReset) return true
+  return false
 }
 
 function tokenCountPayloadHasRateLimits(payload: Record<string, unknown>): boolean {

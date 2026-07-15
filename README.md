@@ -5,9 +5,9 @@
 **A local status hub for your AI coding agents.**
 
 Know at a glance whether Codex, Claude Code, and Grok are working, waiting on
-you, finished, or stuck �?without alt-tabbing back to a terminal.
+you, finished, or stuck — without alt-tabbing back to a terminal.
 
-[![status](https://img.shields.io/badge/status-v1.2.0-brightgreen)](#features)
+[![status](https://img.shields.io/badge/status-v1.2.1-brightgreen)](#features)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue)](#download)
 [![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#development)
@@ -21,28 +21,26 @@ you, finished, or stuck �?without alt-tabbing back to a terminal.
 
 ---
 
-AI coding agents are great at working unattended �?and terrible at telling you
+AI coding agents are great at working unattended — and terrible at telling you
 when they need you. CodePulse listens to the lifecycle hooks that Codex, Claude
 Code, and Grok Build already expose, runs every event through a single state
 machine, and surfaces the result three ways:
 
-- 📊 **Live Dashboard** �?light adaptive panes for Claude Code / Codex / Grok
+- 📊 **Live Dashboard** — light adaptive panes for Claude Code / Codex / Grok
   (only the CLIs you are using), with brand colors, project cards, context bars,
   and quota meters.
-- 📈 **Local analytics console** �?open **Insights** (Chinese UI: **后台**) for
+- 📈 **Local analytics console** — open **Insights** (Chinese UI: **后台**) for
   full-screen rollups of tokens, coding time, projects, model mix, and peak hours
   from your local SQLite history; refresh anytime.
-- 🎨 **Color-coded tray icon** �?the overall state of every agent, visible at
+- 🎨 **Color-coded tray icon** — the overall state of every agent, visible at
   all times.
-- 🔔 **Desktop notifications** �?project-first completion toasts with a short
-  summary of your prompt (�?5 Chinese characters / �?5 English words), throttled
+- 🔔 **Desktop notifications** — project-first completion toasts with a short
+  summary of your prompt (≤15 Chinese characters / ≤15 English words), throttled
   and deduplicated.
 
-Everything runs **100% locally**. The server binds to loopback only; SQLite keeps
-only structured analytics fields and text previews of at most 120 characters.
-Complete hooks, tool inputs/outputs, environment variables, and command arguments
-are never persisted. Hooks fail silently when CodePulse isn't running, so your
-agents are never blocked or slowed down.
+Everything runs **100% locally**. The server binds to loopback only, prompts
+are stored as short previews (never in full), and the hooks fail silently when
+CodePulse isn't running — your agents are never blocked or slowed down.
 
 ## Screenshots
 
@@ -64,34 +62,34 @@ _(Sample data shown.)_
 </p>
 
 SQLite-backed rollups of tokens, coding time, project ranking, model mix, and
-peak hours �?today / 7d / 30d with day / week / month trends. Local only,
+peak hours — today / 7d / 30d with day / week / month trends. Local only,
 nothing is uploaded. _(Sample data shown.)_
 
 ## Features
 
 |                                     |                                                                                                                                         |
 | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| 🚦 **Unified state machine**        | One turn lifecycle for every agent: idle �?processing �?tool running �?waiting for permission/input �?done / error / cancelled / stuck. |
+| 🚦 **Unified state machine**        | One turn lifecycle for every agent: idle → processing → tool running → waiting for permission/input → done / error / cancelled / stuck. |
 | 🧭 **Multi-agent, multi-workspace** | Concurrent Codex, Claude Code, and Grok sessions across projects, each tracked separately.                                              |
-| 🪟 **Adaptive panes**               | Dashboard columns appear only for CLIs that have active tasks (or retained quota) �?one CLI, one pane; all three, three panes.          |
+| 🪟 **Adaptive panes**               | Dashboard columns appear only for CLIs that have active tasks (or retained quota) — one CLI, one pane; all three, three panes.          |
 | 🎨 **Light design system**          | Brand-accented agent panels, 6px progress meters, status chips, and a compact footer strip for pane/session sync status.                |
 | 📈 **Context tracking**             | Compact context-window usage from Claude, Codex, and Grok, using exact CLI data when available.                                         |
-| 🎟�?**Quota awareness**             | Claude: 5-hour + weekly windows. Codex / Grok: weekly window only, matched to the model/bucket when the CLI reports it.                 |
-| 🔔 **Glanceable toasts**            | Completion title is the project name; body is a cleaned prompt summary �?no CLI branding noise.                                         |
-| 🕰�?**Stuck detection**             | A watchdog flags turns with no activity so silent failures don't burn your afternoon.                                                   |
-| 💾 **Local history**                | Events, sessions, turns, and token snapshots persisted to SQLite �?yours to query or delete.                                            |
-| 📊 **Local analytics console**      | SQLite rollups of tokens, coding time, projects, and dialogs �?today / 7d / 30d, with day / week / month trends.                        |
+| 🎟️ **Quota awareness**              | Claude: 5-hour + weekly windows. Codex / Grok: weekly window only, matched to the model/bucket when the CLI reports it.                 |
+| 🔔 **Glanceable toasts**            | Completion title is the project name; body is a cleaned prompt summary — no CLI branding noise.                                         |
+| 🕰️ **Stuck detection**              | A watchdog flags turns with no activity so silent failures don't burn your afternoon.                                                   |
+| 💾 **Local history**                | Events, sessions, turns, and token snapshots persisted to SQLite — yours to query or delete.                                            |
+| 📊 **Local analytics console**      | SQLite rollups of tokens, coding time, projects, and dialogs — today / 7d / 30d, with day / week / month trends.                        |
 | 🔌 **Open local API**               | Plain HTTP + WebSocket on `127.0.0.1:17888` for local integrations.                                                                     |
 
 ## Local analytics console
 
-The live dashboard answers “what is running now.�?The **local analytics console**
-answers “how much did I spend over this period.�?
+The live dashboard answers “what is running now.” The **local analytics console**
+answers “how much did I spend over this period.”
 
 1. On the live console, click **Insights** in the top-right (Chinese UI label:
    **后台**).
 2. A full-screen analytics view opens. Metrics are aggregated from the on-disk
-   `codepulse.sqlite` via in-app IPC �?**nothing is uploaded**.
+   `codepulse.sqlite` via in-app IPC — **nothing is uploaded**.
 3. Pick **Today / Last 7 days / Last 30 days**, then **Refresh** when you want a
    fresh rollup of the latest events.
 4. Trend charts can switch **Day / Week / Month**. Press `Esc` or **Exit** to
@@ -99,15 +97,15 @@ answers “how much did I spend over this period.�?
 
 What you get:
 
-| Section                   | What it shows                                                                                                 |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| **Overview KPIs**         | Total tokens, total / average daily coding time, project count, dialog count, with period-over-period deltas. |
-| **Trends**                | Token and coding-time curves so peak days stand out.                                                          |
-| **Model mix**             | Share of models in use (Claude / GPT / Gemini, etc.).                                                         |
-| **Peak hours**            | Weekday × hour heatmap of activity.                                                                           |
-| **Project ranking**       | Per-project tokens, duration, dialogs, and last activity.                                                     |
-| **Insights**              | Lightweight tips from local rollups (peak day, top model, efficiency hints).                                  |
-| **Distributions & score** | Project types, best-effort file types, tokens-per-dialog buckets, local efficiency score.                     |
+| Section                 | What it shows                                                                 |
+| ----------------------- | ----------------------------------------------------------------------------- |
+| **Overview KPIs**       | Total tokens, total / average daily coding time, project count, dialog count, with period-over-period deltas. |
+| **Trends**              | Token and coding-time curves so peak days stand out.                          |
+| **Model mix**           | Share of models in use (Claude / GPT / Gemini, etc.).                         |
+| **Peak hours**          | Weekday × hour heatmap of activity.                                           |
+| **Project ranking**     | Per-project tokens, duration, dialogs, and last activity.                     |
+| **Insights**            | Lightweight tips from local rollups (peak day, top model, efficiency hints).  |
+| **Distributions & score** | Project types, best-effort file types, tokens-per-dialog buckets, local efficiency score. |
 
 > Charts fill in after CLI tasks have been recorded in the local database. A
 > fresh install or wiped history will show empty-state hints until you run turns.  
@@ -118,13 +116,15 @@ What you get:
 
 ```
  Codex / Claude Code / Grok
-   �? lifecycle hooks & status line (dependency-free Node scripts)
-   �? POST /api/events ──�?adapters ──�?StatusHub (pure reducer + rule engine)
- (Fastify, loopback)   normalize        �?                                        ├─�?SQLite (events / sessions / turns / tokens / workspaces)
-                                        ├─�?tray icon update
-                                        ├─�?desktop notification
-                                        └─�?WebSocket / IPC push ──�?Dashboard (React)
-                                                                  └─�?Analytics (SQLite rollups)
+   │  lifecycle hooks & status line (dependency-free Node scripts)
+   ▼
+ POST /api/events ──► adapters ──► StatusHub (pure reducer + rule engine)
+ (Fastify, loopback)   normalize        │
+                                        ├─► SQLite (events / sessions / turns / tokens / workspaces)
+                                        ├─► tray icon update
+                                        ├─► desktop notification
+                                        └─► WebSocket / IPC push ──► Dashboard (React)
+                                                                  └─► Analytics (SQLite rollups)
 ```
 
 The repository is a `pnpm` workspace:
@@ -132,9 +132,9 @@ The repository is a `pnpm` workspace:
 ```
 apps/desktop/        Electron app (main / preload / renderer, incl. analytics UI)
 packages/
-  shared/            Domain types (Agent, Turn, AgentEvent, UsageStats, �? + constants
+  shared/            Domain types (Agent, Turn, AgentEvent, UsageStats, …) + constants
   core/              State machine, rule engine, aggregation, StatusHub
-  adapters/          Codex / Claude / Grok raw payload �?AgentEvent mapping
+  adapters/          Codex / Claude / Grok raw payload → AgentEvent mapping
   storage/           SQLite schema (Drizzle ORM), repository, usage-stats queries
   local-server/      Fastify HTTP + WebSocket routes
   hooks/             Standalone hook scripts the agents invoke (incl. usage readers)
@@ -159,10 +159,10 @@ Download installers from
 macOS builds on GitHub Releases are **not code-signed or notarized**. Browsers
 (e.g. Chrome) attach a quarantine flag after download. Double-clicking may show:
 
-> “CodePulse�?is damaged and can’t be opened. You should move it to the Trash.
+> “CodePulse” is damaged and can’t be opened. You should move it to the Trash.
 
-The app is **usually not actually damaged** �?Gatekeeper is blocking an unsigned,
-quarantined app. **System Settings �?Privacy & Security �?Open Anyway** often does
+The app is **usually not actually damaged** — Gatekeeper is blocking an unsigned,
+quarantined app. **System Settings → Privacy & Security → Open Anyway** often does
 **not** work for this _damaged_ dialog.
 
 **Recommended fix (Terminal):**
@@ -189,7 +189,7 @@ Use the DMG that matches your chip (`arm64` vs Intel); the wrong arch will not r
 
 Apps opened from Finder / Launchpad do **not** load your shell `PATH` from
 `~/.zshrc`. CLIs installed via Homebrew or nvm may be missing from that minimal
-environment, so older builds could report “CLI not detected�?even when Terminal
+environment, so older builds could report “CLI not detected” even when Terminal
 works.
 
 Current builds probe common install locations automatically. If detection still
@@ -253,16 +253,16 @@ curl http://127.0.0.1:17888/api/status
 
 | Color     | Meaning                                     |
 | --------- | ------------------------------------------- |
-| �?Grey    | All idle                                    |
+| ⚪ Grey   | All idle                                    |
 | 🔵 Blue   | A task is running                           |
-| 🟡 Yellow | Waiting for permission or input �?needs you |
+| 🟡 Yellow | Waiting for permission or input — needs you |
 | 🟢 Green  | A turn finished, unread                     |
 | 🔴 Red    | An error                                    |
 | 🟠 Orange | Suspected stuck                             |
 
 Notifications are throttled and deduplicated so you're informed, not nagged.
 On completion, the toast title is `{emoji} {project} done` and the body is a
-short summary of the user prompt (Chinese �?5 characters, English �?5 words).
+short summary of the user prompt (Chinese ≤15 characters, English ≤15 words).
 **Mute** (tray or header button) silences sound for 30 minutes; notifications
 still appear, just silently.
 Claude Code's routine "waiting for your input" idle reminder is ignored; yellow
@@ -270,7 +270,7 @@ means CodePulse saw a real permission or explicit input request.
 
 ## Local API
 
-Loopback-only (`127.0.0.1:17888`) �?never exposed to the network. Point the
+Loopback-only (`127.0.0.1:17888`) — never exposed to the network. Point the
 hooks elsewhere with the `CODEPULSE_URL` environment variable.
 
 | Method | Path                 | Purpose                                           |
@@ -294,12 +294,10 @@ CodePulse stores a single SQLite database in the Electron user-data directory:
 | macOS   | `~/Library/Application Support/CodePulse/codepulse.sqlite` |
 | Linux   | `~/.config/CodePulse/codepulse.sqlite`                     |
 
-It records events, sessions, turns, workspaces, and token snapshots. Events contain
-only structured metadata, derived file types, and user/assistant text previews of
-at most 120 characters. Complete hook payloads, commands, tool inputs/outputs, and
-environment variables are not written to SQLite. Upgrades automatically scrub raw
-hooks and full commands stored by older versions. Events and token snapshots older
-than 30 days are pruned automatically. Delete the file to reset all history.
+It records events, sessions, turns, workspaces, and token snapshots. Raw events
+and token snapshots older than 30 days are pruned automatically. Prompts are
+stored only as short previews, never in full. Delete the file to reset all
+history.
 
 The **local analytics console** only reads this database on-device for rollups.
 Usage totals and project paths are never uploaded to a remote server.
@@ -308,8 +306,8 @@ Usage totals and project paths are never uploaded to a remote server.
 
 Prerequisites:
 
-- **Node.js �?20** (tested on 22.x)
-- **pnpm �?9** �?`npm i -g pnpm`
+- **Node.js ≥ 20** (tested on 22.x)
+- **pnpm ≥ 9** — `npm i -g pnpm`
 
 ```bash
 pnpm install
@@ -351,8 +349,8 @@ sources and unused Electron locales are excluded from the installer.
 
 macOS CI builds are **unsigned and not notarized**. End users should follow
 [macOS first open](#macos-first-open-unsigned-builds) and clear quarantine with
-`xattr -cr`. Privacy & Security �?“Open Anyway�?usually does not help for the
-“is damaged�?dialog.
+`xattr -cr`. Privacy & Security → “Open Anyway” usually does not help for the
+“is damaged” dialog.
 
 ### Release workflow
 
@@ -377,7 +375,7 @@ git push origin main vX.Y.Z
 ## Troubleshooting
 
 <details>
-<summary><b>macOS says “CodePulse is damaged and can’t be opened�?/b></summary>
+<summary><b>macOS says “CodePulse is damaged and can’t be opened”</b></summary>
 
 The package is usually fine. Unsigned builds get a quarantine flag after download,
 and Gatekeeper shows a _damaged_ message. Follow
@@ -388,7 +386,7 @@ xattr -cr /Applications/CodePulse.app
 open /Applications/CodePulse.app
 ```
 
-Privacy & Security �?Open Anyway usually does **not** work for this dialog. Also
+Privacy & Security → Open Anyway usually does **not** work for this dialog. Also
 confirm you downloaded the DMG that matches your chip (`mac-arm64` vs `mac-x64`).
 
 </details>
@@ -405,7 +403,7 @@ setup dialog does not report missing Claude / Codex / Grok hooks. For Codex, run
 </details>
 
 <details>
-<summary><b>Console logs "SQLite unavailable �?running without persistence"</b></summary>
+<summary><b>Console logs "SQLite unavailable — running without persistence"</b></summary>
 
 The native `better-sqlite3` build doesn't match your runtime's ABI. The live
 Dashboard still works; only history persistence is off. Rebuild for Electron:
@@ -417,7 +415,7 @@ node ../.bin/prebuild-install --runtime electron --target <ELECTRON_VERSION> --a
 ```
 
 (`electron-builder install-app-deps` does not work under pnpm's hoisted
-layout �?use the command above.)
+layout — use the command above.)
 
 </details>
 
@@ -444,7 +442,7 @@ Issues and pull requests are welcome. Before submitting:
 
 1. `pnpm typecheck && pnpm test && pnpm smoke` must pass.
 2. Format with `pnpm format`.
-3. Keep changes focused �?one concern per PR.
+3. Keep changes focused — one concern per PR.
 
 For product context, read [`requirements.md`](./requirements.md); the
 state-machine transition table in §8 is the source of truth for lifecycle

@@ -6,11 +6,6 @@ export interface UpdateInfo {
   installable: boolean
   installerName?: string
   installerUrl?: string
-  /**
-   * Lowercase hex SHA-256 of the installer when known (from GitHub asset digest
-   * or a sibling `.sha256` asset). Used to verify downloads before launch.
-   */
-  installerSha256?: string
   /** Bullet lines from the GitHub Release body (user-facing changelog). */
   releaseNotes?: string[]
 }

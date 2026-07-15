@@ -123,10 +123,7 @@ test('agent auto configuration is idempotent and preserves non-CodePulse hooks',
     (hook: { command: string }) => hook.command,
   )
   const stableBin = join(home, '.codepulse', 'hooks', 'bin')
-  assert.deepEqual(claudeStopHooks, [
-    'echo keep-me',
-    `node "${join(stableBin, 'claude-hook.js')}"`,
-  ])
+  assert.deepEqual(claudeStopHooks, ['echo keep-me', `node "${join(stableBin, 'claude-hook.js')}"`])
   assert.equal(
     claudeSettings.statusLine.command,
     `node "${join(stableBin, 'claude-statusline.js')}"`,

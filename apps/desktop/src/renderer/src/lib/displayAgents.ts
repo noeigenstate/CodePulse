@@ -386,11 +386,7 @@ function compareQuotaCandidates(a: QuotaCandidate, b: QuotaCandidate): number {
  * When two candidates share the same resetsAt on a window, prefer higher used%.
  * Array.sort: negative ⇒ `a` before `b` (higher usage first).
  */
-function compareSameWindowPressure(
-  a: TokenPayload,
-  b: TokenPayload,
-  agentType: AgentType,
-): number {
+function compareSameWindowPressure(a: TokenPayload, b: TokenPayload, agentType: AgentType): number {
   const aWindows = visibleRateLimitWindows(a, agentType)
   const bWindows = visibleRateLimitWindows(b, agentType)
   for (const key of ['sevenDay', 'fiveHour'] as const) {

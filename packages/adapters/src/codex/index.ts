@@ -148,13 +148,13 @@ function extractCodexToken(raw: Record<string, unknown>): AgentEventInput['token
     ? (pickNumber(contextUsage, 'input_tokens', 'inputTokens') ??
       pickNumber(contextUsage, 'cached_input_tokens', 'cachedInputTokens'))
     : undefined
-  // Prefer explicit percent from the usage helper; do not derive from total_token_usage.
+  // Prefer explicit percent (hook/status helpers often nest it under `usage`).
+  // Never derive occupancy from cumulative total_token_usage alone.
   const pct =
     pickNumber(raw, 'context_used_percent', 'contextUsedPercent') ??
-    (contextUsage
-      ? (pickNumber(contextUsage, 'context_used_percent', 'contextUsedPercent') ??
-        percentOf(contextInput, contextWindow))
-      : undefined)
+    pickNumber(usage ?? {}, 'context_used_percent', 'contextUsedPercent') ??
+    pickNumber(contextUsage ?? {}, 'context_used_percent', 'contextUsedPercent') ??
+    percentOf(contextInput, contextWindow)
   const costUsd =
     pickNumber(raw, 'cost_usd', 'costUsd') ?? pickNumber(usage ?? {}, 'cost_usd', 'costUsd')
   const rateLimits = pickRateLimits(raw)

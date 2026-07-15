@@ -98,7 +98,11 @@ test('SessionSyncService start() resolves after first disk hydrate', async () =>
           },
           rate_limits: {
             limit_id: 'codex',
-            primary: { used_percent: 12, window_minutes: 10080, resets_at: Date.now() / 1000 + 3600 },
+            primary: {
+              used_percent: 12,
+              window_minutes: 10080,
+              resets_at: Date.now() / 1000 + 3600,
+            },
           },
         },
       }),

@@ -150,7 +150,9 @@ test('buildDownloadCandidates defaults to official URL only', () => {
     'https://github.com/noeigenstate/CodePulse/releases/download/v0.1.9/CodePulse_0.1.9_x64-setup.exe'
   assert.deepEqual(buildDownloadCandidates(url, { allowMirrors: false }), [url])
   assert.deepEqual(buildDownloadCandidates(url, { allowMirrors: true })[0], url)
-  assert.ok(buildDownloadCandidates(url, { allowMirrors: true }).some((u) => u.includes('gh-proxy.com')))
+  assert.ok(
+    buildDownloadCandidates(url, { allowMirrors: true }).some((u) => u.includes('gh-proxy.com')),
+  )
   assert.throws(() => buildDownloadCandidates('https://example.test/app.exe'), /allowlist/i)
 })
 

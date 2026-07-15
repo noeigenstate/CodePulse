@@ -5,7 +5,7 @@
 **A local status hub for your AI coding agents.**
 
 Know at a glance whether Codex, Claude Code, and Grok are working, waiting on
-you, finished, or stuck â€?without alt-tabbing back to a terminal.
+you, finished, or stuck ï¿½?without alt-tabbing back to a terminal.
 
 [![status](https://img.shields.io/badge/status-v1.2.0-brightgreen)](#features)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue)](#download)
@@ -21,21 +21,21 @@ you, finished, or stuck â€?without alt-tabbing back to a terminal.
 
 ---
 
-AI coding agents are great at working unattended â€?and terrible at telling you
+AI coding agents are great at working unattended ï¿½?and terrible at telling you
 when they need you. CodePulse listens to the lifecycle hooks that Codex, Claude
 Code, and Grok Build already expose, runs every event through a single state
 machine, and surfaces the result three ways:
 
-- ğŸ“Š **Live Dashboard** â€?light adaptive panes for Claude Code / Codex / Grok
+- ğŸ“Š **Live Dashboard** ï¿½?light adaptive panes for Claude Code / Codex / Grok
   (only the CLIs you are using), with brand colors, project cards, context bars,
   and quota meters.
-- ğŸ“ˆ **Local analytics console** â€?open **Insights** (Chinese UI: **åå°**) for
+- ğŸ“ˆ **Local analytics console** ï¿½?open **Insights** (Chinese UI: **åå°**) for
   full-screen rollups of tokens, coding time, projects, model mix, and peak hours
   from your local SQLite history; refresh anytime.
-- ğŸ¨ **Color-coded tray icon** â€?the overall state of every agent, visible at
+- ğŸ¨ **Color-coded tray icon** ï¿½?the overall state of every agent, visible at
   all times.
-- ğŸ”” **Desktop notifications** â€?project-first completion toasts with a short
-  summary of your prompt (â‰?5 Chinese characters / â‰?5 English words), throttled
+- ğŸ”” **Desktop notifications** ï¿½?project-first completion toasts with a short
+  summary of your prompt (ï¿½?5 Chinese characters / ï¿½?5 English words), throttled
   and deduplicated.
 
 Everything runs **100% locally**. The server binds to loopback only; SQLite keeps
@@ -64,33 +64,34 @@ _(Sample data shown.)_
 </p>
 
 SQLite-backed rollups of tokens, coding time, project ranking, model mix, and
-peak hours â€?today / 7d / 30d with day / week / month trends. Local only,
+peak hours ï¿½?today / 7d / 30d with day / week / month trends. Local only,
 nothing is uploaded. _(Sample data shown.)_
 
 ## Features
 
 |                                     |                                                                                                                                         |
 | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| ğŸš¦ **Unified state machine**        | One turn lifecycle for every agent: idle â†?processing â†?tool running â†?waiting for permission/input â†?done / error / cancelled / stuck. |
+| ğŸš¦ **Unified state machine**        | One turn lifecycle for every agent: idle ï¿½?processing ï¿½?tool running ï¿½?waiting for permission/input ï¿½?done / error / cancelled / stuck. |
 | ğŸ§­ **Multi-agent, multi-workspace** | Concurrent Codex, Claude Code, and Grok sessions across projects, each tracked separately.                                              |
-| ğŸªŸ **Adaptive panes**               | Dashboard columns appear only for CLIs that have active tasks (or retained quota) â€?one CLI, one pane; all three, three panes.          |
+| ğŸªŸ **Adaptive panes**               | Dashboard columns appear only for CLIs that have active tasks (or retained quota) ï¿½?one CLI, one pane; all three, three panes.          |
 | ğŸ¨ **Light design system**          | Brand-accented agent panels, 6px progress meters, status chips, and a compact footer strip for pane/session sync status.                |
 | ğŸ“ˆ **Context tracking**             | Compact context-window usage from Claude, Codex, and Grok, using exact CLI data when available.                                         |
-| ğŸŸï¸?**Quota awareness**              | Claude: 5-hour + weekly windows. Codex / Grok: weekly window only, matched to the model/bucket when the CLI reports it.                 |
-| ğŸ”” **Glanceable toasts**            | Completion title is the project name; body is a cleaned prompt summary â€?no CLI branding noise.                                         |
-| ğŸ•°ï¸?**Stuck detection**              | A watchdog flags turns with no activity so silent failures don't burn your afternoon.                                                   |
-| ğŸ’¾ **Local history**                | Events, sessions, turns, and token snapshots persisted to SQLite â€?yours to query or delete.                                            |
-| ğŸ“Š **Local analytics console**      | SQLite rollups of tokens, coding time, projects, and dialogs â€?today / 7d / 30d, with day / week / month trends.                        |
+| ğŸŸï¿½?**Quota awareness**             | Claude: 5-hour + weekly windows. Codex / Grok: weekly window only, matched to the model/bucket when the CLI reports it.                 |
+| ğŸ”” **Glanceable toasts**            | Completion title is the project name; body is a cleaned prompt summary ï¿½?no CLI branding noise.                                         |
+| ğŸ•°ï¿½?**Stuck detection**             | A watchdog flags turns with no activity so silent failures don't burn your afternoon.                                                   |
+| ğŸ’¾ **Local history**                | Events, sessions, turns, and token snapshots persisted to SQLite ï¿½?yours to query or delete.                                            |
+| ğŸ“Š **Local analytics console**      | SQLite rollups of tokens, coding time, projects, and dialogs ï¿½?today / 7d / 30d, with day / week / month trends.                        |
 | ğŸ”Œ **Open local API**               | Plain HTTP + WebSocket on `127.0.0.1:17888` for local integrations.                                                                     |
 
 ## Local analytics console
 
-The live dashboard answers â€œwhat is running now.â€?The **local analytics console**
-answers â€œhow much did I spend over this period.â€?
+The live dashboard answers â€œwhat is running now.ï¿½?The **local analytics console**
+answers â€œhow much did I spend over this period.ï¿½?
+
 1. On the live console, click **Insights** in the top-right (Chinese UI label:
    **åå°**).
 2. A full-screen analytics view opens. Metrics are aggregated from the on-disk
-   `codepulse.sqlite` via in-app IPC â€?**nothing is uploaded**.
+   `codepulse.sqlite` via in-app IPC ï¿½?**nothing is uploaded**.
 3. Pick **Today / Last 7 days / Last 30 days**, then **Refresh** when you want a
    fresh rollup of the latest events.
 4. Trend charts can switch **Day / Week / Month**. Press `Esc` or **Exit** to
@@ -117,13 +118,13 @@ What you get:
 
 ```
  Codex / Claude Code / Grok
-   â”? lifecycle hooks & status line (dependency-free Node scripts)
-   â–? POST /api/events â”€â”€â–?adapters â”€â”€â–?StatusHub (pure reducer + rule engine)
- (Fastify, loopback)   normalize        â”?                                        â”œâ”€â–?SQLite (events / sessions / turns / tokens / workspaces)
-                                        â”œâ”€â–?tray icon update
-                                        â”œâ”€â–?desktop notification
-                                        â””â”€â–?WebSocket / IPC push â”€â”€â–?Dashboard (React)
-                                                                  â””â”€â–?Analytics (SQLite rollups)
+   ï¿½? lifecycle hooks & status line (dependency-free Node scripts)
+   ï¿½? POST /api/events â”€â”€ï¿½?adapters â”€â”€ï¿½?StatusHub (pure reducer + rule engine)
+ (Fastify, loopback)   normalize        ï¿½?                                        â”œâ”€ï¿½?SQLite (events / sessions / turns / tokens / workspaces)
+                                        â”œâ”€ï¿½?tray icon update
+                                        â”œâ”€ï¿½?desktop notification
+                                        â””â”€ï¿½?WebSocket / IPC push â”€â”€ï¿½?Dashboard (React)
+                                                                  â””â”€ï¿½?Analytics (SQLite rollups)
 ```
 
 The repository is a `pnpm` workspace:
@@ -131,9 +132,9 @@ The repository is a `pnpm` workspace:
 ```
 apps/desktop/        Electron app (main / preload / renderer, incl. analytics UI)
 packages/
-  shared/            Domain types (Agent, Turn, AgentEvent, UsageStats, â€? + constants
+  shared/            Domain types (Agent, Turn, AgentEvent, UsageStats, ï¿½? + constants
   core/              State machine, rule engine, aggregation, StatusHub
-  adapters/          Codex / Claude / Grok raw payload â†?AgentEvent mapping
+  adapters/          Codex / Claude / Grok raw payload ï¿½?AgentEvent mapping
   storage/           SQLite schema (Drizzle ORM), repository, usage-stats queries
   local-server/      Fastify HTTP + WebSocket routes
   hooks/             Standalone hook scripts the agents invoke (incl. usage readers)
@@ -158,10 +159,10 @@ Download installers from
 macOS builds on GitHub Releases are **not code-signed or notarized**. Browsers
 (e.g. Chrome) attach a quarantine flag after download. Double-clicking may show:
 
-> â€œCodePulseâ€?is damaged and canâ€™t be opened. You should move it to the Trash.
+> â€œCodePulseï¿½?is damaged and canâ€™t be opened. You should move it to the Trash.
 
-The app is **usually not actually damaged** â€?Gatekeeper is blocking an unsigned,
-quarantined app. **System Settings â†?Privacy & Security â†?Open Anyway** often does
+The app is **usually not actually damaged** ï¿½?Gatekeeper is blocking an unsigned,
+quarantined app. **System Settings ï¿½?Privacy & Security ï¿½?Open Anyway** often does
 **not** work for this _damaged_ dialog.
 
 **Recommended fix (Terminal):**
@@ -188,7 +189,7 @@ Use the DMG that matches your chip (`arm64` vs Intel); the wrong arch will not r
 
 Apps opened from Finder / Launchpad do **not** load your shell `PATH` from
 `~/.zshrc`. CLIs installed via Homebrew or nvm may be missing from that minimal
-environment, so older builds could report â€œCLI not detectedâ€?even when Terminal
+environment, so older builds could report â€œCLI not detectedï¿½?even when Terminal
 works.
 
 Current builds probe common install locations automatically. If detection still
@@ -252,16 +253,16 @@ curl http://127.0.0.1:17888/api/status
 
 | Color     | Meaning                                     |
 | --------- | ------------------------------------------- |
-| âš?Grey   | All idle                                    |
+| ï¿½?Grey    | All idle                                    |
 | ğŸ”µ Blue   | A task is running                           |
-| ğŸŸ¡ Yellow | Waiting for permission or input â€?needs you |
+| ğŸŸ¡ Yellow | Waiting for permission or input ï¿½?needs you |
 | ğŸŸ¢ Green  | A turn finished, unread                     |
 | ğŸ”´ Red    | An error                                    |
 | ğŸŸ  Orange | Suspected stuck                             |
 
 Notifications are throttled and deduplicated so you're informed, not nagged.
 On completion, the toast title is `{emoji} {project} done` and the body is a
-short summary of the user prompt (Chinese â‰?5 characters, English â‰?5 words).
+short summary of the user prompt (Chinese ï¿½?5 characters, English ï¿½?5 words).
 **Mute** (tray or header button) silences sound for 30 minutes; notifications
 still appear, just silently.
 Claude Code's routine "waiting for your input" idle reminder is ignored; yellow
@@ -269,7 +270,7 @@ means CodePulse saw a real permission or explicit input request.
 
 ## Local API
 
-Loopback-only (`127.0.0.1:17888`) â€?never exposed to the network. Point the
+Loopback-only (`127.0.0.1:17888`) ï¿½?never exposed to the network. Point the
 hooks elsewhere with the `CODEPULSE_URL` environment variable.
 
 | Method | Path                 | Purpose                                           |
@@ -307,8 +308,8 @@ Usage totals and project paths are never uploaded to a remote server.
 
 Prerequisites:
 
-- **Node.js â‰?20** (tested on 22.x)
-- **pnpm â‰?9** â€?`npm i -g pnpm`
+- **Node.js ï¿½?20** (tested on 22.x)
+- **pnpm ï¿½?9** ï¿½?`npm i -g pnpm`
 
 ```bash
 pnpm install
@@ -350,8 +351,8 @@ sources and unused Electron locales are excluded from the installer.
 
 macOS CI builds are **unsigned and not notarized**. End users should follow
 [macOS first open](#macos-first-open-unsigned-builds) and clear quarantine with
-`xattr -cr`. Privacy & Security â†?â€œOpen Anywayâ€?usually does not help for the
-â€œis damagedâ€?dialog.
+`xattr -cr`. Privacy & Security ï¿½?â€œOpen Anywayï¿½?usually does not help for the
+â€œis damagedï¿½?dialog.
 
 ### Release workflow
 
@@ -376,7 +377,7 @@ git push origin main vX.Y.Z
 ## Troubleshooting
 
 <details>
-<summary><b>macOS says â€œCodePulse is damaged and canâ€™t be openedâ€?/b></summary>
+<summary><b>macOS says â€œCodePulse is damaged and canâ€™t be openedï¿½?/b></summary>
 
 The package is usually fine. Unsigned builds get a quarantine flag after download,
 and Gatekeeper shows a _damaged_ message. Follow
@@ -387,7 +388,7 @@ xattr -cr /Applications/CodePulse.app
 open /Applications/CodePulse.app
 ```
 
-Privacy & Security â†?Open Anyway usually does **not** work for this dialog. Also
+Privacy & Security ï¿½?Open Anyway usually does **not** work for this dialog. Also
 confirm you downloaded the DMG that matches your chip (`mac-arm64` vs `mac-x64`).
 
 </details>
@@ -404,7 +405,7 @@ setup dialog does not report missing Claude / Codex / Grok hooks. For Codex, run
 </details>
 
 <details>
-<summary><b>Console logs "SQLite unavailable â€?running without persistence"</b></summary>
+<summary><b>Console logs "SQLite unavailable ï¿½?running without persistence"</b></summary>
 
 The native `better-sqlite3` build doesn't match your runtime's ABI. The live
 Dashboard still works; only history persistence is off. Rebuild for Electron:
@@ -416,7 +417,7 @@ node ../.bin/prebuild-install --runtime electron --target <ELECTRON_VERSION> --a
 ```
 
 (`electron-builder install-app-deps` does not work under pnpm's hoisted
-layout â€?use the command above.)
+layout ï¿½?use the command above.)
 
 </details>
 
@@ -443,7 +444,7 @@ Issues and pull requests are welcome. Before submitting:
 
 1. `pnpm typecheck && pnpm test && pnpm smoke` must pass.
 2. Format with `pnpm format`.
-3. Keep changes focused â€?one concern per PR.
+3. Keep changes focused ï¿½?one concern per PR.
 
 For product context, read [`requirements.md`](./requirements.md); the
 state-machine transition table in Â§8 is the source of truth for lifecycle

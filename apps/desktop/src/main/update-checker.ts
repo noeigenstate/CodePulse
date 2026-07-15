@@ -203,8 +203,7 @@ export function buildDownloadCandidates(
   if (!isAllowedUpdateUrl(original)) {
     throw new Error(`Installer URL host is not on the CodePulse allowlist: ${original}`)
   }
-  const allowMirrors =
-    options.allowMirrors ?? process.env.CODEPULSE_UPDATE_ALLOW_MIRRORS === '1'
+  const allowMirrors = options.allowMirrors ?? process.env.CODEPULSE_UPDATE_ALLOW_MIRRORS === '1'
   if (!allowMirrors) return [original]
   if (!/^https:\/\/(github\.com|objects\.githubusercontent\.com)\//i.test(original)) {
     return [original]
@@ -823,7 +822,10 @@ function findWindowsInstaller(
   return null
 }
 
-function findSiblingSha256Url(assets: unknown, installerName: string | undefined): string | undefined {
+function findSiblingSha256Url(
+  assets: unknown,
+  installerName: string | undefined,
+): string | undefined {
   if (!installerName || !Array.isArray(assets)) return undefined
   const base = installerName.toLowerCase()
   const candidates = new Set([`${base}.sha256`, `${base}.sha256.txt`, `${base}.sha256sum`])

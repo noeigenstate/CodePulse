@@ -248,10 +248,7 @@ function softResetExpiredRateLimits(
   }
 }
 
-function softResetWindow(
-  window: RateWindow | undefined,
-  nowMs: number,
-): RateWindow | undefined {
+function softResetWindow(window: RateWindow | undefined, nowMs: number): RateWindow | undefined {
   if (!window) return undefined
   const resetsAt = window.resetsAt
   if (typeof resetsAt !== 'number' || !Number.isFinite(resetsAt)) {

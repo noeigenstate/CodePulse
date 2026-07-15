@@ -5,11 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { StatusHub } from '@codepulse/core'
-import {
-  LOCAL_AUTH_HEADER,
-  startLocalServer,
-  type LocalServer,
-} from '@codepulse/local-server'
+import { LOCAL_AUTH_HEADER, startLocalServer, type LocalServer } from '@codepulse/local-server'
 
 const openServers: LocalServer[] = []
 

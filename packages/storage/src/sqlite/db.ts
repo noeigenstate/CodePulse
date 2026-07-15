@@ -261,7 +261,7 @@ function migrateCommandHintsBatched(sqlite: Database.Database): void {
      LIMIT ?`,
   )
   const saveHints = sqlite.prepare(
-    'UPDATE events SET file_type_hints = ? WHERE id = ? AND (file_type_hints IS NULL OR file_type_hints = \'\')',
+    "UPDATE events SET file_type_hints = ? WHERE id = ? AND (file_type_hints IS NULL OR file_type_hints = '')",
   )
 
   for (;;) {
@@ -316,10 +316,7 @@ function installPrivacyGuards(sqlite: Database.Database): void {
   `)
 }
 
-function checkpointWal(
-  sqlite: Database.Database,
-  options: { required?: boolean } = {},
-): void {
+function checkpointWal(sqlite: Database.Database, options: { required?: boolean } = {}): void {
   try {
     const [result] = sqlite.pragma('wal_checkpoint(TRUNCATE)') as Array<{
       busy: number

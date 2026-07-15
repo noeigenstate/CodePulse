@@ -97,5 +97,7 @@ function tokensMatch(provided: string | undefined, expected: string): boolean {
 }
 
 function rejectUnauthorized(reply: FastifyReply): void {
-  reply.code(401).send({ error: 'unauthorized', message: 'Missing or invalid CodePulse local token' })
+  reply
+    .code(401)
+    .send({ error: 'unauthorized', message: 'Missing or invalid CodePulse local token' })
 }

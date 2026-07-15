@@ -43,8 +43,7 @@ const WATCH_DEBOUNCE_MS = 600
 const KEEPALIVE_MS = 2 * 60_000
 const GROK_BILLING_MSG = 'billing: fetched credits config'
 const CLAUDE_TRANSCRIPT_TAIL = 512 * 1024
-const DEFAULT_CLAUDE_CONTEXT_WINDOW =
-  pickNumberEnv(process.env.CODEPULSE_CONTEXT_WINDOW) ?? 200_000
+const DEFAULT_CLAUDE_CONTEXT_WINDOW = pickNumberEnv(process.env.CODEPULSE_CONTEXT_WINDOW) ?? 200_000
 
 export interface SessionSyncOptions {
   hub: StatusHub
@@ -90,8 +89,7 @@ export class SessionSyncService {
     this.hub = options.hub
     this.codexHome = options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex')
     this.grokHome = options.grokHome ?? process.env.GROK_HOME ?? join(homedir(), '.grok')
-    this.claudeHome =
-      options.claudeHome ?? process.env.CLAUDE_HOME ?? join(homedir(), '.claude')
+    this.claudeHome = options.claudeHome ?? process.env.CLAUDE_HOME ?? join(homedir(), '.claude')
     this.now = options.now ?? Date.now
     this.disableWatch = options.disableWatch ?? false
     this.codexProcessAlive = options.codexProcessAlive ?? (() => isCliProcessAlive('codex'))
@@ -355,9 +353,7 @@ export class SessionSyncService {
       const token = mergeGrokToken(contextToken, billing.token)
       const model = typeof usage.model === 'string' ? usage.model : undefined
       const sourcePath =
-        typeof usage.usage_source_path === 'string'
-          ? usage.usage_source_path
-          : billing.sourcePath
+        typeof usage.usage_source_path === 'string' ? usage.usage_source_path : billing.sourcePath
 
       const payloadToken = token ?? { accuracy: 'unknown' as const }
       const mapKey = `grok:${sessionId}`
@@ -420,22 +416,12 @@ export class SessionSyncService {
   ): Promise<boolean> {
     try {
       const transcript = await findClaudeTranscript(this.claudeHome, sessionId)
-      const usage = transcript
-        ? await readClaudeTranscriptUsage(transcript)
-        : undefined
+      const usage = transcript ? await readClaudeTranscriptUsage(transcript) : undefined
       const token = claudeUsageToToken(usage) ?? { accuracy: 'unknown' as const }
       const model = usage?.model
       const mapKey = `claude_code:${sessionId}`
       if (
-        this.shouldSkipUnchanged(
-          mapKey,
-          'claude_code',
-          sessionId,
-          cwd,
-          updatedAt,
-          token,
-          model,
-        )
+        this.shouldSkipUnchanged(mapKey, 'claude_code', sessionId, cwd, updatedAt, token, model)
       ) {
         return false
       }
@@ -608,10 +594,7 @@ async function readCodexRolloutMeta(file: string): Promise<CodexMeta> {
           ...meta,
           cwd: stringVal(p.cwd) ?? meta.cwd,
           sessionId:
-            stringVal(p.id) ??
-            stringVal(p.session_id) ??
-            stringVal(p.sessionId) ??
-            meta.sessionId,
+            stringVal(p.id) ?? stringVal(p.session_id) ?? stringVal(p.sessionId) ?? meta.sessionId,
           model: stringVal(p.model) ?? meta.model,
         }
       }
@@ -640,7 +623,9 @@ function extractMetaFromPartialLine(text: string): CodexMeta {
     text.match(/"cwd"\s*:\s*"((?:\\.|[^"\\])*)"/)?.[1] ??
     text.match(/"cwd"\s*:\s*'((?:\\.|[^'\\])*)'/)?.[1]
   const sessionId =
-    text.match(/"id"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i)?.[1] ??
+    text.match(
+      /"id"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i,
+    )?.[1] ??
     text.match(
       /"session_id"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i,
     )?.[1]
@@ -705,11 +690,9 @@ async function readCodexTokenFallback(file: string): Promise<TokenPayload | unde
       const info = asRecord(payload.info) ?? {}
       const last = asRecord(info.last_token_usage)
       const total = asRecord(info.total_token_usage)
-      const window =
-        num(info.model_context_window) ?? num(payload.model_context_window) ?? 256_000
+      const window = num(info.model_context_window) ?? num(payload.model_context_window) ?? 256_000
       const input = last ? num(last.input_tokens) : undefined
-      const pct =
-        input != null && window > 0 ? Math.min(100, (input / window) * 100) : undefined
+      const pct = input != null && window > 0 ? Math.min(100, (input / window) * 100) : undefined
       const rateLimits = pickRateLimits(payload)
       return {
         input: input ?? num(total?.input_tokens),
@@ -903,7 +886,9 @@ async function readGrokActiveSessions(
   grokHome: string,
 ): Promise<Array<{ sessionId: string; cwd: string; pid?: number }>> {
   try {
-    const raw = JSON.parse(await readFile(join(grokHome, 'active_sessions.json'), 'utf8')) as unknown
+    const raw = JSON.parse(
+      await readFile(join(grokHome, 'active_sessions.json'), 'utf8'),
+    ) as unknown
     if (!Array.isArray(raw)) return []
     const out: Array<{ sessionId: string; cwd: string; pid?: number }> = []
     for (const row of raw) {
@@ -946,11 +931,10 @@ async function isCliProcessAlive(kind: 'codex' | 'grok'): Promise<boolean> {
       const execFileAsync = promisify(execFile)
       // tasklist is always available; filter by image name.
       const image = kind === 'codex' ? 'codex.exe' : 'grok.exe'
-      const { stdout } = await execFileAsync(
-        'tasklist',
-        ['/FI', `IMAGENAME eq ${image}`, '/NH'],
-        { windowsHide: true, timeout: 3_000 },
-      )
+      const { stdout } = await execFileAsync('tasklist', ['/FI', `IMAGENAME eq ${image}`, '/NH'], {
+        windowsHide: true,
+        timeout: 3_000,
+      })
       return stdout.toLowerCase().includes(image.toLowerCase())
     }
     const { execFile } = await import('node:child_process')
@@ -1113,7 +1097,9 @@ async function readGrokBillingQuota(
         token: {
           rateLimits: {
             sevenDay: {
-              ...(usedPercent != null ? { usedPercent: Math.min(100, Math.max(0, usedPercent)) } : {}),
+              ...(usedPercent != null
+                ? { usedPercent: Math.min(100, Math.max(0, usedPercent)) }
+                : {}),
               ...(resetsAt != null && Number.isFinite(resetsAt) ? { resetsAt } : {}),
               ...(windowMinutes != null ? { windowMinutes } : {}),
             },
@@ -1171,7 +1157,8 @@ function mergeGrokToken(
     rateLimits: context?.rateLimits ?? billing?.rateLimits,
     rateLimitId: context?.rateLimitId ?? billing?.rateLimitId,
     rateLimitName: context?.rateLimitName ?? billing?.rateLimitName,
-    accuracy: context?.accuracy === 'exact' || billing?.accuracy === 'exact' ? 'exact' : 'estimated',
+    accuracy:
+      context?.accuracy === 'exact' || billing?.accuracy === 'exact' ? 'exact' : 'estimated',
   }
 }
 

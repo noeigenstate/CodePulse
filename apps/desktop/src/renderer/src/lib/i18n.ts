@@ -175,6 +175,8 @@ export interface UpdateAvailableCopy {
 export interface ContextStatusCopy {
   waiting: string
   lastPrefix: string
+  /** Shown when context occupancy dropped sharply (CLI compact/compress). */
+  compressedPrefix: string
   left: string
   used: string
 }
@@ -280,6 +282,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
     contextStatus: {
       waiting: '等待命令行同步上下文',
       lastPrefix: '上次：',
+      compressedPrefix: '已压缩：',
       left: '剩余',
       used: '已用',
     },
@@ -441,6 +444,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
     contextStatus: {
       waiting: 'Waiting for CLI context',
       lastPrefix: 'last: ',
+      compressedPrefix: 'compressed: ',
       left: 'left',
       used: 'used',
     },

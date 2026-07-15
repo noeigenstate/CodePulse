@@ -86,7 +86,9 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
     }
     if (event.model) next.model = event.model
   }
-  if (event.token) next.token = mergeToken(current.token, event.token, event.timestamp)
+  if (event.token) {
+    next.token = mergeToken(current.token, event.token, event.timestamp, event.model ?? next.model)
+  }
   if (!tokenOnlyQuotaRefresh && event.eventType !== 'token_snapshot') next.taskHidden = false
 
   switch (event.eventType) {
@@ -225,6 +227,7 @@ function mergeToken(
   current: TokenPayload | undefined,
   patch: TokenPayload,
   capturedAt: number,
+  activeModel?: string,
 ): TokenPayload {
   const keepExactContext = current?.accuracy === 'exact' && patch.accuracy !== 'exact'
   const next: TokenPayload = {
@@ -243,23 +246,93 @@ function mergeToken(
   if (patch.total !== undefined) next.total = patch.total
   if (patch.contextUsedPercent !== undefined && !keepExactContext) {
     next.contextUsedPercent = patch.contextUsedPercent
+    next.contextCompressed = detectContextCompressed(current, patch)
   }
   if (patch.contextWindow !== undefined && !keepExactContext)
     next.contextWindow = patch.contextWindow
   if (hasContextSnapshot(patch) && !keepExactContext) next.contextStale = false
   if (patch.contextStale !== undefined) next.contextStale = patch.contextStale
+  if (patch.contextCompressed !== undefined && patch.contextUsedPercent === undefined) {
+    next.contextCompressed = patch.contextCompressed
+  }
   if (patch.costUsd !== undefined) next.costUsd = patch.costUsd
   if (patch.rateLimits) {
-    const shouldKeepRateLimitMetadata = isZeroOnlyRateLimits(patch.rateLimits)
-    next.rateLimits = mergeRateLimits(current?.rateLimits, patch.rateLimits)
-    if (!shouldKeepRateLimitMetadata) {
-      next.rateLimitId = patch.rateLimitId
-      next.rateLimitName = patch.rateLimitName
-      next.quotaBuckets = mergeQuotaBucket(next.quotaBuckets, patch, capturedAt)
+    // Always accumulate named buckets; top-level display is sticky by family/model.
+    next.quotaBuckets = mergeQuotaBucket(next.quotaBuckets, patch, capturedAt)
+    if (shouldApplyRateLimitPatch(current, patch, activeModel)) {
+      next.rateLimits = mergeRateLimits(current?.rateLimits, patch.rateLimits)
+      if (patch.rateLimitId) next.rateLimitId = patch.rateLimitId
+      if (patch.rateLimitName) next.rateLimitName = patch.rateLimitName
     }
   }
 
   return next
+}
+
+/** Drop of ≥8pp on the same window size ⇒ treat as CLI context compression. */
+const CONTEXT_COMPRESS_DROP_PP = 8
+
+function detectContextCompressed(
+  current: TokenPayload | undefined,
+  patch: TokenPayload,
+): boolean | undefined {
+  const prev = current?.contextUsedPercent
+  const nextPct = patch.contextUsedPercent
+  if (prev == null || nextPct == null || !Number.isFinite(prev) || !Number.isFinite(nextPct)) {
+    return current?.contextCompressed
+  }
+
+  const prevWindow = current?.contextWindow
+  const nextWindow = patch.contextWindow ?? prevWindow
+  // Window size change (e.g. 256k → 1M) changes % without compact — not compression.
+  if (
+    prevWindow != null &&
+    nextWindow != null &&
+    prevWindow > 0 &&
+    nextWindow > 0 &&
+    Math.abs(prevWindow - nextWindow) / prevWindow > 0.05
+  ) {
+    return false
+  }
+
+  if (nextPct <= prev - CONTEXT_COMPRESS_DROP_PP) return true
+  // Growing again after compact → clear the badge.
+  if (nextPct > prev + 2) return false
+  // Small noise: hold previous compressed flag.
+  return current?.contextCompressed
+}
+
+function shouldApplyRateLimitPatch(
+  current: TokenPayload | undefined,
+  patch: TokenPayload,
+  activeModel?: string,
+): boolean {
+  if (!patch.rateLimits) return false
+  if (isZeroOnlyRateLimits(patch.rateLimits)) return false
+  if (!current?.rateLimits) return true
+
+  const curId = (current.rateLimitId ?? '').toLowerCase()
+  const nextId = (patch.rateLimitId ?? '').toLowerCase()
+  if (!curId || !nextId) return true
+  if (curId === nextId) return true
+
+  const nextSpark = isSparkBucket(nextId, patch.rateLimitName)
+  // Model family switched (e.g. to Spark) → allow top-level display to follow.
+  if (activeModel && isSparkModelName(activeModel) === nextSpark) return true
+
+  // Different buckets without a matching model switch: keep sticky top-level.
+  const curSpark = isSparkBucket(curId, current.rateLimitName)
+  return curSpark === nextSpark
+}
+
+function isSparkBucket(id: string | undefined, name: string | undefined): boolean {
+  const s = `${id ?? ''} ${name ?? ''}`.toLowerCase()
+  return s.includes('spark') || s.includes('bengalfox')
+}
+
+function isSparkModelName(model: string | undefined): boolean {
+  const value = String(model ?? '').toLowerCase()
+  return value.includes('spark') || value.includes('bengalfox')
 }
 
 function hasContextSnapshot(token: TokenPayload | undefined): boolean {

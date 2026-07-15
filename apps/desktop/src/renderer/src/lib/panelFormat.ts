@@ -10,6 +10,7 @@ export interface ContextWindowStatus {
   usedPercent?: number
   text: string
   stale?: boolean
+  compressed?: boolean
 }
 
 export function formatContextWindowStatus(
@@ -18,6 +19,7 @@ export function formatContextWindowStatus(
   copy: ContextStatusCopy = {
     waiting: 'Waiting for CLI context',
     lastPrefix: 'last: ',
+    compressedPrefix: 'compressed: ',
     left: 'left',
     used: 'used',
   },
@@ -31,11 +33,15 @@ export function formatContextWindowStatus(
 
   const usedTokens = Math.min(contextWindow, (contextWindow * usedPercent) / 100)
   const leftPercent = Math.max(0, Math.ceil(100 - usedPercent))
+  const compressed = token?.contextCompressed === true
+  const stale = token?.contextStale === true && !compressed
+  const prefix = compressed ? copy.compressedPrefix : stale ? copy.lastPrefix : ''
 
   return {
     usedPercent,
-    stale: token?.contextStale === true,
-    text: `${token?.contextStale ? copy.lastPrefix : ''}${leftPercent}% ${copy.left} (${formatContextUsedCount(usedTokens)} ${copy.used} / ${formatContextTotalCount(contextWindow)})`,
+    stale,
+    compressed,
+    text: `${prefix}${leftPercent}% ${copy.left} (${formatContextUsedCount(usedTokens)} ${copy.used} / ${formatContextTotalCount(contextWindow)})`,
   }
 }
 

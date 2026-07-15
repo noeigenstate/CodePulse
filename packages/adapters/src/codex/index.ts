@@ -127,26 +127,32 @@ function mapCodexEvent(hookEvent: string): AgentEventType | null {
  */
 function extractCodexToken(raw: Record<string, unknown>): AgentEventInput['token'] | undefined {
   const info = asRecord(raw.info)
-  const usage = asRecord(raw.usage ?? raw.token ?? info?.total_token_usage) ?? raw
+  // Cumulative totals for display; never use them as context-window occupancy.
+  const usage = asRecord(raw.usage ?? raw.token ?? info?.total_token_usage)
+  // Context bar must follow last model-call size only (matches CLI /status window fill).
   const contextUsage = asRecord(raw.context_usage ?? raw.contextUsage ?? info?.last_token_usage)
-  const input = pickNumber(usage, 'input_tokens', 'inputTokens')
-  const cachedInput = pickNumber(usage, 'cached_input_tokens', 'cachedInputTokens')
-  const output = pickNumber(usage, 'output_tokens', 'outputTokens')
-  const reasoningOutput = pickNumber(usage, 'reasoning_output_tokens', 'reasoningOutputTokens')
-  const total = pickNumber(usage, 'total_tokens', 'totalTokens')
+  const input = pickNumber(usage ?? {}, 'input_tokens', 'inputTokens')
+  const cachedInput = pickNumber(usage ?? {}, 'cached_input_tokens', 'cachedInputTokens')
+  const output = pickNumber(usage ?? {}, 'output_tokens', 'outputTokens')
+  const reasoningOutput = pickNumber(usage ?? {}, 'reasoning_output_tokens', 'reasoningOutputTokens')
+  const total = pickNumber(usage ?? {}, 'total_tokens', 'totalTokens')
   const contextWindow =
     pickNumber(raw, 'context_window_size', 'contextWindowSize') ??
     pickNumber(info ?? {}, 'model_context_window', 'modelContextWindow') ??
     DEFAULT_CODEX_CONTEXT_WINDOW
-  const contextSource = contextUsage ?? usage
-  const contextInput =
-    pickNumber(contextSource, 'input_tokens', 'inputTokens') ??
-    pickNumber(contextSource, 'cached_input_tokens', 'cachedInputTokens')
+  const contextInput = contextUsage
+    ? (pickNumber(contextUsage, 'input_tokens', 'inputTokens') ??
+      pickNumber(contextUsage, 'cached_input_tokens', 'cachedInputTokens'))
+    : undefined
+  // Prefer explicit percent from the usage helper; do not derive from total_token_usage.
   const pct =
     pickNumber(raw, 'context_used_percent', 'contextUsedPercent') ??
-    pickNumber(usage, 'context_used_percent', 'contextUsedPercent') ??
-    percentOf(contextInput, contextWindow)
-  const costUsd = pickNumber(raw, 'cost_usd', 'costUsd') ?? pickNumber(usage, 'cost_usd', 'costUsd')
+    (contextUsage
+      ? (pickNumber(contextUsage, 'context_used_percent', 'contextUsedPercent') ??
+        percentOf(contextInput, contextWindow))
+      : undefined)
+  const costUsd =
+    pickNumber(raw, 'cost_usd', 'costUsd') ?? pickNumber(usage ?? {}, 'cost_usd', 'costUsd')
   const rateLimits = pickRateLimits(raw)
   const rateLimitId = pickRateLimitId(raw)
   const rateLimitName = pickRateLimitName(raw)

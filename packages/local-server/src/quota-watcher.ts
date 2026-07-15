@@ -217,7 +217,8 @@ function toCodexToken(
 ): TokenPayload | undefined {
   const info = isRecord(tokenCount.info) ? tokenCount.info : {}
   const usage = readUsage(info.total_token_usage) ?? readUsage(info.last_token_usage)
-  const contextUsage = readUsage(info.last_token_usage) ?? usage
+  // Context bar: last model-call only — never total_token_usage (cumulative).
+  const contextUsage = readUsage(info.last_token_usage)
   const rawRateLimits = tokenCount.rate_limits ?? info.rate_limits
   const rateLimits = normalizeRateLimits(rawRateLimits)
   const rateLimitId = readRateLimitString(rawRateLimits, 'limit_id', 'limitId')
@@ -229,7 +230,9 @@ function toCodexToken(
   const contextInput =
     optionalNumber(contextUsage?.input_tokens) ?? optionalNumber(contextUsage?.cached_input_tokens)
   const contextUsedPercent =
-    contextWindow && contextInput ? Math.min(100, (contextInput / contextWindow) * 100) : undefined
+    contextUsage && contextWindow && contextInput
+      ? Math.min(100, (contextInput / contextWindow) * 100)
+      : undefined
 
   if (!usage && !contextUsage && !rateLimits && contextUsedPercent === undefined) return undefined
 

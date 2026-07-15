@@ -96,9 +96,12 @@ function rateLimitSnapshotIsActive(payload, nowMs = Date.now()) {
 
 function rateLimitPatchIsActive(rateLimits, nowMs = Date.now()) {
   if (!rateLimits || typeof rateLimits !== 'object') return false
-  const windows = [rateLimits.five_hour, rateLimits.seven_day, rateLimits.fiveHour, rateLimits.sevenDay].filter(
-    Boolean,
-  )
+  const windows = [
+    rateLimits.five_hour,
+    rateLimits.seven_day,
+    rateLimits.fiveHour,
+    rateLimits.sevenDay,
+  ].filter(Boolean)
   if (windows.length === 0) return false
 
   let sawReset = false
@@ -364,15 +367,17 @@ async function readTail(file, maxBytes = TAIL_BYTES) {
 
 function toUsagePatch(tokenCount, taskStarted) {
   const info = tokenCount.info ?? {}
+  // total_token_usage is cumulative session burn — never use it for the context bar
+  // (that alone makes usage jump 10%→80%→15% as fields appear/disappear).
   const usage = info.total_token_usage ?? info.last_token_usage
-  const contextUsage = info.last_token_usage ?? usage
+  const contextUsage = info.last_token_usage
   const contextWindow =
     optionalNumber(info.model_context_window) ??
     optionalNumber(taskStarted?.model_context_window) ??
     DEFAULT_CODEX_CONTEXT_WINDOW
   const contextInput = codexContextInputTokens(contextUsage)
   const pct =
-    contextWindow && contextInput > 0
+    contextUsage && contextWindow && contextInput > 0
       ? Math.min(100, (contextInput / contextWindow) * 100)
       : undefined
   const rawRateLimits = tokenCount.rate_limits ?? info.rate_limits
@@ -458,8 +463,14 @@ function classifyWindowKind(window) {
   return 'sevenDay'
 }
 
+/**
+ * Current context occupancy for Codex is the *last model call* input size.
+ * Prefer non-cached input_tokens; fall back to cached-only only when input is absent.
+ * Do not sum input+cached (Codex often double-counts cache in both fields).
+ */
 function codexContextInputTokens(usage) {
-  return optionalNumber(usage?.input_tokens) ?? optionalNumber(usage?.cached_input_tokens) ?? 0
+  if (!usage || typeof usage !== 'object') return 0
+  return optionalNumber(usage.input_tokens) ?? optionalNumber(usage.cached_input_tokens) ?? 0
 }
 
 function normalizeWindow(raw) {

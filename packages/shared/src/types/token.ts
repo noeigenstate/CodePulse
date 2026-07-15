@@ -65,6 +65,11 @@ export interface TokenPayload {
   contextWindow?: number
   /** true 表示上下文数值来自上一会话/轮次边界前的最后一次快照。 */
   contextStale?: boolean
+  /**
+   * true 表示相对上一快照上下文占用明显下降（CLI 压缩/compact），
+   * UI 应提示「已压缩」而不是看起来像用量乱跳。
+   */
+  contextCompressed?: boolean
   /** CLI 自身的滚动额度窗口。 */
   rateLimits?: {
     fiveHour?: TokenRateLimitWindow

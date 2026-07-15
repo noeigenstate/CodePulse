@@ -913,3 +913,55 @@ test('Codex usage reader exposes quota bucket identity from rollout rate limits'
     await rm(home, { recursive: true, force: true })
   }
 })
+
+test('Codex usage reader does not use total_token_usage for context percent', async () => {
+  const home = join(tmpdir(), `codepulse-codex-no-total-ctx-${Date.now()}`)
+  const sessions = join(home, 'sessions', '2026', '07', '14')
+  const sessionId = 'session-no-total-ctx'
+  const rollout = join(sessions, `rollout-2026-07-14T15-00-00-${sessionId}.jsonl`)
+  const futureReset = Math.floor(Date.now() / 1000) + 86_400
+
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    rollout,
+    [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: sessionId, cwd: 'E:/project/no-total-ctx' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 100000,
+            // Only cumulative totals — must NOT become context bar (would show 90%).
+            total_token_usage: {
+              input_tokens: 90000,
+              output_tokens: 1000,
+              total_tokens: 91000,
+            },
+          },
+          rate_limits: {
+            limit_id: 'codex',
+            primary: {
+              used_percent: 10,
+              window_minutes: 10080,
+              resets_at: futureReset,
+            },
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  try {
+    const usage = await readLatestCodexUsage({ session_id: sessionId }, { codexHome: home })
+    assert.equal(usage.context_used_percent, undefined)
+    assert.equal(usage.usage.total_tokens, 91000)
+    assert.equal(usage.rate_limits.seven_day.used_percentage, 10)
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})

@@ -908,6 +908,96 @@ test('StatusHub merges partial token snapshots instead of dropping previous fiel
   assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 18)
 })
 
+test('StatusHub marks contextCompressed when occupancy drops sharply on same window', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+
+  hub.ingest({
+    id: 'ctx-high',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    cwd: 'E:/project/compact',
+    timestamp: 100,
+    token: {
+      contextUsedPercent: 72,
+      contextWindow: 256_000,
+      accuracy: 'estimated',
+    },
+  })
+  hub.ingest({
+    id: 'ctx-after-compact',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    cwd: 'E:/project/compact',
+    timestamp: 200,
+    token: {
+      contextUsedPercent: 28,
+      contextWindow: 256_000,
+      accuracy: 'estimated',
+    },
+  })
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.token?.contextUsedPercent, 28)
+  assert.equal(codex?.token?.contextCompressed, true)
+
+  hub.ingest({
+    id: 'ctx-grow-again',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    cwd: 'E:/project/compact',
+    timestamp: 300,
+    token: {
+      contextUsedPercent: 40,
+      contextWindow: 256_000,
+      accuracy: 'estimated',
+    },
+  })
+  const afterGrow = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(afterGrow?.token?.contextCompressed, false)
+})
+
+test('StatusHub rejects switching weekly quota to a different bucket family on partial updates', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const future = Math.floor(Date.now() / 1000) + 86_400
+
+  hub.ingest({
+    id: 'main-weekly',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    cwd: 'E:/project/quota-stick',
+    model: 'gpt-5.3-codex',
+    timestamp: 100,
+    token: {
+      accuracy: 'estimated',
+      rateLimitId: 'codex',
+      rateLimitName: 'Codex',
+      rateLimits: {
+        sevenDay: { usedPercent: 41, resetsAt: future, windowMinutes: 10_080 },
+      },
+    },
+  })
+  hub.ingest({
+    id: 'spark-noise',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    cwd: 'E:/project/quota-stick',
+    model: 'gpt-5.3-codex',
+    timestamp: 200,
+    token: {
+      accuracy: 'estimated',
+      rateLimitId: 'codex_bengalfox',
+      rateLimitName: 'GPT-5.3-Codex-Spark',
+      rateLimits: {
+        sevenDay: { usedPercent: 2, resetsAt: future, windowMinutes: 10_080 },
+      },
+    },
+  })
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.token?.rateLimitId, 'codex')
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 41)
+})
+
 test('StatusHub keeps exact context data when later estimated token snapshots arrive', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
 

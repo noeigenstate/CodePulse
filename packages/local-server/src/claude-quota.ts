@@ -38,7 +38,9 @@ export async function readClaudeQuotaCache(
     const updatedAt = typeof raw.updatedAt === 'number' ? raw.updatedAt : 0
     if (updatedAt > 0 && now - updatedAt > CACHE_MAX_AGE_MS) return undefined
     const families = asRateLimitFamilies(raw.rate_limits ?? raw.rateLimits)
-    const rateLimits = normalizeClaudeRateLimitsPayload(families ?? raw.rate_limits ?? raw.rateLimits)
+    const rateLimits = normalizeClaudeRateLimitsPayload(
+      families ?? raw.rate_limits ?? raw.rateLimits,
+    )
     if (!rateLimits) return undefined
     return {
       rateLimits,
@@ -278,8 +280,7 @@ function asRateLimitFamilies(raw: unknown): Record<string, unknown> | undefined 
   const src = raw as Record<string, unknown>
   // Accept full OAuth payload or a nested rate_limits object.
   const nested = src.rate_limits ?? src.rateLimits
-  const bag =
-    nested && typeof nested === 'object' ? (nested as Record<string, unknown>) : src
+  const bag = nested && typeof nested === 'object' ? (nested as Record<string, unknown>) : src
   const hasFamily =
     bag.five_hour != null ||
     bag.fiveHour != null ||

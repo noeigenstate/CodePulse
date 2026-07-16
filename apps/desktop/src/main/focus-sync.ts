@@ -63,7 +63,8 @@ export class FocusSyncScheduler {
       this.timer = undefined
       void this.flush()
     }, this.debounceMs)
-    this.timer.unref?.()
+    // `schedule()` callers await this timer's scan. Keep it referenced so Node
+    // keeps the event loop alive until the promised refresh can settle.
   }
 
   /** Runs the current batch, or schedules a trailing batch when a scan is active. */

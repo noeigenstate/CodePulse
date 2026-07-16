@@ -661,6 +661,43 @@ test('StatusHub does not let same-window weekly % go backwards from stale snapsh
   assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 35)
 })
 
+test('StatusHub keeps soft-reset 0% on expired window against stale high %', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const past = Math.floor(Date.now() / 1000) - 3_600
+
+  hub.ingest({
+    id: 'soft-zero',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    cwd: 'E:/work/reset',
+    timestamp: 100,
+    token: {
+      accuracy: 'estimated',
+      rateLimitId: 'codex',
+      rateLimits: {
+        sevenDay: { usedPercent: 0, resetsAt: past, windowMinutes: 10_080 },
+      },
+    },
+  })
+  hub.ingest({
+    id: 'stale-pre-reset',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    cwd: 'E:/work/reset',
+    timestamp: 200,
+    token: {
+      accuracy: 'estimated',
+      rateLimitId: 'codex',
+      rateLimits: {
+        sevenDay: { usedPercent: 88, resetsAt: past, windowMinutes: 10_080 },
+      },
+    },
+  })
+
+  const codex = hub.snapshot().agents.find((a) => a.agentType === 'codex')
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 0)
+})
+
 async function mkdtempJoin(prefix: string): Promise<string> {
   const { mkdtemp } = await import('node:fs/promises')
   return mkdtemp(join(tmpdir(), prefix))

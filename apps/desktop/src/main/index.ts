@@ -123,9 +123,17 @@ function createWindow(): void {
   }
 }
 
+/** Coalesce tool-storm status IPC/tray work (~1 frame) without changing hub semantics. */
+const STATUS_COALESCE_MS = 32
+let pendingStatusSnapshot: StatusSnapshot | null = null
+let statusFlushTimer: NodeJS.Timeout | null = null
+
 function wireHub(): void {
   hub.on('event', (event) => {
     if (!db) return
+    // Skip pure internal quota/session-sync noise from stats DB (keeps dashboard
+    // correct; tool storms still persist lifecycle events for analytics).
+    if (event.internal?.quotaRefresh || event.internal?.sessionSync) return
     try {
       persistEvent(db, event)
     } catch (err) {
@@ -134,8 +142,17 @@ function wireHub(): void {
   })
 
   hub.on('status', (snapshot: StatusSnapshot) => {
-    updateTrayIfChanged(snapshot)
-    broadcast('codepulse:status', snapshot)
+    pendingStatusSnapshot = snapshot
+    if (statusFlushTimer) return
+    statusFlushTimer = setTimeout(() => {
+      statusFlushTimer = null
+      const next = pendingStatusSnapshot
+      pendingStatusSnapshot = null
+      if (!next) return
+      updateTrayIfChanged(next)
+      broadcast('codepulse:status', next)
+    }, STATUS_COALESCE_MS)
+    statusFlushTimer.unref?.()
   })
 
   hub.on('notification', (note: NotificationRequest) => {
@@ -477,10 +494,22 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+/**
+ * Tray menus should rebuild only when labels/state change — not on every
+ * token % / lastEventAt tick (tool storms used to rebuild the menu constantly).
+ */
 function trayStatusKey(snapshot: StatusSnapshot): string {
   return JSON.stringify({
     overall: snapshot.overall,
-    agents: snapshot.agents.filter((agent) => !agent.taskHidden),
+    agents: snapshot.agents
+      .filter((agent) => !agent.taskHidden)
+      .map((agent) => ({
+        t: agent.agentType,
+        s: agent.state,
+        u: agent.unread,
+        w: agent.workspacePath ?? '',
+        m: agent.model ?? '',
+      })),
   })
 }
 

@@ -37,9 +37,15 @@ const CODEX_TAIL = 2 * 1024 * 1024
 const CODEX_LIVE_MS = 5 * 60_000
 /** 进程在线但完全无近期写入时，取最近一份 rollout 只刷新账号额度（不复活多项目卡片）。 */
 const CODEX_QUOTA_FALLBACK_MS = 48 * 60 * 60_000
-const BOOT_OFFSETS_MS = [0, 800, 2_000, 4_000, 6_000] as const
-const STEADY_INTERVAL_MS = 8_000
-const WATCH_DEBOUNCE_MS = 600
+/** Fewer boot rescans → less mutex pile-up; 0 + 0.5s + 2s still catches late writers. */
+const BOOT_OFFSETS_MS = [0, 500, 2_000] as const
+/** Steady full rescan when fs.watch is flaky (Windows). Lower = lower worst-case lag. */
+const STEADY_INTERVAL_MS = 3_500
+/** Coalesce bursty multi-file writes without waiting half a second. */
+const WATCH_DEBOUNCE_MS = 200
+/** Cache tasklist/pgrep so steady scans do not re-spawn every cycle. */
+const CLI_ALIVE_CACHE_MS = 3_000
+const CLI_ALIVE_TIMEOUT_MS = 1_000
 const GROK_BILLING_MSG = 'billing: fetched credits config'
 const CLAUDE_TRANSCRIPT_TAIL = 512 * 1024
 const DEFAULT_CLAUDE_CONTEXT_WINDOW = pickNumberEnv(process.env.CODEPULSE_CONTEXT_WINDOW) ?? 200_000
@@ -1101,11 +1107,19 @@ function isPidAlive(pid: number): boolean {
   }
 }
 
+const cliAliveCache = new Map<string, { value: boolean; at: number }>()
+
 /**
  * Best-effort: is any CLI binary of this family currently running?
  * Avoids resurfacing disk history after the user has closed every terminal.
+ * Cached briefly so 3.5s steady scans do not re-run tasklist every cycle.
  */
 async function isCliProcessAlive(kind: 'codex' | 'grok'): Promise<boolean> {
+  const now = Date.now()
+  const cached = cliAliveCache.get(kind)
+  if (cached && now - cached.at < CLI_ALIVE_CACHE_MS) return cached.value
+
+  let value = true
   try {
     if (process.platform === 'win32') {
       const { execFile } = await import('node:child_process')
@@ -1115,21 +1129,24 @@ async function isCliProcessAlive(kind: 'codex' | 'grok'): Promise<boolean> {
       const image = kind === 'codex' ? 'codex.exe' : 'grok.exe'
       const { stdout } = await execFileAsync('tasklist', ['/FI', `IMAGENAME eq ${image}`, '/NH'], {
         windowsHide: true,
-        timeout: 3_000,
+        timeout: CLI_ALIVE_TIMEOUT_MS,
       })
-      return stdout.toLowerCase().includes(image.toLowerCase())
+      value = stdout.toLowerCase().includes(image.toLowerCase())
+    } else {
+      const { execFile } = await import('node:child_process')
+      const { promisify } = await import('node:util')
+      const execFileAsync = promisify(execFile)
+      const { stdout } = await execFileAsync('pgrep', ['-x', kind], {
+        timeout: CLI_ALIVE_TIMEOUT_MS,
+      }).catch(() => ({ stdout: '' }))
+      value = String(stdout).trim().length > 0
     }
-    const { execFile } = await import('node:child_process')
-    const { promisify } = await import('node:util')
-    const execFileAsync = promisify(execFile)
-    const { stdout } = await execFileAsync('pgrep', ['-x', kind], {
-      timeout: 3_000,
-    }).catch(() => ({ stdout: '' }))
-    return String(stdout).trim().length > 0
   } catch {
     // If detection fails, fall through to mtime / active_sessions heuristics.
-    return true
+    value = true
   }
+  cliAliveCache.set(kind, { value, at: now })
+  return value
 }
 
 async function readGrokSessionUsage(

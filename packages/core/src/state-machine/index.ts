@@ -497,14 +497,17 @@ function mergeRateLimitWindow(
   }
 
   // Same window (or missing resetsAt): account usage only rises until official reset.
-  // Exception: when the window is already expired, soft-reset may publish 0%.
+  // Expired same resetsAt: take *min* used% so soft-reset 0% is not clobbered by a
+  // stale rollout still carrying pre-reset high % (last-write was wrong here).
   const windowExpired =
     (patchResetMs != null && patchResetMs <= nowMs) || (curResetMs != null && curResetMs <= nowMs)
 
   let usedPercent = saneCurrent.usedPercent
   if (sanePatch.usedPercent !== undefined) {
-    if (windowExpired || saneCurrent.usedPercent === undefined) {
+    if (saneCurrent.usedPercent === undefined) {
       usedPercent = sanePatch.usedPercent
+    } else if (windowExpired) {
+      usedPercent = Math.min(saneCurrent.usedPercent, sanePatch.usedPercent)
     } else {
       usedPercent = Math.max(saneCurrent.usedPercent, sanePatch.usedPercent)
     }

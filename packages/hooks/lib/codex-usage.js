@@ -63,11 +63,10 @@ export async function readLatestCodexUsage(raw, options = {}) {
         if (limitPatch.rate_limit_name) patch.rate_limit_name = limitPatch.rate_limit_name
       }
     } else if (patch.rate_limits && !rateLimitPatchIsActive(patch.rate_limits, nowMs)) {
-      // Latest event still carries expired limits — drop them so we do not keep
-      // flashing pre-reset percentages after the plan has rolled over.
-      delete patch.rate_limits
-      delete patch.rate_limit_id
-      delete patch.rate_limit_name
+      // Soft-reset (match local-server quota-watcher): keep windows at 0% with past
+      // resets_at so the hub can show "可刷新" instead of sticky pre-reset high %.
+      // Deleting limits left mergeToken holding the previous high sample forever.
+      patch.rate_limits = softResetExpiredRateLimits(patch.rate_limits, nowMs)
     }
     return { ...patch, usage_source_path: file }
   } catch {
@@ -116,6 +115,35 @@ function rateLimitPatchIsActive(rateLimits, nowMs = Date.now()) {
   if (!sawReset) return true
   // Every known reset is in the past → stale pre-reset snapshot.
   return false
+}
+
+/**
+ * Soft-reset expired windows to 0% while keeping resets_at (past) so UI can show
+ * "可刷新" instead of wiping limits (which left sticky pre-reset high % in the hub).
+ */
+function softResetExpiredRateLimits(rateLimits, nowMs = Date.now()) {
+  if (!rateLimits || typeof rateLimits !== 'object') return rateLimits
+  const out = { ...rateLimits }
+  for (const key of ['five_hour', 'seven_day', 'fiveHour', 'sevenDay']) {
+    if (!out[key] || typeof out[key] !== 'object') continue
+    out[key] = softResetExpiredWindow(out[key], nowMs)
+  }
+  return out
+}
+
+function softResetExpiredWindow(window, nowMs) {
+  if (!window || typeof window !== 'object') return window
+  const resetsAt = window.resets_at ?? window.resetsAt
+  if (typeof resetsAt !== 'number' || !Number.isFinite(resetsAt)) {
+    return { ...window, used_percent: 0, usedPercent: 0 }
+  }
+  const resetMs = resetsAt < 1_000_000_000_000 ? resetsAt * 1000 : resetsAt
+  if (resetMs > nowMs) return window
+  return {
+    ...window,
+    used_percent: 0,
+    usedPercent: 0,
+  }
 }
 
 /**

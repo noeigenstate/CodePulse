@@ -45,6 +45,8 @@ export interface SettingsCopy {
   title: string
   close: string
   theme: string
+  themeAuto: string
+  themeAutoHint: string
   themeLight: string
   themeDark: string
   cliTools: string
@@ -326,6 +328,8 @@ const UI_COPY: Record<Locale, UiCopy> = {
       title: '显示与外观',
       close: '关闭设置',
       theme: '主题',
+      themeAuto: '自动',
+      themeAutoHint: '自动：08:00–20:00 白色，20:00–08:00 黑色。',
       themeLight: '白色',
       themeDark: '黑色',
       cliTools: '显示的 CLI 工具',
@@ -503,6 +507,8 @@ const UI_COPY: Record<Locale, UiCopy> = {
       title: 'Display & appearance',
       close: 'Close settings',
       theme: 'Theme',
+      themeAuto: 'Auto',
+      themeAutoHint: 'Automatic: light from 08:00–20:00 and dark otherwise.',
       themeLight: 'White',
       themeDark: 'Black',
       cliTools: 'Visible CLI tools',

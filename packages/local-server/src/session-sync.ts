@@ -14,7 +14,7 @@ import { watch, type FSWatcher } from 'node:fs'
 import { readdir, readFile, stat, open } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
-import type { TokenPayload } from '@codepulse/shared'
+import type { TokenPayload, TurnTiming } from '@codepulse/shared'
 import type { StatusHub } from '@codepulse/core'
 import {
   asRecord,
@@ -50,6 +50,8 @@ const CLI_ALIVE_CACHE_MS = 3_000
 const CLI_ALIVE_TIMEOUT_MS = 1_000
 const GROK_BILLING_MSG = 'billing: fetched credits config'
 const CLAUDE_TRANSCRIPT_TAIL = 512 * 1024
+/** Claude transcript rows lack turn IDs, so start/duration matching stays deliberately tight. */
+const CLAUDE_DURATION_START_MATCH_TOLERANCE_MS = 5_000
 const DEFAULT_CLAUDE_CONTEXT_WINDOW = pickNumberEnv(process.env.CODEPULSE_CONTEXT_WINDOW) ?? 200_000
 
 /** Configures filesystem roots, timing, and test seams for {@link SessionSyncService}. */
@@ -345,6 +347,7 @@ export class SessionSyncService {
           file,
           meta: { ...meta, cwd, ...modelConfig },
           token,
+          turnTiming: rollout.turnTiming,
         }
         if (!prev || shouldPreferCodexWorkspaceCandidate(candidate, prev)) {
           byCwd.set(key, candidate)
@@ -377,7 +380,7 @@ export class SessionSyncService {
       return 1
     }
 
-    for (const { file, meta, token } of byCwd.values()) {
+    for (const { file, meta, token, turnTiming } of byCwd.values()) {
       const sessionId = meta.sessionId ?? sessionIdFromRolloutName(file.path)
       const cwd = meta.cwd!
       const payloadToken = withSharedCodexAccountQuota(
@@ -396,6 +399,7 @@ export class SessionSyncService {
         meta.model,
         meta.reasoningEffort,
         meta.modelObservedAt,
+        turnTiming,
       )
       if (skip === 'skip') continue
 
@@ -413,11 +417,13 @@ export class SessionSyncService {
         model: meta.model,
         reasoningEffort: meta.reasoningEffort,
         modelObservedAt: meta.modelObservedAt,
+        turnTiming,
         token: payloadToken,
         tokenSourcePath: preferPath,
         now,
         // Quota-only churn must not refresh lastEventAt or unhide idle project cards.
         quotaOnly: skip === 'quota',
+        activityRefresh: skip === 'activity',
       })
       count += 1
     }
@@ -437,9 +443,8 @@ export class SessionSyncService {
       // Resolve before grouping active sessions by cwd to collapse symlink/junction aliases.
       const cwd = await this.workspacePaths.resolve(row.cwd)
       const key = normalizePathKey(cwd)
-      // Active list is authoritative; last write wins if duplicates.
-      // Do not use wall-clock as mtime — that would refresh lastEventAt every poll
-      // and prevent the hub's 5-minute idle project pruning.
+      // Active list is authoritative; last write wins if duplicates. Per-session
+      // file mtimes are loaded below; wall-clock time must never become activity.
       byCwd.set(key, { sessionId: row.sessionId, cwd, mtimeMs: 0 })
     }
 
@@ -480,6 +485,13 @@ export class SessionSyncService {
   ): Promise<boolean> {
     try {
       const usage = await readGrokSessionUsage(this.grokHome, sessionId, cwd)
+      const turnTiming = await readGrokTurnTiming(this.grokHome, sessionId, cwd)
+      const activityMtimeMs = await readGrokSessionActivityMtime(
+        this.grokHome,
+        sessionId,
+        cwd,
+        mtimeMs,
+      )
       const contextToken = grokUsageToToken(usage)
       const token = mergeGrokToken(contextToken, billing.token)
       const model = typeof usage.model === 'string' ? usage.model : undefined
@@ -493,9 +505,12 @@ export class SessionSyncService {
         'grok',
         sessionId,
         cwd,
-        mtimeMs,
+        activityMtimeMs,
         payloadToken,
         model,
+        undefined,
+        undefined,
+        turnTiming,
       )
       if (skip === 'skip') return false
 
@@ -504,10 +519,12 @@ export class SessionSyncService {
         sessionId,
         cwd,
         model,
+        turnTiming,
         token: payloadToken,
         tokenSourcePath: sourcePath,
         now,
         quotaOnly: skip === 'quota',
+        activityRefresh: skip === 'activity',
       })
       return true
     } catch (err) {
@@ -532,10 +549,7 @@ export class SessionSyncService {
 
     const active = await readClaudeActiveSessions(this.claudeHome)
     let count = 0
-    const byCwd = new Map<
-      string,
-      { sessionId: string; cwd: string; updatedAt: number; pid?: number }
-    >()
+    const byCwd = new Map<string, ClaudeActiveSession>()
 
     for (const row of active) {
       if (row.pid != null && !this.pidAlive(row.pid)) continue
@@ -556,6 +570,7 @@ export class SessionSyncService {
           row.cwd,
           now,
           row.updatedAt,
+          row.status,
           quota,
           thinkingConfig,
         )
@@ -590,12 +605,18 @@ export class SessionSyncService {
     cwd: string,
     now: number,
     updatedAt: number,
+    status: string | undefined,
     accountQuota?: Awaited<ReturnType<typeof resolveClaudeAccountQuota>>,
     thinkingConfig?: ClaudeThinkingConfig,
   ): Promise<boolean> {
     try {
       const transcript = await findClaudeTranscript(this.claudeHome, sessionId)
-      const usage = transcript ? await readClaudeTranscriptUsage(transcript) : undefined
+      const [usage, transcriptMtimeMs] = transcript
+        ? await Promise.all([
+            readClaudeTranscriptSnapshot(transcript, { status }),
+            readFileMtime(transcript),
+          ])
+        : [undefined, undefined]
       const contextToken = claudeUsageToToken(usage)
       const model = usage?.model
       const reasoningEffort = thinkingConfig?.reasoningEffort
@@ -606,10 +627,12 @@ export class SessionSyncService {
         'claude_code',
         sessionId,
         cwd,
-        updatedAt,
+        Math.max(updatedAt, transcriptMtimeMs ?? 0),
         token,
         model,
         reasoningEffort,
+        undefined,
+        usage?.turnTiming,
       )
       if (skip === 'skip') return false
 
@@ -620,11 +643,13 @@ export class SessionSyncService {
         model,
         reasoningEffort,
         reasoningEffortObservedAt: thinkingConfig?.observedAt,
+        turnTiming: usage?.turnTiming,
         token,
         tokenSourcePath: transcript,
         now,
         // Quota-only churn (account %) must not refresh project idle clock.
         quotaOnly: skip === 'quota',
+        activityRefresh: skip === 'activity',
       })
       return true
     } catch (err) {
@@ -638,6 +663,12 @@ export class SessionSyncService {
    * - skip: nothing changed
    * - activity: mtime/context/model changed (refresh recency, show project)
    * - quota: only rate-limit fields changed (keep lastEventAt / taskHidden)
+   * - rehydrate: a previously pruned slot is still discoverable, but its local
+   *   source did not change since the previous scan
+   *
+   * A static `active` record alone is not a heartbeat: only a native session,
+   * transcript, or rollout update may reset the watchdog. This prevents stale
+   * busy markers from being shown as processing forever.
    */
   private classifyUnchanged(
     mapKey: string,
@@ -649,7 +680,8 @@ export class SessionSyncService {
     model: string | undefined,
     reasoningEffort?: string,
     modelObservedAt?: number,
-  ): 'skip' | 'activity' | 'quota' {
+    turnTiming?: TurnTiming,
+  ): 'skip' | 'activity' | 'quota' | 'rehydrate' {
     const full = fingerprint(
       source,
       sessionId,
@@ -659,6 +691,7 @@ export class SessionSyncService {
       model,
       reasoningEffort,
       modelObservedAt,
+      turnTiming,
     )
     const activity = activityFingerprint(
       source,
@@ -669,6 +702,7 @@ export class SessionSyncService {
       model,
       reasoningEffort,
       modelObservedAt,
+      turnTiming,
     )
     const prevFull = this.fingerprints.get(mapKey)
     const prevActivity = this.activityFingerprints.get(mapKey)
@@ -677,7 +711,8 @@ export class SessionSyncService {
     this.fingerprints.set(mapKey, full)
     this.activityFingerprints.set(mapKey, activity)
 
-    if (!inHub || prevActivity !== activity) return 'activity'
+    if (prevActivity !== activity) return 'activity'
+    if (!inHub) return 'rehydrate'
     if (prevFull !== full) return 'quota'
     return 'skip'
   }
@@ -700,11 +735,14 @@ export class SessionSyncService {
     reasoningEffort?: string
     reasoningEffortObservedAt?: number
     modelObservedAt?: number
+    turnTiming?: TurnTiming
     token: TokenPayload
     tokenSourcePath?: string
     now: number
     /** True when only account rate limits changed — do not bump project recency. */
     quotaOnly?: boolean
+    /** True only when the native local source changed since its previous scan. */
+    activityRefresh?: boolean
   }): void {
     const startKey = `started:${args.source}:${args.sessionId}`
     const alreadyStarted = this.fingerprints.has(startKey)
@@ -724,8 +762,12 @@ export class SessionSyncService {
         reasoningEffort: args.reasoningEffort,
         reasoningEffortObservedAt: args.reasoningEffortObservedAt,
         modelObservedAt: args.modelObservedAt,
+        turnTiming: args.turnTiming,
         timestamp: args.now,
-        internal: { sessionSync: true },
+        internal: {
+          sessionSync: true,
+          ...(args.activityRefresh ? { activityRefresh: true } : {}),
+        },
       })
     } else if (!alreadyStarted && quotaOnly) {
       // Remember start key so a later activity path can still session_start once.
@@ -749,11 +791,13 @@ export class SessionSyncService {
       reasoningEffort: args.reasoningEffort,
       reasoningEffortObservedAt: args.reasoningEffortObservedAt,
       modelObservedAt: args.modelObservedAt,
+      turnTiming: args.turnTiming,
       token: args.token,
       tokenSourcePath: args.tokenSourcePath,
       timestamp: args.now,
       internal: {
         sessionSync: true,
+        ...(args.activityRefresh ? { activityRefresh: true } : {}),
         ...(quotaOnly ? { quotaRefresh: true } : {}),
       },
     })
@@ -780,6 +824,7 @@ interface CodexWorkspaceCandidate {
   file: RolloutFile
   meta: CodexMeta
   token?: TokenPayload
+  turnTiming?: TurnTiming
 }
 
 /**
@@ -1115,6 +1160,8 @@ interface ClaudeActiveSession {
   cwd: string
   pid?: number
   updatedAt: number
+  /** Native process status such as `busy` or `idle`. */
+  status?: string
 }
 
 /** Native Claude Code thinking-depth configuration read from its settings file. */
@@ -1145,8 +1192,10 @@ async function readClaudeActiveSessions(claudeHome: string): Promise<ClaudeActiv
       const cwd = stringVal(raw.cwd)
       if (!sessionId || !cwd) continue
       const pid = num(raw.pid) ?? num(basename(name).replace(/\.json$/i, ''))
-      const updatedAt = num(raw.updatedAt) ?? num(raw.statusUpdatedAt) ?? 0
-      out.push({ sessionId, cwd, pid, updatedAt })
+      const updatedAt =
+        parseLocalTimestamp(raw.updatedAt) ?? parseLocalTimestamp(raw.statusUpdatedAt) ?? 0
+      const status = stringVal(raw.status)?.trim().toLowerCase()
+      out.push({ sessionId, cwd, pid, updatedAt, status })
     } catch {
       // ignore corrupt session files
     }
@@ -1230,6 +1279,8 @@ interface ClaudeTranscriptUsage {
   cachedInput?: number
   contextUsedPercent?: number
   contextWindow?: number
+  /** Native task timing recovered without retaining transcript message content. */
+  turnTiming?: TurnTiming
 }
 
 async function readClaudeTranscriptUsage(
@@ -1284,6 +1335,188 @@ async function readClaudeTranscriptUsage(
     // ignore
   }
   return undefined
+}
+
+/** Native Claude process fields needed only for timing recovery. */
+interface ClaudeTimingContext {
+  status?: string
+}
+
+/** A parsed Claude `system/turn_duration` record. */
+interface ClaudeTurnCompletion {
+  elapsedMs: number
+  observedAt: number
+}
+
+/**
+ * Combines existing transcript usage parsing with a privacy-preserving timing
+ * scan. The timing pass reads only record type, timestamps, and duration fields.
+ *
+ * @param transcriptPath Absolute Claude transcript JSONL path.
+ * @param timingContext Native active-session status.
+ * @returns The latest display-safe usage and timing data, when available.
+ */
+async function readClaudeTranscriptSnapshot(
+  transcriptPath: string,
+  timingContext: ClaudeTimingContext,
+): Promise<ClaudeTranscriptUsage | undefined> {
+  const [usage, turnTiming] = await Promise.all([
+    readClaudeTranscriptUsage(transcriptPath),
+    readClaudeTurnTiming(transcriptPath, timingContext),
+  ])
+  if (!usage && !turnTiming) return undefined
+  return { ...usage, ...(turnTiming ? { turnTiming } : {}) }
+}
+
+/**
+ * Reads only Claude's human-prompt and native `turn_duration` lifecycle fields.
+ * It deliberately excludes message text, assistant text, and tool output.
+ *
+ * @param transcriptPath Absolute Claude transcript JSONL path.
+ * @param timingContext Native active-session status.
+ * @returns A normalized turn timing snapshot, when local CLI data provides one.
+ */
+async function readClaudeTurnTiming(
+  transcriptPath: string,
+  timingContext: ClaudeTimingContext,
+): Promise<TurnTiming | undefined> {
+  try {
+    const text = await readTailFile(transcriptPath, CLAUDE_TRANSCRIPT_TAIL)
+    const lines = text.trim().split(/\r?\n/)
+    let latestPromptAt: number | undefined
+    let latestCompletion: ClaudeTurnCompletion | undefined
+
+    for (let i = lines.length - 1; i >= 0; i--) {
+      let item: {
+        type?: string
+        timestamp?: unknown
+        userType?: unknown
+        isMeta?: unknown
+        isSidechain?: unknown
+        toolUseResult?: unknown
+        subtype?: unknown
+        durationMs?: unknown
+        duration_ms?: unknown
+        message?: { role?: unknown }
+      }
+      try {
+        item = JSON.parse(lines[i] ?? '')
+      } catch {
+        continue
+      }
+
+      const timestamp = parseLocalTimestamp(item.timestamp)
+      if (
+        !latestCompletion &&
+        item.type === 'system' &&
+        stringVal(item.subtype) === 'turn_duration' &&
+        timestamp != null
+      ) {
+        const elapsedMs = num(item.durationMs) ?? num(item.duration_ms)
+        if (elapsedMs != null && elapsedMs >= 0) {
+          latestCompletion = { elapsedMs, observedAt: timestamp }
+        }
+      }
+      if (!latestPromptAt && isClaudeHumanPrompt(item) && timestamp != null) {
+        latestPromptAt = timestamp
+      }
+    }
+
+    return selectClaudeTurnTiming(latestPromptAt, latestCompletion, timingContext)
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Chooses active timing only when a busy Claude process has a prompt newer than
+ * its latest native completion. Otherwise it retains the last terminal duration.
+ *
+ * @param promptAt Latest human prompt timestamp from the transcript.
+ * @param completion Latest native `turn_duration` record from the transcript.
+ * @param context Native active-session status.
+ * @returns A normalized CLI timing snapshot, when available.
+ */
+function selectClaudeTurnTiming(
+  promptAt: number | undefined,
+  completion: ClaudeTurnCompletion | undefined,
+  context: ClaudeTimingContext,
+): TurnTiming | undefined {
+  const promptIsCurrent =
+    promptAt != null && (completion == null || promptAt > completion.observedAt)
+  if (isClaudeBusy(context.status) && promptIsCurrent) {
+    return { state: 'active', startedAt: promptAt, observedAt: promptAt }
+  }
+  if (completion && !promptIsCurrent) {
+    const startedAt = matchClaudeCompletionStart(promptAt, completion)
+    return {
+      state: 'completed',
+      ...(startedAt != null ? { startedAt } : {}),
+      elapsedMs: completion.elapsedMs,
+      observedAt: completion.observedAt,
+    }
+  }
+  // A Claude session's own start is not a task start. Without a transcript
+  // prompt, leave timing unknown instead of displaying accumulated idle time.
+  return undefined
+}
+
+/**
+ * Associates a Claude `turn_duration` with a prompt only when its independently
+ * recorded duration predicts the same start timestamp. Claude transcript rows
+ * have no shared turn ID, and later external user rows can otherwise be matched
+ * to the wrong terminal duration.
+ *
+ * @param promptAt Latest eligible human prompt timestamp.
+ * @param completion Native terminal duration record.
+ * @returns The verified prompt start, or `undefined` when the rows are ambiguous.
+ */
+function matchClaudeCompletionStart(
+  promptAt: number | undefined,
+  completion: ClaudeTurnCompletion,
+): number | undefined {
+  if (promptAt == null) return undefined
+  const inferredStart = completion.observedAt - completion.elapsedMs
+  return Math.abs(inferredStart - promptAt) <= CLAUDE_DURATION_START_MATCH_TOLERANCE_MS
+    ? promptAt
+    : undefined
+}
+
+/**
+ * Identifies a human-entered Claude transcript message without inspecting or
+ * retaining its content. Tool results are represented as user messages too.
+ *
+ * @param item Parsed Claude transcript row.
+ * @returns `true` when the row represents an external human prompt.
+ */
+function isClaudeHumanPrompt(item: {
+  type?: string
+  userType?: unknown
+  isMeta?: unknown
+  isSidechain?: unknown
+  toolUseResult?: unknown
+  message?: { role?: unknown }
+}): boolean {
+  const userType = stringVal(item.userType)
+  return (
+    item.type === 'user' &&
+    item.message?.role === 'user' &&
+    item.toolUseResult == null &&
+    item.isMeta !== true &&
+    item.isSidechain !== true &&
+    (userType == null || userType === 'external')
+  )
+}
+
+/**
+ * Checks whether Claude's native process status indicates it is actively working.
+ *
+ * @param status Native status string from `~/.claude/sessions`.
+ * @returns `true` for known active statuses.
+ */
+function isClaudeBusy(status: string | undefined): boolean {
+  const normalized = status?.trim().toLowerCase()
+  return normalized === 'busy' || normalized === 'working' || normalized === 'running'
 }
 
 function claudeUsageToToken(usage: ClaudeTranscriptUsage | undefined): TokenPayload | undefined {
@@ -1490,6 +1723,119 @@ async function readGrokSessionUsage(
   }
 }
 
+/**
+ * Reads Grok's per-turn lifecycle events without using session-duration counters
+ * that include idle time and earlier turns.
+ *
+ * @param grokHome Grok CLI home directory.
+ * @param sessionId Native Grok session identifier.
+ * @param cwd Workspace path used to locate the encoded session directory.
+ * @returns The latest active or completed turn timing, when available.
+ */
+async function readGrokTurnTiming(
+  grokHome: string,
+  sessionId: string,
+  cwd: string,
+): Promise<TurnTiming | undefined> {
+  const sessionDir = join(grokHome, 'sessions', encodeURIComponent(cwd), sessionId)
+  try {
+    const text = await readTailFile(join(sessionDir, 'events.jsonl'), 512 * 1024)
+    const startedById = new Map<string, number>()
+    const anonymousStarts: number[] = []
+    let latestCompleted: { startedAt: number; elapsedMs: number; observedAt: number } | undefined
+
+    for (const line of text.trim().split(/\r?\n/)) {
+      let item: Record<string, unknown>
+      try {
+        item = JSON.parse(line) as Record<string, unknown>
+      } catch {
+        continue
+      }
+      const payload = asRecord(item.payload) ?? asRecord(item.event) ?? item
+      const type = stringVal(item.type) ?? stringVal(item.event_type) ?? stringVal(payload?.type)
+      const timestamp = parseLocalTimestamp(
+        item.ts ?? item.timestamp ?? payload?.ts ?? payload?.timestamp,
+      )
+      if (timestamp == null) continue
+      const turnId =
+        stringVal(item.turn_id) ??
+        stringVal(item.turnId) ??
+        stringVal(payload?.turn_id) ??
+        stringVal(payload?.turnId)
+
+      if (type === 'turn_started') {
+        if (turnId) startedById.set(turnId, timestamp)
+        else anonymousStarts.push(timestamp)
+        continue
+      }
+      if (type !== 'turn_ended') continue
+
+      const startedAt = turnId ? startedById.get(turnId) : anonymousStarts.shift()
+      if (turnId) startedById.delete(turnId)
+      if (startedAt == null) continue
+      const elapsedMs = Math.max(0, timestamp - startedAt)
+      if (!latestCompleted || timestamp >= latestCompleted.observedAt) {
+        latestCompleted = { startedAt, elapsedMs, observedAt: timestamp }
+      }
+    }
+
+    const activeStartedAt = [...startedById.values(), ...anonymousStarts].reduce<
+      number | undefined
+    >(
+      (earliest, startedAt) => (!earliest || startedAt < earliest ? startedAt : earliest),
+      undefined,
+    )
+    if (activeStartedAt != null) {
+      return { state: 'active', startedAt: activeStartedAt, observedAt: activeStartedAt }
+    }
+    if (latestCompleted) {
+      return {
+        state: 'completed',
+        startedAt: latestCompleted.startedAt,
+        elapsedMs: latestCompleted.elapsedMs,
+        observedAt: latestCompleted.observedAt,
+      }
+    }
+  } catch {
+    // No usable lifecycle file; session lifetime must not be shown as turn time.
+  }
+  return undefined
+}
+
+/**
+ * Finds the freshest Grok file scoped to one active session. This supports
+ * liveness only when Grok actually writes session data; the global
+ * `active_sessions.json` list alone must not keep a stale task alive forever.
+ *
+ * @param grokHome Grok CLI home directory.
+ * @param sessionId Native Grok session identifier.
+ * @param cwd Workspace path used to locate the encoded session directory.
+ * @param fallbackMtimeMs Existing source mtime when no session file is readable.
+ * @returns Epoch milliseconds of the freshest session-scoped file mtime.
+ */
+async function readGrokSessionActivityMtime(
+  grokHome: string,
+  sessionId: string,
+  cwd: string,
+  fallbackMtimeMs: number,
+): Promise<number> {
+  const sessionDir = join(grokHome, 'sessions', encodeURIComponent(cwd), sessionId)
+  const mtimes = await Promise.all(
+    ['events.jsonl', 'updates.jsonl', 'signals.json', 'summary.json'].map(readFileNameMtime),
+  )
+  return Math.max(fallbackMtimeMs, ...mtimes.filter((mtime): mtime is number => mtime != null))
+
+  /**
+   * Reads one candidate session file mtime while keeping a missing file neutral.
+   *
+   * @param fileName Session-relative filename.
+   * @returns Its mtime, or `undefined` when not readable.
+   */
+  async function readFileNameMtime(fileName: string): Promise<number | undefined> {
+    return readFileMtime(join(sessionDir, fileName))
+  }
+}
+
 async function readGrokBillingQuota(
   grokHome: string,
 ): Promise<{ token?: TokenPayload; sourcePath?: string }> {
@@ -1618,6 +1964,7 @@ function fingerprint(
   model: string | undefined,
   reasoningEffort?: string,
   modelObservedAt?: number,
+  turnTiming?: TurnTiming,
 ): string {
   return [
     activityFingerprint(
@@ -1629,6 +1976,7 @@ function fingerprint(
       model,
       reasoningEffort,
       modelObservedAt,
+      turnTiming,
     ),
     token?.rateLimits?.fiveHour?.usedPercent ?? '',
     token?.rateLimits?.fiveHour?.resetsAt ?? '',
@@ -1651,6 +1999,7 @@ function activityFingerprint(
   model: string | undefined,
   reasoningEffort?: string,
   modelObservedAt?: number,
+  turnTiming?: TurnTiming,
 ): string {
   return [
     source,
@@ -1660,6 +2009,10 @@ function activityFingerprint(
     model ?? '',
     reasoningEffort ?? '',
     modelObservedAt ?? '',
+    turnTiming?.state ?? '',
+    turnTiming?.startedAt ?? '',
+    turnTiming?.elapsedMs ?? '',
+    turnTiming?.observedAt ?? '',
     token?.contextUsedPercent ?? '',
     token?.contextWindow ?? '',
     token?.input ?? '',
@@ -1694,6 +2047,23 @@ async function readTailFile(file: string, maxBytes: number): Promise<string> {
   }
 }
 
+/**
+ * Reads a local file's modification time without treating a failed stat as
+ * session activity. Callers use this only as evidence that a CLI wrote its own
+ * transcript or per-session file since the preceding scan.
+ *
+ * @param file Absolute local CLI data path.
+ * @returns Epoch milliseconds of the current file mtime, when readable.
+ */
+async function readFileMtime(file: string): Promise<number | undefined> {
+  try {
+    const mtimeMs = (await stat(file)).mtimeMs
+    return Number.isFinite(mtimeMs) && mtimeMs > 0 ? Math.floor(mtimeMs) : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function stringVal(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
@@ -1716,6 +2086,33 @@ function num(value: unknown): number | undefined {
     if (Number.isFinite(n)) return n
   }
   return undefined
+}
+
+/**
+ * Parses CLI timestamp variants into epoch milliseconds. Local files mix ISO
+ * strings, Unix seconds, and epoch milliseconds across the supported tools.
+ *
+ * @param value Candidate CLI timestamp.
+ * @returns Epoch milliseconds when the value is finite and positive.
+ */
+function parseLocalTimestamp(value: unknown): number | undefined {
+  const numeric = normalizeEpochMilliseconds(value)
+  if (numeric != null) return numeric
+  if (typeof value !== 'string' || !value.trim()) return undefined
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
+}
+
+/**
+ * Normalizes a numeric Unix-seconds or epoch-milliseconds value.
+ *
+ * @param value Candidate numeric timestamp.
+ * @returns Epoch milliseconds when the value is finite and positive.
+ */
+function normalizeEpochMilliseconds(value: unknown): number | undefined {
+  const numeric = num(value)
+  if (numeric == null || numeric <= 0) return undefined
+  return numeric < 1_000_000_000_000 ? numeric * 1000 : numeric
 }
 
 function normalizePathKey(path: string): string {

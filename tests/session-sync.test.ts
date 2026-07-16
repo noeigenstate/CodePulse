@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { StatusHub } from '@codepulse/core'
+import { TurnState } from '@codepulse/shared'
 import { SessionSyncService } from '@codepulse/local-server'
 
 test('SessionSyncService hydrates Codex project from local rollout within one scan', async () => {
@@ -84,6 +85,160 @@ test('SessionSyncService hydrates Codex project from local rollout within one sc
     assert.equal(codex?.model, 'gpt-5.6-terra')
     assert.equal(codex?.reasoningEffort, 'ultra')
     assert.equal(codex?.modelObservedAt, Date.parse('2026-07-14T12:01:00.000Z'))
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService synchronizes Codex native active and completed task timing', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-codex-timing-')
+  const sessions = join(home, 'sessions', '2026', '07', '16')
+  const sessionId = '019f7009-aaaa-bbbb-cccc-ddddeeeeffff'
+  const cwd = 'E:/work/codex-timing'
+  const rollout = join(sessions, `rollout-2026-07-16T12-00-00-${sessionId}.jsonl`)
+  const completedStartSeconds = Math.floor(Date.now() / 1000) - 20
+  const completedAtSeconds = completedStartSeconds + 4
+
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    rollout,
+    [
+      JSON.stringify({ type: 'session_meta', payload: { id: sessionId, cwd } }),
+      JSON.stringify({
+        timestamp: new Date((completedStartSeconds - 30) * 1000).toISOString(),
+        type: 'event_msg',
+        payload: {
+          type: 'task_started',
+          turn_id: 'historical-unmatched-start',
+          started_at: completedStartSeconds - 30,
+        },
+      }),
+      JSON.stringify({
+        timestamp: new Date(completedStartSeconds * 1000).toISOString(),
+        type: 'event_msg',
+        payload: {
+          type: 'task_started',
+          turn_id: 'turn-complete',
+          started_at: completedStartSeconds,
+        },
+      }),
+      JSON.stringify({
+        timestamp: new Date(completedAtSeconds * 1000).toISOString(),
+        type: 'event_msg',
+        payload: {
+          type: 'task_complete',
+          turn_id: 'turn-complete',
+          completed_at: completedAtSeconds,
+          duration_ms: 4_321,
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+  await utimes(rollout, new Date(), new Date())
+
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: home,
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    codexProcessAlive: () => true,
+  })
+
+  try {
+    await sync.syncNow(['codex'])
+    let codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.deepEqual(codex?.turnTiming, {
+      state: 'completed',
+      startedAt: completedStartSeconds * 1000,
+      elapsedMs: 4_321,
+      observedAt: completedAtSeconds * 1000,
+    })
+    assert.equal(
+      codex?.state,
+      TurnState.IDLE,
+      'an unmatched historical start must not revive a completed Codex task',
+    )
+
+    const activeStartSeconds = completedAtSeconds + 1
+    await writeFile(
+      rollout,
+      [
+        JSON.stringify({
+          timestamp: new Date((activeStartSeconds - 1) * 1000).toISOString(),
+          type: 'event_msg',
+          payload: {
+            type: 'task_started',
+            turn_id: 'turn-after-terminal-earlier',
+            started_at: activeStartSeconds - 1,
+          },
+        }),
+        JSON.stringify({
+          timestamp: new Date(activeStartSeconds * 1000).toISOString(),
+          type: 'event_msg',
+          payload: { type: 'task_started', turn_id: 'turn-active', started_at: activeStartSeconds },
+        }),
+      ]
+        .map((line) => `\n${line}`)
+        .join(''),
+      { encoding: 'utf8', flag: 'a' },
+    )
+    await utimes(rollout, new Date(), new Date())
+    await sync.syncNow(['codex'])
+
+    codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.deepEqual(codex?.turnTiming, {
+      state: 'active',
+      startedAt: activeStartSeconds * 1000,
+      observedAt: activeStartSeconds * 1000,
+    })
+    assert.equal(codex?.turnStartedAt, activeStartSeconds * 1000)
+    assert.equal(codex?.state, TurnState.PROMPT_SUBMITTED)
+
+    // A fresh server process has no hook memory. The native active snapshot
+    // must still recover a running card. A static record is not a heartbeat;
+    // only a later real rollout write refreshes the watchdog timestamp.
+    let restartNow = Date.now()
+    const restartedHub = new StatusHub({ sessionThrottleMs: 0 })
+    const restartedSync = new SessionSyncService({
+      hub: restartedHub,
+      userHome: home,
+      codexHome: home,
+      grokHome: join(home, 'no-grok'),
+      claudeHome: join(home, 'no-claude'),
+      disableWatch: true,
+      now: () => restartNow,
+      codexProcessAlive: () => true,
+    })
+    try {
+      await restartedSync.syncNow(['codex'])
+      let restored = restartedHub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+      assert.equal(restored?.state, TurnState.PROMPT_SUBMITTED)
+      assert.equal(restored?.terminalAt, undefined)
+      const restoredAt = restored?.lastEventAt
+
+      restartNow += 3_500
+      await restartedSync.syncNow(['codex'])
+      restored = restartedHub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+      assert.equal(restored?.lastEventAt, restoredAt)
+      assert.equal(restored?.terminalAt, undefined)
+
+      await writeFile(
+        rollout,
+        `\n${JSON.stringify({ type: 'event_msg', payload: { type: 'progress' } })}`,
+        { encoding: 'utf8', flag: 'a' },
+      )
+      await utimes(rollout, new Date(restartNow), new Date(restartNow))
+      await restartedSync.syncNow(['codex'])
+      restored = restartedHub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+      assert.equal(restored?.lastEventAt, restartNow)
+    } finally {
+      restartedSync.stop()
+    }
   } finally {
     sync.stop()
     await rm(home, { recursive: true, force: true })
@@ -311,6 +466,8 @@ test('SessionSyncService hydrates Grok only from live active_sessions', async ()
   const liveDir = join(home, 'sessions', encodeURIComponent(liveCwd), liveId)
   const staleDir = join(home, 'sessions', encodeURIComponent(staleCwd), staleId)
   const logs = join(home, 'logs')
+  const grokTurnStartedAt = Date.now() - 5_000
+  const grokTurnEndedAt = grokTurnStartedAt + 3_250
 
   await mkdir(liveDir, { recursive: true })
   await mkdir(staleDir, { recursive: true })
@@ -343,6 +500,20 @@ test('SessionSyncService hydrates Grok only from live active_sessions', async ()
       'utf8',
     )
   }
+  await writeFile(
+    join(liveDir, 'events.jsonl'),
+    [
+      JSON.stringify({
+        type: 'turn_started',
+        ts: new Date(grokTurnStartedAt).toISOString(),
+      }),
+      JSON.stringify({
+        type: 'turn_ended',
+        ts: new Date(grokTurnEndedAt).toISOString(),
+      }),
+    ].join('\n'),
+    'utf8',
+  )
 
   const periodEnd = new Date(Date.now() + 3 * 24 * 60 * 60_000).toISOString()
   await writeFile(
@@ -380,6 +551,12 @@ test('SessionSyncService hydrates Grok only from live active_sessions', async ()
     assert.equal(grokAgents[0]?.workspacePath?.replace(/\\/g, '/'), liveCwd.replace(/\\/g, '/'))
     assert.equal(grokAgents[0]?.token?.contextUsedPercent, 42)
     assert.equal(grokAgents[0]?.token?.rateLimits?.sevenDay?.usedPercent, 18)
+    assert.deepEqual(grokAgents[0]?.turnTiming, {
+      state: 'completed',
+      startedAt: grokTurnStartedAt,
+      elapsedMs: 3_250,
+      observedAt: grokTurnEndedAt,
+    })
   } finally {
     sync.stop()
     await rm(home, { recursive: true, force: true })
@@ -445,6 +622,8 @@ test('SessionSyncService hydrates Claude from live sessions pid + transcript', a
   const sessionsDir = join(home, 'sessions')
   const projectDir = join(home, 'projects', 'E-------work-claude-open')
   const transcript = join(projectDir, `${sessionId}.jsonl`)
+  const promptAt = Date.now() - 6_000
+  const completedAt = promptAt + 4_000
 
   await mkdir(sessionsDir, { recursive: true })
   await mkdir(projectDir, { recursive: true })
@@ -465,6 +644,12 @@ test('SessionSyncService hydrates Claude from live sessions pid + transcript', a
     [
       JSON.stringify({ type: 'mode', mode: 'normal', sessionId }),
       JSON.stringify({
+        type: 'user',
+        timestamp: new Date(promptAt).toISOString(),
+        userType: 'external',
+        message: { role: 'user' },
+      }),
+      JSON.stringify({
         type: 'assistant',
         cwd,
         sessionId,
@@ -477,6 +662,12 @@ test('SessionSyncService hydrates Claude from live sessions pid + transcript', a
             output_tokens: 200,
           },
         },
+      }),
+      JSON.stringify({
+        type: 'system',
+        subtype: 'turn_duration',
+        timestamp: new Date(completedAt).toISOString(),
+        durationMs: 4_000,
       }),
     ].join('\n'),
     'utf8',
@@ -500,11 +691,80 @@ test('SessionSyncService hydrates Claude from live sessions pid + transcript', a
     assert.equal(claude?.workspacePath?.replace(/\\/g, '/'), cwd.replace(/\\/g, '/'))
     assert.equal(claude?.model, 'claude-opus-4')
     assert.equal(claude?.reasoningEffort, 'high')
+    assert.deepEqual(claude?.turnTiming, {
+      state: 'completed',
+      startedAt: promptAt,
+      elapsedMs: 4_000,
+      observedAt: completedAt,
+    })
     // contextInput = 100+40000+500 = 40600 / 200000 ≈ 20.3%
     assert.ok(
       (claude?.token?.contextUsedPercent ?? 0) > 15,
       `expected context % from transcript usage, got ${claude?.token?.contextUsedPercent}`,
     )
+
+    // Claude has no common turn ID here. A later external user row that cannot
+    // be reconciled with `turn_duration` must not be attached as this turn's
+    // start, while the native completed duration remains displayable.
+    const mismatchedCompletedAt = Date.now() - 500
+    await writeFile(
+      transcript,
+      [
+        JSON.stringify({
+          type: 'user',
+          timestamp: new Date(mismatchedCompletedAt - 855).toISOString(),
+          userType: 'external',
+          message: { role: 'user' },
+        }),
+        JSON.stringify({
+          type: 'system',
+          subtype: 'turn_duration',
+          timestamp: new Date(mismatchedCompletedAt).toISOString(),
+          durationMs: 592_873,
+        }),
+      ]
+        .map((line) => `\n${line}`)
+        .join(''),
+      { encoding: 'utf8', flag: 'a' },
+    )
+    await sync.syncNow(['claude_code'])
+    const unpairedClaude = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
+    assert.deepEqual(unpairedClaude?.turnTiming, {
+      state: 'completed',
+      elapsedMs: 592_873,
+      observedAt: mismatchedCompletedAt,
+    })
+
+    const activePromptAt = Date.now()
+    await writeFile(
+      join(sessionsDir, '424242.json'),
+      JSON.stringify({
+        pid: 424_242,
+        sessionId,
+        cwd,
+        status: 'busy',
+        startedAt: promptAt - 60_000,
+        updatedAt: activePromptAt,
+      }),
+      'utf8',
+    )
+    await writeFile(
+      transcript,
+      `\n${JSON.stringify({
+        type: 'user',
+        timestamp: new Date(activePromptAt).toISOString(),
+        userType: 'external',
+        message: { role: 'user' },
+      })}`,
+      { encoding: 'utf8', flag: 'a' },
+    )
+    await sync.syncNow(['claude_code'])
+    const activeClaude = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
+    assert.deepEqual(activeClaude?.turnTiming, {
+      state: 'active',
+      startedAt: activePromptAt,
+      observedAt: activePromptAt,
+    })
 
     // A parsed settings file that no longer defines effort is an authoritative
     // unknown value, rather than a reason to keep the previous level forever.

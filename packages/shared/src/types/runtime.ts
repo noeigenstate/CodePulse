@@ -6,6 +6,7 @@
  */
 import type { AgentType } from './agent.js'
 import type { TurnState } from './state.js'
+import type { TurnTiming } from './timing.js'
 import type { TokenPayload } from './token.js'
 
 /**
@@ -58,6 +59,11 @@ export interface AgentRuntimeState {
   token?: TokenPayload
   /** 当前轮次开始时间（epoch 毫秒，有活动轮次时存在）。 */
   turnStartedAt?: number
+  /**
+   * CLI 原生会话数据同步出的当前或最近完成轮次耗时。活动任务使用 `startedAt`
+   * 持续递增；完成任务使用冻结的 `elapsedMs`，因此卡片不会重新显示为未知。
+   */
+  turnTiming?: TurnTiming
   /** 该 agent 最近一次事件的时间（epoch 毫秒）。 */
   lastEventAt: number
   /** Epoch milliseconds when the current terminal state was entered. */

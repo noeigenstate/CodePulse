@@ -2,6 +2,7 @@ import { open } from 'node:fs/promises'
 import {
   type AgentEvent,
   type TokenPayload,
+  type TurnTiming,
   parseTokenCount,
   workspaceKey,
 } from '@codepulse/shared'
@@ -38,6 +39,8 @@ export interface CodexRolloutSnapshot {
   model?: string
   reasoningEffort?: string
   modelObservedAt?: number
+  /** Latest native Codex task lifecycle timing recovered from the rollout tail. */
+  turnTiming?: TurnTiming
 }
 
 export interface QuotaRefreshWatcherOptions {
@@ -291,12 +294,20 @@ export async function readCodexRolloutSnapshotFromFile(
   let tokenCountWithLimits: Record<string, unknown> | undefined
   let taskStarted: Record<string, unknown> | undefined
   let modelConfig: CodexModelConfig | undefined
+  const terminalTasks = new Map<string, CodexTaskTerminal>()
+  const activeTasks: CodexTaskStart[] = []
+  let latestCompletedTask: CodexTaskTerminal | undefined
   const nowMs = Date.now()
 
   for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i] ?? ''
+    // A rollout tail can contain thousands of reasoning and tool-output rows.
+    // Scan all lines for lifecycle matching, but parse JSON only for envelopes
+    // that can carry token, model, or task timing data.
+    if (!isCodexTimingOrUsageEnvelope(line)) continue
     let item: unknown
     try {
-      item = JSON.parse(lines[i]!)
+      item = JSON.parse(line)
     } catch {
       continue
     }
@@ -315,13 +326,46 @@ export async function readCodexRolloutSnapshotFromFile(
       }
     }
     if (!taskStarted && payload?.type === 'task_started') taskStarted = payload
-    if (tokenCount && tokenCountWithLimits && taskStarted && modelConfig) break
+
+    const taskType = readString(payload, 'type')
+    if (payload && (taskType === 'task_complete' || taskType === 'turn_aborted')) {
+      const terminal = readCodexTaskTerminal(payload, item)
+      if (terminal) {
+        if (!latestCompletedTask || terminal.observedAt >= latestCompletedTask.observedAt) {
+          latestCompletedTask = terminal
+        }
+        if (terminal.turnId) terminalTasks.set(terminal.turnId, terminal)
+      }
+    } else if (payload && taskType === 'task_started') {
+      const start = readCodexTaskStart(payload, item)
+      const terminal = start?.turnId ? terminalTasks.get(start.turnId) : undefined
+      if (terminal && start) terminal.startedAt = start.startedAt
+      else if (start) activeTasks.push(start)
+    }
   }
 
   const token = tokenCount
     ? finalizeCodexToken(tokenCount, tokenCountWithLimits, taskStarted, nowMs)
     : undefined
-  return { ...(token ? { token } : {}), ...modelConfig }
+  const turnTiming = selectCodexTurnTiming(activeTasks, latestCompletedTask)
+  return { ...(token ? { token } : {}), ...modelConfig, ...(turnTiming ? { turnTiming } : {}) }
+}
+
+/**
+ * Fast-filters rollout JSONL rows before JSON parsing during periodic scans.
+ *
+ * @param line Raw JSONL row.
+ * @returns `true` when the row can contain a token, model, or task-timing envelope.
+ */
+function isCodexTimingOrUsageEnvelope(line: string): boolean {
+  return (
+    line.includes('"token_count"') ||
+    line.includes('"turn_context"') ||
+    line.includes('"thread_settings_applied"') ||
+    line.includes('"task_started"') ||
+    line.includes('"task_complete"') ||
+    line.includes('"turn_aborted"')
+  )
 }
 
 /**
@@ -373,6 +417,102 @@ interface CodexModelConfig {
   model: string
   reasoningEffort?: string
   modelObservedAt?: number
+}
+
+/** A native Codex `task_started` record normalized for lifecycle matching. */
+interface CodexTaskStart {
+  turnId?: string
+  startedAt: number
+}
+
+/** A native Codex terminal task record normalized for lifecycle matching. */
+interface CodexTaskTerminal {
+  turnId?: string
+  startedAt?: number
+  elapsedMs: number
+  observedAt: number
+}
+
+/**
+ * Parses a native Codex task-start record without treating the JSONL file mtime
+ * as task time.
+ *
+ * @param payload Parsed `event_msg` payload.
+ * @param envelope Parsed JSONL envelope.
+ * @returns A valid task start record, or `undefined` when timestamps are absent.
+ */
+function readCodexTaskStart(
+  payload: Record<string, unknown>,
+  envelope: Record<string, unknown>,
+): CodexTaskStart | undefined {
+  const startedAt =
+    parseRolloutTimestamp(payload.started_at) ?? parseRolloutTimestamp(envelope.timestamp)
+  if (startedAt == null || startedAt <= 0) return undefined
+  return { turnId: readString(payload, 'turn_id', 'turnId'), startedAt }
+}
+
+/**
+ * Parses a native Codex completed or aborted task record.
+ *
+ * @param payload Parsed `event_msg` payload.
+ * @param envelope Parsed JSONL envelope.
+ * @returns A terminal duration record, or `undefined` when native timing is unusable.
+ */
+function readCodexTaskTerminal(
+  payload: Record<string, unknown>,
+  envelope: Record<string, unknown>,
+): CodexTaskTerminal | undefined {
+  const observedAt =
+    parseRolloutTimestamp(payload.completed_at) ?? parseRolloutTimestamp(envelope.timestamp)
+  const elapsedMs = optionalNumber(payload.duration_ms) ?? optionalNumber(payload.durationMs)
+  if (observedAt == null || observedAt <= 0 || elapsedMs == null || elapsedMs < 0) return undefined
+  return {
+    turnId: readString(payload, 'turn_id', 'turnId'),
+    elapsedMs,
+    observedAt,
+  }
+}
+
+/**
+ * Picks one card-level timing value from a rollout that may include several
+ * agent turns. Only starts newer than the newest terminal can still describe an
+ * active foreground turn; this prevents a historical interrupted start from
+ * reviving a completed card after a restart. Codex does not expose a stable
+ * foreground-turn marker when several tasks remain unclosed, so the newest
+ * start is the conservative best-effort proxy for the card's current turn.
+ *
+ * @param activeTasks Unmatched native task starts from the rollout tail.
+ * @param latestCompletedTask Newest native task completion from the rollout tail.
+ * @returns The timing snapshot suitable for the project card, when available.
+ */
+function selectCodexTurnTiming(
+  activeTasks: readonly CodexTaskStart[],
+  latestCompletedTask: CodexTaskTerminal | undefined,
+): TurnTiming | undefined {
+  const currentTasks = activeTasks.filter(
+    (candidate) =>
+      latestCompletedTask == null || candidate.startedAt >= latestCompletedTask.observedAt,
+  )
+  const active = currentTasks.reduce<CodexTaskStart | undefined>(
+    (latest, candidate) => (!latest || candidate.startedAt > latest.startedAt ? candidate : latest),
+    undefined,
+  )
+  if (active) {
+    return {
+      state: 'active',
+      startedAt: active.startedAt,
+      observedAt: active.startedAt,
+    }
+  }
+  if (!latestCompletedTask) return undefined
+  return {
+    state: 'completed',
+    ...(latestCompletedTask.startedAt !== undefined
+      ? { startedAt: latestCompletedTask.startedAt }
+      : {}),
+    elapsedMs: latestCompletedTask.elapsedMs,
+    observedAt: latestCompletedTask.observedAt,
+  }
 }
 
 /**

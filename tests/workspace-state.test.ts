@@ -64,6 +64,240 @@ test('StatusHub routes workspace-less events back to the original session worksp
   assert.equal(codexAgents[0]?.state, 'DONE')
 })
 
+test('StatusHub freezes elapsed time after a terminal lifecycle event', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const startedAt = 1_000_000
+  const finishedAt = startedAt + 12_345
+
+  hub.ingest({
+    id: 'prompt',
+    source: 'codex',
+    eventType: 'prompt_submit',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: startedAt,
+  })
+  hub.ingest({
+    id: 'stop',
+    source: 'codex',
+    eventType: 'turn_stop',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: finishedAt,
+  })
+
+  const codex = hub.snapshot(finishedAt).agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.turnStartedAt, undefined)
+  assert.deepEqual(codex?.turnTiming, {
+    state: 'completed',
+    startedAt,
+    elapsedMs: 12_345,
+    observedAt: finishedAt,
+  })
+})
+
+test('StatusHub restores a native active timing snapshot without using scan time', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const nativeStartedAt = 1_000_000
+
+  hub.ingest({
+    id: 'disk-timing',
+    source: 'claude_code',
+    eventType: 'token_snapshot',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: nativeStartedAt + 90_000,
+    turnTiming: {
+      state: 'active',
+      startedAt: nativeStartedAt,
+      observedAt: nativeStartedAt,
+    },
+  })
+
+  const claude = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
+  assert.equal(claude?.turnStartedAt, nativeStartedAt)
+  assert.deepEqual(claude?.turnTiming, {
+    state: 'active',
+    startedAt: nativeStartedAt,
+    observedAt: nativeStartedAt,
+  })
+})
+
+test('StatusHub ignores a stale native timing snapshot after a newer prompt hook', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const staleStartedAt = 1_000_000
+  const currentStartedAt = staleStartedAt + 10_000
+
+  hub.ingest({
+    id: 'prompt',
+    source: 'codex',
+    eventType: 'prompt_submit',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: currentStartedAt,
+  })
+  hub.ingest({
+    id: 'stale-disk-timing',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: currentStartedAt + 1_000,
+    turnTiming: {
+      state: 'completed',
+      elapsedMs: 2_000,
+      observedAt: staleStartedAt + 5_000,
+    },
+  })
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.turnStartedAt, currentStartedAt)
+  assert.deepEqual(codex?.turnTiming, {
+    state: 'active',
+    startedAt: currentStartedAt,
+    observedAt: currentStartedAt,
+  })
+})
+
+test('StatusHub lets native completion duration refine the same hook-observed turn', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const startedAt = 1_000_000
+  const hookStoppedAt = startedAt + 5_000
+
+  hub.ingest({
+    id: 'prompt',
+    source: 'codex',
+    eventType: 'prompt_submit',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: startedAt,
+  })
+  hub.ingest({
+    id: 'stop',
+    source: 'codex',
+    eventType: 'turn_stop',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: hookStoppedAt,
+  })
+  hub.ingest({
+    id: 'native-completion',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: hookStoppedAt + 1_000,
+    turnTiming: {
+      state: 'completed',
+      startedAt,
+      elapsedMs: 4_321,
+      observedAt: startedAt + 4_321,
+    },
+  })
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.deepEqual(codex?.turnTiming, {
+    state: 'completed',
+    startedAt,
+    elapsedMs: 4_321,
+    observedAt: startedAt + 4_321,
+  })
+})
+
+test('StatusHub backfills a nearby CLI completion even when no prompt association is safe', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const startedAt = 1_000_000
+  const hookStoppedAt = startedAt + 5_000
+
+  hub.ingest({
+    id: 'prompt',
+    source: 'claude_code',
+    eventType: 'prompt_submit',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: startedAt,
+  })
+  hub.ingest({
+    id: 'stop',
+    source: 'claude_code',
+    eventType: 'turn_stop',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: hookStoppedAt,
+  })
+  hub.ingest({
+    id: 'native-unpaired-completion',
+    source: 'claude_code',
+    eventType: 'token_snapshot',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: hookStoppedAt + 1_000,
+    turnTiming: {
+      state: 'completed',
+      elapsedMs: 4_321,
+      observedAt: startedAt + 4_321,
+    },
+  })
+
+  const claude = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
+  assert.deepEqual(claude?.turnTiming, {
+    state: 'completed',
+    elapsedMs: 4_321,
+    observedAt: startedAt + 4_321,
+  })
+})
+
+test('StatusHub only revives a timeout after a real local-session activity refresh', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const startedAt = 1_000_000
+  const timeoutAt = startedAt + STUCK_VISIBLE_MS + 1
+
+  hub.ingest({
+    id: 'prompt',
+    source: 'codex',
+    eventType: 'prompt_submit',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: startedAt,
+  })
+  ;(hub as unknown as { tick(now?: number): void }).tick(timeoutAt)
+
+  const staleTiming = {
+    state: 'active' as const,
+    startedAt,
+    observedAt: startedAt,
+  }
+  hub.ingest({
+    id: 'static-disk-record',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: timeoutAt + 1,
+    turnTiming: staleTiming,
+    internal: { sessionSync: true },
+  })
+  assert.equal(
+    hub.snapshot().agents.find((agent) => agent.agentType === 'codex')?.state,
+    TurnState.TIMEOUT,
+  )
+
+  hub.ingest({
+    id: 'fresh-disk-record',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: timeoutAt + 2,
+    turnTiming: staleTiming,
+    internal: { sessionSync: true, activityRefresh: true },
+  })
+  assert.equal(
+    hub.snapshot().agents.find((agent) => agent.agentType === 'codex')?.state,
+    TurnState.PROMPT_SUBMITTED,
+  )
+})
+
 test('StatusHub keeps the newest Codex model and thinking-depth snapshot atomic', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const base = {
@@ -335,7 +569,7 @@ test('StatusHub treats slash and backslash workspace paths as the same project',
   assert.equal(codexAgents[0]?.token?.contextUsedPercent, 12)
 })
 
-test('StatusHub clears turn start time when watchdog marks TIMEOUT', () => {
+test('StatusHub freezes elapsed time when watchdog marks TIMEOUT', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const startedAt = 1_000_000
 
@@ -352,6 +586,12 @@ test('StatusHub clears turn start time when watchdog marks TIMEOUT', () => {
   const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
   assert.equal(codex?.state, TurnState.TIMEOUT)
   assert.equal(codex?.turnStartedAt, undefined)
+  assert.deepEqual(codex?.turnTiming, {
+    state: 'completed',
+    startedAt,
+    elapsedMs: STUCK_VISIBLE_MS + 1,
+    observedAt: startedAt + STUCK_VISIBLE_MS + 1,
+  })
 })
 
 test('StatusHub emits a synthetic timeout event through the normal pipeline', () => {

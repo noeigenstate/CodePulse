@@ -1,13 +1,13 @@
 import { useEffect, useRef, type MouseEvent } from 'react'
 import type { SettingsCopy } from '../lib/i18n.js'
-import { CLI_TOOL_TYPES, type CliToolType, type ThemeMode } from '../lib/dashboardSettings.js'
+import { CLI_TOOL_TYPES, type CliToolType, type ThemePreference } from '../lib/dashboardSettings.js'
 
 interface Props {
   copy: SettingsCopy
   onClose: () => void
-  onThemeChange: (theme: ThemeMode) => void
+  onThemeChange: (theme: ThemePreference) => void
   onToolVisibilityChange: (tool: CliToolType, visible: boolean) => void
-  theme: ThemeMode
+  theme: ThemePreference
   visibleTools: Record<CliToolType, boolean>
 }
 
@@ -117,7 +117,14 @@ export function SettingsDialog({
         <div className="grid gap-6 px-5 py-5">
           <section>
             <h3 className="text-sm font-semibold text-ink">{copy.theme}</h3>
-            <div className="mt-3 grid grid-cols-2 gap-2">
+            <p className="mt-1.5 text-meta leading-5 text-ink-500">{copy.themeAutoHint}</p>
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <ThemeOption
+                active={theme === 'auto'}
+                label={copy.themeAuto}
+                onClick={() => onThemeChange('auto')}
+                theme="auto"
+              />
               <ThemeOption
                 active={theme === 'light'}
                 label={copy.themeLight}
@@ -162,7 +169,7 @@ function ThemeOption({
   active: boolean
   label: string
   onClick: () => void
-  theme: ThemeMode
+  theme: ThemePreference
 }): JSX.Element {
   return (
     <button
@@ -172,7 +179,7 @@ function ThemeOption({
       type="button"
     >
       <span className={`theme-swatch theme-swatch-${theme}`} aria-hidden="true">
-        {theme === 'light' ? <SunIcon /> : <MoonIcon />}
+        {theme === 'light' ? <SunIcon /> : theme === 'dark' ? <MoonIcon /> : <AutoThemeIcon />}
       </span>
       <span>{label}</span>
     </button>
@@ -245,6 +252,27 @@ function MoonIcon(): JSX.Element {
         stroke="currentColor"
         strokeLinejoin="round"
         strokeWidth="1.7"
+      />
+    </svg>
+  )
+}
+
+/**
+ * Renders the time-based automatic-theme icon.
+ *
+ * @returns The automatic-theme SVG icon.
+ */
+function AutoThemeIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 20 20">
+      <circle cx="10" cy="10" fill="none" r="6.8" stroke="currentColor" strokeWidth="1.6" />
+      <path
+        d="M10 5.7v4.5l3 1.8M5.4 4.7l1.2 1.1M14.6 4.7l-1.2 1.1"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.6"
       />
     </svg>
   )

@@ -56,11 +56,14 @@ import { buildVirtualListLayout, findVirtualListRange } from './lib/virtualList.
 import {
   applyTheme,
   CLI_TOOL_TYPES,
+  millisecondsUntilScheduledThemeChange,
   readDashboardSettings,
+  resolveTheme,
   writeDashboardSettings,
   type CliToolType,
   type DashboardSettings,
   type ThemeMode,
+  type ThemePreference,
 } from './lib/dashboardSettings.js'
 import {
   formatThinkingDepth,
@@ -127,15 +130,16 @@ export function App(): JSX.Element {
     codexTrustAcknowledged,
   )
   const now = useNow(30_000)
+  const resolvedTheme = useScheduledTheme(dashboardSettings.theme)
 
   useEffect(() => {
     void window.codepulse.setLocale(locale)
   }, [locale])
 
   useLayoutEffect(() => {
-    // Write before paint so a persisted dark palette never flashes the light palette.
-    applyTheme(document.documentElement, dashboardSettings.theme)
-  }, [dashboardSettings.theme])
+    // Write before paint so the resolved palette never flashes its opposite color.
+    applyTheme(document.documentElement, resolvedTheme)
+  }, [resolvedTheme])
 
   useEffect(() => {
     // Storage may be unavailable; the writer deliberately preserves the in-memory selection.
@@ -168,7 +172,7 @@ export function App(): JSX.Element {
   )
 
   const setTheme = useCallback(
-    (theme: ThemeMode): void => {
+    (theme: ThemePreference): void => {
       updateDashboardSettings((current) => ({ ...current, theme }))
     },
     [updateDashboardSettings],
@@ -245,6 +249,49 @@ export function App(): JSX.Element {
       )}
     </div>
   )
+}
+
+/**
+ * Resolves the selected theme and reschedules automatic changes at local 08:00 and 20:00.
+ *
+ * Refreshing on focus and visibility changes also corrects the palette immediately after
+ * sleep or when the system clock changes while the app is hidden.
+ *
+ * @param preference Persisted user theme selection.
+ * @returns Concrete palette currently suitable for the document root.
+ */
+function useScheduledTheme(preference: ThemePreference): ThemeMode {
+  const [, setRefreshVersion] = useState(0)
+
+  useEffect(() => {
+    if (preference !== 'auto') return
+
+    let timeoutId: number | undefined
+    const scheduleNextChange = (): void => {
+      const observedAt = new Date()
+      setRefreshVersion((version) => version + 1)
+      timeoutId = window.setTimeout(
+        scheduleNextChange,
+        millisecondsUntilScheduledThemeChange(observedAt),
+      )
+    }
+    const refreshWhenVisible = (): void => {
+      if (document.visibilityState !== 'visible') return
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId)
+      scheduleNextChange()
+    }
+
+    scheduleNextChange()
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    window.addEventListener('focus', refreshWhenVisible)
+    return () => {
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+      window.removeEventListener('focus', refreshWhenVisible)
+    }
+  }, [preference])
+
+  return resolveTheme(preference)
 }
 
 /** 实时三栏控制台主体 + 底栏（与设计稿一致） */
@@ -1054,7 +1101,13 @@ const ProjectTile = memo(function ProjectTile({
           />
           <InlineMetric
             label={copy.elapsed}
-            value={<ElapsedTime since={agent.turnStartedAt} locale={locale} />}
+            value={
+              <ElapsedTime
+                timing={agent.turnTiming}
+                legacyStartedAt={agent.turnStartedAt}
+                locale={locale}
+              />
+            }
           />
         </div>
 
@@ -1189,15 +1242,35 @@ function RelativeTime({
   return <>{timestamp ? formatRelative(timestamp, now, locale) : '—'}</>
 }
 
+/**
+ * Renders a live task duration from a CLI-native timing snapshot. Active turns
+ * advance with the local clock, while completed turns retain their frozen CLI
+ * duration after hooks, the renderer, or the desktop app restart.
+ *
+ * @param props Component properties.
+ * @param props.timing Latest normalized CLI turn-timing snapshot.
+ * @param props.legacyStartedAt Active start retained for server-version compatibility.
+ * @param props.locale Dashboard display locale.
+ * @returns The formatted elapsed-time text or an em dash when CLI timing is unknown.
+ */
 function ElapsedTime({
-  since,
+  timing,
+  legacyStartedAt,
   locale,
 }: {
-  since: number | undefined
+  timing: AgentRuntimeState['turnTiming']
+  legacyStartedAt: number | undefined
   locale: Locale
 }): JSX.Element {
   const now = useNow()
-  return <>{since ? formatDuration(now - since, locale) : '—'}</>
+  if (timing?.state === 'active' && timing.startedAt) {
+    return <>{formatDuration(now - timing.startedAt, locale)}</>
+  }
+  if (timing?.state === 'completed' && timing.elapsedMs != null) {
+    return <>{formatDuration(timing.elapsedMs, locale)}</>
+  }
+  if (legacyStartedAt) return <>{formatDuration(now - legacyStartedAt, locale)}</>
+  return <>—</>
 }
 
 function ContextMeter({

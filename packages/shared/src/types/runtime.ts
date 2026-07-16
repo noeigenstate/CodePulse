@@ -28,6 +28,18 @@ export interface AgentRuntimeState {
   workspacePath?: string
   /** 使用的模型（如已知）。 */
   model?: string
+  /** 当前模型配置的思考深度；未知时不从 token 用量推断。 */
+  reasoningEffort?: string
+  /**
+   * 当前思考深度配置最近一次由原生 CLI 确认的时间（epoch 毫秒）。独立的
+   * Claude 全局设置使用此字段，避免旧事件重新显示已移除的深度。
+   */
+  reasoningEffortObservedAt?: number
+  /**
+   * 当前模型配置在原始 CLI rollout 中的记录时间（epoch 毫秒）。用于拒绝
+   * 晚到的旧配置快照，避免模型和思考深度在不同轮次之间交叉覆盖。
+   */
+  modelObservedAt?: number
   /** 当前活动的简短人类可读描述，例如 `"正在执行 npm test"`。 */
   activity?: string
   /** 当前正在运行的工具名（如适用）。 */

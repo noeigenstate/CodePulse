@@ -20,7 +20,21 @@ test('SessionSyncService hydrates Codex project from local rollout within one sc
     [
       JSON.stringify({
         type: 'session_meta',
-        payload: { id: sessionId, cwd, model: 'gpt-5.3-codex' },
+        payload: { id: sessionId, cwd },
+      }),
+      JSON.stringify({
+        timestamp: '2026-07-14T12:00:00.000Z',
+        type: 'turn_context',
+        payload: { model: 'gpt-5.6-sol', effort: 'max' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: { type: 'noise', value: 'x'.repeat(600_000) },
+      }),
+      JSON.stringify({
+        timestamp: '2026-07-14T12:01:00.000Z',
+        type: 'turn_context',
+        payload: { model: 'gpt-5.6-terra', effort: 'ultra' },
       }),
       JSON.stringify({
         type: 'event_msg',
@@ -67,7 +81,73 @@ test('SessionSyncService hydrates Codex project from local rollout within one sc
       `expected context % from last_token_usage, got ${codex?.token?.contextUsedPercent}`,
     )
     assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 37)
-    assert.equal(codex?.model, 'gpt-5.3-codex')
+    assert.equal(codex?.model, 'gpt-5.6-terra')
+    assert.equal(codex?.reasoningEffort, 'ultra')
+    assert.equal(codex?.modelObservedAt, Date.parse('2026-07-14T12:01:00.000Z'))
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService prefers the newest model config over a newer same-workspace mtime', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-model-priority-')
+  const sessions = join(home, 'sessions', '2026', '07', '16')
+  const cwd = 'E:/work/same-workspace'
+  const solId = '019f7004-aaaa-bbbb-cccc-ddddeeeeffff'
+  const terraId = '019f7005-aaaa-bbbb-cccc-ddddeeeeffff'
+  const solRollout = join(sessions, `rollout-2026-07-16T12-00-00-${solId}.jsonl`)
+  const terraRollout = join(sessions, `rollout-2026-07-16T12-01-00-${terraId}.jsonl`)
+
+  await mkdir(sessions, { recursive: true })
+  const writeRollout = async (
+    file: string,
+    sessionId: string,
+    model: string,
+    effort: string,
+    timestamp: string,
+  ): Promise<void> => {
+    await writeFile(
+      file,
+      [
+        JSON.stringify({ type: 'session_meta', payload: { id: sessionId, cwd } }),
+        JSON.stringify({ timestamp, type: 'turn_context', payload: { model, effort } }),
+        JSON.stringify({
+          type: 'event_msg',
+          payload: {
+            type: 'token_count',
+            info: { last_token_usage: { input_tokens: 100, output_tokens: 1, total_tokens: 101 } },
+          },
+        }),
+      ].join('\n'),
+      'utf8',
+    )
+  }
+
+  await writeRollout(solRollout, solId, 'gpt-5.6-sol', 'max', '2026-07-16T12:00:00.000Z')
+  await writeRollout(terraRollout, terraId, 'gpt-5.6-terra', 'ultra', '2026-07-16T12:01:00.000Z')
+  const now = Date.now()
+  // Simulate an older Sol session writing a later token snapshot after Terra changed model.
+  await utimes(terraRollout, new Date(now - 1_000), new Date(now - 1_000))
+  await utimes(solRollout, new Date(now), new Date(now))
+
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: home,
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    codexProcessAlive: () => true,
+  })
+
+  try {
+    await sync.syncNow(['codex'])
+    const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.equal(codex?.externalSessionId, terraId)
+    assert.equal(codex?.model, 'gpt-5.6-terra')
+    assert.equal(codex?.reasoningEffort, 'ultra')
   } finally {
     sync.stop()
     await rm(home, { recursive: true, force: true })
@@ -368,6 +448,7 @@ test('SessionSyncService hydrates Claude from live sessions pid + transcript', a
 
   await mkdir(sessionsDir, { recursive: true })
   await mkdir(projectDir, { recursive: true })
+  await writeFile(join(home, 'settings.json'), JSON.stringify({ effortLevel: 'high' }), 'utf8')
   await writeFile(
     join(sessionsDir, '424242.json'),
     JSON.stringify({
@@ -418,11 +499,19 @@ test('SessionSyncService hydrates Claude from live sessions pid + transcript', a
     assert.ok(claude, 'expected claude_code agent after disk sync')
     assert.equal(claude?.workspacePath?.replace(/\\/g, '/'), cwd.replace(/\\/g, '/'))
     assert.equal(claude?.model, 'claude-opus-4')
+    assert.equal(claude?.reasoningEffort, 'high')
     // contextInput = 100+40000+500 = 40600 / 200000 ≈ 20.3%
     assert.ok(
       (claude?.token?.contextUsedPercent ?? 0) > 15,
       `expected context % from transcript usage, got ${claude?.token?.contextUsedPercent}`,
     )
+
+    // A parsed settings file that no longer defines effort is an authoritative
+    // unknown value, rather than a reason to keep the previous level forever.
+    await writeFile(join(home, 'settings.json'), JSON.stringify({ model: 'opus' }), 'utf8')
+    await sync.syncNow(['claude_code'])
+    const refreshed = hub.snapshot().agents.find((a) => a.agentType === 'claude_code')
+    assert.equal(refreshed?.reasoningEffort, undefined)
   } finally {
     sync.stop()
     await rm(home, { recursive: true, force: true })

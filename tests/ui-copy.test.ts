@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { TurnState } from '@codepulse/shared'
 import {
+  formatThinkingDepth,
   headerCopy,
   nextLocale,
   overallLabel,
@@ -26,6 +27,15 @@ test('header copy does not expose a clear alerts action', () => {
   assert.equal('clearAlerts' in headerCopy('en'), false)
 })
 
+test('thinking depth is localized without deriving it from token usage', () => {
+  assert.equal(uiCopy('zh').thinkingDepth, '思考深度')
+  assert.equal(uiCopy('en').thinkingDepth, 'Thinking depth')
+  assert.equal(formatThinkingDepth('ultra', 'zh'), '超高')
+  assert.equal(formatThinkingDepth('max', 'en'), 'Max')
+  assert.equal(formatThinkingDepth(undefined, 'zh'), '—')
+  assert.equal(formatThinkingDepth('future-level', 'en'), 'future-level')
+})
+
 test('locale toggle switches between Chinese and English labels', () => {
   assert.equal(nextLocale('zh'), 'en')
   assert.equal(nextLocale('en'), 'zh')
@@ -42,6 +52,7 @@ test('Chinese locale does not expose English dashboard chrome', () => {
     headerCopy('zh').subtitle,
     headerCopy('zh').languageToggle,
     copy.contextWindow,
+    copy.thinkingDepth,
     copy.waitingQuota,
     copy.unknownProject,
     copy.agentSetupReminder.title,
@@ -96,6 +107,7 @@ test('English locale does not expose Chinese dashboard chrome', () => {
     headerCopy('en').subtitle,
     headerCopy('en').languageToggle,
     copy.contextWindow,
+    copy.thinkingDepth,
     copy.waitingQuota,
     copy.unknownProject,
     copy.agentSetupReminder.title,

@@ -1181,17 +1181,29 @@ function CalendarIcon(): JSX.Element {
   )
 }
 
+/**
+ * Renders a high-contrast, two-arrow refresh glyph that remains legible at the
+ * compact control-button size and can rotate while a refresh is in progress.
+ *
+ * @param spin Whether to apply the loading rotation animation.
+ * @returns The refresh icon SVG.
+ */
 function RefreshIcon({ spin }: { spin?: boolean }): JSX.Element {
   return (
     <svg
-      viewBox="0 0 16 16"
-      className={`h-3.5 w-3.5 opacity-70 ${spin ? 'animate-spin' : ''}`}
+      viewBox="0 0 24 24"
+      className={`h-4 w-4 shrink-0 opacity-80 ${spin ? 'animate-spin' : ''}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
       aria-hidden
     >
-      <path
-        fill="currentColor"
-        d="M13.5 8A5.5 5.5 0 113 5.7V4a.75.75 0 00-1.5 0v3c0 .4.3.75.75.75h3a.75.75 0 000-1.5H3.6A4 4 0 1012 8a.75.75 0 001.5 0z"
-      />
+      <path d="M21 12a9 9 0 00-15.5-6.2L3 8" />
+      <path d="M3 3v5h5" />
+      <path d="M3 12a9 9 0 0015.5 6.2L21 16" />
+      <path d="M21 21v-5h-5" />
     </svg>
   )
 }

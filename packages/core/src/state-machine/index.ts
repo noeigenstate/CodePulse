@@ -84,10 +84,12 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
     if (incomingWorkspace) {
       next.workspacePath = preferWorkspacePath(current.workspacePath, incomingWorkspace)
     }
-    if (event.model) next.model = event.model
+    applyModelConfiguration(current, next, event)
   }
   if (event.token) {
-    next.token = mergeToken(current.token, event.token, event.timestamp, event.model ?? next.model)
+    // Use the accepted runtime model, not the raw event model. A stale rollout
+    // snapshot must not affect quota-family selection after it was rejected above.
+    next.token = mergeToken(current.token, event.token, event.timestamp, next.model)
   }
   // Real activity unhides idle-pruned project cards. Pure quota refreshes do not.
   if (!tokenOnlyQuotaRefresh) {
@@ -231,6 +233,96 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
     turnEnded: isTerminalState(next.state) && !isTerminalState(previousState),
     previousState,
   }
+}
+
+/**
+ * Applies model and reasoning-depth configuration while protecting a verified
+ * Codex rollout snapshot from late, less-specific hook metadata.
+ *
+ * Codex records the model and its reasoning effort together in a `turn_context`.
+ * Once that timestamped snapshot exists, an unversioned hook model cannot replace
+ * it. Newer snapshots replace both fields atomically so an old effort never remains
+ * paired with a new model. Claude can also report its global thinking-depth setting
+ * independently, so that setting has its own observation timestamp.
+ *
+ * @param current Runtime state before the event.
+ * @param next Mutable copy of the runtime state being built by the reducer.
+ * @param event Normalized incoming event.
+ */
+function applyModelConfiguration(
+  current: AgentRuntimeState,
+  next: AgentRuntimeState,
+  event: AgentEvent,
+): void {
+  const observedAt = event.modelObservedAt
+  let acceptedModelSnapshot = false
+  let rejectedModelSnapshot = false
+
+  if (observedAt !== undefined && event.model) {
+    if (current.modelObservedAt === undefined || observedAt >= current.modelObservedAt) {
+      next.model = event.model
+      next.modelObservedAt = observedAt
+      acceptedModelSnapshot = true
+    } else {
+      rejectedModelSnapshot = true
+    }
+  } else if (!(event.source === 'codex' && current.modelObservedAt !== undefined)) {
+    // Native Codex hooks may carry a stale top-level model. Once a timestamped
+    // rollout configuration is known, wait for another rollout snapshot to change it.
+    if (event.model) next.model = event.model
+  }
+
+  if (event.reasoningEffortObservedAt !== undefined) {
+    applyReasoningEffortSnapshot(
+      current,
+      next,
+      event.reasoningEffort,
+      event.reasoningEffortObservedAt,
+    )
+    return
+  }
+
+  if (acceptedModelSnapshot && observedAt !== undefined) {
+    // Deliberately assign undefined too: an effort omitted by the newest model
+    // snapshot is unknown, rather than evidence that the previous effort remains.
+    applyReasoningEffortSnapshot(current, next, event.reasoningEffort, observedAt)
+    return
+  }
+
+  // An unversioned event can populate an unknown depth, but cannot replace a
+  // configuration that a native settings/rollout snapshot has already verified.
+  if (
+    !rejectedModelSnapshot &&
+    event.reasoningEffort &&
+    current.reasoningEffortObservedAt === undefined
+  ) {
+    next.reasoningEffort = event.reasoningEffort
+  }
+}
+
+/**
+ * Applies a timestamped native thinking-depth setting, including an intentional
+ * empty value when the current CLI configuration no longer defines one.
+ *
+ * @param current Runtime state before the event.
+ * @param next Mutable copy of the runtime state being built by the reducer.
+ * @param reasoningEffort Native effort value, or `undefined` when known absent.
+ * @param observedAt Timestamp of the native configuration observation.
+ */
+function applyReasoningEffortSnapshot(
+  current: AgentRuntimeState,
+  next: AgentRuntimeState,
+  reasoningEffort: string | undefined,
+  observedAt: number,
+): void {
+  if (
+    current.reasoningEffortObservedAt !== undefined &&
+    observedAt < current.reasoningEffortObservedAt
+  ) {
+    return
+  }
+  next.reasoningEffort = reasoningEffort
+  next.reasoningEffortObservedAt = observedAt
 }
 
 function mergeToken(

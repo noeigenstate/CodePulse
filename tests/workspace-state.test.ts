@@ -64,6 +64,94 @@ test('StatusHub routes workspace-less events back to the original session worksp
   assert.equal(codexAgents[0]?.state, 'DONE')
 })
 
+test('StatusHub keeps the newest Codex model and thinking-depth snapshot atomic', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const base = {
+    source: 'codex' as const,
+    eventType: 'token_snapshot' as const,
+    externalSessionId: 'model-session',
+    cwd: 'E:/project/model-config',
+  }
+
+  hub.ingest({
+    ...base,
+    id: 'terra-ultra',
+    model: 'gpt-5.6-terra',
+    reasoningEffort: 'ultra',
+    modelObservedAt: 2_000,
+    timestamp: 5_000,
+  })
+  // A later unversioned hook event may still contain an old top-level model.
+  hub.ingest({
+    ...base,
+    id: 'late-sol-hook',
+    model: 'gpt-5.6-sol',
+    reasoningEffort: 'max',
+    timestamp: 6_000,
+  })
+
+  let codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.model, 'gpt-5.6-terra')
+  assert.equal(codex?.reasoningEffort, 'ultra')
+
+  hub.ingest({
+    ...base,
+    id: 'new-sol-max',
+    model: 'gpt-5.6-sol',
+    reasoningEffort: 'max',
+    modelObservedAt: 3_000,
+    timestamp: 7_000,
+  })
+  hub.ingest({
+    ...base,
+    id: 'terra-effort-unknown',
+    model: 'gpt-5.6-terra',
+    modelObservedAt: 4_000,
+    timestamp: 8_000,
+  })
+
+  codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.model, 'gpt-5.6-terra')
+  assert.equal(codex?.reasoningEffort, undefined)
+  assert.equal(codex?.modelObservedAt, 4_000)
+})
+
+test('StatusHub applies and clears Claude thinking-depth settings by observation time', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const base = {
+    source: 'claude_code' as const,
+    eventType: 'token_snapshot' as const,
+    externalSessionId: 'claude-thinking-session',
+    cwd: 'E:/project/claude-thinking',
+    model: 'claude-opus-4-8',
+  }
+
+  hub.ingest({
+    ...base,
+    id: 'settings-high',
+    reasoningEffort: 'high',
+    reasoningEffortObservedAt: 2_000,
+    timestamp: 5_000,
+  })
+  // A late unversioned hook cannot replace a depth confirmed by settings.json.
+  hub.ingest({
+    ...base,
+    id: 'late-hook',
+    reasoningEffort: 'low',
+    timestamp: 6_000,
+  })
+  hub.ingest({
+    ...base,
+    id: 'settings-cleared',
+    reasoningEffortObservedAt: 3_000,
+    timestamp: 7_000,
+  })
+
+  const claude = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
+  assert.equal(claude?.reasoningEffort, undefined)
+  assert.equal(claude?.reasoningEffortObservedAt, 3_000)
+})
+
 test('StatusHub keeps one card when the same session reports subdirectory cwd values', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
 
@@ -181,6 +269,43 @@ test('display panels do not collapse Desktop projects under the user profile pat
     /Desktop\/MetalMax_recovered_from_recycle_bin_20260708$/i,
   )
   assert.equal(metal?.agent.state, TurnState.TOOL_RUNNING)
+})
+
+test('display panels keep the newest verified model config for duplicate workspace sessions', () => {
+  const panels = buildAgentPanels([
+    {
+      agentType: 'codex',
+      state: TurnState.DONE,
+      toolCallCount: 0,
+      needPermission: false,
+      needUserInput: false,
+      unread: false,
+      externalSessionId: 'sol-session',
+      workspacePath: 'E:/project/model-selection',
+      model: 'gpt-5.6-sol',
+      reasoningEffort: 'max',
+      modelObservedAt: 2_000,
+      lastEventAt: 9_000,
+    },
+    {
+      agentType: 'codex',
+      state: TurnState.DONE,
+      toolCallCount: 0,
+      needPermission: false,
+      needUserInput: false,
+      unread: false,
+      externalSessionId: 'terra-session',
+      workspacePath: 'E:/project/model-selection',
+      model: 'gpt-5.6-terra',
+      reasoningEffort: 'ultra',
+      modelObservedAt: 3_000,
+      lastEventAt: 1_000,
+    },
+  ])
+
+  const card = panels.find((panel) => panel.agentType === 'codex')?.workspaces[0]?.agent
+  assert.equal(card?.model, 'gpt-5.6-terra')
+  assert.equal(card?.reasoningEffort, 'ultra')
 })
 
 test('StatusHub treats slash and backslash workspace paths as the same project', () => {

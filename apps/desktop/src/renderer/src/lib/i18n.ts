@@ -18,6 +18,7 @@ export interface UiCopy {
   project: string
   recent: string
   model: string
+  thinkingDepth: string
   elapsed: string
   fiveHourQuota: string
   weeklyQuota: string
@@ -242,6 +243,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
     project: '项目',
     recent: '最近',
     model: '模型',
+    thinkingDepth: '思考深度',
     elapsed: '耗时',
     fiveHourQuota: '5 小时额度',
     weeklyQuota: '每周额度',
@@ -418,6 +420,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
     project: 'Projects',
     recent: 'Recent',
     model: 'Model',
+    thinkingDepth: 'Thinking depth',
     elapsed: 'Elapsed',
     fiveHourQuota: '5h quota',
     weeklyQuota: 'Weekly quota',
@@ -643,6 +646,27 @@ const TURN_STATE_LABELS: Record<Locale, Record<TurnState, string>> = {
   },
 }
 
+const THINKING_DEPTH_LABELS: Record<Locale, Record<string, string>> = {
+  zh: {
+    minimal: '极低',
+    low: '低',
+    medium: '中',
+    high: '高',
+    xhigh: '极高',
+    max: '最高',
+    ultra: '超高',
+  },
+  en: {
+    minimal: 'Minimal',
+    low: 'Low',
+    medium: 'Medium',
+    high: 'High',
+    xhigh: 'Extra high',
+    max: 'Max',
+    ultra: 'Ultra',
+  },
+}
+
 export function nextLocale(locale: Locale): Locale {
   return locale === 'zh' ? 'en' : 'zh'
 }
@@ -661,6 +685,21 @@ export function overallLabel(overall: OverallState, locale: Locale): string {
 
 export function turnStateLabel(state: TurnState, locale: Locale): string {
   return TURN_STATE_LABELS[locale][state] ?? state
+}
+
+/**
+ * Formats a native CLI reasoning-effort value for the active dashboard locale.
+ *
+ * Unknown future values stay visible rather than being guessed from token usage.
+ *
+ * @param effort Native model reasoning-effort string.
+ * @param locale Dashboard locale.
+ * @returns Localized depth label, the raw unknown value, or an em dash.
+ */
+export function formatThinkingDepth(effort: string | undefined, locale: Locale): string {
+  if (!effort?.trim()) return '—'
+  const normalized = effort.trim().toLowerCase()
+  return THINKING_DEPTH_LABELS[locale][normalized] ?? effort
 }
 
 export function readStoredLocale(storage: LocaleStorageLike | undefined): Locale {

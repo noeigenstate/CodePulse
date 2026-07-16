@@ -185,7 +185,13 @@ export function buildWorkspaceAgentGroups(agents: AgentRuntimeState[]): Workspac
   return [...grouped.entries()]
     .map(([key, groupAgents]) => {
       const workspacePath = groupAgents.find((agent) => agent.workspacePath)?.workspacePath
-      const byType = new Map(groupAgents.map((agent) => [agent.agentType, agent]))
+      const byType = new Map<AgentType, AgentRuntimeState>()
+      for (const agent of groupAgents) {
+        const current = byType.get(agent.agentType)
+        if (!current || compareWorkspaceDisplayAgents(agent, current) < 0) {
+          byType.set(agent.agentType, agent)
+        }
+      }
       const primary = DISPLAY_AGENT_ORDER.map(
         (agentType) => byType.get(agentType) ?? idleAgent(agentType, workspacePath),
       )
@@ -221,8 +227,7 @@ function buildAgentWorkspaceItems(
   }
 
   const items = [...grouped.entries()].map(([key, groupAgents]) => {
-    const latest =
-      [...groupAgents].sort((a, b) => b.lastEventAt - a.lastEventAt)[0] ?? idleAgent(agentType)
+    const latest = [...groupAgents].sort(compareWorkspaceDisplayAgents)[0] ?? idleAgent(agentType)
     const workspacePath =
       latest.workspacePath ?? groupAgents.find((agent) => agent.workspacePath)?.workspacePath
 
@@ -238,6 +243,30 @@ function buildAgentWorkspaceItems(
   // Collapse nested project cards (subdir cwd noise) into the parent root card.
   return coalesceNestedWorkspaceItems(items).sort(
     (a, b) => b.updatedAt - a.updatedAt || a.name.localeCompare(b.name),
+  )
+}
+
+/**
+ * Orders same-workspace sessions for one representative dashboard card.
+ *
+ * A disk scan's arrival time is not a model-config timestamp. Prefer an active
+ * turn, then the native configuration time, so an older Sol session cannot replace
+ * a newer Terra configuration merely because it wrote a token snapshot later.
+ *
+ * @param a First candidate runtime state.
+ * @param b Second candidate runtime state.
+ * @returns Sort ordering with the preferred card first.
+ */
+function compareWorkspaceDisplayAgents(a: AgentRuntimeState, b: AgentRuntimeState): number {
+  const activeOrder = Number(isActiveState(b.state)) - Number(isActiveState(a.state))
+  if (activeOrder !== 0) return activeOrder
+
+  const modelOrder = (b.modelObservedAt ?? 0) - (a.modelObservedAt ?? 0)
+  if (modelOrder !== 0) return modelOrder
+
+  return (
+    b.lastEventAt - a.lastEventAt ||
+    (a.externalSessionId ?? '').localeCompare(b.externalSessionId ?? '')
   )
 }
 

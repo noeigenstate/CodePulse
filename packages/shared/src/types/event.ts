@@ -52,6 +52,18 @@ export interface AgentEvent {
   cwd?: string
   /** 使用的模型（如有上报）。 */
   model?: string
+  /** 模型配置的思考深度，不等同于实际产生的推理 token 数。 */
+  reasoningEffort?: string
+  /**
+   * 原生 CLI 最近一次记录思考深度配置的时间（epoch 毫秒）。它可以来自独立
+   * 的全局设置，不要求与 `modelObservedAt` 属于同一份模型快照。
+   */
+  reasoningEffortObservedAt?: number
+  /**
+   * CLI rollout 记录这组模型配置的时间（epoch 毫秒）。存在时，`model` 与
+   * `reasoningEffort` 必须作为同一份配置快照一起处理。
+   */
+  modelObservedAt?: number
   /** `tool_start`/`tool_end`/`permission_request` 的工具名。 */
   toolName?: string
   /** shell 类工具调用的命令行。 */

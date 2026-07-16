@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { fromClaudeStatusLine, fromCodexHook, fromGrokHook } from '@codepulse/adapters'
+import {
+  fromClaudeHook,
+  fromClaudeStatusLine,
+  fromCodexHook,
+  fromGrokHook,
+} from '@codepulse/adapters'
 
 test('Claude status line sums current_usage cache tokens into context input', () => {
   const event = fromClaudeStatusLine({
@@ -90,6 +95,24 @@ test('Claude status line does not use cumulative total input as context percent 
   assert.equal(event?.token?.accuracy, 'estimated')
 })
 
+test('Claude adapters map native effort fields without using reasoning output tokens as depth', () => {
+  const hook = fromClaudeHook({
+    hook_event_name: 'UserPromptSubmit',
+    model: 'claude-opus-4-8',
+    effortLevel: 'HIGH',
+    usage: { reasoning_output_tokens: 12_345 },
+  })
+  const statusLine = fromClaudeStatusLine({
+    model: { display_name: 'Claude Opus 4.8' },
+    settings: { effortLevel: 'xhigh' },
+    usage: { reasoning_output_tokens: 54_321 },
+  })
+
+  assert.equal(hook?.reasoningEffort, 'high')
+  assert.equal(statusLine?.reasoningEffort, 'xhigh')
+  assert.equal(statusLine?.token?.reasoningOutput, 54_321)
+})
+
 test('Codex hook does not double count cached input for context percent', () => {
   const event = fromCodexHook({
     hook_event_name: 'UserPromptSubmit',
@@ -122,6 +145,21 @@ test('Codex hook parses 1M context window strings as one million tokens', () => 
 
   assert.equal(event?.token?.contextWindow, 1_000_000)
   assert.equal(event?.token?.contextUsedPercent, 25)
+})
+
+test('Codex hook keeps reasoning effort separate from reasoning output tokens', () => {
+  const event = fromCodexHook({
+    hook_event_name: 'UserPromptSubmit',
+    model: 'gpt-5.6-terra',
+    reasoning_effort: 'ultra',
+    model_observed_at: 1_784_513_490_123,
+    usage: { reasoning_output_tokens: 12_345 },
+  })
+
+  assert.equal(event?.model, 'gpt-5.6-terra')
+  assert.equal(event?.reasoningEffort, 'ultra')
+  assert.equal(event?.modelObservedAt, 1_784_513_490_123)
+  assert.equal(event?.token?.reasoningOutput, 12_345)
 })
 
 test('Codex hook carries quota bucket identity from rate limits', () => {

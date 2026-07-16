@@ -39,6 +39,7 @@ export function fromClaudeHook(raw: unknown): AgentEventInput | null {
     cwd: pickString(r, 'cwd'),
     workspacePath: pickString(r, 'workspace', 'project_dir', 'cwd'),
     model: pickString(r, 'model'),
+    reasoningEffort: pickClaudeReasoningEffort(r, asRecord(r.settings), asRecord(r.model)),
     raw,
   }
 
@@ -227,9 +228,17 @@ export function fromClaudeStatusLine(raw: unknown): AgentEventInput | null {
   const rateLimits = pickRateLimits(r)
   const rateLimitId = pickRateLimitId(r)
   const rateLimitName = pickRateLimitName(r)
+  const reasoningEffort = pickClaudeReasoningEffort(
+    r,
+    model,
+    asRecord(r.settings),
+    asRecord(r.usage),
+  )
   // Official statusline context_window.used_percentage is exact; transcript/default math is not.
   const accuracy =
-    officialUsedPct != null && contextWindowSize != null ? ('exact' as const) : ('estimated' as const)
+    officialUsedPct != null && contextWindowSize != null
+      ? ('exact' as const)
+      : ('estimated' as const)
 
   return {
     source: 'claude_code',
@@ -241,6 +250,7 @@ export function fromClaudeStatusLine(raw: unknown): AgentEventInput | null {
       ? pickString(workspace, 'project_dir', 'current_dir')
       : pickString(r, 'cwd'),
     model: model ? pickString(model, 'display_name', 'id') : pickString(r, 'model'),
+    reasoningEffort,
     token: {
       input,
       output,
@@ -260,6 +270,45 @@ export function fromClaudeStatusLine(raw: unknown): AgentEventInput | null {
     },
     raw,
   }
+}
+
+/**
+ * Reads Claude Code's named thinking-depth setting without confusing it with
+ * `reasoning_output_tokens`, which measures usage rather than selected depth.
+ *
+ * @param sources Native hook/status-line records that may carry the setting.
+ * @returns A normalized, display-safe effort name when the CLI supplied one.
+ */
+function pickClaudeReasoningEffort(
+  ...sources: Array<Record<string, unknown> | null | undefined>
+): string | undefined {
+  for (const source of sources) {
+    if (!source) continue
+    const value = pickString(
+      source,
+      'effortLevel',
+      'effort_level',
+      'reasoningEffort',
+      'reasoning_effort',
+      'thinkingEffort',
+      'thinking_effort',
+      'effort',
+    )
+    const normalized = normalizeClaudeReasoningEffort(value)
+    if (normalized) return normalized
+  }
+  return undefined
+}
+
+/**
+ * Normalizes a short native effort enum while allowing future Claude Code values.
+ *
+ * @param value Candidate native setting value.
+ * @returns Lowercase effort value, or `undefined` for malformed input.
+ */
+function normalizeClaudeReasoningEffort(value: string | undefined): string | undefined {
+  const normalized = value?.trim().toLowerCase()
+  return normalized && /^[a-z][a-z0-9_-]{0,31}$/.test(normalized) ? normalized : undefined
 }
 
 function sumKnown(...values: Array<number | undefined>): number | undefined {

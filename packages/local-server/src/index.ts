@@ -164,7 +164,12 @@ export {
   type AgentConfigurationStatus,
 } from './agent-config.js'
 export { registerAgentRoutes, registerEventRoutes, registerStatusRoutes, registerWebSocket }
-export { QuotaRefreshWatcher, readCodexQuotaTokenFromFile } from './quota-watcher.js'
+export {
+  QuotaRefreshWatcher,
+  readCodexQuotaTokenFromFile,
+  readCodexRolloutSnapshotFromFile,
+  type CodexRolloutSnapshot,
+} from './quota-watcher.js'
 export {
   SessionSyncService,
   type SessionSyncOptions,

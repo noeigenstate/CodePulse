@@ -23,7 +23,7 @@ import {
   pickRateLimitName,
   pickRateLimits,
 } from '@codepulse/adapters'
-import { readCodexQuotaTokenFromFile } from './quota-watcher.js'
+import { readCodexRolloutSnapshotFromFile } from './quota-watcher.js'
 import { mergeClaudeContextWithQuota, resolveClaudeAccountQuota } from './claude-quota.js'
 import { WorkspacePathResolver } from './workspace-path.js'
 
@@ -316,7 +316,7 @@ export class SessionSyncService {
     const now = this.now()
     let count = 0
     // Dedupe by workspace: keep the freshest *live* file per cwd.
-    const byCwd = new Map<string, { file: RolloutFile; meta: CodexMeta; token?: TokenPayload }>()
+    const byCwd = new Map<string, CodexWorkspaceCandidate>()
 
     for (const file of files) {
       try {
@@ -327,14 +327,27 @@ export class SessionSyncService {
         // Resolve aliases before project dedupe/fingerprints so one project has one hub key.
         cwd = await this.workspacePaths.resolve(cwd)
 
-        const token =
-          (await readCodexQuotaTokenFromFile(file.path)) ??
-          (await readCodexTokenFallback(file.path))
+        const rollout = await readCodexRolloutSnapshotFromFile(file.path)
+        const token = rollout.token ?? (await readCodexTokenFallback(file.path))
+        const modelConfig = rollout.model
+          ? {
+              model: rollout.model,
+              reasoningEffort: rollout.reasoningEffort,
+              // JSONL envelopes normally carry ISO timestamps. File mtime is only
+              // a stable fallback for legacy envelopes that omit one.
+              modelObservedAt: rollout.modelObservedAt ?? Math.floor(file.mtimeMs),
+            }
+          : {}
 
         const key = normalizePathKey(cwd)
         const prev = byCwd.get(key)
-        if (!prev || file.mtimeMs >= prev.file.mtimeMs) {
-          byCwd.set(key, { file, meta: { ...meta, cwd }, token })
+        const candidate: CodexWorkspaceCandidate = {
+          file,
+          meta: { ...meta, cwd, ...modelConfig },
+          token,
+        }
+        if (!prev || shouldPreferCodexWorkspaceCandidate(candidate, prev)) {
+          byCwd.set(key, candidate)
         }
       } catch (err) {
         console.error('[codepulse] session-sync codex file failed', file.path, err)
@@ -381,6 +394,8 @@ export class SessionSyncService {
         file.mtimeMs,
         payloadToken,
         meta.model,
+        meta.reasoningEffort,
+        meta.modelObservedAt,
       )
       if (skip === 'skip') continue
 
@@ -396,6 +411,8 @@ export class SessionSyncService {
         sessionId,
         cwd,
         model: meta.model,
+        reasoningEffort: meta.reasoningEffort,
+        modelObservedAt: meta.modelObservedAt,
         token: payloadToken,
         tokenSourcePath: preferPath,
         now,
@@ -511,6 +528,7 @@ export class SessionSyncService {
       now: () => this.now(),
       timeoutMs: 1_200,
     }).catch(() => undefined)
+    const thinkingConfig = await readClaudeThinkingConfig(this.claudeHome, now)
 
     const active = await readClaudeActiveSessions(this.claudeHome)
     let count = 0
@@ -532,7 +550,16 @@ export class SessionSyncService {
     }
 
     for (const row of byCwd.values()) {
-      if (await this.ingestClaudeSession(row.sessionId, row.cwd, now, row.updatedAt, quota)) {
+      if (
+        await this.ingestClaudeSession(
+          row.sessionId,
+          row.cwd,
+          now,
+          row.updatedAt,
+          quota,
+          thinkingConfig,
+        )
+      ) {
         count += 1
       }
     }
@@ -564,12 +591,14 @@ export class SessionSyncService {
     now: number,
     updatedAt: number,
     accountQuota?: Awaited<ReturnType<typeof resolveClaudeAccountQuota>>,
+    thinkingConfig?: ClaudeThinkingConfig,
   ): Promise<boolean> {
     try {
       const transcript = await findClaudeTranscript(this.claudeHome, sessionId)
       const usage = transcript ? await readClaudeTranscriptUsage(transcript) : undefined
       const contextToken = claudeUsageToToken(usage)
       const model = usage?.model
+      const reasoningEffort = thinkingConfig?.reasoningEffort
       const token = mergeClaudeContextWithQuota(contextToken, accountQuota, model)
       const mapKey = `claude_code:${sessionId}`
       const skip = this.classifyUnchanged(
@@ -580,6 +609,7 @@ export class SessionSyncService {
         updatedAt,
         token,
         model,
+        reasoningEffort,
       )
       if (skip === 'skip') return false
 
@@ -588,6 +618,8 @@ export class SessionSyncService {
         sessionId,
         cwd,
         model,
+        reasoningEffort,
+        reasoningEffortObservedAt: thinkingConfig?.observedAt,
         token,
         tokenSourcePath: transcript,
         now,
@@ -615,9 +647,29 @@ export class SessionSyncService {
     mtimeMs: number,
     token: TokenPayload,
     model: string | undefined,
+    reasoningEffort?: string,
+    modelObservedAt?: number,
   ): 'skip' | 'activity' | 'quota' {
-    const full = fingerprint(source, sessionId, cwd, mtimeMs, token, model)
-    const activity = activityFingerprint(source, sessionId, cwd, mtimeMs, token, model)
+    const full = fingerprint(
+      source,
+      sessionId,
+      cwd,
+      mtimeMs,
+      token,
+      model,
+      reasoningEffort,
+      modelObservedAt,
+    )
+    const activity = activityFingerprint(
+      source,
+      sessionId,
+      cwd,
+      mtimeMs,
+      token,
+      model,
+      reasoningEffort,
+      modelObservedAt,
+    )
     const prevFull = this.fingerprints.get(mapKey)
     const prevActivity = this.activityFingerprints.get(mapKey)
     const inHub = this.hubHasSession(source, sessionId)
@@ -645,6 +697,9 @@ export class SessionSyncService {
     sessionId: string
     cwd: string
     model?: string
+    reasoningEffort?: string
+    reasoningEffortObservedAt?: number
+    modelObservedAt?: number
     token: TokenPayload
     tokenSourcePath?: string
     now: number
@@ -666,6 +721,9 @@ export class SessionSyncService {
         cwd: args.cwd,
         workspacePath: args.cwd,
         model: args.model,
+        reasoningEffort: args.reasoningEffort,
+        reasoningEffortObservedAt: args.reasoningEffortObservedAt,
+        modelObservedAt: args.modelObservedAt,
         timestamp: args.now,
         internal: { sessionSync: true },
       })
@@ -688,6 +746,9 @@ export class SessionSyncService {
       cwd: args.cwd,
       workspacePath: args.cwd,
       model: args.model,
+      reasoningEffort: args.reasoningEffort,
+      reasoningEffortObservedAt: args.reasoningEffortObservedAt,
+      modelObservedAt: args.modelObservedAt,
       token: args.token,
       tokenSourcePath: args.tokenSourcePath,
       timestamp: args.now,
@@ -710,6 +771,36 @@ interface CodexMeta {
   cwd?: string
   sessionId?: string
   model?: string
+  reasoningEffort?: string
+  modelObservedAt?: number
+}
+
+/** One live Codex rollout candidate for a deduplicated workspace card. */
+interface CodexWorkspaceCandidate {
+  file: RolloutFile
+  meta: CodexMeta
+  token?: TokenPayload
+}
+
+/**
+ * Chooses which same-workspace Codex rollout represents the current project.
+ *
+ * Token writes update mtime long after a model change. Prefer the native model
+ * configuration timestamp first, then mtime only as a deterministic fallback,
+ * so an old Sol session cannot displace a newer Terra configuration.
+ *
+ * @param candidate Newly scanned rollout candidate.
+ * @param current Candidate already selected for the workspace.
+ * @returns True when `candidate` should replace `current`.
+ */
+function shouldPreferCodexWorkspaceCandidate(
+  candidate: CodexWorkspaceCandidate,
+  current: CodexWorkspaceCandidate,
+): boolean {
+  const candidateObservedAt = candidate.meta.modelObservedAt ?? 0
+  const currentObservedAt = current.meta.modelObservedAt ?? 0
+  if (candidateObservedAt !== currentObservedAt) return candidateObservedAt > currentObservedAt
+  return candidate.file.mtimeMs >= current.file.mtimeMs
 }
 
 /** Rollouts with mtime within `maxAgeMs` (newest first). */
@@ -755,6 +846,15 @@ async function walkRollouts(
   }
 }
 
+/**
+ * Reads stable session identity from a rollout header.
+ *
+ * Header records can describe an earlier turn, so current model configuration is
+ * intentionally excluded here and is read from the newest rollout-tail snapshot.
+ *
+ * @param file Absolute rollout JSONL path.
+ * @returns Workspace and session identifiers available near the file head.
+ */
 async function readCodexRolloutMeta(file: string): Promise<CodexMeta> {
   const text = await readHead(file, CODEX_META_HEAD)
   let meta: CodexMeta = {}
@@ -770,13 +870,12 @@ async function readCodexRolloutMeta(file: string): Promise<CodexMeta> {
           cwd: stringVal(p.cwd) ?? meta.cwd,
           sessionId:
             stringVal(p.id) ?? stringVal(p.session_id) ?? stringVal(p.sessionId) ?? meta.sessionId,
-          model: stringVal(p.model) ?? meta.model,
         }
       }
     } catch {
       // Truncated huge first line — try regex extraction.
       const partial = extractMetaFromPartialLine(line)
-      if (partial.cwd || partial.sessionId || partial.model) {
+      if (partial.cwd || partial.sessionId) {
         meta = { ...meta, ...partial }
       }
       continue
@@ -787,7 +886,6 @@ async function readCodexRolloutMeta(file: string): Promise<CodexMeta> {
     const partial = extractMetaFromPartialLine(text)
     if (partial.cwd) meta.cwd = partial.cwd
     if (partial.sessionId && !meta.sessionId) meta.sessionId = partial.sessionId
-    if (partial.model && !meta.model) meta.model = partial.model
   }
   return meta
 }
@@ -804,11 +902,9 @@ function extractMetaFromPartialLine(text: string): CodexMeta {
     text.match(
       /"session_id"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i,
     )?.[1]
-  const model = text.match(/"model"\s*:\s*"((?:\\.|[^"\\])*)"/)?.[1]
   return {
     cwd: cwd ? unescapeJsonString(cwd) : undefined,
     sessionId: sessionId ?? undefined,
-    model: model ? unescapeJsonString(model) : undefined,
   }
 }
 
@@ -1021,6 +1117,13 @@ interface ClaudeActiveSession {
   updatedAt: number
 }
 
+/** Native Claude Code thinking-depth configuration read from its settings file. */
+interface ClaudeThinkingConfig {
+  reasoningEffort?: string
+  /** File mtime or a missing-file tombstone timestamp, in epoch milliseconds. */
+  observedAt: number
+}
+
 /**
  * Claude Code writes one `{pid}.json` per interactive process under `~/.claude/sessions`.
  * Fields: pid, sessionId, cwd, status, updatedAt, …
@@ -1049,6 +1152,41 @@ async function readClaudeActiveSessions(claudeHome: string): Promise<ClaudeActiv
     }
   }
   return out
+}
+
+/**
+ * Reads Claude Code's global `effortLevel` setting without deriving a level from
+ * transcript thinking text or reasoning token counts.
+ *
+ * A successfully parsed settings file is authoritative even when it omits the
+ * field, allowing a removed setting to clear a previously displayed value. A
+ * transient parse/read error is ignored so a partial editor write does not erase
+ * valid UI state. A missing file is an intentional unknown-settings tombstone.
+ *
+ * @param claudeHome Claude Code home directory.
+ * @param missingObservedAt Timestamp to use when the settings file is absent.
+ * @returns The known native setting snapshot, or `undefined` on transient failure.
+ */
+async function readClaudeThinkingConfig(
+  claudeHome: string,
+  missingObservedAt: number,
+): Promise<ClaudeThinkingConfig | undefined> {
+  const settingsPath = join(claudeHome, 'settings.json')
+  try {
+    const [text, metadata] = await Promise.all([readFile(settingsPath, 'utf8'), stat(settingsPath)])
+    const settings = asRecord(JSON.parse(text.replace(/^\uFEFF/, '')))
+    return {
+      reasoningEffort: normalizeClaudeReasoningEffort(
+        settings?.effortLevel ?? settings?.effort_level,
+      ),
+      observedAt: Math.max(0, Math.floor(metadata.mtimeMs)),
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { observedAt: missingObservedAt }
+    }
+    return undefined
+  }
 }
 
 /** Locate session transcript under claudeHome/projects by session id. */
@@ -1478,9 +1616,20 @@ function fingerprint(
   mtimeMs: number,
   token: TokenPayload | undefined,
   model: string | undefined,
+  reasoningEffort?: string,
+  modelObservedAt?: number,
 ): string {
   return [
-    activityFingerprint(source, sessionId, cwd, mtimeMs, token, model),
+    activityFingerprint(
+      source,
+      sessionId,
+      cwd,
+      mtimeMs,
+      token,
+      model,
+      reasoningEffort,
+      modelObservedAt,
+    ),
     token?.rateLimits?.fiveHour?.usedPercent ?? '',
     token?.rateLimits?.fiveHour?.resetsAt ?? '',
     token?.rateLimits?.sevenDay?.usedPercent ?? '',
@@ -1500,6 +1649,8 @@ function activityFingerprint(
   mtimeMs: number,
   token: TokenPayload | undefined,
   model: string | undefined,
+  reasoningEffort?: string,
+  modelObservedAt?: number,
 ): string {
   return [
     source,
@@ -1507,6 +1658,8 @@ function activityFingerprint(
     normalizePathKey(cwd),
     Math.floor(mtimeMs),
     model ?? '',
+    reasoningEffort ?? '',
+    modelObservedAt ?? '',
     token?.contextUsedPercent ?? '',
     token?.contextWindow ?? '',
     token?.input ?? '',
@@ -1543,6 +1696,17 @@ async function readTailFile(file: string, maxBytes: number): Promise<string> {
 
 function stringVal(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+/**
+ * Validates and normalizes Claude's compact native effort enum for display.
+ *
+ * @param value Candidate value from `settings.json`.
+ * @returns A lowercase effort name, or `undefined` for absent/malformed input.
+ */
+function normalizeClaudeReasoningEffort(value: unknown): string | undefined {
+  const normalized = stringVal(value)?.trim().toLowerCase()
+  return normalized && /^[a-z][a-z0-9_-]{0,31}$/.test(normalized) ? normalized : undefined
 }
 
 function num(value: unknown): number | undefined {

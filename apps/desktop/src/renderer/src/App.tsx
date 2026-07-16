@@ -63,6 +63,7 @@ import {
   type ThemeMode,
 } from './lib/dashboardSettings.js'
 import {
+  formatThinkingDepth,
   nextLocale,
   readStoredLocale,
   turnStateLabel,
@@ -1045,8 +1046,12 @@ const ProjectTile = memo(function ProjectTile({
           </div>
         </div>
 
-        <div className="grid grid-cols-[minmax(7rem,1fr)_minmax(5.5rem,0.7fr)] gap-2">
+        <div className="grid grid-cols-[minmax(7rem,1fr)_minmax(4.75rem,0.7fr)_minmax(5.5rem,0.7fr)] gap-2">
           <InlineMetric label={copy.model} value={agent.model ?? '—'} />
+          <InlineMetric
+            label={copy.thinkingDepth}
+            value={formatThinkingDepth(agent.reasoningEffort, locale)}
+          />
           <InlineMetric
             label={copy.elapsed}
             value={<ElapsedTime since={agent.turnStartedAt} locale={locale} />}

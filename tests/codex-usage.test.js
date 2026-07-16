@@ -1013,3 +1013,45 @@ test('Codex usage reader does not use total_token_usage for context percent', as
     await rm(home, { recursive: true, force: true })
   }
 })
+
+test('Codex usage reader returns the newest rollout model configuration', async () => {
+  const home = join(tmpdir(), `codepulse-codex-model-config-${Date.now()}`)
+  const sessions = join(home, 'sessions', '2026', '07', '16')
+  const sessionId = 'session-model-config'
+  const rollout = join(sessions, `rollout-2026-07-16T12-00-00-${sessionId}.jsonl`)
+
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    rollout,
+    [
+      JSON.stringify({ type: 'session_meta', payload: { id: sessionId, cwd: 'E:/project/model' } }),
+      JSON.stringify({
+        timestamp: '2026-07-16T12:00:00.000Z',
+        type: 'turn_context',
+        payload: { model: 'gpt-5.6-sol', effort: 'max' },
+      }),
+      JSON.stringify({ type: 'event_msg', payload: { type: 'noise', value: 'x'.repeat(600_000) } }),
+      JSON.stringify({
+        timestamp: '2026-07-16T12:01:00.000Z',
+        type: 'event_msg',
+        payload: {
+          type: 'thread_settings_applied',
+          thread_settings: { model: 'gpt-5.6-terra', reasoning_effort: 'ultra' },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  try {
+    const usage = await readLatestCodexUsage(
+      { session_id: sessionId, model: 'gpt-5.6-sol' },
+      { codexHome: home },
+    )
+    assert.equal(usage.model, 'gpt-5.6-terra')
+    assert.equal(usage.reasoning_effort, 'ultra')
+    assert.equal(usage.model_observed_at, Date.parse('2026-07-16T12:01:00.000Z'))
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})

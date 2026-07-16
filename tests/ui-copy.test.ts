@@ -64,6 +64,15 @@ test('Chinese locale does not expose English dashboard chrome', () => {
     copy.updateAvailable.install,
     copy.updateAvailable.installing,
     copy.updateAvailable.failed,
+    copy.settings.title,
+    copy.settings.close,
+    copy.settings.theme,
+    copy.settings.themeLight,
+    copy.settings.themeDark,
+    copy.settings.cliTools,
+    copy.settings.cliToolsHint,
+    copy.emptyDashboard.settingsHiddenTitle,
+    copy.emptyDashboard.settingsHiddenBody,
     formatContextWindowStatus(
       { accuracy: 'exact', contextUsedPercent: 79.85, contextWindow: 258_400, contextStale: true },
       undefined,
@@ -109,6 +118,15 @@ test('English locale does not expose Chinese dashboard chrome', () => {
     copy.updateAvailable.install,
     copy.updateAvailable.installing,
     copy.updateAvailable.failed,
+    copy.settings.title,
+    copy.settings.close,
+    copy.settings.theme,
+    copy.settings.themeLight,
+    copy.settings.themeDark,
+    copy.settings.cliTools,
+    copy.settings.cliToolsHint,
+    copy.emptyDashboard.settingsHiddenTitle,
+    copy.emptyDashboard.settingsHiddenBody,
     formatContextWindowStatus(
       { accuracy: 'exact', contextUsedPercent: 79.85, contextWindow: 258_400, contextStale: true },
       undefined,
@@ -160,4 +178,27 @@ test('setup tutorial modal keeps long instructions scrollable', () => {
   assert.match(appSource, /max-h-\[min\(calc\(100vh-2rem\),42rem\)\]/)
   assert.match(appSource, /overflow-y-auto/)
   assert.match(appSource, /shrink-0 border-t/)
+})
+
+test('settings dialog traps keyboard focus and returns it to the invoking control', () => {
+  const settingsSource = readFileSync(
+    'apps/desktop/src/renderer/src/components/SettingsDialog.tsx',
+    'utf8',
+  )
+
+  assert.match(settingsSource, /closeButtonRef\.current\?\.focus\(\)/)
+  assert.match(settingsSource, /previouslyFocused\?\.focus\(\)/)
+  assert.match(settingsSource, /FOCUSABLE_SELECTOR/)
+  assert.match(settingsSource, /event\.key !== 'Tab'/)
+})
+
+test('reduced transparency keeps the selected theme surface instead of forcing white', () => {
+  const styles = readFileSync('apps/desktop/src/renderer/src/index.css', 'utf8')
+  const reducedTransparency = styles.match(
+    /@media \(prefers-reduced-transparency: reduce\) \{([\s\S]*?)\n\}/,
+  )?.[1]
+
+  assert.ok(reducedTransparency)
+  assert.match(reducedTransparency, /background: var\(--surface-solid\)/)
+  assert.doesNotMatch(reducedTransparency, /background: #ffffff/)
 })

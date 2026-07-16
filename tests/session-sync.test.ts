@@ -535,6 +535,79 @@ test('SessionSyncService skips unchanged fingerprint on second scan', async () =
   }
 })
 
+test('SessionSyncService can scan only the dirty source', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-source-')
+  const codexHome = join(home, 'codex')
+  const claudeHome = join(home, 'claude')
+  const codexSessions = join(codexHome, 'sessions', '2026', '07', '16')
+  const codexSessionId = '019f7004-aaaa-bbbb-cccc-ddddeeeeffff'
+  const claudeSessionId = 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff'
+  const rollout = join(codexSessions, `rollout-2026-07-16-${codexSessionId}.jsonl`)
+
+  await mkdir(codexSessions, { recursive: true })
+  await writeFile(
+    rollout,
+    [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: codexSessionId, cwd: 'E:/work/dirty-codex' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: { last_token_usage: { input_tokens: 10, output_tokens: 1, total_tokens: 11 } },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+  await utimes(rollout, new Date(), new Date())
+  await mkdir(join(claudeHome, 'sessions'), { recursive: true })
+  await writeFile(
+    join(claudeHome, 'sessions', '515151.json'),
+    JSON.stringify({
+      pid: 515_151,
+      sessionId: claudeSessionId,
+      cwd: 'E:/work/clean-claude',
+      updatedAt: Date.now(),
+    }),
+    'utf8',
+  )
+
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome,
+    grokHome: join(home, 'no-grok'),
+    claudeHome,
+    disableWatch: true,
+    codexProcessAlive: () => true,
+    isPidAlive: () => true,
+  })
+
+  try {
+    await sync.syncNow(['codex'])
+    assert.deepEqual(
+      hub.snapshot().agents.map((agent) => agent.agentType),
+      ['codex'],
+    )
+
+    await sync.syncNow(['claude_code'])
+    assert.deepEqual(
+      hub
+        .snapshot()
+        .agents.map((agent) => agent.agentType)
+        .sort(),
+      ['claude_code', 'codex'],
+    )
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
 test('SessionSyncService shares highest same-window weekly % across projects (not stale mtime)', async () => {
   const home = await mkdtempJoin('codepulse-session-sync-quota-share-')
   const sessions = join(home, 'sessions', '2026', '07', '15')

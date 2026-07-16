@@ -16,9 +16,16 @@ import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import type { TokenPayload } from '@codepulse/shared'
 import type { StatusHub } from '@codepulse/core'
-import { asRecord, pickNumber, pickRateLimitId, pickRateLimitName, pickRateLimits } from '@codepulse/adapters'
+import {
+  asRecord,
+  pickNumber,
+  pickRateLimitId,
+  pickRateLimitName,
+  pickRateLimits,
+} from '@codepulse/adapters'
 import { readCodexQuotaTokenFromFile } from './quota-watcher.js'
 import { mergeClaudeContextWithQuota, resolveClaudeAccountQuota } from './claude-quota.js'
+import { WorkspacePathResolver } from './workspace-path.js'
 
 const MAX_CODEX_FILES = 80
 const CODEX_META_HEAD = 512 * 1024
@@ -45,6 +52,7 @@ const GROK_BILLING_MSG = 'billing: fetched credits config'
 const CLAUDE_TRANSCRIPT_TAIL = 512 * 1024
 const DEFAULT_CLAUDE_CONTEXT_WINDOW = pickNumberEnv(process.env.CODEPULSE_CONTEXT_WINDOW) ?? 200_000
 
+/** Configures filesystem roots, timing, and test seams for {@link SessionSyncService}. */
 export interface SessionSyncOptions {
   hub: StatusHub
   codexHome?: string
@@ -62,10 +70,17 @@ export interface SessionSyncOptions {
   codexProcessAlive?: () => boolean | Promise<boolean>
   /** 测试注入：Grok/Claude session 的 pid 是否存活 */
   isPidAlive?: (pid: number) => boolean
+  /** 测试/嵌入时可替换 realpath 解析器。 */
+  workspacePathResolver?: Pick<WorkspacePathResolver, 'resolve'>
 }
 
-type SyncSource = 'codex' | 'grok' | 'claude_code'
+/** A CLI source that can be scanned independently after a filesystem change. */
+export type SessionSyncSource = 'codex' | 'grok' | 'claude_code'
 
+/** Full-scan source set used for boot, steady polling, and explicit refreshes. */
+const ALL_SYNC_SOURCES: readonly SessionSyncSource[] = ['codex', 'grok', 'claude_code']
+
+/** Hydrates live CLI sessions into StatusHub from disk while avoiding historical sessions. */
 export class SessionSyncService {
   private readonly hub: StatusHub
   private readonly codexHome: string
@@ -76,10 +91,14 @@ export class SessionSyncService {
   private readonly disableWatch: boolean
   private readonly codexProcessAlive: () => boolean | Promise<boolean>
   private readonly pidAlive: (pid: number) => boolean
+  /** Canonicalizes aliases before dedupe keys and fingerprints are calculated. */
+  private readonly workspacePaths: Pick<WorkspacePathResolver, 'resolve'>
   private timers: NodeJS.Timeout[] = []
   private steady?: NodeJS.Timeout
   private watchDebounce?: NodeJS.Timeout
   private watchers: FSWatcher[] = []
+  /** Sources touched by fs.watch since the last debounced, source-scoped watch scan. */
+  private dirtySources = new Set<SessionSyncSource>()
   private running = false
   private stopped = false
   private lastLogAt = 0
@@ -102,6 +121,7 @@ export class SessionSyncService {
     this.disableWatch = options.disableWatch ?? false
     this.codexProcessAlive = options.codexProcessAlive ?? (() => isCliProcessAlive('codex'))
     this.pidAlive = options.isPidAlive ?? isPidAlive
+    this.workspacePaths = options.workspacePathResolver ?? new WorkspacePathResolver()
     this.firstSync = new Promise<void>((resolve) => {
       this.resolveFirstSync = resolve
     })
@@ -159,28 +179,45 @@ export class SessionSyncService {
       }
     }
     this.watchers = []
+    this.dirtySources.clear()
     if (!this.firstSyncDone) {
       this.firstSyncDone = true
       this.resolveFirstSync()
     }
   }
 
-  async syncNow(): Promise<void> {
-    await this.syncOnce('manual')
+  /**
+   * Runs an immediate scan for the requested CLI sources.
+   *
+   * Duplicate sources are removed and an empty list is a no-op. Scan failures
+   * are logged by the serialized scan path so background timers and IPC callers
+   * can continue returning the latest StatusHub snapshot.
+   *
+   * @param sources CLI sources to scan; omit for a full safety-net scan.
+   * @returns A promise that resolves after the requested scan attempt finishes.
+   */
+  async syncNow(sources: readonly SessionSyncSource[] = ALL_SYNC_SOURCES): Promise<void> {
+    await this.syncOnce('manual', sources)
   }
 
+  /**
+   * Associates each watched filesystem root with the CLI source it can affect.
+   *
+   * Watchers are only low-latency hints; the steady timer still performs a full
+   * scan when a platform cannot watch recursively or drops an event.
+   */
   private startWatchers(): void {
-    const roots = [
-      join(this.codexHome, 'sessions'),
-      join(this.grokHome, 'sessions'),
-      join(this.grokHome, 'active_sessions.json'),
-      join(this.grokHome, 'logs'),
-      join(this.claudeHome, 'sessions'),
-      join(this.claudeHome, 'projects'),
+    const roots: Array<{ root: string; source: SessionSyncSource }> = [
+      { root: join(this.codexHome, 'sessions'), source: 'codex' },
+      { root: join(this.grokHome, 'sessions'), source: 'grok' },
+      { root: join(this.grokHome, 'active_sessions.json'), source: 'grok' },
+      { root: join(this.grokHome, 'logs'), source: 'grok' },
+      { root: join(this.claudeHome, 'sessions'), source: 'claude_code' },
+      { root: join(this.claudeHome, 'projects'), source: 'claude_code' },
     ]
-    for (const root of roots) {
+    for (const { root, source } of roots) {
       try {
-        const w = watch(root, { recursive: true }, () => this.scheduleWatchSync())
+        const w = watch(root, { recursive: true }, () => this.scheduleWatchSync(source))
         w.on('error', () => {
           // Directory may not exist yet; ignore.
         })
@@ -191,18 +228,37 @@ export class SessionSyncService {
     }
   }
 
-  private scheduleWatchSync(): void {
+  /**
+   * Collects source changes inside one debounce window before scanning only them.
+   *
+   * @param source CLI source associated with the filesystem notification.
+   */
+  private scheduleWatchSync(source: SessionSyncSource): void {
     if (this.stopped) return
+    this.dirtySources.add(source)
     if (this.watchDebounce) clearTimeout(this.watchDebounce)
     this.watchDebounce = setTimeout(() => {
       this.watchDebounce = undefined
-      void this.syncOnce('watch')
+      const sources = [...this.dirtySources]
+      this.dirtySources.clear()
+      void this.syncOnce('watch', sources)
     }, WATCH_DEBOUNCE_MS)
     this.watchDebounce.unref?.()
   }
 
-  private async syncOnce(reason: string): Promise<void> {
+  /**
+   * Serializes one disk-scan attempt to prevent boot, watch, and manual scans interleaving.
+   *
+   * @param reason Trigger label used for diagnostics.
+   * @param requestedSources Sources selected for this attempt.
+   */
+  private async syncOnce(
+    reason: string,
+    requestedSources: readonly SessionSyncSource[] = ALL_SYNC_SOURCES,
+  ): Promise<void> {
     if (this.stopped) return
+    const sources = [...new Set(requestedSources)]
+    if (sources.length === 0) return
     // Serialize scans so boot/watch/manual do not interleave.
     while (this.running) {
       await sleep(40)
@@ -211,15 +267,22 @@ export class SessionSyncService {
     this.running = true
     const t0 = this.now()
     try {
-      const [codexCount, grokCount, claudeCount] = await Promise.all([
-        this.syncCodex(),
-        this.syncGrok(),
-        this.syncClaude(),
-      ])
+      const counts: Record<SessionSyncSource, number> = {
+        codex: 0,
+        grok: 0,
+        claude_code: 0,
+      }
+      await Promise.all(
+        sources.map(async (source) => {
+          if (source === 'codex') counts.codex = await this.syncCodex()
+          else if (source === 'grok') counts.grok = await this.syncGrok()
+          else counts.claude_code = await this.syncClaude()
+        }),
+      )
       const elapsed = this.now() - t0
       if (reason !== 'steady' || this.now() - this.lastLogAt > 60_000) {
         console.log(
-          `[codepulse] session-sync (${reason}): codex=${codexCount} grok=${grokCount} claude=${claudeCount} in ${elapsed}ms`,
+          `[codepulse] session-sync (${reason}; ${sources.join(',')}): codex=${counts.codex} grok=${counts.grok} claude=${counts.claude_code} in ${elapsed}ms`,
         )
         this.lastLogAt = this.now()
       }
@@ -261,6 +324,8 @@ export class SessionSyncService {
         let cwd = meta.cwd
         if (!cwd) cwd = await findCwdInTail(file.path)
         if (!cwd) continue
+        // Resolve aliases before project dedupe/fingerprints so one project has one hub key.
+        cwd = await this.workspacePaths.resolve(cwd)
 
         const token =
           (await readCodexQuotaTokenFromFile(file.path)) ??
@@ -352,11 +417,13 @@ export class SessionSyncService {
 
     for (const row of active) {
       if (row.pid != null && !this.pidAlive(row.pid)) continue
-      const key = normalizePathKey(row.cwd)
+      // Resolve before grouping active sessions by cwd to collapse symlink/junction aliases.
+      const cwd = await this.workspacePaths.resolve(row.cwd)
+      const key = normalizePathKey(cwd)
       // Active list is authoritative; last write wins if duplicates.
       // Do not use wall-clock as mtime — that would refresh lastEventAt every poll
       // and prevent the hub's 5-minute idle project pruning.
-      byCwd.set(key, { sessionId: row.sessionId, cwd: row.cwd, mtimeMs: 0 })
+      byCwd.set(key, { sessionId: row.sessionId, cwd, mtimeMs: 0 })
     }
 
     let count = 0
@@ -454,11 +521,13 @@ export class SessionSyncService {
 
     for (const row of active) {
       if (row.pid != null && !this.pidAlive(row.pid)) continue
+      // Resolve before choosing the freshest project row so aliases do not create duplicate cards.
+      const canonicalRow = { ...row, cwd: await this.workspacePaths.resolve(row.cwd) }
       // Prefer freshest session per project root.
-      const key = normalizePathKey(row.cwd)
+      const key = normalizePathKey(canonicalRow.cwd)
       const prev = byCwd.get(key)
-      if (!prev || row.updatedAt >= prev.updatedAt) {
-        byCwd.set(key, row)
+      if (!prev || canonicalRow.updatedAt >= prev.updatedAt) {
+        byCwd.set(key, canonicalRow)
       }
     }
 
@@ -540,7 +609,7 @@ export class SessionSyncService {
    */
   private classifyUnchanged(
     mapKey: string,
-    source: SyncSource,
+    source: SessionSyncSource,
     sessionId: string,
     cwd: string,
     mtimeMs: number,
@@ -561,7 +630,7 @@ export class SessionSyncService {
     return 'skip'
   }
 
-  private hubHasSession(source: SyncSource, sessionId: string): boolean {
+  private hubHasSession(source: SessionSyncSource, sessionId: string): boolean {
     return this.hub
       .snapshot()
       .agents.some((a) => a.agentType === source && a.externalSessionId === sessionId)
@@ -572,7 +641,7 @@ export class SessionSyncService {
    * Later: token_snapshot only (avoids markContextStale on every poll).
    */
   private ingestHydrate(args: {
-    source: SyncSource
+    source: SessionSyncSource
     sessionId: string
     cwd: string
     model?: string
@@ -1403,7 +1472,7 @@ function mergeGrokToken(
 
 /** Full payload identity including account rate limits. */
 function fingerprint(
-  source: SyncSource | string,
+  source: SessionSyncSource | string,
   sessionId: string,
   cwd: string,
   mtimeMs: number,
@@ -1425,7 +1494,7 @@ function fingerprint(
  * do not refresh lastEventAt or resurrect idle project cards.
  */
 function activityFingerprint(
-  source: SyncSource | string,
+  source: SessionSyncSource | string,
   sessionId: string,
   cwd: string,
   mtimeMs: number,

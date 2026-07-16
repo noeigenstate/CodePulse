@@ -165,7 +165,16 @@ export {
 } from './agent-config.js'
 export { registerAgentRoutes, registerEventRoutes, registerStatusRoutes, registerWebSocket }
 export { QuotaRefreshWatcher, readCodexQuotaTokenFromFile } from './quota-watcher.js'
-export { SessionSyncService, type SessionSyncOptions } from './session-sync.js'
+export {
+  SessionSyncService,
+  type SessionSyncOptions,
+  type SessionSyncSource,
+} from './session-sync.js'
+export {
+  resolveEventWorkspacePaths,
+  WorkspacePathResolver,
+  type WorkspacePathResolverOptions,
+} from './workspace-path.js'
 export {
   claudeQuotaCachePath,
   fetchClaudeOauthUsage,

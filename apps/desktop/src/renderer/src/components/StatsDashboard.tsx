@@ -819,7 +819,7 @@ function ProjectTable({
         </thead>
         <tbody>
           {stats.projectRank.map((row, i) => (
-            <tr key={row.path} className="border-t border-line/80">
+            <tr key={row.path} className="border-t border-line">
               <td className="py-2.5 tabular-nums text-ink-500">{i + 1}</td>
               <td className="py-2.5 font-semibold text-ink">
                 <span className="block max-w-[10rem] truncate" title={row.path}>

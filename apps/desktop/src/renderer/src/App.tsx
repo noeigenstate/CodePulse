@@ -4,7 +4,17 @@
  *
  * @module renderer/App
  */
-import { memo, useEffect, useMemo, useState, type ReactNode } from 'react'
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type UIEvent as ReactUIEvent,
+} from 'react'
 import {
   formatTokenPercent,
   type AgentRuntimeState,
@@ -17,6 +27,7 @@ import {
 } from '@codepulse/shared'
 import { useStore } from './store.js'
 import { Header } from './components/Header.js'
+import { SettingsDialog } from './components/SettingsDialog.js'
 import { StatsDashboard } from './components/StatsDashboard.js'
 import {
   acknowledgeCodexTrust,
@@ -41,6 +52,16 @@ import {
 } from './lib/panelFormat.js'
 import { formatQuotaReset } from './lib/quotaFormat.js'
 import { useNow } from './lib/useNow.js'
+import { buildVirtualListLayout, findVirtualListRange } from './lib/virtualList.js'
+import {
+  applyTheme,
+  CLI_TOOL_TYPES,
+  readDashboardSettings,
+  writeDashboardSettings,
+  type CliToolType,
+  type DashboardSettings,
+  type ThemeMode,
+} from './lib/dashboardSettings.js'
 import {
   nextLocale,
   readStoredLocale,
@@ -78,7 +99,24 @@ export function App(): JSX.Element {
   )
   /** 本地开发数据统计后台（设计稿大屏） */
   const [statsOpen, setStatsOpen] = useState(false)
-  const panels = useMemo(() => buildAgentPanels(snapshot.agents), [snapshot.agents])
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [dashboardSettings, setDashboardSettings] = useState<DashboardSettings>(() =>
+    readDashboardSettings(window.localStorage),
+  )
+  const allPanels = useMemo(() => buildAgentPanels(snapshot.agents), [snapshot.agents])
+  const panels = useMemo(
+    // Display preferences only filter renderer panels; hook delivery and disk sync keep running.
+    () => allPanels.filter((panel) => dashboardSettings.visibleTools[panel.agentType]),
+    [allPanels, dashboardSettings.visibleTools],
+  )
+  const visibleSessionCount = useMemo(
+    () => snapshot.agents.filter((agent) => dashboardSettings.visibleTools[agent.agentType]).length,
+    [dashboardSettings.visibleTools, snapshot.agents],
+  )
+  const allToolsHidden = useMemo(
+    () => CLI_TOOL_TYPES.every((tool) => !dashboardSettings.visibleTools[tool]),
+    [dashboardSettings.visibleTools],
+  )
   const setupReminder = useMemo(() => buildAgentSetupReminder(agents), [agents])
   const copy = useMemo(() => uiCopy(locale), [locale])
   const showSetupReminder = shouldShowAgentSetupReminder(
@@ -92,6 +130,16 @@ export function App(): JSX.Element {
   useEffect(() => {
     void window.codepulse.setLocale(locale)
   }, [locale])
+
+  useLayoutEffect(() => {
+    // Write before paint so a persisted dark palette never flashes the light palette.
+    applyTheme(document.documentElement, dashboardSettings.theme)
+  }, [dashboardSettings.theme])
+
+  useEffect(() => {
+    // Storage may be unavailable; the writer deliberately preserves the in-memory selection.
+    writeDashboardSettings(window.localStorage, dashboardSettings)
+  }, [dashboardSettings])
 
   useEffect(() => init(), [init])
 
@@ -110,10 +158,38 @@ export function App(): JSX.Element {
     }
   }
 
+  /** Apply one atomic preference update; persistence occurs after React commits the state. */
+  const updateDashboardSettings = useCallback(
+    (updater: (current: DashboardSettings) => DashboardSettings): void => {
+      setDashboardSettings(updater)
+    },
+    [],
+  )
+
+  const setTheme = useCallback(
+    (theme: ThemeMode): void => {
+      updateDashboardSettings((current) => ({ ...current, theme }))
+    },
+    [updateDashboardSettings],
+  )
+
+  const setToolVisibility = useCallback(
+    (tool: CliToolType, visible: boolean): void => {
+      updateDashboardSettings((current) => ({
+        ...current,
+        visibleTools: { ...current.visibleTools, [tool]: visible },
+      }))
+    },
+    [updateDashboardSettings],
+  )
+
+  const closeSettings = useCallback((): void => setSettingsOpen(false), [])
+
   const liveConsole = (
     <LiveConsole
       panels={panels}
-      sessionCount={snapshot.agents.length}
+      allToolsHidden={allToolsHidden}
+      sessionCount={visibleSessionCount}
       updatedAt={snapshot.updatedAt}
       locale={locale}
       copy={copy}
@@ -130,7 +206,9 @@ export function App(): JSX.Element {
         onToggleLocale={toggleLocale}
         onToggleMute={toggleMute}
         onOpenStats={() => setStatsOpen(true)}
+        onOpenSettings={() => setSettingsOpen(true)}
         statsActive={statsOpen}
+        settingsOpen={settingsOpen}
       />
       {liveConsole}
       {showSetupReminder && (
@@ -151,6 +229,16 @@ export function App(): JSX.Element {
           update={updateInfo}
         />
       )}
+      {settingsOpen && (
+        <SettingsDialog
+          copy={copy.settings}
+          onClose={closeSettings}
+          onThemeChange={setTheme}
+          onToolVisibilityChange={setToolVisibility}
+          theme={dashboardSettings.theme}
+          visibleTools={dashboardSettings.visibleTools}
+        />
+      )}
       {statsOpen && (
         <StatsDashboard locale={locale} copy={copy} onClose={() => setStatsOpen(false)} />
       )}
@@ -160,6 +248,7 @@ export function App(): JSX.Element {
 
 /** 实时三栏控制台主体 + 底栏（与设计稿一致） */
 function LiveConsole({
+  allToolsHidden,
   panels,
   sessionCount,
   updatedAt,
@@ -168,6 +257,7 @@ function LiveConsole({
   now,
   onAck,
 }: {
+  allToolsHidden: boolean
   panels: AgentPanel[]
   sessionCount: number
   updatedAt: number
@@ -181,7 +271,7 @@ function LiveConsole({
       <div className="min-h-0 flex-1 overflow-hidden px-5 pb-3">
         <main className="h-full min-w-0 overflow-x-auto overflow-y-hidden pr-1">
           {panels.length === 0 ? (
-            <EmptyDashboard copy={copy} />
+            <EmptyDashboard allToolsHidden={allToolsHidden} copy={copy} />
           ) : (
             <div className={`grid h-full items-stretch gap-4 ${panelGridClass(panels.length)}`}>
               {panels.map((panel) => (
@@ -200,7 +290,9 @@ function LiveConsole({
       <footer className="footer-strip flex shrink-0 items-center justify-between gap-3 px-6 py-2.5">
         <span>
           {panels.length === 0
-            ? copy.emptyDashboard.title
+            ? allToolsHidden
+              ? copy.emptyDashboard.settingsHiddenTitle
+              : copy.emptyDashboard.title
             : locale === 'zh'
               ? `${panels.length} 个助手分屏 · ${sessionCount} 个会话`
               : `${panels.length} panels · ${sessionCount} sessions`}
@@ -553,11 +645,22 @@ function panelGridClass(count: number): string {
   return 'min-w-[84rem] grid-cols-[minmax(26rem,1fr)_minmax(26rem,1fr)_minmax(26rem,1fr)]'
 }
 
-function EmptyDashboard({ copy }: { copy: UiCopy }): JSX.Element {
+/** Renders the appropriate empty state for either inactive or intentionally hidden tools. */
+function EmptyDashboard({
+  allToolsHidden,
+  copy,
+}: {
+  allToolsHidden: boolean
+  copy: UiCopy
+}): JSX.Element {
   return (
     <div className="agent-panel flex h-full min-h-0 flex-col items-center justify-center px-6 text-center">
-      <p className="text-lg font-semibold text-ink">{copy.emptyDashboard.title}</p>
-      <p className="mt-2 max-w-md text-sm leading-6 text-ink-500">{copy.emptyDashboard.body}</p>
+      <p className="text-lg font-semibold text-ink">
+        {allToolsHidden ? copy.emptyDashboard.settingsHiddenTitle : copy.emptyDashboard.title}
+      </p>
+      <p className="mt-2 max-w-md text-sm leading-6 text-ink-500">
+        {allToolsHidden ? copy.emptyDashboard.settingsHiddenBody : copy.emptyDashboard.body}
+      </p>
     </div>
   )
 }
@@ -612,21 +715,231 @@ const AgentPanelView = memo(function AgentPanelView({
           copy={copy}
         />
       </div>
-      <div className="agent-project-list grid min-h-0 flex-1 content-start gap-2.5 overflow-y-auto pr-1">
-        {panel.workspaces.map((item) => (
-          <ProjectTile
-            key={item.id}
-            item={item}
-            brand={brand}
-            locale={locale}
-            copy={copy}
-            onAck={() => onAck(panel.agentType, item.workspacePath)}
-          />
-        ))}
-      </div>
+      <ProjectList
+        agentType={panel.agentType}
+        brand={brand}
+        copy={copy}
+        items={panel.workspaces}
+        locale={locale}
+        onAck={onAck}
+      />
     </section>
   )
 })
+
+/** Avoids observer and absolute-positioning overhead for short project lists. */
+const VIRTUALIZE_PROJECTS_AFTER = 8
+/** Conservative first-pass card height until ResizeObserver reports the rendered size. */
+const PROJECT_ROW_ESTIMATE_PX = 142
+/** Matches the short-list `gap-2.5` spacing so both rendering paths align. */
+const PROJECT_ROW_GAP_PX = 10
+/** Keeps nearby rows mounted to make scrolling feel continuous without a large DOM. */
+const PROJECT_LIST_OVERSCAN_PX = 280
+
+/**
+ * Chooses the simplest project-list implementation for the current panel size.
+ *
+ * @param props Panel identity, display copy, workspace items, and acknowledgement callback.
+ * @returns A normal list for short collections or a virtual list for long collections.
+ */
+function ProjectList({
+  agentType,
+  brand,
+  copy,
+  items,
+  locale,
+  onAck,
+}: {
+  agentType: AgentType
+  brand: BrandClass
+  copy: UiCopy
+  items: AgentWorkspaceItem[]
+  locale: Locale
+  onAck: (agentType: AgentType, workspacePath?: string) => void
+}): JSX.Element {
+  if (items.length > VIRTUALIZE_PROJECTS_AFTER) {
+    return (
+      <VirtualProjectList
+        agentType={agentType}
+        brand={brand}
+        copy={copy}
+        items={items}
+        locale={locale}
+        onAck={onAck}
+      />
+    )
+  }
+
+  return (
+    <div className="agent-project-list grid min-h-0 flex-1 content-start gap-2.5 overflow-y-auto pr-1">
+      {items.map((item) => (
+        <ProjectTile
+          key={item.id}
+          item={item}
+          brand={brand}
+          locale={locale}
+          copy={copy}
+          onAck={() => onAck(agentType, item.workspacePath)}
+        />
+      ))}
+    </div>
+  )
+}
+
+/**
+ * Renders a variable-height virtual project list with measured rows.
+ *
+ * Initial geometry uses a card-height estimate. ResizeObserver replaces each
+ * estimate after mount, stale measurements are removed when projects disappear,
+ * and scrollTop is clamped when the total list height shrinks.
+ *
+ * @param props Panel identity, display copy, workspace items, and acknowledgement callback.
+ * @returns A scroll container that mounts only the viewport and overscan rows.
+ */
+function VirtualProjectList({
+  agentType,
+  brand,
+  copy,
+  items,
+  locale,
+  onAck,
+}: {
+  agentType: AgentType
+  brand: BrandClass
+  copy: UiCopy
+  items: AgentWorkspaceItem[]
+  locale: Locale
+  onAck: (agentType: AgentType, workspacePath?: string) => void
+}): JSX.Element {
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const [viewportHeight, setViewportHeight] = useState(0)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [measuredSizes, setMeasuredSizes] = useState<Map<string, number>>(() => new Map())
+  const keys = useMemo(() => items.map((item) => item.id), [items])
+  const layout = useMemo(
+    () => buildVirtualListLayout(keys, measuredSizes, PROJECT_ROW_ESTIMATE_PX, PROJECT_ROW_GAP_PX),
+    [keys, measuredSizes],
+  )
+  const range = useMemo(
+    () => findVirtualListRange(layout.rows, scrollTop, viewportHeight, PROJECT_LIST_OVERSCAN_PX),
+    [layout.rows, scrollTop, viewportHeight],
+  )
+
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const update = (): void => setViewportHeight(viewport.clientHeight)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(viewport)
+    return () => observer.disconnect()
+  }, [])
+
+  useLayoutEffect(() => {
+    // Keep the browser scroll position valid after rows disappear or become shorter.
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const maxScrollTop = Math.max(0, layout.totalSize - viewport.clientHeight)
+    if (viewport.scrollTop <= maxScrollTop) return
+    viewport.scrollTop = maxScrollTop
+    setScrollTop(maxScrollTop)
+  }, [layout.totalSize, viewportHeight])
+
+  useEffect(() => {
+    // Do not retain measurements for project ids that no longer exist in this panel.
+    const liveKeys = new Set(keys)
+    setMeasuredSizes((current) => {
+      if ([...current.keys()].every((key) => liveKeys.has(key))) return current
+      return new Map([...current].filter(([key]) => liveKeys.has(key)))
+    })
+  }, [keys])
+
+  /** Records a stable rounded row height only when ResizeObserver reports a change. */
+  const measureRow = useCallback((key: string, size: number): void => {
+    const rounded = Math.ceil(size)
+    if (rounded <= 0) return
+    setMeasuredSizes((current) => {
+      if (current.get(key) === rounded) return current
+      const next = new Map(current)
+      next.set(key, rounded)
+      return next
+    })
+  }, [])
+
+  const handleScroll = useCallback((event: ReactUIEvent<HTMLDivElement>): void => {
+    setScrollTop(event.currentTarget.scrollTop)
+  }, [])
+
+  return (
+    <div
+      ref={viewportRef}
+      className="agent-project-list min-h-0 flex-1 overflow-y-auto pr-1"
+      onScroll={handleScroll}
+    >
+      <div className="relative" style={{ height: layout.totalSize }}>
+        {layout.rows.slice(range.start, range.end).map((row) => {
+          const item = items[row.index]!
+          return (
+            <MeasuredProjectRow
+              key={row.key}
+              itemKey={row.key}
+              start={row.start}
+              onMeasure={measureRow}
+            >
+              <ProjectTile
+                item={item}
+                brand={brand}
+                locale={locale}
+                copy={copy}
+                onAck={() => onAck(agentType, item.workspacePath)}
+              />
+            </MeasuredProjectRow>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Positions one virtual row and reports its rendered height to the parent layout.
+ *
+ * @param props Row content, stable id, y offset, and measurement callback.
+ * @returns An absolutely positioned row wrapper.
+ */
+function MeasuredProjectRow({
+  children,
+  itemKey,
+  onMeasure,
+  start,
+}: {
+  children: ReactNode
+  itemKey: string
+  onMeasure: (key: string, size: number) => void
+  start: number
+}): JSX.Element {
+  const rowRef = useRef<HTMLDivElement>(null)
+
+  useLayoutEffect(() => {
+    const row = rowRef.current
+    if (!row) return
+    const measure = (): void => onMeasure(itemKey, row.getBoundingClientRect().height)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(row)
+    return () => observer.disconnect()
+  }, [itemKey, onMeasure])
+
+  return (
+    <div
+      ref={rowRef}
+      className="absolute inset-x-0 top-0"
+      style={{ transform: `translateY(${start}px)` }}
+    >
+      {children}
+    </div>
+  )
+}
 
 function AgentLogo({ agentType }: { agentType: AgentType }): JSX.Element {
   if (agentType === 'codex') return <CodexLogo />

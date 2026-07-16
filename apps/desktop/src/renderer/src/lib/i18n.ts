@@ -11,6 +11,7 @@ export interface HeaderCopy {
   languageToggle: string
   /** Local stats / insights console */
   stats: string
+  settings: string
 }
 
 export interface UiCopy {
@@ -30,7 +31,26 @@ export interface UiCopy {
   updateAvailable: UpdateAvailableCopy
   contextStatus: ContextStatusCopy
   pathStatus: PathStatusCopy
+  settings: SettingsCopy
   stats: StatsCopy
+}
+
+/**
+ * Localized labels for display-only dashboard preferences.
+ *
+ * `cliToolsHint` must make clear that hiding a panel never stops local sync or notifications.
+ */
+export interface SettingsCopy {
+  title: string
+  close: string
+  theme: string
+  themeLight: string
+  themeDark: string
+  cliTools: string
+  cliToolsHint: string
+  codex: string
+  claudeCode: string
+  grok: string
 }
 
 export interface StatsCopy {
@@ -121,9 +141,14 @@ export interface StatsCopy {
   queryFailed: string
 }
 
+/** Localized content for an idle dashboard and the intentional all-tools-hidden state. */
 export interface EmptyDashboardCopy {
   title: string
   body: string
+  /** Title used when user preferences intentionally hide every CLI panel. */
+  settingsHiddenTitle: string
+  /** Recovery guidance for the all-tools-hidden state. */
+  settingsHiddenBody: string
 }
 
 export interface AgentSetupReminderCopy {
@@ -199,6 +224,7 @@ const HEADER_COPY: Record<Locale, HeaderCopy> = {
     muted: '已静音',
     languageToggle: '英文',
     stats: '后台',
+    settings: '设置',
   },
   en: {
     brandTag: '',
@@ -207,6 +233,7 @@ const HEADER_COPY: Record<Locale, HeaderCopy> = {
     muted: 'Muted',
     languageToggle: 'Chinese',
     stats: 'Insights',
+    settings: 'Settings',
   },
 }
 
@@ -225,6 +252,8 @@ const UI_COPY: Record<Locale, UiCopy> = {
     emptyDashboard: {
       title: '等待 CLI 任务',
       body: '开始 Claude Code、Codex 或 Grok 任务后，对应分屏会自动出现；只用一个 CLI 时只显示一栏。',
+      settingsHiddenTitle: '所有 CLI 工具已隐藏',
+      settingsHiddenBody: '打开右上角设置，重新选择要显示的 CLI 工具。',
     },
     agentSetupReminder: {
       title: '配置与权限检查',
@@ -290,6 +319,18 @@ const UI_COPY: Record<Locale, UiCopy> = {
       waitingProjectPath: '等待项目路径',
       waitingDirectory: '等待目录',
       projectRoot: '项目根目录',
+    },
+    settings: {
+      title: '显示与外观',
+      close: '关闭设置',
+      theme: '主题',
+      themeLight: '白色',
+      themeDark: '黑色',
+      cliTools: '显示的 CLI 工具',
+      cliToolsHint: '隐藏仅影响主控制台显示，不会停止本机同步或通知。',
+      codex: 'Codex',
+      claudeCode: 'Claude Code',
+      grok: 'Grok',
     },
     stats: {
       title: '本地开发数据统计',
@@ -387,6 +428,8 @@ const UI_COPY: Record<Locale, UiCopy> = {
     emptyDashboard: {
       title: 'Waiting for CLI tasks',
       body: 'Panels appear when you start Claude Code, Codex, or Grok tasks. If you only use one CLI, only that panel is shown.',
+      settingsHiddenTitle: 'All CLI tools are hidden',
+      settingsHiddenBody: 'Open settings in the upper-right corner to choose tools to display.',
     },
     agentSetupReminder: {
       title: 'Setup and permission check',
@@ -452,6 +495,19 @@ const UI_COPY: Record<Locale, UiCopy> = {
       waitingProjectPath: 'Waiting for project path',
       waitingDirectory: 'Waiting for directory',
       projectRoot: 'Project root',
+    },
+    settings: {
+      title: 'Display & appearance',
+      close: 'Close settings',
+      theme: 'Theme',
+      themeLight: 'White',
+      themeDark: 'Black',
+      cliTools: 'Visible CLI tools',
+      cliToolsHint:
+        'Hiding a tool only changes the live console; syncing and notifications continue.',
+      codex: 'Codex',
+      claudeCode: 'Claude Code',
+      grok: 'Grok',
     },
     stats: {
       title: 'Local development analytics',

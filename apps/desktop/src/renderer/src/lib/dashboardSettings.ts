@@ -1,0 +1,122 @@
+import type { AgentType } from '@codepulse/shared'
+
+/**
+ * Lists CLI panels supported by the dashboard preference schema.
+ *
+ * Order controls the settings UI. Hiding a tool only changes renderer visibility;
+ * it never disables that tool's hook, session sync, or notifications.
+ */
+export const CLI_TOOL_TYPES = [
+  'codex',
+  'claude_code',
+  'grok',
+] as const satisfies readonly AgentType[]
+
+/** One supported CLI tool key stored in {@link DashboardSettings.visibleTools}. */
+export type CliToolType = (typeof CLI_TOOL_TYPES)[number]
+
+/** Palette persisted for the dashboard root element. */
+export type ThemeMode = 'light' | 'dark'
+
+/** Persisted display-only preferences for the desktop dashboard. */
+export interface DashboardSettings {
+  theme: ThemeMode
+  visibleTools: Record<CliToolType, boolean>
+}
+
+interface StorageLike {
+  getItem(key: string): string | null
+  setItem(key: string, value: string): void
+}
+
+interface ThemeRoot {
+  dataset: { theme?: string }
+}
+
+const STORAGE_KEY = 'codepulse:dashboard-settings'
+
+/** Default preferences; newly introduced CLI tools are also treated as visible on read. */
+export const DEFAULT_DASHBOARD_SETTINGS: DashboardSettings = {
+  theme: 'light',
+  visibleTools: {
+    codex: true,
+    claude_code: true,
+    grok: true,
+  },
+}
+
+/**
+ * Reads a defensive, forward-compatible local preference snapshot.
+ *
+ * Missing, malformed, or unreadable storage falls back to defaults. A stored
+ * tool is hidden only when its value is explicitly `false`, so preferences made
+ * before a newly supported tool was added automatically keep that tool visible.
+ *
+ * @param storage Browser storage, or `undefined` for non-browser callers.
+ * @returns A complete display preference object safe for immediate rendering.
+ */
+export function readDashboardSettings(storage: StorageLike | undefined): DashboardSettings {
+  let raw: string | null | undefined
+  try {
+    raw = storage?.getItem(STORAGE_KEY)
+  } catch {
+    return cloneSettings(DEFAULT_DASHBOARD_SETTINGS)
+  }
+  if (!raw) return cloneSettings(DEFAULT_DASHBOARD_SETTINGS)
+
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!isRecord(parsed)) return cloneSettings(DEFAULT_DASHBOARD_SETTINGS)
+    const visibleTools = isRecord(parsed.visibleTools) ? parsed.visibleTools : {}
+    return {
+      theme: parsed.theme === 'dark' ? 'dark' : 'light',
+      visibleTools: {
+        codex: visibleTools.codex !== false,
+        claude_code: visibleTools.claude_code !== false,
+        grok: visibleTools.grok !== false,
+      },
+    }
+  } catch {
+    return cloneSettings(DEFAULT_DASHBOARD_SETTINGS)
+  }
+}
+
+/**
+ * Best-effort persists display preferences without interrupting the current UI state.
+ *
+ * @param storage Browser storage, or `undefined` for non-browser callers.
+ * @param settings Complete preference snapshot to serialize.
+ */
+export function writeDashboardSettings(
+  storage: StorageLike | undefined,
+  settings: DashboardSettings,
+): void {
+  try {
+    storage?.setItem(STORAGE_KEY, JSON.stringify(settings))
+  } catch {
+    // Keep the in-memory selection when browser storage is unavailable or full.
+  }
+}
+
+/**
+ * Applies the selected palette at the document root so every surface switches together.
+ *
+ * @param root Root element-like object that owns the `data-theme` attribute.
+ * @param theme Palette to expose to CSS variables and Tailwind utilities.
+ */
+export function applyTheme(root: ThemeRoot, theme: ThemeMode): void {
+  root.dataset.theme = theme
+}
+
+/** Creates a mutable copy so callers cannot alter the shared defaults object. */
+function cloneSettings(settings: DashboardSettings): DashboardSettings {
+  return {
+    theme: settings.theme,
+    visibleTools: { ...settings.visibleTools },
+  }
+}
+
+/** Narrows parsed JSON to a non-null object before reading optional properties. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}

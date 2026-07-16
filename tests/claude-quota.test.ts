@@ -43,6 +43,55 @@ test('normalizeClaudeRateLimitsPayload keeps 0-100 used_percentage', () => {
   assert.equal(limits?.sevenDay?.usedPercent, 18)
 })
 
+test('normalizeClaudeRateLimitsPayload prefers model-family weekly window', () => {
+  const families = {
+    five_hour: { used_percent: 10, resets_at: Math.floor(Date.now() / 1000) + 3_600 },
+    seven_day: { used_percent: 50, resets_at: Math.floor(Date.now() / 1000) + 86_400 },
+    seven_day_opus: { used_percent: 88, resets_at: Math.floor(Date.now() / 1000) + 86_400 },
+    seven_day_sonnet: { used_percent: 12, resets_at: Math.floor(Date.now() / 1000) + 86_400 },
+  }
+  assert.equal(
+    normalizeClaudeRateLimitsPayload(families, 'claude-opus-4')?.sevenDay?.usedPercent,
+    88,
+  )
+  assert.equal(
+    normalizeClaudeRateLimitsPayload(families, 'claude-sonnet-4')?.sevenDay?.usedPercent,
+    12,
+  )
+  // No model → generic overall week when present.
+  assert.equal(normalizeClaudeRateLimitsPayload(families)?.sevenDay?.usedPercent, 50)
+})
+
+test('mergeClaudeContextWithQuota re-picks weekly window from rawFamilies', () => {
+  const quota = {
+    rateLimits: {
+      fiveHour: { usedPercent: 10 },
+      sevenDay: { usedPercent: 50 },
+    },
+    rateLimitId: 'claude',
+    updatedAt: Date.now(),
+    source: 'oauth' as const,
+    rawFamilies: {
+      five_hour: { used_percent: 10 },
+      seven_day: { used_percent: 50 },
+      seven_day_opus: { used_percent: 77 },
+      seven_day_sonnet: { used_percent: 9 },
+    },
+  }
+  const opus = mergeClaudeContextWithQuota(
+    { accuracy: 'estimated', contextUsedPercent: 20 },
+    quota,
+    'claude-opus-4-1',
+  )
+  const sonnet = mergeClaudeContextWithQuota(
+    { accuracy: 'estimated', contextUsedPercent: 20 },
+    quota,
+    'claude-sonnet-4',
+  )
+  assert.equal(opus.rateLimits?.sevenDay?.usedPercent, 77)
+  assert.equal(sonnet.rateLimits?.sevenDay?.usedPercent, 9)
+})
+
 test('claude quota cache round-trips for session-sync merge', async () => {
   const home = await mkdtemp(join(tmpdir(), 'codepulse-claude-quota-'))
   try {

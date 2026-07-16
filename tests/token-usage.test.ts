@@ -26,6 +26,8 @@ test('Claude status line sums current_usage cache tokens into context input', ()
   assert.equal(event?.token?.output, 1200)
   assert.equal(event?.token?.total, 16700)
   assert.equal(event?.token?.contextUsedPercent, 7.75)
+  // No official used_percentage → derived math is estimated.
+  assert.equal(event?.token?.accuracy, 'estimated')
   assert.equal(event?.token?.rateLimits?.fiveHour?.usedPercent, 23.5)
   assert.equal(event?.token?.rateLimits?.fiveHour?.resetsAt, 1738425600)
   assert.equal(event?.token?.rateLimits?.sevenDay?.usedPercent, 41.2)
@@ -42,6 +44,7 @@ test('Claude status line parses 1M context window strings as one million tokens'
 
   assert.equal(event?.token?.contextWindow, 1_000_000)
   assert.equal(event?.token?.contextUsedPercent, 50)
+  assert.equal(event?.token?.accuracy, 'estimated')
 })
 
 test('Claude status line prefers official used_percentage when present', () => {
@@ -65,6 +68,7 @@ test('Claude status line prefers official used_percentage when present', () => {
   assert.equal(event?.token?.output, 1000)
   assert.equal(event?.token?.total, 25000)
   assert.equal(event?.token?.contextUsedPercent, 12.5)
+  assert.equal(event?.token?.accuracy, 'exact')
 })
 
 test('Claude status line does not use cumulative total input as context percent fallback', () => {
@@ -83,6 +87,7 @@ test('Claude status line does not use cumulative total input as context percent 
 
   assert.equal(event?.token?.input, 800000)
   assert.equal(event?.token?.contextUsedPercent, 20)
+  assert.equal(event?.token?.accuracy, 'estimated')
 })
 
 test('Codex hook does not double count cached input for context percent', () => {

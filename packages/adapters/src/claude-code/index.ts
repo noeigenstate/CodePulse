@@ -180,8 +180,8 @@ function extractCommand(raw: Record<string, unknown>): string | undefined {
  * 把 Claude Code 的 status-line 载荷映射为 `token_snapshot` 事件。
  *
  * status-line 收集器转发 Claude 提供的结构化 JSON（模型、工作区、
- * 花费、token 用量、上下文百分比）。由于来源是稳定的结构化数据，
- * 快照被标记为 `accuracy: 'exact'`。
+ * 花费、token 用量、上下文百分比）。仅当官方 `context_window.used_percentage`
+ * 与窗口大小同时存在时标记 `accuracy: 'exact'`，否则为 `estimated`。
  *
  * @param raw 解析后的 status-line 载荷（不可信）。
  * @returns 归一化的 token 快照事件；非对象时为 `null`。
@@ -217,8 +217,9 @@ export function fromClaudeStatusLine(raw: unknown): AgentEventInput | null {
     'context_window_size',
     'contextWindowSize',
   )
+  const officialUsedPct = pickNumber(contextWindow ?? {}, 'used_percentage', 'usedPercentage')
   const contextUsedPercent =
-    pickNumber(contextWindow ?? {}, 'used_percentage', 'usedPercentage') ??
+    officialUsedPct ??
     pickNumber(r, 'context_used_percent', 'contextUsedPercent') ??
     pickNumber(usageSource, 'context_used_percent', 'contextUsedPercent') ??
     percentOf(fallbackContextInput, contextWindowSize)
@@ -226,6 +227,9 @@ export function fromClaudeStatusLine(raw: unknown): AgentEventInput | null {
   const rateLimits = pickRateLimits(r)
   const rateLimitId = pickRateLimitId(r)
   const rateLimitName = pickRateLimitName(r)
+  // Official statusline context_window.used_percentage is exact; transcript/default math is not.
+  const accuracy =
+    officialUsedPct != null && contextWindowSize != null ? ('exact' as const) : ('estimated' as const)
 
   return {
     source: 'claude_code',
@@ -252,7 +256,7 @@ export function fromClaudeStatusLine(raw: unknown): AgentEventInput | null {
       rateLimitId,
       rateLimitName,
       costUsd: cost ? pickNumber(cost, 'total_cost_usd', 'total_cost') : pickNumber(r, 'cost_usd'),
-      accuracy: 'exact',
+      accuracy,
     },
     raw,
   }

@@ -57,21 +57,20 @@ import codePulseIcon from './assets/codepulse-icon.png'
  * @returns 渲染后的 Dashboard。
  */
 export function App(): JSX.Element {
-  const {
-    snapshot,
-    muted,
-    agents,
-    agentCheckId,
-    updateInfo,
-    updateInstalling,
-    updateProgress,
-    updateError,
-    init,
-    ack,
-    toggleMute,
-    dismissUpdate,
-    installUpdate,
-  } = useStore()
+  // Select slices so update progress / mute ticks do not force unrelated work.
+  const snapshot = useStore((s) => s.snapshot)
+  const muted = useStore((s) => s.muted)
+  const agents = useStore((s) => s.agents)
+  const agentCheckId = useStore((s) => s.agentCheckId)
+  const updateInfo = useStore((s) => s.updateInfo)
+  const updateInstalling = useStore((s) => s.updateInstalling)
+  const updateProgress = useStore((s) => s.updateProgress)
+  const updateError = useStore((s) => s.updateError)
+  const init = useStore((s) => s.init)
+  const ack = useStore((s) => s.ack)
+  const toggleMute = useStore((s) => s.toggleMute)
+  const dismissUpdate = useStore((s) => s.dismissUpdate)
+  const installUpdate = useStore((s) => s.installUpdate)
   const [locale, setLocale] = useState<Locale>(() => readStoredLocale(window.localStorage))
   const [dismissedAgentCheckId, setDismissedAgentCheckId] = useState<number | undefined>()
   const [codexTrustAcknowledged, setCodexTrustAcknowledged] = useState<boolean>(() =>

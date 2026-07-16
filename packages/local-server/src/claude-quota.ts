@@ -15,6 +15,11 @@ export interface ClaudeQuotaSnapshot {
   rateLimitName?: string
   updatedAt: number
   source: 'statusline' | 'oauth' | 'cache'
+  /**
+   * Original multi-family rate_limits payload (opus/sonnet/oauth_apps).
+   * Kept so merge can re-pick weekly window for the active model.
+   */
+  rawFamilies?: Record<string, unknown>
 }
 
 export function claudeQuotaCachePath(home = homedir()): string {
@@ -32,7 +37,8 @@ export async function readClaudeQuotaCache(
     >
     const updatedAt = typeof raw.updatedAt === 'number' ? raw.updatedAt : 0
     if (updatedAt > 0 && now - updatedAt > CACHE_MAX_AGE_MS) return undefined
-    const rateLimits = normalizeClaudeRateLimitsPayload(raw.rate_limits ?? raw.rateLimits)
+    const families = asRateLimitFamilies(raw.rate_limits ?? raw.rateLimits)
+    const rateLimits = normalizeClaudeRateLimitsPayload(families ?? raw.rate_limits ?? raw.rateLimits)
     if (!rateLimits) return undefined
     return {
       rateLimits,
@@ -40,6 +46,7 @@ export async function readClaudeQuotaCache(
       rateLimitName: typeof raw.rate_limit_name === 'string' ? raw.rate_limit_name : undefined,
       updatedAt,
       source: 'cache',
+      ...(families ? { rawFamilies: families } : {}),
     }
   } catch {
     return undefined
@@ -60,7 +67,10 @@ export async function writeClaudeQuotaCache(
       `${JSON.stringify(
         {
           updatedAt: now,
-          rate_limits: toSnakeRateLimits(snapshot.rateLimits),
+          // Prefer multi-family raw so later model-aware picks still work offline.
+          rate_limits: snapshot.rawFamilies
+            ? toSnakeRateLimitFamilies(snapshot.rawFamilies)
+            : toSnakeRateLimits(snapshot.rateLimits),
           ...(snapshot.rateLimitId ? { rate_limit_id: snapshot.rateLimitId } : {}),
           ...(snapshot.rateLimitName ? { rate_limit_name: snapshot.rateLimitName } : {}),
           source: snapshot.source ?? 'statusline',
@@ -130,12 +140,14 @@ export async function fetchClaudeOauthUsage(options?: {
     })
     if (!res.ok) return undefined
     const data = (await res.json()) as unknown
-    const rateLimits = normalizeClaudeRateLimitsPayload(data)
+    const families = asRateLimitFamilies(data)
+    const rateLimits = normalizeClaudeRateLimitsPayload(families ?? data)
     if (!rateLimits) return undefined
     return {
       rateLimits,
       rateLimitId: 'claude',
       rateLimitName: subscriptionType ? `Claude ${subscriptionType}` : 'Claude',
+      ...(families ? { rawFamilies: families } : {}),
     }
   } catch {
     return undefined
@@ -147,29 +159,54 @@ export async function fetchClaudeOauthUsage(options?: {
 export function mergeClaudeContextWithQuota(
   context: TokenPayload | undefined,
   quota: ClaudeQuotaSnapshot | undefined,
+  preferredModel?: string,
 ): TokenPayload {
   const base = context ?? { accuracy: 'unknown' as const }
-  if (!quota?.rateLimits) return base
+  if (!quota) return base
+
+  const rateLimits =
+    preferredModel && quota.rawFamilies
+      ? (normalizeClaudeRateLimitsPayload(quota.rawFamilies, preferredModel) ?? quota.rateLimits)
+      : quota.rateLimits
+  if (!rateLimits) return base
+
   return {
     ...base,
-    rateLimits: quota.rateLimits,
+    rateLimits,
     rateLimitId: quota.rateLimitId ?? base.rateLimitId ?? 'claude',
     rateLimitName: quota.rateLimitName ?? base.rateLimitName,
     accuracy: base.accuracy === 'exact' ? 'exact' : 'estimated',
   }
 }
 
+/**
+ * Normalize Claude rate_limits. When model is known, prefer the matching
+ * model-family weekly window (opus/sonnet) over generic / first-hit order.
+ */
 export function normalizeClaudeRateLimitsPayload(
   raw: unknown,
+  preferredModel?: string,
 ): NonNullable<TokenPayload['rateLimits']> | undefined {
   if (!raw || typeof raw !== 'object') return undefined
   const src = raw as Record<string, unknown>
   const five = normalizeWindow(src.five_hour ?? src.fiveHour)
-  const seven =
-    normalizeWindow(src.seven_day ?? src.sevenDay) ??
-    normalizeWindow(src.seven_day_opus ?? src.sevenDayOpus) ??
-    normalizeWindow(src.seven_day_sonnet ?? src.sevenDaySonnet) ??
-    normalizeWindow(src.seven_day_oauth_apps ?? src.sevenDayOauthApps)
+  const generic = normalizeWindow(src.seven_day ?? src.sevenDay)
+  const opus = normalizeWindow(src.seven_day_opus ?? src.sevenDayOpus)
+  const sonnet = normalizeWindow(src.seven_day_sonnet ?? src.sevenDaySonnet)
+  const oauthApps = normalizeWindow(src.seven_day_oauth_apps ?? src.sevenDayOauthApps)
+
+  const model = (preferredModel ?? '').toLowerCase()
+  let seven: ReturnType<typeof normalizeWindow>
+  if (model.includes('opus') && opus) seven = opus
+  else if ((model.includes('sonnet') || model.includes('haiku')) && sonnet) seven = sonnet
+  else {
+    // Generic overall week, else busiest model-family week.
+    seven =
+      generic ??
+      [opus, sonnet, oauthApps]
+        .filter(Boolean)
+        .sort((a, b) => (b?.usedPercent ?? -1) - (a?.usedPercent ?? -1))[0]
+  }
   if (!five && !seven) return undefined
   return { fiveHour: five, sevenDay: seven }
 }
@@ -197,18 +234,64 @@ function normalizeWindow(
 }
 
 function toSnakeRateLimits(rateLimits: NonNullable<TokenPayload['rateLimits']>): unknown {
-  const map = (w: NonNullable<TokenPayload['rateLimits']>['fiveHour'] | undefined) =>
-    w
-      ? {
-          ...(w.usedPercent != null ? { used_percent: w.usedPercent } : {}),
-          ...(w.resetsAt != null ? { resets_at: w.resetsAt } : {}),
-          ...(w.windowMinutes != null ? { window_minutes: w.windowMinutes } : {}),
-        }
-      : undefined
+  const map = windowToSnake
   return {
     ...(rateLimits.fiveHour ? { five_hour: map(rateLimits.fiveHour) } : {}),
     ...(rateLimits.sevenDay ? { seven_day: map(rateLimits.sevenDay) } : {}),
   }
+}
+
+/** Preserve multi-family windows in cache for model-aware re-picks. */
+function toSnakeRateLimitFamilies(families: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  const pairs: Array<[string, string[]]> = [
+    ['five_hour', ['five_hour', 'fiveHour']],
+    ['seven_day', ['seven_day', 'sevenDay']],
+    ['seven_day_opus', ['seven_day_opus', 'sevenDayOpus']],
+    ['seven_day_sonnet', ['seven_day_sonnet', 'sevenDaySonnet']],
+    ['seven_day_oauth_apps', ['seven_day_oauth_apps', 'sevenDayOauthApps']],
+  ]
+  for (const [snake, keys] of pairs) {
+    let win: ReturnType<typeof normalizeWindow>
+    for (const key of keys) {
+      win = normalizeWindow(families[key])
+      if (win) break
+    }
+    if (win) out[snake] = windowToSnake(win)
+  }
+  return out
+}
+
+function windowToSnake(
+  w: NonNullable<TokenPayload['rateLimits']>['fiveHour'] | undefined,
+): Record<string, number> | undefined {
+  if (!w) return undefined
+  return {
+    ...(w.usedPercent != null ? { used_percent: w.usedPercent } : {}),
+    ...(w.resetsAt != null ? { resets_at: w.resetsAt } : {}),
+    ...(w.windowMinutes != null ? { window_minutes: w.windowMinutes } : {}),
+  }
+}
+
+function asRateLimitFamilies(raw: unknown): Record<string, unknown> | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const src = raw as Record<string, unknown>
+  // Accept full OAuth payload or a nested rate_limits object.
+  const nested = src.rate_limits ?? src.rateLimits
+  const bag =
+    nested && typeof nested === 'object' ? (nested as Record<string, unknown>) : src
+  const hasFamily =
+    bag.five_hour != null ||
+    bag.fiveHour != null ||
+    bag.seven_day != null ||
+    bag.sevenDay != null ||
+    bag.seven_day_opus != null ||
+    bag.sevenDayOpus != null ||
+    bag.seven_day_sonnet != null ||
+    bag.sevenDaySonnet != null ||
+    bag.seven_day_oauth_apps != null ||
+    bag.sevenDayOauthApps != null
+  return hasFamily ? bag : undefined
 }
 
 function numberish(value: unknown): number | undefined {

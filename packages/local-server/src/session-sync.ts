@@ -16,19 +16,14 @@ import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import type { TokenPayload } from '@codepulse/shared'
 import type { StatusHub } from '@codepulse/core'
-import {
-  asRecord,
-  pickNumber,
-  pickRateLimitId,
-  pickRateLimitName,
-  pickRateLimits,
-} from '@codepulse/adapters'
+import { asRecord, pickNumber, pickRateLimitId, pickRateLimitName, pickRateLimits } from '@codepulse/adapters'
 import { readCodexQuotaTokenFromFile } from './quota-watcher.js'
 import { mergeClaudeContextWithQuota, resolveClaudeAccountQuota } from './claude-quota.js'
 
 const MAX_CODEX_FILES = 80
 const CODEX_META_HEAD = 512 * 1024
-const CODEX_TAIL = 2 * 1024 * 1024
+/** Align with quota-watcher / hooks tails so token_count is not buried under tool noise. */
+const CODEX_TAIL = 4 * 1024 * 1024
 /**
  * Codex 无 active_sessions：用 rollout mtime 近似「CLI 仍活跃」。
  * 与 StatusHub 空闲 5 分钟剔除对齐——超过该窗口的 rollout 不再拉起项目卡片。
@@ -281,15 +276,12 @@ export class SessionSyncService {
       }
     }
 
-    // Account weekly/5h quotas are global — never trust stale per-project rollouts.
-    // Prefer the most authoritative *non-Spark* snapshot: same window keeps the
-    // highest used% (usage only rises), not merely the file with the latest mtime.
-    // Spark files often have fresher mtimes but 0% on a different bucket — overlaying
-    // them used to make the main weekly bar flip to 0/2%.
-    const accountQuota = pickSharedCodexAccountQuota([...byCwd.values()])
+    // Account weekly/5h quotas are global — pick best main + Spark separately.
+    const accountFamilies = pickSharedCodexAccountQuotaFamilies([...byCwd.values()])
+    const accountPrimary = accountFamilies.main ?? accountFamilies.spark
 
     if (quotaOnlyFallback) {
-      const token = accountQuota?.token
+      const token = accountPrimary?.token
       if (!token?.rateLimits) return 0
       const mapKey = 'codex:quota-only'
       const fp = fingerprint('codex', 'quota-only', '', 0, token, undefined)
@@ -300,7 +292,7 @@ export class SessionSyncService {
         source: 'codex',
         eventType: 'token_snapshot',
         token,
-        tokenSourcePath: accountQuota?.path,
+        tokenSourcePath: accountPrimary?.path,
         timestamp: now,
         internal: { sessionSync: true, quotaRefresh: true },
       })
@@ -312,7 +304,8 @@ export class SessionSyncService {
       const cwd = meta.cwd!
       const payloadToken = withSharedCodexAccountQuota(
         token ?? { accuracy: 'unknown' as const, contextWindow: 256_000 },
-        accountQuota?.token,
+        accountFamilies.main,
+        accountFamilies.spark,
       )
       const mapKey = `codex:${sessionId}`
       const skip = this.classifyUnchanged(
@@ -326,14 +319,20 @@ export class SessionSyncService {
       )
       if (skip === 'skip') continue
 
+      const preferPath =
+        (tokenLooksLikeSpark(payloadToken)
+          ? accountFamilies.spark?.path
+          : accountFamilies.main?.path) ??
+        accountPrimary?.path ??
+        file.path
+
       this.ingestHydrate({
         source: 'codex',
         sessionId,
         cwd,
         model: meta.model,
         token: payloadToken,
-        // Prefer account quota source path so QuotaRefreshWatcher re-reads the freshest file.
-        tokenSourcePath: accountQuota?.path ?? file.path,
+        tokenSourcePath: preferPath,
         now,
         // Quota-only churn must not refresh lastEventAt or unhide idle project cards.
         quotaOnly: skip === 'quota',
@@ -501,8 +500,8 @@ export class SessionSyncService {
       const transcript = await findClaudeTranscript(this.claudeHome, sessionId)
       const usage = transcript ? await readClaudeTranscriptUsage(transcript) : undefined
       const contextToken = claudeUsageToToken(usage)
-      const token = mergeClaudeContextWithQuota(contextToken, accountQuota)
       const model = usage?.model
+      const token = mergeClaudeContextWithQuota(contextToken, accountQuota, model)
       const mapKey = `claude_code:${sessionId}`
       const skip = this.classifyUnchanged(
         mapKey,
@@ -779,7 +778,11 @@ async function findCwdInTail(file: string): Promise<string | undefined> {
   return undefined
 }
 
-/** Fallback when quota reader returns nothing — still extract last_token context. */
+/**
+ * Fallback when the primary quota reader returns nothing.
+ * Context only from last_token_usage — never total_token_usage, never raw expired limits
+ * (rate limits always go through readCodexQuotaTokenFromFile soft-reset path).
+ */
 async function readCodexTokenFallback(file: string): Promise<TokenPayload | undefined> {
   try {
     const text = await readTailFile(file, CODEX_TAIL)
@@ -796,19 +799,17 @@ async function readCodexTokenFallback(file: string): Promise<TokenPayload | unde
       if (!payload || payload.type !== 'token_count') continue
       const info = asRecord(payload.info) ?? {}
       const last = asRecord(info.last_token_usage)
-      const total = asRecord(info.total_token_usage)
+      if (!last) continue
       const window = num(info.model_context_window) ?? num(payload.model_context_window) ?? 256_000
-      const input = last ? num(last.input_tokens) : undefined
+      const input = num(last.input_tokens)
       const pct = input != null && window > 0 ? Math.min(100, (input / window) * 100) : undefined
-      const rateLimits = pickRateLimits(payload)
+      if (pct == null && input == null) continue
       return {
-        input: input ?? num(total?.input_tokens),
-        total: num(total?.total_tokens) ?? num(last?.total_tokens),
+        input,
+        total: num(last.total_tokens),
         contextUsedPercent: pct,
         contextWindow: window,
-        rateLimits,
-        rateLimitId: pickRateLimitId(payload),
-        rateLimitName: pickRateLimitName(payload),
+        // Deliberately omit rateLimits — use readCodexQuotaTokenFromFile for those.
         accuracy: 'estimated',
       }
     }
@@ -824,72 +825,109 @@ function sessionIdFromRolloutName(file: string): string {
   return m?.[1] ?? name.replace(/\.jsonl$/i, '')
 }
 
+type CodexQuotaRow = { file: RolloutFile; token?: TokenPayload }
+type AccountQuotaPick = { token: TokenPayload; mtimeMs: number; path: string }
+
 /**
  * Context is per-project; rate limits are account-wide.
- * Overlay the authoritative account quota onto each project's context snapshot so
- * idle/stale rollouts cannot publish outdated weekly %.
+ * Overlay main (and optional Spark) account snapshots; keep quotaBuckets so dual meters work.
  */
 function withSharedCodexAccountQuota(
   project: TokenPayload,
-  account: TokenPayload | undefined,
+  accountMain: AccountQuotaPick | undefined,
+  accountSpark: AccountQuotaPick | undefined,
 ): TokenPayload {
-  if (!account?.rateLimits) return project
-  return {
-    ...project,
-    rateLimits: account.rateLimits,
-    rateLimitId: account.rateLimitId ?? project.rateLimitId,
-    rateLimitName: account.rateLimitName ?? project.rateLimitName,
-    // Drop project-local bucket maps — they may carry stale Spark/main samples.
-    quotaBuckets: undefined,
+  if (!accountMain?.token.rateLimits && !accountSpark?.token.rateLimits) return project
+
+  // Top-level prefers main account weekly (never let a fresher Spark 0% clobber it).
+  // Dual meters still live in quotaBuckets; display layer picks by active model.
+  const top = accountMain ?? accountSpark
+  if (!top?.token.rateLimits) return project
+
+  const now = Date.now()
+  const buckets: NonNullable<TokenPayload['quotaBuckets']> = {
+    ...(project.quotaBuckets ?? {}),
   }
-}
-
-type CodexQuotaRow = { file: RolloutFile; token?: TokenPayload }
-
-/**
- * Choose one account-wide rate-limit snapshot to share across all live projects.
- * - Ignore Spark/bengalfox buckets when a main `codex` sample exists.
- * - Prefer later resetsAt (new window).
- * - Within the same window, prefer higher used% (never go backwards).
- * - mtime is only a tiebreaker.
- */
-function pickSharedCodexAccountQuota(
-  rows: CodexQuotaRow[],
-): { token: TokenPayload; mtimeMs: number; path: string } | undefined {
-  const withLimits = rows.filter((row) => row.token?.rateLimits)
-  if (withLimits.length === 0) return undefined
-
-  const nonSpark = withLimits.filter((row) => !tokenLooksLikeSpark(row.token))
-  const pool = nonSpark.length > 0 ? nonSpark : withLimits
-
-  let best: { token: TokenPayload; mtimeMs: number; path: string } | undefined
-  for (const row of pool) {
-    const token = row.token!
-    const candidate = { token, mtimeMs: row.file.mtimeMs, path: row.file.path }
-    if (!best || compareAccountQuotaSnapshots(candidate, best) > 0) {
-      best = candidate
+  if (accountMain?.token.rateLimits) {
+    const id = accountMain.token.rateLimitId?.trim() || 'codex'
+    buckets[id] = {
+      rateLimitId: accountMain.token.rateLimitId,
+      rateLimitName: accountMain.token.rateLimitName,
+      rateLimits: accountMain.token.rateLimits,
+      updatedAt: accountMain.mtimeMs || now,
     }
   }
-  return best
+  if (accountSpark?.token.rateLimits) {
+    const id = accountSpark.token.rateLimitId?.trim() || 'codex_bengalfox'
+    buckets[id] = {
+      rateLimitId: accountSpark.token.rateLimitId,
+      rateLimitName: accountSpark.token.rateLimitName,
+      rateLimits: accountSpark.token.rateLimits,
+      updatedAt: accountSpark.mtimeMs || now,
+    }
+  }
+
+  return {
+    ...project,
+    rateLimits: top.token.rateLimits,
+    rateLimitId: top.token.rateLimitId ?? project.rateLimitId,
+    rateLimitName: top.token.rateLimitName ?? project.rateLimitName,
+    quotaBuckets: Object.keys(buckets).length > 0 ? buckets : undefined,
+  }
 }
 
-/** Positive when `a` is a better account-wide snapshot than `b`. */
-function compareAccountQuotaSnapshots(
-  a: { token: TokenPayload; mtimeMs: number },
-  b: { token: TokenPayload; mtimeMs: number },
-): number {
+/**
+ * Pick best main + best Spark account snapshots from live rollouts.
+ * Prefer weekly (sevenDay) signal for ranking — matches Codex UI (no 5h bar).
+ */
+function pickSharedCodexAccountQuotaFamilies(rows: CodexQuotaRow[]): {
+  main?: AccountQuotaPick
+  spark?: AccountQuotaPick
+} {
+  const withLimits = rows.filter((row) => row.token?.rateLimits)
+  if (withLimits.length === 0) return {}
+
+  let main: AccountQuotaPick | undefined
+  let spark: AccountQuotaPick | undefined
+  for (const row of withLimits) {
+    const token = row.token!
+    const candidate: AccountQuotaPick = {
+      token,
+      mtimeMs: row.file.mtimeMs,
+      path: row.file.path,
+    }
+    if (tokenLooksLikeSpark(token)) {
+      if (!spark || compareAccountQuotaSnapshots(candidate, spark) > 0) spark = candidate
+    } else if (!main || compareAccountQuotaSnapshots(candidate, main) > 0) {
+      main = candidate
+    }
+  }
+  return { main, spark }
+}
+
+/** Positive when `a` is a better account-wide snapshot than `b` (weekly-first). */
+function compareAccountQuotaSnapshots(a: AccountQuotaPick, b: AccountQuotaPick): number {
   const aSeven = a.token.rateLimits?.sevenDay
   const bSeven = b.token.rateLimits?.sevenDay
   const aFive = a.token.rateLimits?.fiveHour
   const bFive = b.token.rateLimits?.fiveHour
 
-  const aReset = Math.max(normalizeResetAtMs(aSeven?.resetsAt), normalizeResetAtMs(aFive?.resetsAt))
-  const bReset = Math.max(normalizeResetAtMs(bSeven?.resetsAt), normalizeResetAtMs(bFive?.resetsAt))
-  if (aReset !== bReset) return aReset - bReset
+  // Prefer later weekly reset, then higher weekly %; five-hour only as weak tiebreak.
+  const aWeekReset = normalizeResetAtMs(aSeven?.resetsAt)
+  const bWeekReset = normalizeResetAtMs(bSeven?.resetsAt)
+  if (aWeekReset !== bWeekReset) return aWeekReset - bWeekReset
 
-  const aUsed = Math.max(aSeven?.usedPercent ?? -1, aFive?.usedPercent ?? -1)
-  const bUsed = Math.max(bSeven?.usedPercent ?? -1, bFive?.usedPercent ?? -1)
-  if (aUsed !== bUsed) return aUsed - bUsed
+  const aWeekUsed = aSeven?.usedPercent ?? -1
+  const bWeekUsed = bSeven?.usedPercent ?? -1
+  if (aWeekUsed !== bWeekUsed) return aWeekUsed - bWeekUsed
+
+  const aFiveReset = normalizeResetAtMs(aFive?.resetsAt)
+  const bFiveReset = normalizeResetAtMs(bFive?.resetsAt)
+  if (aFiveReset !== bFiveReset) return aFiveReset - bFiveReset
+
+  const aFiveUsed = aFive?.usedPercent ?? -1
+  const bFiveUsed = bFive?.usedPercent ?? -1
+  if (aFiveUsed !== bFiveUsed) return aFiveUsed - bFiveUsed
 
   return a.mtimeMs - b.mtimeMs
 }

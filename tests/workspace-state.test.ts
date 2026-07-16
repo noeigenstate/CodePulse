@@ -1136,8 +1136,9 @@ test('StatusHub keeps exact context data when later estimated token snapshots ar
   })
 
   const claude = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
-  assert.equal(claude?.token?.input, 50_000)
-  assert.equal(claude?.token?.total, 51_000)
+  // Exact context (and matching usage totals) must not be clobbered by estimated patches.
+  assert.equal(claude?.token?.input, 210_000)
+  assert.equal(claude?.token?.total, 212_000)
   assert.equal(claude?.token?.contextUsedPercent, 21)
   assert.equal(claude?.token?.contextWindow, 1_000_000)
   assert.equal(claude?.token?.accuracy, 'exact')

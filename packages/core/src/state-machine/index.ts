@@ -249,11 +249,15 @@ function mergeToken(
     next.quotaBuckets = mergeQuotaBuckets(current?.quotaBuckets, patch.quotaBuckets, capturedAt)
   }
 
-  if (patch.input !== undefined) next.input = patch.input
-  if (patch.cachedInput !== undefined) next.cachedInput = patch.cachedInput
-  if (patch.output !== undefined) next.output = patch.output
-  if (patch.reasoningOutput !== undefined) next.reasoningOutput = patch.reasoningOutput
-  if (patch.total !== undefined) next.total = patch.total
+  // When context is exact, do not let estimated snapshots clobber usage fields either
+  // (avoids totals disagreeing with the exact context bar).
+  if (!keepExactContext) {
+    if (patch.input !== undefined) next.input = patch.input
+    if (patch.cachedInput !== undefined) next.cachedInput = patch.cachedInput
+    if (patch.output !== undefined) next.output = patch.output
+    if (patch.reasoningOutput !== undefined) next.reasoningOutput = patch.reasoningOutput
+    if (patch.total !== undefined) next.total = patch.total
+  }
   if (patch.contextUsedPercent !== undefined && !keepExactContext) {
     next.contextUsedPercent = patch.contextUsedPercent
     next.contextCompressed = detectContextCompressed(current, patch)

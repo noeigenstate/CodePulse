@@ -13,7 +13,7 @@
 import { watch, type FSWatcher } from 'node:fs'
 import { readdir, readFile, stat, open } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, isAbsolute, join } from 'node:path'
 import type { TokenPayload, TurnTiming } from '@codepulse/shared'
 import type { StatusHub } from '@codepulse/core'
 import {
@@ -25,6 +25,7 @@ import {
 } from '@codepulse/adapters'
 import { readCodexRolloutSnapshotFromFile } from './quota-watcher.js'
 import { mergeClaudeContextWithQuota, resolveClaudeAccountQuota } from './claude-quota.js'
+import { resolveKimiAccountQuota, type KimiQuotaSnapshot } from './kimi-quota.js'
 import { WorkspacePathResolver } from './workspace-path.js'
 
 const MAX_CODEX_FILES = 80
@@ -37,6 +38,10 @@ const CODEX_TAIL = 4 * 1024 * 1024
  * 仍要求本机有 codex 进程，避免把历史沉寂项目拉出来。
  */
 const CODEX_LIVE_MS = 5 * 60_000
+/** Kimi has no active-session registry; recent wire activity plus a live process is authoritative. */
+const KIMI_LIVE_MS = 5 * 60_000
+/** Kimi's account endpoint is independent of wire activity; avoid polling it every steady scan. */
+const KIMI_QUOTA_REFRESH_MS = 30_000
 /** 进程在线但完全无近期写入时，取最近一份 rollout 只刷新账号额度（不复活多项目卡片）。 */
 const CODEX_QUOTA_FALLBACK_MS = 48 * 60 * 60_000
 /** Fewer boot rescans → less mutex pile-up; 0 + 0.5s + 2s still catches late writers. */
@@ -59,6 +64,7 @@ export interface SessionSyncOptions {
   hub: StatusHub
   codexHome?: string
   grokHome?: string
+  kimiHome?: string
   claudeHome?: string
   /**
    * 用户主目录（OAuth credentials + `~/.codepulse/claude-quota.json`）。
@@ -70,6 +76,10 @@ export interface SessionSyncOptions {
   disableWatch?: boolean
   /** 测试注入：是否视为本机有 Codex CLI 进程 */
   codexProcessAlive?: () => boolean | Promise<boolean>
+  /** Test seam for Kimi's process-level active-session guard. */
+  kimiProcessAlive?: () => boolean | Promise<boolean>
+  /** Test seam for Kimi's managed account-usage endpoint. */
+  kimiQuotaResolver?: () => Promise<KimiQuotaSnapshot | undefined>
   /** 测试注入：Grok/Claude session 的 pid 是否存活 */
   isPidAlive?: (pid: number) => boolean
   /** 测试/嵌入时可替换 realpath 解析器。 */
@@ -77,21 +87,24 @@ export interface SessionSyncOptions {
 }
 
 /** A CLI source that can be scanned independently after a filesystem change. */
-export type SessionSyncSource = 'codex' | 'grok' | 'claude_code'
+export type SessionSyncSource = 'codex' | 'grok' | 'claude_code' | 'kimi'
 
 /** Full-scan source set used for boot, steady polling, and explicit refreshes. */
-const ALL_SYNC_SOURCES: readonly SessionSyncSource[] = ['codex', 'grok', 'claude_code']
+const ALL_SYNC_SOURCES: readonly SessionSyncSource[] = ['codex', 'grok', 'claude_code', 'kimi']
 
 /** Hydrates live CLI sessions into StatusHub from disk while avoiding historical sessions. */
 export class SessionSyncService {
   private readonly hub: StatusHub
   private readonly codexHome: string
   private readonly grokHome: string
+  private readonly kimiHome: string
   private readonly claudeHome: string
   private readonly userHome: string
   private readonly now: () => number
   private readonly disableWatch: boolean
   private readonly codexProcessAlive: () => boolean | Promise<boolean>
+  private readonly kimiProcessAlive: () => boolean | Promise<boolean>
+  private readonly kimiQuotaResolver: () => Promise<KimiQuotaSnapshot | undefined>
   private readonly pidAlive: (pid: number) => boolean
   /** Canonicalizes aliases before dedupe keys and fingerprints are calculated. */
   private readonly workspacePaths: Pick<WorkspacePathResolver, 'resolve'>
@@ -104,6 +117,8 @@ export class SessionSyncService {
   private running = false
   private stopped = false
   private lastLogAt = 0
+  private kimiQuota?: KimiQuotaSnapshot
+  private nextKimiQuotaRefreshAt = 0
   /** sessionKey → full fingerprint (activity + quota) of last ingested payload */
   private fingerprints = new Map<string, string>()
   /** sessionKey → activity-only fingerprint (mtime/context; excludes rate limits) */
@@ -117,11 +132,23 @@ export class SessionSyncService {
     this.userHome = options.userHome ?? homedir()
     this.codexHome = options.codexHome ?? process.env.CODEX_HOME ?? join(this.userHome, '.codex')
     this.grokHome = options.grokHome ?? process.env.GROK_HOME ?? join(this.userHome, '.grok')
+    this.kimiHome =
+      options.kimiHome ?? process.env.KIMI_CODE_HOME ?? join(this.userHome, '.kimi-code')
     this.claudeHome =
       options.claudeHome ?? process.env.CLAUDE_HOME ?? join(this.userHome, '.claude')
     this.now = options.now ?? Date.now
     this.disableWatch = options.disableWatch ?? false
     this.codexProcessAlive = options.codexProcessAlive ?? (() => isCliProcessAlive('codex'))
+    this.kimiProcessAlive = options.kimiProcessAlive ?? (() => isCliProcessAlive('kimi'))
+    this.kimiQuotaResolver =
+      options.kimiQuotaResolver ??
+      (() =>
+        resolveKimiAccountQuota({
+          kimiHome: this.kimiHome,
+          userHome: this.userHome,
+          now: () => this.now(),
+          timeoutMs: 1_200,
+        }))
     this.pidAlive = options.isPidAlive ?? isPidAlive
     this.workspacePaths = options.workspacePathResolver ?? new WorkspacePathResolver()
     this.firstSync = new Promise<void>((resolve) => {
@@ -214,6 +241,8 @@ export class SessionSyncService {
       { root: join(this.grokHome, 'sessions'), source: 'grok' },
       { root: join(this.grokHome, 'active_sessions.json'), source: 'grok' },
       { root: join(this.grokHome, 'logs'), source: 'grok' },
+      { root: join(this.kimiHome, 'sessions'), source: 'kimi' },
+      { root: join(this.kimiHome, 'session_index.jsonl'), source: 'kimi' },
       { root: join(this.claudeHome, 'sessions'), source: 'claude_code' },
       { root: join(this.claudeHome, 'projects'), source: 'claude_code' },
     ]
@@ -273,18 +302,20 @@ export class SessionSyncService {
         codex: 0,
         grok: 0,
         claude_code: 0,
+        kimi: 0,
       }
       await Promise.all(
         sources.map(async (source) => {
           if (source === 'codex') counts.codex = await this.syncCodex()
           else if (source === 'grok') counts.grok = await this.syncGrok()
+          else if (source === 'kimi') counts.kimi = await this.syncKimi()
           else counts.claude_code = await this.syncClaude()
         }),
       )
       const elapsed = this.now() - t0
       if (reason !== 'steady' || this.now() - this.lastLogAt > 60_000) {
         console.log(
-          `[codepulse] session-sync (${reason}; ${sources.join(',')}): codex=${counts.codex} grok=${counts.grok} claude=${counts.claude_code} in ${elapsed}ms`,
+          `[codepulse] session-sync (${reason}; ${sources.join(',')}): codex=${counts.codex} grok=${counts.grok} claude=${counts.claude_code} kimi=${counts.kimi} in ${elapsed}ms`,
         )
         this.lastLogAt = this.now()
       }
@@ -300,28 +331,59 @@ export class SessionSyncService {
     if (!(await this.codexProcessAlive())) return 0
 
     const sessionsRoot = join(this.codexHome, 'sessions')
-    let files = await listLiveCodexRollouts(sessionsRoot, this.now(), CODEX_LIVE_MS)
+    const now = this.now()
+    const files = await listLiveCodexRollouts(sessionsRoot, now, CODEX_LIVE_MS)
     // No recently-active projects: still refresh account quota from the freshest
     // rollout, but do not resurrect multi-project cards from hours-old sessions.
-    let quotaOnlyFallback = false
     if (files.length === 0) {
-      const fallback = await listLiveCodexRollouts(
-        sessionsRoot,
-        this.now(),
-        CODEX_QUOTA_FALLBACK_MS,
-      )
-      if (fallback[0]) {
-        files = [fallback[0]]
-        quotaOnlyFallback = true
+      const fallback = await listLiveCodexRollouts(sessionsRoot, now, CODEX_QUOTA_FALLBACK_MS)
+      const quotaRows: CodexQuotaRow[] = []
+      for (const file of fallback) {
+        try {
+          const rollout = await readCodexRolloutSnapshotFromFile(file.path)
+          const token = rollout.token ?? (await readCodexTokenFallback(file.path))
+          if (!token?.rateLimits) continue
+          quotaRows.push({ file, token })
+          // Main Codex weekly is the quota-only panel's preferred family. Stop
+          // once found; Spark-only rows remain a fallback when no main row exists.
+          if (!tokenLooksLikeSpark(token)) break
+        } catch (err) {
+          console.error('[codepulse] session-sync codex quota fallback failed', file.path, err)
+        }
       }
+      const accountFamilies = pickSharedCodexAccountQuotaFamilies(quotaRows)
+      const accountPrimary = accountFamilies.main ?? accountFamilies.spark
+      const token = accountPrimary?.token
+      if (!token?.rateLimits) return 0
+      const mapKey = 'codex:quota-only'
+      const fp = fingerprint('codex', 'quota-only', '', 0, token, undefined)
+      if (this.fingerprints.get(mapKey) === fp) return 0
+      this.fingerprints.set(mapKey, fp)
+      this.hub.ingest({
+        id: `session-sync:codex:quota:${now}`,
+        source: 'codex',
+        eventType: 'token_snapshot',
+        token,
+        tokenSourcePath: accountPrimary?.path,
+        timestamp: now,
+        internal: { sessionSync: true, quotaRefresh: true },
+      })
+      return 1
     }
-    const now = this.now()
+
     let count = 0
     // Dedupe by workspace: keep the freshest *live* file per cwd.
     const byCwd = new Map<string, CodexWorkspaceCandidate>()
+    // Account limits are independent of workspace dedupe. A newer parallel
+    // rollout may have model/context data before its first rate_limits row.
+    const quotaRows: CodexQuotaRow[] = []
 
     for (const file of files) {
       try {
+        const rollout = await readCodexRolloutSnapshotFromFile(file.path)
+        const token = rollout.token ?? (await readCodexTokenFallback(file.path))
+        if (token?.rateLimits) quotaRows.push({ file, token })
+
         const meta = await readCodexRolloutMeta(file.path)
         let cwd = meta.cwd
         if (!cwd) cwd = await findCwdInTail(file.path)
@@ -329,8 +391,6 @@ export class SessionSyncService {
         // Resolve aliases before project dedupe/fingerprints so one project has one hub key.
         cwd = await this.workspacePaths.resolve(cwd)
 
-        const rollout = await readCodexRolloutSnapshotFromFile(file.path)
-        const token = rollout.token ?? (await readCodexTokenFallback(file.path))
         const modelConfig = rollout.model
           ? {
               model: rollout.model,
@@ -358,27 +418,8 @@ export class SessionSyncService {
     }
 
     // Account weekly/5h quotas are global — pick best main + Spark separately.
-    const accountFamilies = pickSharedCodexAccountQuotaFamilies([...byCwd.values()])
+    const accountFamilies = pickSharedCodexAccountQuotaFamilies(quotaRows)
     const accountPrimary = accountFamilies.main ?? accountFamilies.spark
-
-    if (quotaOnlyFallback) {
-      const token = accountPrimary?.token
-      if (!token?.rateLimits) return 0
-      const mapKey = 'codex:quota-only'
-      const fp = fingerprint('codex', 'quota-only', '', 0, token, undefined)
-      if (this.fingerprints.get(mapKey) === fp) return 0
-      this.fingerprints.set(mapKey, fp)
-      this.hub.ingest({
-        id: `session-sync:codex:quota:${now}`,
-        source: 'codex',
-        eventType: 'token_snapshot',
-        token,
-        tokenSourcePath: accountPrimary?.path,
-        timestamp: now,
-        internal: { sessionSync: true, quotaRefresh: true },
-      })
-      return 1
-    }
 
     for (const { file, meta, token, turnTiming } of byCwd.values()) {
       const sessionId = meta.sessionId ?? sessionIdFromRolloutName(file.path)
@@ -533,9 +574,94 @@ export class SessionSyncService {
     }
   }
 
+  /** Hydrates recently active Kimi Code sessions from their local wire logs. */
+  private async syncKimi(): Promise<number> {
+    if (!(await this.kimiProcessAlive())) return 0
+
+    const now = this.now()
+    const accountQuota = await this.getKimiAccountQuota(now)
+    const indexed = await readKimiSessionIndex(this.kimiHome)
+    const byCwd = new Map<string, KimiSessionSnapshot>()
+    for (const row of indexed.slice(-100)) {
+      const snapshot = await readKimiSessionSnapshot(row)
+      if (!snapshot || now - snapshot.mtimeMs > KIMI_LIVE_MS) continue
+      snapshot.cwd = await this.workspacePaths.resolve(snapshot.cwd)
+      const key = normalizePathKey(snapshot.cwd)
+      const previous = byCwd.get(key)
+      if (!previous || snapshot.mtimeMs >= previous.mtimeMs) byCwd.set(key, snapshot)
+    }
+
+    let count = 0
+    for (const snapshot of byCwd.values()) {
+      const payloadToken = mergeKimiContextWithQuota(snapshot.token, accountQuota)
+      const mapKey = `kimi:${snapshot.sessionId}`
+      const skip = this.classifyUnchanged(
+        mapKey,
+        'kimi',
+        snapshot.sessionId,
+        snapshot.cwd,
+        snapshot.mtimeMs,
+        payloadToken,
+        snapshot.model,
+        snapshot.reasoningEffort,
+        snapshot.modelObservedAt,
+        snapshot.turnTiming,
+      )
+      if (skip === 'skip') continue
+
+      this.ingestHydrate({
+        source: 'kimi',
+        sessionId: snapshot.sessionId,
+        cwd: snapshot.cwd,
+        model: snapshot.model,
+        modelObservedAt: snapshot.modelObservedAt,
+        reasoningEffort: snapshot.reasoningEffort,
+        reasoningEffortObservedAt: snapshot.modelObservedAt,
+        turnTiming: snapshot.turnTiming,
+        token: payloadToken,
+        tokenSourcePath: snapshot.sourcePath,
+        now,
+        quotaOnly: skip === 'quota',
+        activityRefresh: skip === 'activity',
+      })
+      count += 1
+    }
+
+    // Keep the account meters visible while Kimi is open even before a project writes a wire row.
+    if (byCwd.size === 0 && accountQuota?.rateLimits) {
+      const mapKey = 'kimi:quota-only'
+      const token = mergeKimiContextWithQuota(undefined, accountQuota)
+      const fp = fingerprint('kimi', 'quota-only', '', 0, token, undefined)
+      if (this.fingerprints.get(mapKey) !== fp) {
+        this.fingerprints.set(mapKey, fp)
+        this.hub.ingest({
+          id: `session-sync:kimi:quota:${now}`,
+          source: 'kimi',
+          eventType: 'token_snapshot',
+          token,
+          timestamp: now,
+          internal: { sessionSync: true, quotaRefresh: true },
+        })
+        count += 1
+      }
+    }
+    return count
+  }
+
+  /** Returns the cached Kimi quota and refreshes it at a bounded account-level cadence. */
+  private async getKimiAccountQuota(now: number): Promise<KimiQuotaSnapshot | undefined> {
+    if (now < this.nextKimiQuotaRefreshAt) return this.kimiQuota
+    this.nextKimiQuotaRefreshAt = now + KIMI_QUOTA_REFRESH_MS
+    const refreshed = await this.kimiQuotaResolver().catch(() => undefined)
+    if (refreshed) this.kimiQuota = refreshed
+    return this.kimiQuota
+  }
+
   /**
-   * Claude Code：`~/.claude/sessions/{pid}.json` 列出当前交互会话。
-   * 仅同步 pid 仍存活的条目；上下文从 projects transcript 尾部读取。
+   * Hydrates live Claude Code sessions listed under `~/.claude/sessions`.
+   *
+   * Only entries whose process remains alive are accepted; context and timing
+   * are recovered from the corresponding project transcript tail.
    */
   private async syncClaude(): Promise<number> {
     const now = this.now()
@@ -1548,6 +1674,180 @@ function pickNumberEnv(value: string | undefined): number | undefined {
 
 // ─── Grok ────────────────────────────────────────────────────────────────────
 
+// Kimi local-session helpers.
+interface KimiSessionIndexRow {
+  sessionId: string
+  sessionDir: string
+  cwd: string
+}
+
+interface KimiSessionSnapshot extends KimiSessionIndexRow {
+  mtimeMs: number
+  sourcePath: string
+  model?: string
+  modelObservedAt?: number
+  reasoningEffort?: string
+  token?: TokenPayload
+  turnTiming?: TurnTiming
+}
+
+/** Reads Kimi's append-only session index and ignores partial rows. */
+async function readKimiSessionIndex(kimiHome: string): Promise<KimiSessionIndexRow[]> {
+  let text: string
+  try {
+    text = await readFile(join(kimiHome, 'session_index.jsonl'), 'utf8')
+  } catch {
+    return []
+  }
+  const rows: KimiSessionIndexRow[] = []
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue
+    try {
+      const record = JSON.parse(line) as Record<string, unknown>
+      const sessionId = stringVal(record.sessionId) ?? stringVal(record.session_id)
+      const rawSessionDir = stringVal(record.sessionDir) ?? stringVal(record.session_dir)
+      const cwd = stringVal(record.workDir) ?? stringVal(record.cwd)
+      if (!sessionId || !rawSessionDir || !cwd) continue
+      rows.push({
+        sessionId,
+        sessionDir: isAbsolute(rawSessionDir) ? rawSessionDir : join(kimiHome, rawSessionDir),
+        cwd,
+      })
+    } catch {
+      // The final index line may still be in flight.
+    }
+  }
+  return rows
+}
+
+/** Parses model, thinking depth, context occupancy, and turn timing from one wire tail. */
+async function readKimiSessionSnapshot(
+  row: KimiSessionIndexRow,
+): Promise<KimiSessionSnapshot | undefined> {
+  const sourcePath = join(row.sessionDir, 'agents', 'main', 'wire.jsonl')
+  const mtimeMs = await readFileMtime(sourcePath)
+  if (mtimeMs == null) return undefined
+  let text: string
+  try {
+    text = await readTailFile(sourcePath, 1024 * 1024)
+  } catch {
+    return undefined
+  }
+
+  let usageRecord: Record<string, unknown> | undefined
+  let requestRecord: Record<string, unknown> | undefined
+  let usageRequestRecord: Record<string, unknown> | undefined
+  let promptAt: number | undefined
+  let stepBeginAt: number | undefined
+  let stepEndAt: number | undefined
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue
+    try {
+      const record = JSON.parse(line) as Record<string, unknown>
+      const type = stringVal(record.type)
+      const time = num(record.time)
+      if (type === 'turn.prompt' && time != null) {
+        promptAt = time
+        stepBeginAt = undefined
+        stepEndAt = undefined
+      } else if (type === 'usage.record') {
+        usageRecord = record
+        usageRequestRecord = requestRecord
+      } else if (type === 'llm.request') {
+        requestRecord = record
+      } else if (type === 'context.append_loop_event') {
+        const event = asRecord(record.event)
+        const eventType = stringVal(event?.type)
+        if (eventType === 'step.begin' && time != null) stepBeginAt = time
+        if (eventType === 'step.end' && time != null) stepEndAt = time
+      }
+    } catch {
+      // A tail can begin in the middle of one JSON row.
+    }
+  }
+
+  const nativeUsage = asRecord(usageRecord?.usage)
+  const inputOther = num(nativeUsage?.inputOther) ?? 0
+  const cacheRead = num(nativeUsage?.inputCacheRead) ?? 0
+  const cacheCreation = num(nativeUsage?.inputCacheCreation) ?? 0
+  const output = num(nativeUsage?.output)
+  const input = inputOther + cacheRead + cacheCreation
+  const pairedRemaining = num(usageRequestRecord?.maxTokens)
+  const latestRemaining = num(requestRecord?.maxTokens)
+  const contextWindow = pairedRemaining != null ? input + pairedRemaining : undefined
+  const contextUsed =
+    contextWindow != null && latestRemaining != null
+      ? Math.min(contextWindow, Math.max(0, contextWindow - latestRemaining))
+      : input
+  const token = nativeUsage
+    ? {
+        input,
+        cachedInput: cacheRead,
+        output,
+        total: input + (output ?? 0),
+        contextWindow,
+        contextUsedPercent:
+          contextWindow && contextWindow > 0
+            ? Math.min(100, Math.max(0, (contextUsed / contextWindow) * 100))
+            : undefined,
+        accuracy: 'estimated' as const,
+      }
+    : undefined
+  const model =
+    stringVal(requestRecord?.modelAlias) ??
+    stringVal(usageRecord?.model) ??
+    stringVal(requestRecord?.model)
+  const modelObservedAt = num(requestRecord?.time) ?? num(usageRecord?.time)
+  const reasoningEffort = normalizeKimiEffort(stringVal(requestRecord?.thinkingEffort))
+  const active = stepBeginAt != null && (stepEndAt == null || stepBeginAt > stepEndAt)
+  const completedAt = !active && promptAt != null && stepEndAt != null ? stepEndAt : undefined
+  const turnTiming = promptAt
+    ? active
+      ? { state: 'active' as const, startedAt: promptAt, observedAt: stepBeginAt ?? mtimeMs }
+      : completedAt != null
+        ? {
+            state: 'completed' as const,
+            startedAt: promptAt,
+            elapsedMs: Math.max(0, completedAt - promptAt),
+            observedAt: completedAt,
+          }
+        : undefined
+    : undefined
+
+  return {
+    ...row,
+    mtimeMs,
+    sourcePath,
+    model,
+    modelObservedAt,
+    reasoningEffort,
+    token,
+    turnTiming,
+  }
+}
+
+/** Overlays Kimi's account-wide plan limits without replacing session context usage. */
+function mergeKimiContextWithQuota(
+  context: TokenPayload | undefined,
+  quota: KimiQuotaSnapshot | undefined,
+): TokenPayload {
+  const base = context ?? { accuracy: 'unknown' as const }
+  if (!quota) return base
+  return {
+    ...base,
+    rateLimits: quota.rateLimits,
+    rateLimitId: 'kimi-code',
+    rateLimitName: 'Kimi Code',
+    accuracy: base.accuracy === 'exact' ? 'exact' : 'estimated',
+  }
+}
+
+function normalizeKimiEffort(value: string | undefined): string | undefined {
+  const normalized = value?.trim().toLowerCase()
+  return normalized && /^[a-z][a-z0-9_-]{0,31}$/.test(normalized) ? normalized : undefined
+}
+
+// Grok local-session helpers.
 async function readGrokActiveSessions(
   grokHome: string,
 ): Promise<Array<{ sessionId: string; cwd: string; pid?: number }>> {
@@ -1592,7 +1892,7 @@ const cliAliveCache = new Map<string, { value: boolean; at: number }>()
  * Avoids resurfacing disk history after the user has closed every terminal.
  * Cached briefly so 3.5s steady scans do not re-run tasklist every cycle.
  */
-async function isCliProcessAlive(kind: 'codex' | 'grok'): Promise<boolean> {
+async function isCliProcessAlive(kind: 'codex' | 'grok' | 'kimi'): Promise<boolean> {
   const now = Date.now()
   const cached = cliAliveCache.get(kind)
   if (cached && now - cached.at < CLI_ALIVE_CACHE_MS) return cached.value
@@ -1604,7 +1904,7 @@ async function isCliProcessAlive(kind: 'codex' | 'grok'): Promise<boolean> {
       const { promisify } = await import('node:util')
       const execFileAsync = promisify(execFile)
       // tasklist is always available; filter by image name.
-      const image = kind === 'codex' ? 'codex.exe' : 'grok.exe'
+      const image = `${kind}.exe`
       const { stdout } = await execFileAsync('tasklist', ['/FI', `IMAGENAME eq ${image}`, '/NH'], {
         windowsHide: true,
         timeout: CLI_ALIVE_TIMEOUT_MS,

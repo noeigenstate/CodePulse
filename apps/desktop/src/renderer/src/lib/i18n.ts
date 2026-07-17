@@ -54,6 +54,7 @@ export interface SettingsCopy {
   codex: string
   claudeCode: string
   grok: string
+  kimi: string
 }
 
 export interface StatsCopy {
@@ -255,15 +256,15 @@ const UI_COPY: Record<Locale, UiCopy> = {
     unknownProject: '未识别项目',
     emptyDashboard: {
       title: '等待 CLI 任务',
-      body: '开始 Claude Code、Codex 或 Grok 任务后，对应分屏会自动出现；只用一个 CLI 时只显示一栏。',
+      body: '开始 Claude Code、Codex、Grok 或 Kimi 任务后，对应分屏会自动出现；只用一个 CLI 时只显示一栏。',
       settingsHiddenTitle: '所有 CLI 工具已隐藏',
       settingsHiddenBody: '打开右上角设置，重新选择要显示的 CLI 工具。',
     },
     agentSetupReminder: {
       title: '配置与权限检查',
-      body: 'CodePulse 每次打开都会检查本机 Claude / Codex / Grok 配置。请先处理下面的问题，否则任务状态可能无法同步。',
+      body: 'CodePulse 每次打开都会检查本机 Claude / Codex / Grok / Kimi 配置。请先处理下面的问题，否则任务状态可能无法同步。',
       firstRunNotice:
-        '首次打开时，CodePulse 会在 ~/.claude/settings.json、~/.codex/hooks.json、~/.codex/config.toml 和 ~/.grok/hooks/codepulse.json 写入必要的 CodePulse hook 配置。',
+        '首次打开时，CodePulse 会在 ~/.claude/settings.json、~/.codex/hooks.json、~/.codex/config.toml、~/.grok/hooks/codepulse.json 和 ~/.kimi-code/config.toml 写入必要的 CodePulse hook 配置。',
       cleanupNotice:
         '卸载 CodePulse 时，安装器会自动删除这些 CodePulse hook 和 statusLine 配置；用户原有的其它 hook、模型、插件和偏好设置会保留。',
       missingCli: '未检测到命令行工具',
@@ -337,6 +338,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
       codex: 'Codex',
       claudeCode: 'Claude Code',
       grok: 'Grok',
+      kimi: 'Kimi Code',
     },
     stats: {
       title: '本地开发数据统计',
@@ -434,15 +436,15 @@ const UI_COPY: Record<Locale, UiCopy> = {
     unknownProject: 'Unknown project',
     emptyDashboard: {
       title: 'Waiting for CLI tasks',
-      body: 'Panels appear when you start Claude Code, Codex, or Grok tasks. If you only use one CLI, only that panel is shown.',
+      body: 'Panels appear when you start Claude Code, Codex, Grok, or Kimi tasks. If you only use one CLI, only that panel is shown.',
       settingsHiddenTitle: 'All CLI tools are hidden',
       settingsHiddenBody: 'Open settings in the upper-right corner to choose tools to display.',
     },
     agentSetupReminder: {
       title: 'Setup and permission check',
-      body: 'CodePulse checks local Claude / Codex / Grok setup every time it opens. Resolve these items first or task status may not sync.',
+      body: 'CodePulse checks local Claude / Codex / Grok / Kimi setup every time it opens. Resolve these items first or task status may not sync.',
       firstRunNotice:
-        'On first launch, CodePulse writes the required CodePulse hook configuration to ~/.claude/settings.json, ~/.codex/hooks.json, ~/.codex/config.toml, and ~/.grok/hooks/codepulse.json.',
+        'On first launch, CodePulse writes the required hook configuration to ~/.claude/settings.json, ~/.codex/hooks.json, ~/.codex/config.toml, ~/.grok/hooks/codepulse.json, and ~/.kimi-code/config.toml.',
       cleanupNotice:
         'When CodePulse is uninstalled, the installer removes those CodePulse hooks and statusLine entries automatically. Your other hooks, models, plugins, and preferences are preserved.',
       missingCli: 'CLI not detected',
@@ -517,6 +519,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
       codex: 'Codex',
       claudeCode: 'Claude Code',
       grok: 'Grok',
+      kimi: 'Kimi Code',
     },
     stats: {
       title: 'Local development analytics',

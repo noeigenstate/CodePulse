@@ -5,6 +5,7 @@ import {
   fromClaudeStatusLine,
   fromCodexHook,
   fromGrokHook,
+  fromKimiHook,
 } from '@codepulse/adapters'
 
 test('Claude status line sums current_usage cache tokens into context input', () => {
@@ -222,5 +223,33 @@ test('Grok hook maps signals-style context and weekly credit rate limits', () =>
   assert.equal(event?.token?.rateLimits?.sevenDay?.usedPercent, 1)
   assert.equal(event?.token?.rateLimits?.sevenDay?.resetsAt, 1_784_000_000)
   assert.equal(event?.token?.rateLimitName, 'SuperGrok')
+  assert.equal(event?.token?.accuracy, 'estimated')
+})
+
+test('Kimi hook maps native effort and injected local context usage', () => {
+  const event = fromKimiHook({
+    hook_event_name: 'UserPromptSubmit',
+    session_id: 'kimi-session',
+    cwd: 'E:/work/kimi',
+    model: 'kimi-code/k3',
+    thinking_effort: 'max',
+    prompt: 'implement the feature',
+    usage: {
+      input_tokens: 50_000,
+      cached_input_tokens: 48_000,
+      output_tokens: 400,
+      total_tokens: 50_400,
+    },
+    context_window_size: 200_000,
+    context_used_percent: 25,
+  })
+
+  assert.equal(event?.source, 'kimi')
+  assert.equal(event?.eventType, 'prompt_submit')
+  assert.equal(event?.model, 'kimi-code/k3')
+  assert.equal(event?.reasoningEffort, 'max')
+  assert.equal(event?.token?.input, 50_000)
+  assert.equal(event?.token?.cachedInput, 48_000)
+  assert.equal(event?.token?.contextUsedPercent, 25)
   assert.equal(event?.token?.accuracy, 'estimated')
 })

@@ -211,7 +211,8 @@ function ToolToggle({
 function toolLabel(tool: CliToolType, copy: SettingsCopy): string {
   if (tool === 'codex') return copy.codex
   if (tool === 'claude_code') return copy.claudeCode
-  return copy.grok
+  if (tool === 'grok') return copy.grok
+  return copy.kimi
 }
 
 function CloseIcon(): JSX.Element {

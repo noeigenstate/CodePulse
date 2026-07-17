@@ -1,6 +1,6 @@
 # CodePulse 同步优化 Vault
 
-> 用 Obsidian 打开本目录（`docs/vault`）即可作为本地知识库浏览。
+> 用 Obsidian 打开本目录（`docs/CodePulse`）即可作为本地知识库浏览。
 
 ## 笔记索引
 
@@ -18,6 +18,7 @@
 
 ## 波次
 
-- **第一波（进行中）**：扫盘/debounce/进程缓存 + status 合并 + soft-reset 统一
-- **第二波**：SQLite 异步过滤、Codex reader 合一、Claude 窗口、时钟/store
-- **第三波**：按源扫盘、focus 补扫、路径 realpath、列表虚拟化
+- **第一波（已完成）**：扫盘/debounce/进程缓存 + status 合并 + soft-reset 统一
+- **第二波（已完成）**：internal SQLite 过滤、Codex reader 合一、Claude 窗口、时钟/store
+- **第三波（已完成）**：按源扫盘、focus 补扫、路径 realpath、列表虚拟化
+- **后续**：评估 lifecycle SQLite 异步批写（不改变统计语义）

@@ -1046,6 +1046,269 @@ test('SessionSyncService shares highest same-window weekly % across projects (no
   }
 })
 
+test('SessionSyncService keeps Codex weekly quota from a parallel same-workspace rollout', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-parallel-quota-')
+  const sessions = join(home, 'sessions', '2026', '07', '17')
+  const cwd = 'E:/work/parallel-codex'
+  const quotaId = '019f9000-aaaa-bbbb-cccc-ddddeeeeff01'
+  const modelId = '019f9000-aaaa-bbbb-cccc-ddddeeeeff02'
+  const futureReset = Math.floor(Date.now() / 1000) + 5 * 24 * 60 * 60
+  const olderModelAt = new Date(Date.now() - 60_000).toISOString()
+  const newerModelAt = new Date().toISOString()
+  await mkdir(sessions, { recursive: true })
+
+  const quotaRollout = join(sessions, `rollout-2026-07-17T01-00-00-${quotaId}.jsonl`)
+  await writeFile(
+    quotaRollout,
+    [
+      JSON.stringify({ type: 'session_meta', payload: { id: quotaId, cwd } }),
+      JSON.stringify({
+        timestamp: olderModelAt,
+        type: 'turn_context',
+        payload: { model: 'gpt-5.6-sol', effort: 'high' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 256000,
+            last_token_usage: { input_tokens: 20_000, output_tokens: 10, total_tokens: 20_010 },
+          },
+          rate_limits: {
+            limit_id: 'codex',
+            primary: {
+              used_percent: 42,
+              window_minutes: 10080,
+              resets_at: futureReset,
+            },
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  const modelRollout = join(sessions, `rollout-2026-07-17T01-01-00-${modelId}.jsonl`)
+  await writeFile(
+    modelRollout,
+    [
+      JSON.stringify({ type: 'session_meta', payload: { id: modelId, cwd } }),
+      JSON.stringify({
+        timestamp: newerModelAt,
+        type: 'turn_context',
+        payload: { model: 'gpt-5.6-terra', effort: 'max' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 256000,
+            last_token_usage: { input_tokens: 30_000, output_tokens: 20, total_tokens: 30_020 },
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  const now = new Date()
+  await utimes(quotaRollout, now, now)
+  await utimes(modelRollout, now, now)
+
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: home,
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    codexProcessAlive: () => true,
+  })
+
+  try {
+    await sync.syncNow(['codex'])
+    const agents = hub.snapshot().agents.filter((agent) => agent.agentType === 'codex')
+    assert.equal(agents.length, 1)
+    assert.equal(agents[0]?.model, 'gpt-5.6-terra')
+    assert.equal(agents[0]?.token?.contextUsedPercent, (30_000 / 256_000) * 100)
+    assert.equal(agents[0]?.token?.rateLimits?.sevenDay?.usedPercent, 42)
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService quota fallback skips a newer rollout without rate limits', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-quota-fallback-')
+  const sessions = join(home, 'sessions', '2026', '07', '17')
+  const quotaId = '019f9100-aaaa-bbbb-cccc-ddddeeeeff01'
+  const emptyId = '019f9100-aaaa-bbbb-cccc-ddddeeeeff02'
+  const futureReset = Math.floor(Date.now() / 1000) + 4 * 24 * 60 * 60
+  await mkdir(sessions, { recursive: true })
+
+  const quotaRollout = join(sessions, `rollout-2026-07-17T00-00-00-${quotaId}.jsonl`)
+  await writeFile(
+    quotaRollout,
+    JSON.stringify({
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: { last_token_usage: { input_tokens: 1_000, total_tokens: 1_010 } },
+        rate_limits: {
+          limit_id: 'codex',
+          primary: {
+            used_percent: 31,
+            window_minutes: 10080,
+            resets_at: futureReset,
+          },
+        },
+      },
+    }),
+    'utf8',
+  )
+
+  const emptyRollout = join(sessions, `rollout-2026-07-17T00-01-00-${emptyId}.jsonl`)
+  await writeFile(
+    emptyRollout,
+    JSON.stringify({
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: { last_token_usage: { input_tokens: 2_000, total_tokens: 2_010 } },
+      },
+    }),
+    'utf8',
+  )
+
+  const idleAt = Date.now() - 10 * 60_000
+  await utimes(quotaRollout, new Date(idleAt - 1_000), new Date(idleAt - 1_000))
+  await utimes(emptyRollout, new Date(idleAt), new Date(idleAt))
+
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: home,
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    codexProcessAlive: () => true,
+  })
+
+  try {
+    await sync.syncNow(['codex'])
+    const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.ok(codex)
+    assert.equal(codex?.workspacePath, undefined)
+    assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 31)
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService hydrates Kimi model, effort, context, and native timing', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-kimi-')
+  const sessionId = 'session_kimi_sync'
+  const cwd = 'E:/work/kimi-open'
+  const sessionDir = join(home, 'sessions', 'wd_kimi', sessionId)
+  const agentDir = join(sessionDir, 'agents', 'main')
+  const wirePath = join(agentDir, 'wire.jsonl')
+  const promptAt = Date.now() - 4_000
+  const stepAt = promptAt + 20
+  await mkdir(agentDir, { recursive: true })
+  await writeFile(
+    join(home, 'session_index.jsonl'),
+    `${JSON.stringify({ sessionId, sessionDir, workDir: cwd })}\n`,
+    'utf8',
+  )
+  await writeFile(
+    wirePath,
+    [
+      JSON.stringify({ type: 'turn.prompt', time: promptAt }),
+      JSON.stringify({
+        type: 'context.append_loop_event',
+        event: { type: 'step.begin' },
+        time: stepAt,
+      }),
+      JSON.stringify({
+        type: 'llm.request',
+        modelAlias: 'kimi-code/k3',
+        thinkingEffort: 'max',
+        maxTokens: 150_000,
+        time: stepAt + 1,
+      }),
+      JSON.stringify({
+        type: 'usage.record',
+        model: 'kimi-code/k3',
+        usage: { inputOther: 1_000, inputCacheRead: 49_000, inputCacheCreation: 0, output: 300 },
+        time: stepAt + 2,
+      }),
+      JSON.stringify({
+        type: 'context.append_loop_event',
+        event: { type: 'step.end' },
+        time: stepAt + 3,
+      }),
+      JSON.stringify({
+        type: 'context.append_loop_event',
+        event: { type: 'step.begin' },
+        time: stepAt + 4,
+      }),
+      JSON.stringify({
+        type: 'llm.request',
+        modelAlias: 'kimi-code/k3',
+        thinkingEffort: 'max',
+        maxTokens: 149_700,
+        time: stepAt + 5,
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: join(home, 'no-codex'),
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    kimiHome: home,
+    kimiProcessAlive: () => true,
+    kimiQuotaResolver: async () => ({
+      rateLimits: {
+        fiveHour: { usedPercent: 100, resetsAt: 1_800_000_000, windowMinutes: 300 },
+        sevenDay: { usedPercent: 20, resetsAt: 1_800_604_800, windowMinutes: 10_080 },
+      },
+      updatedAt: Date.now(),
+      source: 'api',
+    }),
+    disableWatch: true,
+  })
+  try {
+    await sync.syncNow(['kimi'])
+    const kimi = hub.snapshot().agents.find((agent) => agent.agentType === 'kimi')
+    assert.ok(kimi)
+    assert.equal(kimi?.model, 'kimi-code/k3')
+    assert.equal(kimi?.reasoningEffort, 'max')
+    assert.equal(kimi?.token?.input, 50_000)
+    assert.equal(kimi?.token?.contextWindow, 200_000)
+    assert.equal(kimi?.token?.contextUsedPercent, 25.15)
+    assert.equal(kimi?.token?.rateLimits?.fiveHour?.usedPercent, 100)
+    assert.equal(kimi?.token?.rateLimits?.sevenDay?.usedPercent, 20)
+    assert.deepEqual(kimi?.turnTiming, {
+      state: 'active',
+      startedAt: promptAt,
+      observedAt: stepAt + 4,
+    })
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
 test('StatusHub does not let same-window weekly % go backwards from stale snapshots', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const future = Math.floor(Date.now() / 1000) + 86_400

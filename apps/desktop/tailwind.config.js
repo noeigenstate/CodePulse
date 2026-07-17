@@ -21,6 +21,7 @@ module.exports = {
           claude: '#FF8A2B',
           codex: '#5B6BFF',
           grok: '#17C083',
+          kimi: '#6D5EF5',
         },
       },
       borderRadius: {

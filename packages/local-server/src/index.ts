@@ -147,6 +147,7 @@ export {
   detectClaudeAgent,
   detectCodexAgent,
   detectGrokAgent,
+  detectKimiAgent,
   type AgentDetectOptions,
 } from './agent-detect.js'
 export {
@@ -154,10 +155,12 @@ export {
   configureClaudeAgent,
   configureCodexAgent,
   configureGrokAgent,
+  configureKimiAgent,
   cleanupAgents,
   cleanupClaudeAgent,
   cleanupCodexAgent,
   cleanupGrokAgent,
+  cleanupKimiAgent,
   publishStableHookLaunchers,
   type AgentConfigurationOptions,
   type AgentConfigurationResult,
@@ -190,6 +193,14 @@ export {
   writeClaudeQuotaCache,
   type ClaudeQuotaSnapshot,
 } from './claude-quota.js'
+export {
+  fetchKimiManagedUsage,
+  kimiQuotaCachePath,
+  normalizeKimiManagedUsage,
+  readKimiQuotaCache,
+  resolveKimiAccountQuota,
+  type KimiQuotaSnapshot,
+} from './kimi-quota.js'
 export {
   defaultLocalAuthPath,
   generateLocalAuthToken,

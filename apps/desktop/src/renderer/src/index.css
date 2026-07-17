@@ -14,6 +14,7 @@
   --claude: #ff8a2b;
   --codex: #5b6bff;
   --grok: #17c083;
+  --kimi: #6d5ef5;
   --radius-card: 20px;
   --radius-badge: 12px;
   --space: 8px;
@@ -173,6 +174,12 @@ body {
     box-shadow:
       var(--shadow-card),
       inset 3px 0 0 var(--grok);
+  }
+
+  .agent-panel[data-agent='kimi'] {
+    box-shadow:
+      var(--shadow-card),
+      inset 3px 0 0 var(--kimi);
   }
 
   .project-tile {
@@ -354,6 +361,11 @@ body {
     background: linear-gradient(180deg, #ecfdf5 0%, #ffffff 100%);
   }
 
+  .agent-brand-icon[data-agent='kimi'] {
+    border-color: rgba(109, 94, 245, 0.28);
+    background: linear-gradient(180deg, #f2efff 0%, #ffffff 100%);
+  }
+
   .meter-fill.brand-claude {
     background: var(--claude);
   }
@@ -364,6 +376,10 @@ body {
 
   .meter-fill.brand-grok {
     background: var(--grok);
+  }
+
+  .meter-fill.brand-kimi {
+    background: var(--kimi);
   }
 
   .meter-fill.warn {
@@ -578,6 +594,10 @@ body {
 
 :root[data-theme='dark'] .agent-brand-icon[data-agent='grok'] {
   background: linear-gradient(180deg, #173a30 0%, var(--surface-solid) 100%);
+}
+
+:root[data-theme='dark'] .agent-brand-icon[data-agent='kimi'] {
+  background: linear-gradient(180deg, #29234f 0%, var(--surface-solid) 100%);
 }
 
 @media (prefers-reduced-transparency: reduce) {

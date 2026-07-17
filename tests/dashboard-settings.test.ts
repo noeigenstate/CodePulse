@@ -27,7 +27,7 @@ test('dashboard settings default to automatic theme selection with every CLI pan
   assert.equal(settings.theme, 'auto')
   assert.deepEqual(
     CLI_TOOL_TYPES.filter((tool) => settings.visibleTools[tool]),
-    ['codex', 'claude_code', 'grok'],
+    ['codex', 'claude_code', 'grok', 'kimi'],
   )
 })
 
@@ -65,6 +65,7 @@ test('dashboard settings preserve saved theme and CLI visibility while filling n
   assert.equal(settings.visibleTools.codex, false)
   assert.equal(settings.visibleTools.claude_code, true)
   assert.equal(settings.visibleTools.grok, true)
+  assert.equal(settings.visibleTools.kimi, true)
 })
 
 test('legacy manual palette selections remain explicit user preferences', () => {
@@ -81,7 +82,7 @@ test('dashboard settings persist changes and apply the selected root theme', () 
   const storage = new MemoryStorage()
   const next = {
     theme: 'dark' as const,
-    visibleTools: { codex: true, claude_code: false, grok: true },
+    visibleTools: { codex: true, claude_code: false, grok: true, kimi: false },
   }
   writeDashboardSettings(storage, next)
 
@@ -95,7 +96,7 @@ test('dashboard settings persist automatic theme selection', () => {
   const storage = new MemoryStorage()
   const next = {
     theme: 'auto' as const,
-    visibleTools: { codex: true, claude_code: true, grok: true },
+    visibleTools: { codex: true, claude_code: true, grok: true, kimi: true },
   }
 
   writeDashboardSettings(storage, next)
@@ -117,7 +118,7 @@ test('dashboard settings retain safe in-memory defaults when storage is unavaila
   assert.doesNotThrow(() =>
     writeDashboardSettings(unavailableStorage, {
       theme: 'dark',
-      visibleTools: { codex: true, claude_code: true, grok: true },
+      visibleTools: { codex: true, claude_code: true, grok: true, kimi: true },
     }),
   )
 })

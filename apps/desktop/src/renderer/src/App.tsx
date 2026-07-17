@@ -681,6 +681,7 @@ function AgentSetupReminderModal({
 function agentName(agent: AgentType): string {
   if (agent === 'codex') return 'Codex'
   if (agent === 'grok') return 'Grok'
+  if (agent === 'kimi') return 'Kimi Code'
   return 'Claude Code'
 }
 
@@ -690,7 +691,10 @@ function panelGridClass(count: number): string {
   if (count === 2) {
     return 'min-w-[56rem] grid-cols-[minmax(27rem,1fr)_minmax(27rem,1fr)]'
   }
-  return 'min-w-[84rem] grid-cols-[minmax(26rem,1fr)_minmax(26rem,1fr)_minmax(26rem,1fr)]'
+  if (count === 3) {
+    return 'min-w-[84rem] grid-cols-[minmax(26rem,1fr)_minmax(26rem,1fr)_minmax(26rem,1fr)]'
+  }
+  return 'min-w-[112rem] grid-cols-[repeat(4,minmax(26rem,1fr))]'
 }
 
 /** Renders the appropriate empty state for either inactive or intentionally hidden tools. */
@@ -992,6 +996,7 @@ function MeasuredProjectRow({
 function AgentLogo({ agentType }: { agentType: AgentType }): JSX.Element {
   if (agentType === 'codex') return <CodexLogo />
   if (agentType === 'grok') return <GrokLogo />
+  if (agentType === 'kimi') return <KimiLogo />
   return <ClaudeLogo />
 }
 
@@ -1042,6 +1047,19 @@ function GrokLogo(): JSX.Element {
         fill="currentColor"
         className="text-ink"
         d="M6.227 3.5h3.12l4.38 7.12L18.13 3.5H21.3l-6.02 9.05L21.5 20.5h-3.13l-4.62-7.42-4.63 7.42H6.01l6.24-8.01L6.227 3.5zm-.85 0L12 12.35 5.12 20.5H2.5l6.9-8.19L2.5 3.5h2.877z"
+      />
+    </svg>
+  )
+}
+
+/** Kimi Code wordmark reduced to a clear dashboard monogram. */
+function KimiLogo(): JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" role="img" aria-label="Kimi Code" className="h-7 w-7">
+      <path
+        fill="currentColor"
+        className="text-brand-kimi"
+        d="M5 3.5h3v7.15L14.35 3.5h3.8l-6.8 7.5 7.15 9.5h-3.7l-5.55-7.35L8 14.5v6H5v-17z"
       />
     </svg>
   )
@@ -1134,7 +1152,7 @@ function PanelQuotaMeter({
   const showFiveHour = showsFiveHourQuota(agentType)
 
   // No quota yet — keep waiting bars so pane layout stays stable.
-  // Claude uses 5h + weekly; Codex/Grok only weekly.
+  // Claude and Kimi use 5h + weekly; Codex/Grok only weekly.
   if (meters.length === 0) {
     if (showFiveHour) {
       return (
@@ -1166,7 +1184,7 @@ function PanelQuotaMeter({
     )
   }
 
-  // Claude: one bucket with 5h + weekly side-by-side.
+  // Claude/Kimi: one bucket with 5h + weekly side-by-side.
   if (showFiveHour && meters.length === 1) {
     const token = meters[0]!.token
     const { fiveHour, sevenDay } = visibleRateLimitWindows(token, agentType)
@@ -1368,11 +1386,12 @@ function effectiveContextWindow(agent: AgentRuntimeState): number | undefined {
   return agent.token?.contextWindow ?? (agent.agentType === 'codex' ? 256_000 : undefined)
 }
 
-type BrandClass = 'brand-claude' | 'brand-codex' | 'brand-grok'
+type BrandClass = 'brand-claude' | 'brand-codex' | 'brand-grok' | 'brand-kimi'
 
 function brandClass(agentType: AgentType): BrandClass {
   if (agentType === 'codex') return 'brand-codex'
   if (agentType === 'grok') return 'brand-grok'
+  if (agentType === 'kimi') return 'brand-kimi'
   return 'brand-claude'
 }
 

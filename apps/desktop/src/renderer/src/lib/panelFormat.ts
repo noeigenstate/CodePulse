@@ -1,9 +1,9 @@
 import type { AgentType, TokenPayload, TokenRateLimitWindow } from '@codepulse/shared'
 import type { ContextStatusCopy, PathStatusCopy } from './i18n.js'
 
-/** Codex / Grok 仅展示周额度；Claude Code 仍展示 5 小时 + 周额度。 */
+/** Claude Code and Kimi expose both five-hour and weekly quota windows. */
 export function showsFiveHourQuota(agentType: AgentType | undefined): boolean {
-  return agentType === 'claude_code'
+  return agentType === 'claude_code' || agentType === 'kimi'
 }
 
 export interface ContextWindowStatus {

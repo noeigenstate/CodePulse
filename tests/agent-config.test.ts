@@ -16,6 +16,7 @@ test('agent auto configuration creates missing Claude and Codex config files', a
   assert.equal(result.claude.changed, true)
   assert.equal(result.codex.changed, true)
   assert.equal(result.grok.changed, true)
+  assert.equal(result.kimi.changed, true)
 
   const runtime = JSON.parse(await readFile(join(home, '.codepulse', 'hook-runtime.json'), 'utf8'))
   assert.equal(runtime.hookBinDir, hookBinDir)
@@ -50,6 +51,11 @@ test('agent auto configuration creates missing Claude and Codex config files', a
     grokHooks.hooks.Stop[0].hooks[0].command,
     `node "${join(stableBin, 'grok-hook.js')}"`,
   )
+
+  const kimiConfig = await readFile(join(home, '.kimi-code', 'config.toml'), 'utf8')
+  assert.match(kimiConfig, /# >>> codepulse-managed >>>/)
+  assert.match(kimiConfig, /event = "Stop"/)
+  assert.match(kimiConfig, /kimi-hook\.js/)
 })
 
 test('agent auto configuration is idempotent and preserves non-CodePulse hooks', async () => {
@@ -117,6 +123,7 @@ test('agent auto configuration is idempotent and preserves non-CodePulse hooks',
 
   assert.equal(second.claude.changed, false)
   assert.equal(second.codex.changed, false)
+  assert.equal(second.kimi.changed, false)
 
   const claudeSettings = JSON.parse(await readFile(join(claudeDir, 'settings.json'), 'utf8'))
   const claudeStopHooks = claudeSettings.hooks.Stop[0].hooks.map(
@@ -371,4 +378,21 @@ test('agent cleanup disables Codex hooks when only CodePulse hooks remain', asyn
   const codexHooks = JSON.parse(await readFile(join(codexDir, 'hooks.json'), 'utf8'))
   assert.equal(codexHooks.hooks, undefined)
   assert.match(await readFile(join(codexDir, 'config.toml'), 'utf8'), /hooks = false/)
+})
+
+test('Kimi configuration backup and cleanup preserve user TOML content', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'codepulse-kimi-config-'))
+  const kimiDir = join(home, '.kimi-code')
+  const configPath = join(kimiDir, 'config.toml')
+  const original = 'default_model = "kimi-code/k3"\n\n[thinking]\neffort = "max"\n'
+  await mkdir(kimiDir, { recursive: true })
+  await writeFile(configPath, original, 'utf8')
+
+  const configured = await configureAgents({ homeDir: home, hookBinDir: join(home, 'hooks') })
+  assert.equal(configured.kimi.changed, true)
+  assert.equal(await readFile(`${configPath}.codepulse.bak`, 'utf8'), original)
+
+  const cleaned = await cleanupAgents({ homeDir: home, hookBinDir: join(home, 'hooks') })
+  assert.equal(cleaned.kimi.changed, true)
+  assert.equal(await readFile(configPath, 'utf8'), original)
 })

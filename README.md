@@ -4,10 +4,10 @@
 
 **A local status hub for your AI coding agents.**
 
-Know at a glance whether Codex, Claude Code, and Grok are working, waiting on
+Know at a glance whether Codex, Claude Code, Grok, and Kimi Code are working, waiting on
 you, finished, or stuck — without alt-tabbing back to a terminal.
 
-[![status](https://img.shields.io/badge/status-v1.2.4-brightgreen)](#features)
+[![status](https://img.shields.io/badge/status-v1.3.1-brightgreen)](#features)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue)](#download)
 [![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#development)
@@ -23,12 +23,14 @@ you, finished, or stuck — without alt-tabbing back to a terminal.
 
 AI coding agents are great at working unattended — and terrible at telling you
 when they need you. CodePulse listens to the lifecycle hooks that Codex, Claude
-Code, and Grok Build already expose, runs every event through a single state
-machine, and surfaces the result three ways:
+Code, Grok, and Kimi Code expose, runs every event through a single state
+machine, and surfaces the result in a few focused ways:
 
-- 📊 **Live Dashboard** — light adaptive panes for Claude Code / Codex / Grok
+- 📊 **Live Dashboard** — adaptive panes for Claude Code / Codex / Grok / Kimi Code
   (only the CLIs you are using), with brand colors, project cards, context bars,
   and quota meters.
+- ⚙️ **Display settings** — choose automatic, light, or dark appearance and hide
+  CLI panels you do not need. Automatic mode uses light from 08:00–20:00.
 - 📈 **Local analytics console** — open **Insights** (Chinese UI: **后台**) for
   full-screen rollups of tokens, coding time, projects, model mix, and peak hours
   from your local SQLite history; refresh anytime.
@@ -50,9 +52,11 @@ CodePulse isn't running — your agents are never blocked or slowed down.
   <img src="./docs/screenshots/dashboard.png" alt="CodePulse live console" width="920" />
 </p>
 
-Adaptive three-pane console: Claude keeps **5h + weekly** quota meters; Codex
-and Grok show **weekly only**. Each project card surfaces model, elapsed time,
-context window, and state badges. Open **Insights** for local analytics.
+Adaptive four-pane console: Claude and Kimi Code show **5h + weekly** quota
+meters; Codex and Grok show **weekly only**. Each project card surfaces the
+verified model, thinking depth, native elapsed time, context window, and state.
+Use the gear button to change theme or visible CLI panels; open **Insights** for
+local analytics.
 _(Sample data shown.)_
 
 ### Local analytics console
@@ -70,11 +74,13 @@ nothing is uploaded. _(Sample data shown.)_
 |                                     |                                                                                                                                         |
 | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | 🚦 **Unified state machine**        | One turn lifecycle for every agent: idle → processing → tool running → waiting for permission/input → done / error / cancelled / stuck. |
-| 🧭 **Multi-agent, multi-workspace** | Concurrent Codex, Claude Code, and Grok sessions across projects, each tracked separately.                                              |
-| 🪟 **Adaptive panes**               | Dashboard columns appear only for CLIs that have active tasks (or retained quota) — one CLI, one pane; all three, three panes.          |
-| 🎨 **Light design system**          | Brand-accented agent panels, 6px progress meters, status chips, and a compact footer strip for pane/session sync status.                |
-| 📈 **Context tracking**             | Compact context-window usage from Claude, Codex, and Grok, using exact CLI data when available.                                         |
-| 🎟️ **Quota awareness**              | Claude: 5-hour + weekly windows. Codex / Grok: weekly window only, matched to the model/bucket when the CLI reports it.                 |
+| 🧭 **Multi-agent, multi-workspace** | Concurrent Codex, Claude Code, Grok, and Kimi Code sessions across projects, each tracked separately.                                   |
+| 🪟 **Adaptive panes**               | Only CLIs with active tasks or retained quota appear — from one pane up to four panes.                                                  |
+| 🎨 **Automatic light/dark theme**   | Automatic mode uses light from 08:00–20:00 and dark overnight; light and dark can also be selected manually.                            |
+| ⚙️ **Configurable CLI panels**      | The gear menu lets you show or hide each CLI panel without stopping background sync or notifications.                                   |
+| 🧠 **Model, depth, and timing**     | Stable model identity, thinking depth when available, and native CLI elapsed time remain visible across refreshes.                      |
+| 📈 **Context tracking**             | Compact context-window usage from all four supported CLIs, using exact CLI data when available.                                         |
+| 🎟️ **Quota awareness**              | Claude / Kimi: 5-hour + weekly. Codex / Grok: weekly only, matched to the CLI model or quota bucket.                                    |
 | 🔔 **Glanceable toasts**            | Completion title is the project name; body is a cleaned prompt summary — no CLI branding noise.                                         |
 | 🕰️ **Stuck detection**              | A watchdog flags turns with no activity so silent failures don't burn your afternoon.                                                   |
 | 💾 **Local history**                | Events, sessions, turns, and token snapshots persisted to SQLite — yours to query or delete.                                            |
@@ -115,7 +121,7 @@ What you get:
 ## How it works
 
 ```
- Codex / Claude Code / Grok
+ Codex / Claude Code / Grok / Kimi Code
    │  lifecycle hooks & status line (dependency-free Node scripts)
    ▼
  POST /api/events ──► adapters ──► StatusHub (pure reducer + rule engine)
@@ -134,7 +140,7 @@ apps/desktop/        Electron app (main / preload / renderer, incl. analytics UI
 packages/
   shared/            Domain types (Agent, Turn, AgentEvent, UsageStats, …) + constants
   core/              State machine, rule engine, aggregation, StatusHub
-  adapters/          Codex / Claude / Grok raw payload → AgentEvent mapping
+  adapters/          Codex / Claude / Grok / Kimi raw payload → AgentEvent mapping
   storage/           SQLite schema (Drizzle ORM), repository, usage-stats queries
   local-server/      Fastify HTTP + WebSocket routes
   hooks/             Standalone hook scripts the agents invoke (incl. usage readers)
@@ -185,7 +191,7 @@ xattr -cr /Volumes/CodePulse*/CodePulse.app
 
 Use the DMG that matches your chip (`arm64` vs Intel); the wrong arch will not run.
 
-### macOS: CLIs not detected (Claude / Codex / Grok)
+### macOS: CLIs not detected (Claude / Codex / Grok / Kimi)
 
 Apps opened from Finder / Launchpad do **not** load your shell `PATH` from
 `~/.zshrc`. CLIs installed via Homebrew or nvm may be missing from that minimal
@@ -196,10 +202,11 @@ Current builds probe common install locations automatically. If detection still
 fails, verify in Terminal:
 
 ```bash
-which claude codex grok
+which claude codex grok kimi
 claude --version
 codex --version
 grok --version
+kimi --version
 ```
 
 Or point CodePulse at absolute paths and relaunch:
@@ -208,6 +215,7 @@ Or point CodePulse at absolute paths and relaunch:
 launchctl setenv CLAUDE_CLI_PATH "$(which claude)"
 launchctl setenv CODEX_CLI_PATH "$(which codex)"
 launchctl setenv GROK_CLI_PATH "$(which grok)"
+launchctl setenv KIMI_CLI_PATH "$(which kimi)"
 ```
 
 (Or `export` those variables in a shell and run `open -a CodePulse`.)
@@ -215,13 +223,14 @@ launchctl setenv GROK_CLI_PATH "$(which grok)"
 ## First run
 
 1. Open CodePulse.
-2. CodePulse checks your local Claude Code, Codex, and Grok CLI setup.
+2. CodePulse checks your local Claude Code, Codex, Grok, and Kimi Code CLI setup.
 3. If required entries are missing, CodePulse writes only its own hook and
    status-line configuration to:
    - `~/.claude/settings.json`
    - `~/.codex/hooks.json`
    - `~/.codex/config.toml`
    - `~/.grok/hooks/codepulse.json` (global Grok hooks; trusted by default)
+   - `~/.kimi-code/config.toml` (managed Kimi hook block)
 4. If the setup dialog asks you to trust Codex hooks, open a Codex project
    terminal, run `/hooks`, select the CodePulse hook, and trust:
    - `SessionStart`
@@ -230,9 +239,10 @@ launchctl setenv GROK_CLI_PATH "$(which grok)"
    - `PermissionRequest`
    - `PostToolUse`
    - `Stop`
-5. Run a Claude Code, Codex, or Grok task. Only panes for CLIs that report
+5. Run a Claude Code, Codex, Grok, or Kimi Code task. Only panes for CLIs that report
    activity appear on the dashboard (adaptive layout).
-6. To review spend over time, open **Insights** in the top-right (see
+6. Use the gear button to select automatic/light/dark theme and visible CLI panels.
+7. To review spend over time, open **Insights** in the top-right (see
    [Local analytics console](#local-analytics-console)).
 
 CodePulse only manages CodePulse-owned hook and status-line entries. Existing
@@ -241,7 +251,7 @@ installer removes CodePulse-managed entries automatically.
 
 ### Verify
 
-Run any task in Claude Code, Codex, or Grok and watch the matching pane light
+Run any task in Claude Code, Codex, Grok, or Kimi Code and watch the matching pane light
 up, or check the local API:
 
 ```bash
@@ -273,16 +283,16 @@ means CodePulse saw a real permission or explicit input request.
 Loopback-only (`127.0.0.1:17888`) — never exposed to the network. Point the
 hooks elsewhere with the `CODEPULSE_URL` environment variable.
 
-| Method | Path                 | Purpose                                           |
-| ------ | -------------------- | ------------------------------------------------- |
-| `POST` | `/api/events`        | Ingest a raw hook payload (or an array, max 1000) |
-| `GET`  | `/api/status`        | Full `StatusSnapshot` for the Dashboard           |
-| `GET`  | `/api/device/status` | Minimal status for lightweight local clients      |
-| `GET`  | `/api/agents/detect` | Detect local Codex / Claude / Grok CLI and hooks  |
-| `POST` | `/api/ack/:agent`    | Mark an agent's terminal result as read           |
-| `POST` | `/api/mute`          | `{ "muted": true }` to silence notification sound |
-| `GET`  | `/api/health`        | Liveness probe                                    |
-| `WS`   | `/ws`                | Push channel: `status` + `notification` messages  |
+| Method | Path                 | Purpose                                                 |
+| ------ | -------------------- | ------------------------------------------------------- |
+| `POST` | `/api/events`        | Ingest a raw hook payload (or an array, max 1000)       |
+| `GET`  | `/api/status`        | Full `StatusSnapshot` for the Dashboard                 |
+| `GET`  | `/api/device/status` | Minimal status for lightweight local clients            |
+| `GET`  | `/api/agents/detect` | Detect local Codex / Claude / Grok / Kimi CLI and hooks |
+| `POST` | `/api/ack/:agent`    | Mark an agent's terminal result as read                 |
+| `POST` | `/api/mute`          | `{ "muted": true }` to silence notification sound       |
+| `GET`  | `/api/health`        | Liveness probe                                          |
+| `WS`   | `/ws`                | Push channel: `status` + `notification` messages        |
 
 ## LAN device API (opt-in)
 
@@ -417,7 +427,7 @@ confirm you downloaded the DMG that matches your chip (`mac-arm64` vs `mac-x64`)
 
 The agent isn't reaching the server. Check that CodePulse is running, that
 `curl http://127.0.0.1:17888/api/health` returns `{"ok":true}`, and that the
-setup dialog does not report missing Claude / Codex / Grok hooks. For Codex, run
+setup dialog does not report missing Claude / Codex / Grok / Kimi hooks. For Codex, run
 `/hooks` once and trust the CodePulse hook if prompted. Grok global hooks live in
 `~/.grok/hooks/codepulse.json` and do not need project trust.
 

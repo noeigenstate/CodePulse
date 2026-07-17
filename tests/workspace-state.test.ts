@@ -64,6 +64,328 @@ test('StatusHub routes workspace-less events back to the original session worksp
   assert.equal(codexAgents[0]?.state, 'DONE')
 })
 
+test('StatusHub freezes elapsed time after a terminal lifecycle event', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const startedAt = 1_000_000
+  const finishedAt = startedAt + 12_345
+
+  hub.ingest({
+    id: 'prompt',
+    source: 'codex',
+    eventType: 'prompt_submit',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: startedAt,
+  })
+  hub.ingest({
+    id: 'stop',
+    source: 'codex',
+    eventType: 'turn_stop',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: finishedAt,
+  })
+
+  const codex = hub.snapshot(finishedAt).agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.turnStartedAt, undefined)
+  assert.deepEqual(codex?.turnTiming, {
+    state: 'completed',
+    startedAt,
+    elapsedMs: 12_345,
+    observedAt: finishedAt,
+  })
+})
+
+test('StatusHub restores a native active timing snapshot without using scan time', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const nativeStartedAt = 1_000_000
+
+  hub.ingest({
+    id: 'disk-timing',
+    source: 'claude_code',
+    eventType: 'token_snapshot',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: nativeStartedAt + 90_000,
+    turnTiming: {
+      state: 'active',
+      startedAt: nativeStartedAt,
+      observedAt: nativeStartedAt,
+    },
+  })
+
+  const claude = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
+  assert.equal(claude?.turnStartedAt, nativeStartedAt)
+  assert.deepEqual(claude?.turnTiming, {
+    state: 'active',
+    startedAt: nativeStartedAt,
+    observedAt: nativeStartedAt,
+  })
+})
+
+test('StatusHub ignores a stale native timing snapshot after a newer prompt hook', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const staleStartedAt = 1_000_000
+  const currentStartedAt = staleStartedAt + 10_000
+
+  hub.ingest({
+    id: 'prompt',
+    source: 'codex',
+    eventType: 'prompt_submit',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: currentStartedAt,
+  })
+  hub.ingest({
+    id: 'stale-disk-timing',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: currentStartedAt + 1_000,
+    turnTiming: {
+      state: 'completed',
+      elapsedMs: 2_000,
+      observedAt: staleStartedAt + 5_000,
+    },
+  })
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.turnStartedAt, currentStartedAt)
+  assert.deepEqual(codex?.turnTiming, {
+    state: 'active',
+    startedAt: currentStartedAt,
+    observedAt: currentStartedAt,
+  })
+})
+
+test('StatusHub lets native completion duration refine the same hook-observed turn', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const startedAt = 1_000_000
+  const hookStoppedAt = startedAt + 5_000
+
+  hub.ingest({
+    id: 'prompt',
+    source: 'codex',
+    eventType: 'prompt_submit',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: startedAt,
+  })
+  hub.ingest({
+    id: 'stop',
+    source: 'codex',
+    eventType: 'turn_stop',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: hookStoppedAt,
+  })
+  hub.ingest({
+    id: 'native-completion',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: hookStoppedAt + 1_000,
+    turnTiming: {
+      state: 'completed',
+      startedAt,
+      elapsedMs: 4_321,
+      observedAt: startedAt + 4_321,
+    },
+  })
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.deepEqual(codex?.turnTiming, {
+    state: 'completed',
+    startedAt,
+    elapsedMs: 4_321,
+    observedAt: startedAt + 4_321,
+  })
+})
+
+test('StatusHub backfills a nearby CLI completion even when no prompt association is safe', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const startedAt = 1_000_000
+  const hookStoppedAt = startedAt + 5_000
+
+  hub.ingest({
+    id: 'prompt',
+    source: 'claude_code',
+    eventType: 'prompt_submit',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: startedAt,
+  })
+  hub.ingest({
+    id: 'stop',
+    source: 'claude_code',
+    eventType: 'turn_stop',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: hookStoppedAt,
+  })
+  hub.ingest({
+    id: 'native-unpaired-completion',
+    source: 'claude_code',
+    eventType: 'token_snapshot',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: hookStoppedAt + 1_000,
+    turnTiming: {
+      state: 'completed',
+      elapsedMs: 4_321,
+      observedAt: startedAt + 4_321,
+    },
+  })
+
+  const claude = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
+  assert.deepEqual(claude?.turnTiming, {
+    state: 'completed',
+    elapsedMs: 4_321,
+    observedAt: startedAt + 4_321,
+  })
+})
+
+test('StatusHub only revives a timeout after a real local-session activity refresh', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const startedAt = 1_000_000
+  const timeoutAt = startedAt + STUCK_VISIBLE_MS + 1
+
+  hub.ingest({
+    id: 'prompt',
+    source: 'codex',
+    eventType: 'prompt_submit',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: startedAt,
+  })
+  ;(hub as unknown as { tick(now?: number): void }).tick(timeoutAt)
+
+  const staleTiming = {
+    state: 'active' as const,
+    startedAt,
+    observedAt: startedAt,
+  }
+  hub.ingest({
+    id: 'static-disk-record',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: timeoutAt + 1,
+    turnTiming: staleTiming,
+    internal: { sessionSync: true },
+  })
+  assert.equal(
+    hub.snapshot().agents.find((agent) => agent.agentType === 'codex')?.state,
+    TurnState.TIMEOUT,
+  )
+
+  hub.ingest({
+    id: 'fresh-disk-record',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'elapsed-session',
+    cwd: 'E:/project/elapsed',
+    timestamp: timeoutAt + 2,
+    turnTiming: staleTiming,
+    internal: { sessionSync: true, activityRefresh: true },
+  })
+  assert.equal(
+    hub.snapshot().agents.find((agent) => agent.agentType === 'codex')?.state,
+    TurnState.PROMPT_SUBMITTED,
+  )
+})
+
+test('StatusHub keeps the newest Codex model and thinking-depth snapshot atomic', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const base = {
+    source: 'codex' as const,
+    eventType: 'token_snapshot' as const,
+    externalSessionId: 'model-session',
+    cwd: 'E:/project/model-config',
+  }
+
+  hub.ingest({
+    ...base,
+    id: 'terra-ultra',
+    model: 'gpt-5.6-terra',
+    reasoningEffort: 'ultra',
+    modelObservedAt: 2_000,
+    timestamp: 5_000,
+  })
+  // A later unversioned hook event may still contain an old top-level model.
+  hub.ingest({
+    ...base,
+    id: 'late-sol-hook',
+    model: 'gpt-5.6-sol',
+    reasoningEffort: 'max',
+    timestamp: 6_000,
+  })
+
+  let codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.model, 'gpt-5.6-terra')
+  assert.equal(codex?.reasoningEffort, 'ultra')
+
+  hub.ingest({
+    ...base,
+    id: 'new-sol-max',
+    model: 'gpt-5.6-sol',
+    reasoningEffort: 'max',
+    modelObservedAt: 3_000,
+    timestamp: 7_000,
+  })
+  hub.ingest({
+    ...base,
+    id: 'terra-effort-unknown',
+    model: 'gpt-5.6-terra',
+    modelObservedAt: 4_000,
+    timestamp: 8_000,
+  })
+
+  codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.model, 'gpt-5.6-terra')
+  assert.equal(codex?.reasoningEffort, undefined)
+  assert.equal(codex?.modelObservedAt, 4_000)
+})
+
+test('StatusHub applies and clears Claude thinking-depth settings by observation time', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const base = {
+    source: 'claude_code' as const,
+    eventType: 'token_snapshot' as const,
+    externalSessionId: 'claude-thinking-session',
+    cwd: 'E:/project/claude-thinking',
+    model: 'claude-opus-4-8',
+  }
+
+  hub.ingest({
+    ...base,
+    id: 'settings-high',
+    reasoningEffort: 'high',
+    reasoningEffortObservedAt: 2_000,
+    timestamp: 5_000,
+  })
+  // A late unversioned hook cannot replace a depth confirmed by settings.json.
+  hub.ingest({
+    ...base,
+    id: 'late-hook',
+    reasoningEffort: 'low',
+    timestamp: 6_000,
+  })
+  hub.ingest({
+    ...base,
+    id: 'settings-cleared',
+    reasoningEffortObservedAt: 3_000,
+    timestamp: 7_000,
+  })
+
+  const claude = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
+  assert.equal(claude?.reasoningEffort, undefined)
+  assert.equal(claude?.reasoningEffortObservedAt, 3_000)
+})
+
 test('StatusHub keeps one card when the same session reports subdirectory cwd values', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
 
@@ -183,6 +505,43 @@ test('display panels do not collapse Desktop projects under the user profile pat
   assert.equal(metal?.agent.state, TurnState.TOOL_RUNNING)
 })
 
+test('display panels keep the newest verified model config for duplicate workspace sessions', () => {
+  const panels = buildAgentPanels([
+    {
+      agentType: 'codex',
+      state: TurnState.DONE,
+      toolCallCount: 0,
+      needPermission: false,
+      needUserInput: false,
+      unread: false,
+      externalSessionId: 'sol-session',
+      workspacePath: 'E:/project/model-selection',
+      model: 'gpt-5.6-sol',
+      reasoningEffort: 'max',
+      modelObservedAt: 2_000,
+      lastEventAt: 9_000,
+    },
+    {
+      agentType: 'codex',
+      state: TurnState.DONE,
+      toolCallCount: 0,
+      needPermission: false,
+      needUserInput: false,
+      unread: false,
+      externalSessionId: 'terra-session',
+      workspacePath: 'E:/project/model-selection',
+      model: 'gpt-5.6-terra',
+      reasoningEffort: 'ultra',
+      modelObservedAt: 3_000,
+      lastEventAt: 1_000,
+    },
+  ])
+
+  const card = panels.find((panel) => panel.agentType === 'codex')?.workspaces[0]?.agent
+  assert.equal(card?.model, 'gpt-5.6-terra')
+  assert.equal(card?.reasoningEffort, 'ultra')
+})
+
 test('StatusHub treats slash and backslash workspace paths as the same project', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
 
@@ -210,7 +569,7 @@ test('StatusHub treats slash and backslash workspace paths as the same project',
   assert.equal(codexAgents[0]?.token?.contextUsedPercent, 12)
 })
 
-test('StatusHub clears turn start time when watchdog marks TIMEOUT', () => {
+test('StatusHub freezes elapsed time when watchdog marks TIMEOUT', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const startedAt = 1_000_000
 
@@ -227,6 +586,12 @@ test('StatusHub clears turn start time when watchdog marks TIMEOUT', () => {
   const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
   assert.equal(codex?.state, TurnState.TIMEOUT)
   assert.equal(codex?.turnStartedAt, undefined)
+  assert.deepEqual(codex?.turnTiming, {
+    state: 'completed',
+    startedAt,
+    elapsedMs: STUCK_VISIBLE_MS + 1,
+    observedAt: startedAt + STUCK_VISIBLE_MS + 1,
+  })
 })
 
 test('StatusHub emits a synthetic timeout event through the normal pipeline', () => {
@@ -1136,8 +1501,9 @@ test('StatusHub keeps exact context data when later estimated token snapshots ar
   })
 
   const claude = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
-  assert.equal(claude?.token?.input, 50_000)
-  assert.equal(claude?.token?.total, 51_000)
+  // Exact context (and matching usage totals) must not be clobbered by estimated patches.
+  assert.equal(claude?.token?.input, 210_000)
+  assert.equal(claude?.token?.total, 212_000)
   assert.equal(claude?.token?.contextUsedPercent, 21)
   assert.equal(claude?.token?.contextWindow, 1_000_000)
   assert.equal(claude?.token?.accuracy, 'exact')
@@ -1348,9 +1714,11 @@ test('display agents are grouped by workspace with a shared token', () => {
       'E:/project/a:claude_code',
       'E:/project/a:codex',
       'E:/project/a:grok',
+      'E:/project/a:kimi',
       'E:/project/b:claude_code',
       'E:/project/b:codex',
       'E:/project/b:grok',
+      'E:/project/b:kimi',
     ],
   )
   assert.equal(groups.find((group) => group.workspacePath === 'E:/project/a')?.token?.total, 1200)

@@ -27,6 +27,8 @@ const CONTEXT_WINDOW = parseTokenCount(process.env.CODEPULSE_CONTEXT_WINDOW) ?? 
 const TAIL_BYTES = 512 * 1024
 
 const data = await readStdinJson()
+const originalUsage =
+  data?.usage && typeof data.usage === 'object' && !Array.isArray(data.usage) ? data.usage : {}
 
 const officialContextWindow = normalizeContextWindow(data?.context_window)
 const usage = officialContextWindow ? null : readLatestUsage(data?.transcript_path)
@@ -42,7 +44,14 @@ if (officialContextWindow) {
     (usage.cache_creation_input_tokens ?? 0)
   const output = usage.output_tokens ?? 0
   tokenPatch = {
-    usage: { input_tokens: input, output_tokens: output, total_tokens: input + output },
+    // Retain native usage metadata (including future effort fields) while replacing
+    // only the token values synthesized from the transcript fallback.
+    usage: {
+      ...originalUsage,
+      input_tokens: input,
+      output_tokens: output,
+      total_tokens: input + output,
+    },
     context_used_percent: Math.min(100, Math.round((input / CONTEXT_WINDOW) * 100)),
   }
 }

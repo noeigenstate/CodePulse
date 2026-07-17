@@ -13,7 +13,9 @@ import {
   type AgentType,
   type TokenPayload,
   type TokenRateLimitWindow,
+  type TurnTiming,
   TurnState,
+  isActiveState,
   isTerminalState,
   normalizeWorkspacePath,
 } from '@codepulse/shared'
@@ -84,10 +86,15 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
     if (incomingWorkspace) {
       next.workspacePath = preferWorkspacePath(current.workspacePath, incomingWorkspace)
     }
-    if (event.model) next.model = event.model
+    applyModelConfiguration(current, next, event)
   }
+  const acceptedTurnTiming = tokenOnlyQuotaRefresh
+    ? undefined
+    : applyTurnTimingSnapshot(current, next, event)
   if (event.token) {
-    next.token = mergeToken(current.token, event.token, event.timestamp, event.model ?? next.model)
+    // Use the accepted runtime model, not the raw event model. A stale rollout
+    // snapshot must not affect quota-family selection after it was rejected above.
+    next.token = mergeToken(current.token, event.token, event.timestamp, next.model)
   }
   // Real activity unhides idle-pruned project cards. Pure quota refreshes do not.
   if (!tokenOnlyQuotaRefresh) {
@@ -106,11 +113,12 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       // Count idle retention from first sighting so disk-hydrated cards expire in 5 min.
       next.terminalAt = event.timestamp
       if (!hasContextSnapshot(event.token)) next.token = markContextStale(next.token)
+      reconcileSynchronizedTimingLifecycle(current, next, event, acceptedTurnTiming)
       break
 
     case 'prompt_submit':
       next.state = TurnState.PROMPT_SUBMITTED
-      next.turnStartedAt = event.timestamp
+      applyPromptTiming(next, acceptedTurnTiming, event.timestamp)
       next.toolCallCount = 0
       next.needPermission = false
       next.needUserInput = false
@@ -155,6 +163,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
     case 'turn_stop':
       next.state = TurnState.DONE
       next.turnStartedAt = undefined
+      next.turnTiming = completeTurnTiming(current, acceptedTurnTiming, event.timestamp)
       next.needPermission = false
       next.needUserInput = false
       next.toolName = undefined
@@ -167,6 +176,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
     case 'turn_error':
       next.state = TurnState.ERROR
       next.turnStartedAt = undefined
+      next.turnTiming = completeTurnTiming(current, acceptedTurnTiming, event.timestamp)
       next.terminalAt = event.timestamp
       next.activity = event.message ?? '任务执行出错'
       next.unread = true
@@ -175,6 +185,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
     case 'turn_cancelled':
       next.state = TurnState.CANCELLED
       next.turnStartedAt = undefined
+      next.turnTiming = completeTurnTiming(current, acceptedTurnTiming, event.timestamp)
       next.needPermission = false
       next.needUserInput = false
       next.toolName = undefined
@@ -186,6 +197,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
     case 'turn_timeout':
       next.state = TurnState.TIMEOUT
       next.turnStartedAt = undefined
+      next.turnTiming = completeTurnTiming(current, acceptedTurnTiming, event.timestamp)
       next.needPermission = false
       next.needUserInput = false
       next.toolName = undefined
@@ -197,6 +209,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
     case 'usage_limited':
       next.state = TurnState.USAGE_LIMITED
       next.turnStartedAt = undefined
+      next.turnTiming = completeTurnTiming(current, acceptedTurnTiming, event.timestamp)
       next.needPermission = false
       next.needUserInput = false
       next.toolName = undefined
@@ -206,12 +219,16 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       break
 
     case 'token_snapshot':
-      // 仅携带 token 数据；不改变生命周期状态。
+      // Token-only data normally leaves lifecycle untouched. A local CLI timing
+      // snapshot is the exception: it can recover an in-flight turn after the
+      // desktop/server restarts, or close one that the hook stream missed.
+      reconcileSynchronizedTimingLifecycle(current, next, event, acceptedTurnTiming)
       break
 
     case 'session_end':
       next.state = TurnState.IDLE
       next.turnStartedAt = undefined
+      next.turnTiming = completeTurnTiming(current, acceptedTurnTiming, event.timestamp)
       next.needPermission = false
       next.needUserInput = false
       next.toolName = undefined
@@ -233,6 +250,353 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
   }
 }
 
+/**
+ * Applies a timestamped native CLI timing snapshot when it is newer than the
+ * timing currently held by the runtime. The event timestamp is deliberately
+ * not used as the task start because session synchronization is intermittent.
+ *
+ * @param current Runtime state before the event.
+ * @param next Mutable runtime state being constructed.
+ * @param event Normalized event that may carry native timing metadata.
+ * @returns The accepted sanitized timing snapshot, if any.
+ */
+function applyTurnTimingSnapshot(
+  current: AgentRuntimeState,
+  next: AgentRuntimeState,
+  event: AgentEvent,
+): TurnTiming | undefined {
+  const incoming = sanitizeTurnTiming(event.turnTiming)
+  if (!incoming) return undefined
+
+  const existingObservedAt = current.turnTiming?.observedAt ?? current.turnStartedAt
+  if (
+    existingObservedAt != null &&
+    incoming.observedAt < existingObservedAt &&
+    !isNativeCompletionForCurrentTurn(current.turnTiming, incoming) &&
+    !canRecoverTimedOutTurnFromFreshSync(current, event, incoming)
+  ) {
+    return undefined
+  }
+  if (
+    existingObservedAt === incoming.observedAt &&
+    current.turnTiming?.state === 'completed' &&
+    incoming.state === 'active'
+  ) {
+    return undefined
+  }
+
+  next.turnTiming = incoming
+  next.turnStartedAt = incoming.state === 'active' ? incoming.startedAt : undefined
+  return incoming
+}
+
+/**
+ * Allows a real local file/session update to revive a previously timed-out turn.
+ *
+ * A static persisted `active` record is intentionally not enough: it may be an
+ * abandoned CLI session. The session synchronizer marks this path only after a
+ * rollout, transcript, or per-session data file changed since its prior scan.
+ *
+ * @param current Runtime state before the incoming timing snapshot.
+ * @param event Event carrying local synchronization metadata.
+ * @param incoming Candidate native timing snapshot.
+ * @returns `true` when the timeout can safely be replaced with active work.
+ */
+function canRecoverTimedOutTurnFromFreshSync(
+  current: AgentRuntimeState,
+  event: AgentEvent,
+  incoming: TurnTiming,
+): boolean {
+  return (
+    current.state === TurnState.TIMEOUT &&
+    incoming.state === 'active' &&
+    event.internal?.sessionSync === true &&
+    event.internal.activityRefresh === true
+  )
+}
+
+/**
+ * Allows a CLI-completed duration to refine the reducer's approximate hook
+ * duration for the same turn. Native completion time can precede the hook's
+ * delivery time, so a strict observation-time comparison would reject it.
+ *
+ * @param current Existing runtime timing snapshot.
+ * @param incoming Candidate native CLI timing snapshot.
+ * @returns `true` when the candidate is a completion for the same observed turn.
+ */
+function isNativeCompletionForCurrentTurn(
+  current: TurnTiming | undefined,
+  incoming: TurnTiming,
+): boolean {
+  if (current?.state !== 'completed' || incoming.state !== 'completed') return false
+  if (current.startedAt != null && incoming.startedAt != null) {
+    return Math.abs(current.startedAt - incoming.startedAt) <= 2_000
+  }
+
+  // Claude's native `turn_duration` does not reliably identify the matching
+  // prompt. A hook-derived completion is recognizable because its elapsed value
+  // is exactly its hook receive time minus the remembered start. Allow a nearby
+  // CLI completion to replace that approximation even without a safe start ID.
+  return (
+    isHookDerivedCompletion(current) &&
+    incoming.observedAt <= current.observedAt &&
+    current.observedAt - incoming.observedAt <= 90_000
+  )
+}
+
+/**
+ * Checks whether a completed timing value was calculated from a hook timestamp.
+ *
+ * Hook terminal events have no native duration, so {@link completeTurnTiming}
+ * stores precisely `observedAt - startedAt`. Native CLI durations are often a
+ * few milliseconds different and must be allowed to refine this approximation.
+ *
+ * @param timing Completed timing value to inspect.
+ * @returns `true` when the duration has the reducer's hook-derived shape.
+ */
+function isHookDerivedCompletion(timing: TurnTiming): boolean {
+  return (
+    timing.startedAt != null &&
+    timing.elapsedMs != null &&
+    timing.elapsedMs === Math.max(0, timing.observedAt - timing.startedAt)
+  )
+}
+
+/**
+ * Starts a turn using accepted CLI timing when available, otherwise the hook
+ * observation time. A new prompt always clears the prior completed duration.
+ *
+ * @param next Mutable runtime state being constructed.
+ * @param timing Accepted native timing snapshot for this event, if any.
+ * @param observedAt Hook event observation time in epoch milliseconds.
+ */
+function applyPromptTiming(
+  next: AgentRuntimeState,
+  timing: TurnTiming | undefined,
+  observedAt: number,
+): void {
+  const startedAt = timing?.state === 'active' ? timing.startedAt : undefined
+  const effectiveStart = startedAt ?? observedAt
+  next.turnStartedAt = effectiveStart
+  next.turnTiming = {
+    state: 'active',
+    startedAt: effectiveStart,
+    observedAt: timing?.state === 'active' ? timing.observedAt : observedAt,
+  }
+}
+
+/**
+ * Freezes the elapsed time when a lifecycle event ends a task. Native completed
+ * snapshots win; otherwise the reducer derives a duration from the remembered
+ * active start time and preserves an already completed snapshot when no start
+ * was ever observed.
+ *
+ * @param current Runtime state before the terminal event.
+ * @param timing Accepted native timing snapshot for this event, if any.
+ * @param endedAt Terminal event observation time in epoch milliseconds.
+ * @returns The timing snapshot to retain on the completed runtime card.
+ */
+function completeTurnTiming(
+  current: AgentRuntimeState,
+  timing: TurnTiming | undefined,
+  endedAt: number,
+): TurnTiming | undefined {
+  if (timing?.state === 'completed') return timing
+
+  const startedAt = current.turnStartedAt ?? current.turnTiming?.startedAt
+  if (isEpochMilliseconds(startedAt)) {
+    return {
+      state: 'completed',
+      startedAt,
+      elapsedMs: Math.max(0, endedAt - startedAt),
+      observedAt: endedAt,
+    }
+  }
+  return current.turnTiming?.state === 'completed' ? current.turnTiming : undefined
+}
+
+/**
+ * Reconciles a trusted local-session timing snapshot with the visible lifecycle.
+ *
+ * Session hydration intentionally begins as `IDLE` so merely opening a CLI does
+ * not look like work. When the CLI's own session data says a turn is active,
+ * however, the card must be restored as active and must not enter idle pruning.
+ * Conversely, a newly observed native completion closes a currently active card
+ * without overriding a more specific hook terminal result such as `ERROR`.
+ *
+ * @param current Runtime state before the synchronized event.
+ * @param next Mutable runtime state being built for the synchronized event.
+ * @param event Event carrying the local session synchronization marker.
+ * @param timing Accepted native timing snapshot, if it passed freshness checks.
+ */
+function reconcileSynchronizedTimingLifecycle(
+  current: AgentRuntimeState,
+  next: AgentRuntimeState,
+  event: AgentEvent,
+  timing: TurnTiming | undefined,
+): void {
+  if (event.internal?.sessionSync !== true || !timing) return
+
+  if (timing.state === 'active') {
+    if (!isActiveState(next.state)) {
+      next.state = TurnState.PROMPT_SUBMITTED
+      next.toolCallCount = 0
+      next.needPermission = false
+      next.needUserInput = false
+      next.toolName = undefined
+      next.unread = false
+      next.activity = 'AI 正在处理任务'
+      next.lastAssistantMessage = undefined
+    }
+    // A native active observation is a liveness heartbeat, never an idle card.
+    next.terminalAt = undefined
+    return
+  }
+
+  if (!isActiveState(current.state)) return
+  next.state = TurnState.DONE
+  next.turnStartedAt = undefined
+  next.needPermission = false
+  next.needUserInput = false
+  next.toolName = undefined
+  next.terminalAt = Math.min(event.timestamp, timing.observedAt)
+  next.activity = '本轮任务已完成'
+  next.unread = true
+}
+
+/**
+ * Validates an untrusted timing snapshot from a local hook or the local HTTP API.
+ *
+ * @param timing Candidate native timing snapshot.
+ * @returns A normalized timing snapshot, or `undefined` when it is malformed.
+ */
+function sanitizeTurnTiming(timing: TurnTiming | undefined): TurnTiming | undefined {
+  if (!timing || (timing.state !== 'active' && timing.state !== 'completed')) return undefined
+  if (!isEpochMilliseconds(timing.observedAt)) return undefined
+
+  const startedAt = isEpochMilliseconds(timing.startedAt) ? timing.startedAt : undefined
+  const elapsedMs = isNonNegativeFinite(timing.elapsedMs) ? timing.elapsedMs : undefined
+  if (timing.state === 'active' && startedAt === undefined) return undefined
+  if (timing.state === 'completed' && elapsedMs === undefined) return undefined
+
+  return {
+    state: timing.state,
+    ...(startedAt !== undefined ? { startedAt } : {}),
+    ...(elapsedMs !== undefined ? { elapsedMs } : {}),
+    observedAt: timing.observedAt,
+  }
+}
+
+/**
+ * Checks whether a value is a plausible positive epoch-millisecond timestamp.
+ *
+ * @param value Candidate timestamp.
+ * @returns `true` when the value is finite and positive.
+ */
+function isEpochMilliseconds(value: number | undefined): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+}
+
+/**
+ * Checks whether a value is a usable duration in milliseconds.
+ *
+ * @param value Candidate duration.
+ * @returns `true` when the value is finite and not negative.
+ */
+function isNonNegativeFinite(value: number | undefined): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+}
+
+/**
+ * Applies model and reasoning-depth configuration while protecting a verified
+ * Codex rollout snapshot from late, less-specific hook metadata.
+ *
+ * Codex records the model and its reasoning effort together in a `turn_context`.
+ * Once that timestamped snapshot exists, an unversioned hook model cannot replace
+ * it. Newer snapshots replace both fields atomically so an old effort never remains
+ * paired with a new model. Claude can also report its global thinking-depth setting
+ * independently, so that setting has its own observation timestamp.
+ *
+ * @param current Runtime state before the event.
+ * @param next Mutable copy of the runtime state being built by the reducer.
+ * @param event Normalized incoming event.
+ */
+function applyModelConfiguration(
+  current: AgentRuntimeState,
+  next: AgentRuntimeState,
+  event: AgentEvent,
+): void {
+  const observedAt = event.modelObservedAt
+  let acceptedModelSnapshot = false
+  let rejectedModelSnapshot = false
+
+  if (observedAt !== undefined && event.model) {
+    if (current.modelObservedAt === undefined || observedAt >= current.modelObservedAt) {
+      next.model = event.model
+      next.modelObservedAt = observedAt
+      acceptedModelSnapshot = true
+    } else {
+      rejectedModelSnapshot = true
+    }
+  } else if (!(event.source === 'codex' && current.modelObservedAt !== undefined)) {
+    // Native Codex hooks may carry a stale top-level model. Once a timestamped
+    // rollout configuration is known, wait for another rollout snapshot to change it.
+    if (event.model) next.model = event.model
+  }
+
+  if (event.reasoningEffortObservedAt !== undefined) {
+    applyReasoningEffortSnapshot(
+      current,
+      next,
+      event.reasoningEffort,
+      event.reasoningEffortObservedAt,
+    )
+    return
+  }
+
+  if (acceptedModelSnapshot && observedAt !== undefined) {
+    // Deliberately assign undefined too: an effort omitted by the newest model
+    // snapshot is unknown, rather than evidence that the previous effort remains.
+    applyReasoningEffortSnapshot(current, next, event.reasoningEffort, observedAt)
+    return
+  }
+
+  // An unversioned event can populate an unknown depth, but cannot replace a
+  // configuration that a native settings/rollout snapshot has already verified.
+  if (
+    !rejectedModelSnapshot &&
+    event.reasoningEffort &&
+    current.reasoningEffortObservedAt === undefined
+  ) {
+    next.reasoningEffort = event.reasoningEffort
+  }
+}
+
+/**
+ * Applies a timestamped native thinking-depth setting, including an intentional
+ * empty value when the current CLI configuration no longer defines one.
+ *
+ * @param current Runtime state before the event.
+ * @param next Mutable copy of the runtime state being built by the reducer.
+ * @param reasoningEffort Native effort value, or `undefined` when known absent.
+ * @param observedAt Timestamp of the native configuration observation.
+ */
+function applyReasoningEffortSnapshot(
+  current: AgentRuntimeState,
+  next: AgentRuntimeState,
+  reasoningEffort: string | undefined,
+  observedAt: number,
+): void {
+  if (
+    current.reasoningEffortObservedAt !== undefined &&
+    observedAt < current.reasoningEffortObservedAt
+  ) {
+    return
+  }
+  next.reasoningEffort = reasoningEffort
+  next.reasoningEffortObservedAt = observedAt
+}
+
 function mergeToken(
   current: TokenPayload | undefined,
   patch: TokenPayload,
@@ -249,11 +613,15 @@ function mergeToken(
     next.quotaBuckets = mergeQuotaBuckets(current?.quotaBuckets, patch.quotaBuckets, capturedAt)
   }
 
-  if (patch.input !== undefined) next.input = patch.input
-  if (patch.cachedInput !== undefined) next.cachedInput = patch.cachedInput
-  if (patch.output !== undefined) next.output = patch.output
-  if (patch.reasoningOutput !== undefined) next.reasoningOutput = patch.reasoningOutput
-  if (patch.total !== undefined) next.total = patch.total
+  // When context is exact, do not let estimated snapshots clobber usage fields either
+  // (avoids totals disagreeing with the exact context bar).
+  if (!keepExactContext) {
+    if (patch.input !== undefined) next.input = patch.input
+    if (patch.cachedInput !== undefined) next.cachedInput = patch.cachedInput
+    if (patch.output !== undefined) next.output = patch.output
+    if (patch.reasoningOutput !== undefined) next.reasoningOutput = patch.reasoningOutput
+    if (patch.total !== undefined) next.total = patch.total
+  }
   if (patch.contextUsedPercent !== undefined && !keepExactContext) {
     next.contextUsedPercent = patch.contextUsedPercent
     next.contextCompressed = detectContextCompressed(current, patch)
@@ -497,14 +865,17 @@ function mergeRateLimitWindow(
   }
 
   // Same window (or missing resetsAt): account usage only rises until official reset.
-  // Exception: when the window is already expired, soft-reset may publish 0%.
+  // Expired same resetsAt: take *min* used% so soft-reset 0% is not clobbered by a
+  // stale rollout still carrying pre-reset high % (last-write was wrong here).
   const windowExpired =
     (patchResetMs != null && patchResetMs <= nowMs) || (curResetMs != null && curResetMs <= nowMs)
 
   let usedPercent = saneCurrent.usedPercent
   if (sanePatch.usedPercent !== undefined) {
-    if (windowExpired || saneCurrent.usedPercent === undefined) {
+    if (saneCurrent.usedPercent === undefined) {
       usedPercent = sanePatch.usedPercent
+    } else if (windowExpired) {
+      usedPercent = Math.min(saneCurrent.usedPercent, sanePatch.usedPercent)
     } else {
       usedPercent = Math.max(saneCurrent.usedPercent, sanePatch.usedPercent)
     }

@@ -45,6 +45,8 @@ export function fromCodexHook(raw: unknown): AgentEventInput | null {
     cwd: pickString(r, 'cwd'),
     workspacePath: pickString(r, 'workspace', 'cwd', 'project_dir'),
     model: pickString(r, 'model'),
+    reasoningEffort: pickString(r, 'reasoning_effort', 'reasoningEffort', 'effort'),
+    modelObservedAt: pickNumber(r, 'model_observed_at', 'modelObservedAt'),
     tokenSourcePath: pickString(
       r,
       'token_source_path',

@@ -30,6 +30,7 @@ export async function detectAgents(options: AgentDetectOptions = {}): Promise<Ag
     await detectClaudeAgent(options),
     await detectCodexAgent(options),
     await detectGrokAgent(options),
+    await detectKimiAgent(options),
   ]
 }
 
@@ -107,6 +108,36 @@ export async function detectGrokAgent(options: AgentDetectOptions = {}): Promise
     id: 'grok',
     type: 'grok',
     name: 'Grok',
+    installed: versionResult.ok,
+    configured,
+    version: versionResult.ok ? cleanVersion(versionResult.stdout) : undefined,
+  }
+}
+
+/** Detects Kimi Code and the CodePulse-managed hook block in its main config. */
+export async function detectKimiAgent(options: AgentDetectOptions = {}): Promise<Agent> {
+  const env = options.env ?? process.env
+  const runCommand = options.runCommand ?? createLocalCommandRunner(options)
+  const home = options.homeDir ?? homedir()
+  const kimiHome = env['KIMI_CODE_HOME'] ?? join(home, '.kimi-code')
+  const configPath = env['CODEPULSE_KIMI_CONFIG_FILE'] ?? join(kimiHome, 'config.toml')
+  const candidates = env['KIMI_CLI_PATH']
+    ? [env['KIMI_CLI_PATH']]
+    : [
+        join(
+          kimiHome,
+          'bin',
+          (options.platform ?? process.platform) === 'win32' ? 'kimi.exe' : 'kimi',
+        ),
+        ...(await commandCandidates('kimi', options)),
+      ]
+  const versionResult = await runFirstAvailableCommand(candidates, ['--version'], runCommand)
+  const configured = await fileContainsAny(configPath, ['kimi-hook.js', 'codepulse-kimi-hook'])
+
+  return {
+    id: 'kimi',
+    type: 'kimi',
+    name: 'Kimi Code',
     installed: versionResult.ok,
     configured,
     version: versionResult.ok ? cleanVersion(versionResult.stdout) : undefined,

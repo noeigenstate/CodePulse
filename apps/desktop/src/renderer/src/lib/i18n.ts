@@ -11,12 +11,14 @@ export interface HeaderCopy {
   languageToggle: string
   /** Local stats / insights console */
   stats: string
+  settings: string
 }
 
 export interface UiCopy {
   project: string
   recent: string
   model: string
+  thinkingDepth: string
   elapsed: string
   fiveHourQuota: string
   weeklyQuota: string
@@ -30,7 +32,29 @@ export interface UiCopy {
   updateAvailable: UpdateAvailableCopy
   contextStatus: ContextStatusCopy
   pathStatus: PathStatusCopy
+  settings: SettingsCopy
   stats: StatsCopy
+}
+
+/**
+ * Localized labels for display-only dashboard preferences.
+ *
+ * `cliToolsHint` must make clear that hiding a panel never stops local sync or notifications.
+ */
+export interface SettingsCopy {
+  title: string
+  close: string
+  theme: string
+  themeAuto: string
+  themeAutoHint: string
+  themeLight: string
+  themeDark: string
+  cliTools: string
+  cliToolsHint: string
+  codex: string
+  claudeCode: string
+  grok: string
+  kimi: string
 }
 
 export interface StatsCopy {
@@ -121,9 +145,14 @@ export interface StatsCopy {
   queryFailed: string
 }
 
+/** Localized content for an idle dashboard and the intentional all-tools-hidden state. */
 export interface EmptyDashboardCopy {
   title: string
   body: string
+  /** Title used when user preferences intentionally hide every CLI panel. */
+  settingsHiddenTitle: string
+  /** Recovery guidance for the all-tools-hidden state. */
+  settingsHiddenBody: string
 }
 
 export interface AgentSetupReminderCopy {
@@ -199,6 +228,7 @@ const HEADER_COPY: Record<Locale, HeaderCopy> = {
     muted: '已静音',
     languageToggle: '英文',
     stats: '后台',
+    settings: '设置',
   },
   en: {
     brandTag: '',
@@ -207,6 +237,7 @@ const HEADER_COPY: Record<Locale, HeaderCopy> = {
     muted: 'Muted',
     languageToggle: 'Chinese',
     stats: 'Insights',
+    settings: 'Settings',
   },
 }
 
@@ -215,6 +246,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
     project: '项目',
     recent: '最近',
     model: '模型',
+    thinkingDepth: '思考深度',
     elapsed: '耗时',
     fiveHourQuota: '5 小时额度',
     weeklyQuota: '每周额度',
@@ -224,13 +256,15 @@ const UI_COPY: Record<Locale, UiCopy> = {
     unknownProject: '未识别项目',
     emptyDashboard: {
       title: '等待 CLI 任务',
-      body: '开始 Claude Code、Codex 或 Grok 任务后，对应分屏会自动出现；只用一个 CLI 时只显示一栏。',
+      body: '开始 Claude Code、Codex、Grok 或 Kimi 任务后，对应分屏会自动出现；只用一个 CLI 时只显示一栏。',
+      settingsHiddenTitle: '所有 CLI 工具已隐藏',
+      settingsHiddenBody: '打开右上角设置，重新选择要显示的 CLI 工具。',
     },
     agentSetupReminder: {
       title: '配置与权限检查',
-      body: 'CodePulse 每次打开都会检查本机 Claude / Codex / Grok 配置。请先处理下面的问题，否则任务状态可能无法同步。',
+      body: 'CodePulse 每次打开都会检查本机 Claude / Codex / Grok / Kimi 配置。请先处理下面的问题，否则任务状态可能无法同步。',
       firstRunNotice:
-        '首次打开时，CodePulse 会在 ~/.claude/settings.json、~/.codex/hooks.json、~/.codex/config.toml 和 ~/.grok/hooks/codepulse.json 写入必要的 CodePulse hook 配置。',
+        '首次打开时，CodePulse 会在 ~/.claude/settings.json、~/.codex/hooks.json、~/.codex/config.toml、~/.grok/hooks/codepulse.json 和 ~/.kimi-code/config.toml 写入必要的 CodePulse hook 配置。',
       cleanupNotice:
         '卸载 CodePulse 时，安装器会自动删除这些 CodePulse hook 和 statusLine 配置；用户原有的其它 hook、模型、插件和偏好设置会保留。',
       missingCli: '未检测到命令行工具',
@@ -290,6 +324,21 @@ const UI_COPY: Record<Locale, UiCopy> = {
       waitingProjectPath: '等待项目路径',
       waitingDirectory: '等待目录',
       projectRoot: '项目根目录',
+    },
+    settings: {
+      title: '显示与外观',
+      close: '关闭设置',
+      theme: '主题',
+      themeAuto: '自动',
+      themeAutoHint: '自动：08:00–20:00 白色，20:00–08:00 黑色。',
+      themeLight: '白色',
+      themeDark: '黑色',
+      cliTools: '显示的 CLI 工具',
+      cliToolsHint: '隐藏仅影响主控制台显示，不会停止本机同步或通知。',
+      codex: 'Codex',
+      claudeCode: 'Claude Code',
+      grok: 'Grok',
+      kimi: 'Kimi Code',
     },
     stats: {
       title: '本地开发数据统计',
@@ -377,6 +426,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
     project: 'Projects',
     recent: 'Recent',
     model: 'Model',
+    thinkingDepth: 'Thinking depth',
     elapsed: 'Elapsed',
     fiveHourQuota: '5h quota',
     weeklyQuota: 'Weekly quota',
@@ -386,13 +436,15 @@ const UI_COPY: Record<Locale, UiCopy> = {
     unknownProject: 'Unknown project',
     emptyDashboard: {
       title: 'Waiting for CLI tasks',
-      body: 'Panels appear when you start Claude Code, Codex, or Grok tasks. If you only use one CLI, only that panel is shown.',
+      body: 'Panels appear when you start Claude Code, Codex, Grok, or Kimi tasks. If you only use one CLI, only that panel is shown.',
+      settingsHiddenTitle: 'All CLI tools are hidden',
+      settingsHiddenBody: 'Open settings in the upper-right corner to choose tools to display.',
     },
     agentSetupReminder: {
       title: 'Setup and permission check',
-      body: 'CodePulse checks local Claude / Codex / Grok setup every time it opens. Resolve these items first or task status may not sync.',
+      body: 'CodePulse checks local Claude / Codex / Grok / Kimi setup every time it opens. Resolve these items first or task status may not sync.',
       firstRunNotice:
-        'On first launch, CodePulse writes the required CodePulse hook configuration to ~/.claude/settings.json, ~/.codex/hooks.json, ~/.codex/config.toml, and ~/.grok/hooks/codepulse.json.',
+        'On first launch, CodePulse writes the required hook configuration to ~/.claude/settings.json, ~/.codex/hooks.json, ~/.codex/config.toml, ~/.grok/hooks/codepulse.json, and ~/.kimi-code/config.toml.',
       cleanupNotice:
         'When CodePulse is uninstalled, the installer removes those CodePulse hooks and statusLine entries automatically. Your other hooks, models, plugins, and preferences are preserved.',
       missingCli: 'CLI not detected',
@@ -452,6 +504,22 @@ const UI_COPY: Record<Locale, UiCopy> = {
       waitingProjectPath: 'Waiting for project path',
       waitingDirectory: 'Waiting for directory',
       projectRoot: 'Project root',
+    },
+    settings: {
+      title: 'Display & appearance',
+      close: 'Close settings',
+      theme: 'Theme',
+      themeAuto: 'Auto',
+      themeAutoHint: 'Automatic: light from 08:00–20:00 and dark otherwise.',
+      themeLight: 'White',
+      themeDark: 'Black',
+      cliTools: 'Visible CLI tools',
+      cliToolsHint:
+        'Hiding a tool only changes the live console; syncing and notifications continue.',
+      codex: 'Codex',
+      claudeCode: 'Claude Code',
+      grok: 'Grok',
+      kimi: 'Kimi Code',
     },
     stats: {
       title: 'Local development analytics',
@@ -587,6 +655,27 @@ const TURN_STATE_LABELS: Record<Locale, Record<TurnState, string>> = {
   },
 }
 
+const THINKING_DEPTH_LABELS: Record<Locale, Record<string, string>> = {
+  zh: {
+    minimal: '极低',
+    low: '低',
+    medium: '中',
+    high: '高',
+    xhigh: '极高',
+    max: '最高',
+    ultra: '超高',
+  },
+  en: {
+    minimal: 'Minimal',
+    low: 'Low',
+    medium: 'Medium',
+    high: 'High',
+    xhigh: 'Extra high',
+    max: 'Max',
+    ultra: 'Ultra',
+  },
+}
+
 export function nextLocale(locale: Locale): Locale {
   return locale === 'zh' ? 'en' : 'zh'
 }
@@ -605,6 +694,21 @@ export function overallLabel(overall: OverallState, locale: Locale): string {
 
 export function turnStateLabel(state: TurnState, locale: Locale): string {
   return TURN_STATE_LABELS[locale][state] ?? state
+}
+
+/**
+ * Formats a native CLI reasoning-effort value for the active dashboard locale.
+ *
+ * Unknown future values stay visible rather than being guessed from token usage.
+ *
+ * @param effort Native model reasoning-effort string.
+ * @param locale Dashboard locale.
+ * @returns Localized depth label, the raw unknown value, or an em dash.
+ */
+export function formatThinkingDepth(effort: string | undefined, locale: Locale): string {
+  if (!effort?.trim()) return '—'
+  const normalized = effort.trim().toLowerCase()
+  return THINKING_DEPTH_LABELS[locale][normalized] ?? effort
 }
 
 export function readStoredLocale(storage: LocaleStorageLike | undefined): Locale {

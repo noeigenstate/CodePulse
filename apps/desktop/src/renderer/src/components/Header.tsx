@@ -7,17 +7,23 @@ interface Props {
   onToggleLocale: () => void
   onToggleMute: () => void
   onOpenStats: () => void
+  onOpenSettings: () => void
   /** 大屏模式中：按钮变为退出大屏 */
   statsActive?: boolean
+  /** Drives only the gear button's active visual state while the dialog is mounted. */
+  settingsOpen?: boolean
 }
 
+/** Renders global dashboard controls, including the settings trigger beside insights. */
 export function Header({
   locale,
   muted,
   onToggleLocale,
   onToggleMute,
   onOpenStats,
+  onOpenSettings,
   statsActive = false,
+  settingsOpen = false,
 }: Props): JSX.Element {
   const copy = headerCopy(locale)
   const statsLabel = statsActive ? (locale === 'zh' ? '退出大屏' : 'Exit') : copy.stats
@@ -76,6 +82,15 @@ export function Header({
             <ChartIcon />
             <span>{statsLabel}</span>
           </button>
+          <button
+            aria-label={copy.settings}
+            className={`control-btn control-btn-icon ${settingsOpen ? 'is-active' : ''}`}
+            onClick={onOpenSettings}
+            title={copy.settings}
+            type="button"
+          >
+            <SettingsIcon />
+          </button>
         </div>
       </div>
     </header>
@@ -121,6 +136,17 @@ function ChartIcon(): JSX.Element {
       <path
         fill="currentColor"
         d="M3 3a1 1 0 011-1h1a1 1 0 011 1v14H4a1 1 0 01-1-1V3zm5 6a1 1 0 011-1h1a1 1 0 011 1v8H8V9zm5-4a1 1 0 011-1h1a1 1 0 011 1v12h-3V5z"
+      />
+    </svg>
+  )
+}
+
+function SettingsIcon(): JSX.Element {
+  return (
+    <svg viewBox="0 0 20 20" className="h-[18px] w-[18px]" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M8.9 1.7h2.2l.5 1.9c.5.2 1 .5 1.4.8l1.9-.5 1.1 1.9-1.4 1.3c.1.5.2 1 .2 1.5s-.1 1-.2 1.5l1.4 1.3-1.1 1.9-1.9-.5c-.4.3-.9.6-1.4.8l-.5 1.9H8.9l-.5-1.9c-.5-.2-1-.5-1.4-.8l-1.9.5L4 12.5l1.4-1.3a5.8 5.8 0 010-3L4 6.9 5.1 5l1.9.5c.4-.3.9-.6 1.4-.8l.5-1.9zm1.1 5.1a3.2 3.2 0 100 6.4 3.2 3.2 0 000-6.4z"
       />
     </svg>
   )

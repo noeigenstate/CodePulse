@@ -8,7 +8,8 @@
     "codepulse-codex-hook": "./bin/codex-hook.js",
     "codepulse-claude-hook": "./bin/claude-hook.js",
     "codepulse-claude-statusline": "./bin/claude-statusline.js",
-    "codepulse-grok-hook": "./bin/grok-hook.js"
+    "codepulse-grok-hook": "./bin/grok-hook.js",
+    "codepulse-kimi-hook": "./bin/kimi-hook.js"
   },
   "scripts": {
     "typecheck": "echo \"hooks are plain JS — no typecheck\""

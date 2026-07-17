@@ -35,6 +35,7 @@ pnpm-debug.log*
 .idea/
 .vscode/*
 !.vscode/extensions.json
+**/.obsidian/workspace*.json
 Thumbs.db
 
 # env

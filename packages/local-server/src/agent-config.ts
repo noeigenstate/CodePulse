@@ -45,6 +45,24 @@ const GROK_MATCHED_EVENTS = new Set<string>([
   'Notification',
 ])
 
+/** Kimi Code events supported by its native `[[hooks]]` configuration. */
+const KIMI_EVENTS = [
+  'SessionStart',
+  'UserPromptSubmit',
+  'PreToolUse',
+  'PostToolUse',
+  'PostToolUseFailure',
+  'PermissionRequest',
+  'Stop',
+  'StopFailure',
+  'Interrupt',
+  'SessionEnd',
+  'Notification',
+] as const
+const KIMI_BLOCK_START = '# >>> codepulse-managed >>>'
+const KIMI_BLOCK_END = '# <<< codepulse-managed <<<'
+const KIMI_ADDED_NEWLINE = '# codepulse-added-leading-newline'
+
 export interface AgentConfigurationOptions {
   env?: Record<string, string | undefined>
   homeDir?: string
@@ -67,6 +85,7 @@ export interface AgentConfigurationResult {
   claude: AgentConfigurationStatus
   codex: AgentConfigurationStatus
   grok: AgentConfigurationStatus
+  kimi: AgentConfigurationStatus
 }
 
 interface JsonObject {
@@ -124,6 +143,7 @@ const HOOK_LAUNCHER_NAMES = [
   'claude-statusline.js',
   'codex-hook.js',
   'grok-hook.js',
+  'kimi-hook.js',
 ] as const
 
 /** Tiny ESM shim: read sibling hook-runtime.json and run the real install script. */
@@ -167,23 +187,25 @@ export async function configureAgents(
   const stableBin = await publishStableHookLaunchers(options)
   const resolved = { ...options, hookBinDir: stableBin }
 
-  const [claude, codex, grok] = await Promise.all([
+  const [claude, codex, grok, kimi] = await Promise.all([
     configureClaudeAgent(resolved),
     configureCodexAgent(resolved),
     configureGrokAgent(resolved),
+    configureKimiAgent(resolved),
   ])
-  return { claude, codex, grok }
+  return { claude, codex, grok, kimi }
 }
 
 export async function cleanupAgents(
   options: AgentConfigurationOptions,
 ): Promise<AgentConfigurationResult> {
-  const [claude, codex, grok] = await Promise.all([
+  const [claude, codex, grok, kimi] = await Promise.all([
     cleanupClaudeAgent(options),
     cleanupCodexAgent(options),
     cleanupGrokAgent(options),
+    cleanupKimiAgent(options),
   ])
-  return { claude, codex, grok }
+  return { claude, codex, grok, kimi }
 }
 
 export async function configureClaudeAgent(
@@ -644,6 +666,112 @@ function isGrokConfigured(settings: JsonObject): boolean {
   return !!hooks && GROK_EVENTS.every((event) => eventHasManagedCommand(hooks, event, 'grok-hook'))
 }
 
+/**
+ * Installs CodePulse hooks into Kimi Code's main TOML configuration.
+ *
+ * A delimited block makes the operation idempotent and lets cleanup preserve
+ * every user-owned setting byte-for-byte. The first edit also creates a
+ * non-overwriting `.codepulse.bak` safety copy.
+ *
+ * @param options Hook installation paths and environment overrides.
+ * @returns The resulting configuration status.
+ */
+export async function configureKimiAgent(
+  options: AgentConfigurationOptions,
+): Promise<AgentConfigurationStatus> {
+  const path = kimiConfigPath(options)
+  const command = nodeCommand(join(options.hookBinDir, 'kimi-hook.js'), options.localAuthToken)
+  try {
+    const before = (await readTextIfExists(path)) ?? ''
+    const block = buildKimiManagedBlock(command)
+    const next = replaceKimiManagedBlock(before, block)
+    const changed = next !== before
+    if (changed) {
+      await writeBackupOnce(path, before)
+      await writeText(path, next)
+    }
+    return { path, changed, configured: next.includes('kimi-hook.js') }
+  } catch (error) {
+    return { path, changed: false, configured: false, error: errorMessage(error) }
+  }
+}
+
+/**
+ * Removes only the CodePulse-managed Kimi TOML block.
+ *
+ * @param options Configuration path overrides.
+ * @returns The cleanup status without modifying user-owned TOML entries.
+ */
+export async function cleanupKimiAgent(
+  options: AgentConfigurationOptions,
+): Promise<AgentConfigurationStatus> {
+  const path = kimiConfigPath(options)
+  try {
+    const before = await readTextIfExists(path)
+    if (before == null) return { path, changed: false, configured: false }
+    const next = removeKimiManagedBlock(before)
+    const changed = next !== before
+    if (changed) await writeText(path, next)
+    return { path, changed, configured: false }
+  } catch (error) {
+    return { path, changed: false, configured: false, error: errorMessage(error) }
+  }
+}
+
+/** Builds valid Kimi TOML using only the documented hook fields. */
+function buildKimiManagedBlock(command: string): string {
+  const entries = KIMI_EVENTS.map(
+    (event) => `[[hooks]]\nevent = ${JSON.stringify(event)}\ncommand = ${JSON.stringify(command)}`,
+  ).join('\n\n')
+  return `${KIMI_BLOCK_START}\n${entries}\n${KIMI_BLOCK_END}`
+}
+
+/** Replaces an existing managed block or appends a new one. */
+function replaceKimiManagedBlock(text: string, block: string): string {
+  const start = text.indexOf(KIMI_BLOCK_START)
+  const end = start >= 0 ? text.indexOf(KIMI_BLOCK_END, start) : -1
+  if (start >= 0 && end >= 0) {
+    const existing = text.slice(start, end + KIMI_BLOCK_END.length)
+    const replacement = existing.includes(KIMI_ADDED_NEWLINE)
+      ? block.replace(KIMI_BLOCK_START, `${KIMI_BLOCK_START}\n${KIMI_ADDED_NEWLINE}`)
+      : block
+    return `${text.slice(0, start)}${replacement}${text.slice(end + KIMI_BLOCK_END.length)}`
+  }
+  if (text.length === 0) return `${block}\n`
+  if (text.endsWith('\n')) return `${text}${block}\n`
+  const marked = block.replace(KIMI_BLOCK_START, `${KIMI_BLOCK_START}\n${KIMI_ADDED_NEWLINE}`)
+  return `${text}\n${marked}\n`
+}
+
+/** Removes the managed block and only the separator inserted with it. */
+function removeKimiManagedBlock(text: string): string {
+  const start = text.indexOf(KIMI_BLOCK_START)
+  if (start < 0) return text
+  const markerEnd = text.indexOf(KIMI_BLOCK_END, start)
+  if (markerEnd < 0) return text
+  const managed = text.slice(start, markerEnd + KIMI_BLOCK_END.length)
+  let removeStart = start
+  if (managed.includes(KIMI_ADDED_NEWLINE) && start > 0 && text[start - 1] === '\n') {
+    removeStart -= 1
+  }
+  let removeEnd = markerEnd + KIMI_BLOCK_END.length
+  if (text.slice(removeEnd, removeEnd + 2) === '\r\n') removeEnd += 2
+  else if (text[removeEnd] === '\n') removeEnd += 1
+  return `${text.slice(0, removeStart)}${text.slice(removeEnd)}`
+}
+
+/** Writes the original config once without replacing a previous safety copy. */
+async function writeBackupOnce(path: string, original: string): Promise<void> {
+  if (!original) return
+  const backupPath = `${path}.codepulse.bak`
+  await mkdir(dirname(backupPath), { recursive: true })
+  try {
+    await writeFile(backupPath, original, { encoding: 'utf8', flag: 'wx' })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+  }
+}
+
 function codexHooksPath(options: Pick<AgentConfigurationOptions, 'env' | 'homeDir'>): string {
   const env = options.env ?? process.env
   return (
@@ -656,6 +784,16 @@ function grokHooksPath(options: Pick<AgentConfigurationOptions, 'env' | 'homeDir
   return (
     env['CODEPULSE_GROK_HOOKS_FILE'] ??
     join(options.homeDir ?? homedir(), '.grok', 'hooks', 'codepulse.json')
+  )
+}
+
+/** Resolves Kimi Code's main config, honoring test and installation overrides. */
+function kimiConfigPath(options: Pick<AgentConfigurationOptions, 'env' | 'homeDir'>): string {
+  const env = options.env ?? process.env
+  const home = options.homeDir ?? homedir()
+  return (
+    env['CODEPULSE_KIMI_CONFIG_FILE'] ??
+    join(env['KIMI_CODE_HOME'] ?? join(home, '.kimi-code'), 'config.toml')
   )
 }
 

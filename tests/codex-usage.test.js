@@ -799,8 +799,56 @@ test('Codex usage reader does not backfill pre-reset high weekly usage after res
 
   try {
     const usage = await readLatestCodexUsage({ session_id: sessionId }, { codexHome: home })
+    // Expired earlier snapshot must not be backfilled onto a context-only latest event.
     assert.equal(usage.rate_limits, undefined)
     assert.equal(usage.rate_limit_id, undefined)
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('Codex usage reader soft-resets expired limits on the latest token_count to 0%', async () => {
+  const home = join(tmpdir(), `codepulse-codex-soft-reset-${Date.now()}`)
+  const sessions = join(home, 'sessions', '2026', '07', '14')
+  const sessionId = 'session-soft-reset'
+  const rollout = join(sessions, `rollout-2026-07-14T12-00-00-${sessionId}.jsonl`)
+  const pastReset = Math.floor(Date.now() / 1000) - 120
+
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    rollout,
+    [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: sessionId, cwd: 'E:/project/soft-reset' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            last_token_usage: { input_tokens: 2000, total_tokens: 2000 },
+          },
+          rate_limits: {
+            limit_id: 'codex',
+            primary: {
+              used_percent: 91,
+              window_minutes: 10080,
+              resets_at: pastReset,
+            },
+            secondary: null,
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  try {
+    const usage = await readLatestCodexUsage({ session_id: sessionId }, { codexHome: home })
+    assert.ok(usage.rate_limits, 'must keep rate_limits for soft-reset UI')
+    assert.equal(usage.rate_limits.seven_day?.used_percent, 0)
+    assert.equal(usage.rate_limits.seven_day?.resets_at, pastReset)
   } finally {
     await rm(home, { recursive: true, force: true })
   }
@@ -961,6 +1009,48 @@ test('Codex usage reader does not use total_token_usage for context percent', as
     assert.equal(usage.context_used_percent, undefined)
     assert.equal(usage.usage.total_tokens, 91000)
     assert.equal(usage.rate_limits.seven_day.used_percentage, 10)
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('Codex usage reader returns the newest rollout model configuration', async () => {
+  const home = join(tmpdir(), `codepulse-codex-model-config-${Date.now()}`)
+  const sessions = join(home, 'sessions', '2026', '07', '16')
+  const sessionId = 'session-model-config'
+  const rollout = join(sessions, `rollout-2026-07-16T12-00-00-${sessionId}.jsonl`)
+
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    rollout,
+    [
+      JSON.stringify({ type: 'session_meta', payload: { id: sessionId, cwd: 'E:/project/model' } }),
+      JSON.stringify({
+        timestamp: '2026-07-16T12:00:00.000Z',
+        type: 'turn_context',
+        payload: { model: 'gpt-5.6-sol', effort: 'max' },
+      }),
+      JSON.stringify({ type: 'event_msg', payload: { type: 'noise', value: 'x'.repeat(600_000) } }),
+      JSON.stringify({
+        timestamp: '2026-07-16T12:01:00.000Z',
+        type: 'event_msg',
+        payload: {
+          type: 'thread_settings_applied',
+          thread_settings: { model: 'gpt-5.6-terra', reasoning_effort: 'ultra' },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  try {
+    const usage = await readLatestCodexUsage(
+      { session_id: sessionId, model: 'gpt-5.6-sol' },
+      { codexHome: home },
+    )
+    assert.equal(usage.model, 'gpt-5.6-terra')
+    assert.equal(usage.reasoning_effort, 'ultra')
+    assert.equal(usage.model_observed_at, Date.parse('2026-07-16T12:01:00.000Z'))
   } finally {
     await rm(home, { recursive: true, force: true })
   }

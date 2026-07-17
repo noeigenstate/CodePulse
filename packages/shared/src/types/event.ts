@@ -6,6 +6,7 @@
  * @module shared/types/event
  */
 import type { AgentType } from './agent.js'
+import type { TurnTiming } from './timing.js'
 import type { TokenPayload } from './token.js'
 
 /**
@@ -52,6 +53,18 @@ export interface AgentEvent {
   cwd?: string
   /** 使用的模型（如有上报）。 */
   model?: string
+  /** 模型配置的思考深度，不等同于实际产生的推理 token 数。 */
+  reasoningEffort?: string
+  /**
+   * 原生 CLI 最近一次记录思考深度配置的时间（epoch 毫秒）。它可以来自独立
+   * 的全局设置，不要求与 `modelObservedAt` 属于同一份模型快照。
+   */
+  reasoningEffortObservedAt?: number
+  /**
+   * CLI rollout 记录这组模型配置的时间（epoch 毫秒）。存在时，`model` 与
+   * `reasoningEffort` 必须作为同一份配置快照一起处理。
+   */
+  modelObservedAt?: number
   /** `tool_start`/`tool_end`/`permission_request` 的工具名。 */
   toolName?: string
   /** shell 类工具调用的命令行。 */
@@ -61,6 +74,11 @@ export interface AgentEvent {
 
   /** `token_snapshot` 事件内联的 token/上下文用量。 */
   token?: TokenPayload
+  /**
+   * CLI 本地会话文件中读出的当前或最近一轮耗时快照。它与事件接收时间分离，
+   * 以便后台间歇同步不会把扫描时刻误认为任务开始时间。
+   */
+  turnTiming?: TurnTiming
   /** token 快照来源的本地文件路径，用于服务端做绑定会话的轻量刷新。 */
   tokenSourcePath?: string
 
@@ -74,6 +92,12 @@ export interface AgentEvent {
      * Combined with quotaRefresh when only rate limits changed (no recency bump).
      */
     sessionSync?: boolean
+    /**
+     * The local CLI source changed since the previous synchronization scan.
+     * This is stronger than merely seeing a persisted active record again and
+     * may safely recover a card that the watchdog marked as timed out.
+     */
+    activityRefresh?: boolean
   }
 
   /** 原始 Hook 载荷，仅供进程内归一化/调试，禁止持久化到 SQLite。 */

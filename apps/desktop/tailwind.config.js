@@ -4,22 +4,24 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        canvas: '#F6F9FF',
+        // Root CSS variables let existing Tailwind utilities switch with data-theme.
+        canvas: 'var(--canvas)',
         ink: {
-          DEFAULT: '#0F172A',
-          900: '#0F172A',
-          700: '#334155',
-          500: '#64748B',
-          400: '#94A3B8',
+          DEFAULT: 'var(--ink)',
+          900: 'var(--ink)',
+          700: 'var(--ink-700)',
+          500: 'var(--ink-muted)',
+          400: 'var(--ink-subtle)',
         },
         line: {
-          DEFAULT: '#E6EBF5',
-          soft: '#EEF2F9',
+          DEFAULT: 'var(--line)',
+          soft: 'var(--line-soft)',
         },
         brand: {
           claude: '#FF8A2B',
           codex: '#5B6BFF',
           grok: '#17C083',
+          kimi: '#6D5EF5',
         },
       },
       borderRadius: {

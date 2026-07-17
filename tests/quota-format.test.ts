@@ -175,6 +175,7 @@ test('Codex and Grok visible windows omit five-hour even when payload has it', (
   assert.equal(visibleRateLimitWindows(token, 'codex').sevenDay?.usedPercent, 15)
   assert.equal(visibleRateLimitWindows(token, 'grok').fiveHour, undefined)
   assert.equal(visibleRateLimitWindows(token, 'claude_code').fiveHour?.usedPercent, 40)
+  assert.equal(visibleRateLimitWindows(token, 'kimi').fiveHour?.usedPercent, 40)
 })
 
 test('workspace paths are shortened for project rows', () => {

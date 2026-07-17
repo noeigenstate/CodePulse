@@ -34,6 +34,7 @@ import {
 } from '@codepulse/local-server'
 import { TrayController } from './tray.js'
 import { showNotification } from './notifications.js'
+import { FocusSyncScheduler } from './focus-sync.js'
 import {
   checkForUpdate,
   computeUpdateSnoozeUntil,
@@ -46,6 +47,8 @@ const MUTE_DURATION_MS = 30 * 60_000
 const DISABLE_UPDATE_CHECK_ENV = 'CODEPULSE_DISABLE_UPDATE_CHECKS'
 const EVENT_RETENTION_MS = 30 * 24 * 60 * 60_000
 const EVENT_PRUNE_INTERVAL_MS = 24 * 60 * 60_000
+/** Merges tray, focus, and renderer bootstrap refresh requests into one short batch. */
+const FOCUS_SYNC_DEBOUNCE_MS = 180
 
 let mainWindow: BrowserWindow | null = null
 let tray: TrayController | null = null
@@ -67,6 +70,21 @@ let installingUpdate = false
 let lastTrayStatusKey: string | undefined
 
 const hub = new StatusHub()
+const focusSync = new FocusSyncScheduler(async () => {
+  await server?.syncSessions()
+}, FOCUS_SYNC_DEBOUNCE_MS)
+
+/**
+ * Starts a coalesced focus refresh without delaying Electron event handlers.
+ *
+ * Errors are logged here because tray, window-focus, and bootstrap callers are
+ * fire-and-forget; the explicit IPC path awaits the scheduler itself.
+ */
+function scheduleFocusSync(): void {
+  void focusSync.schedule().catch((err) => {
+    console.error('[codepulse] focused session sync failed', err)
+  })
+}
 
 function broadcast(channel: string, payload: unknown): void {
   mainWindow?.webContents.send(channel, payload)
@@ -76,15 +94,15 @@ function showWindow(): void {
   if (!mainWindow) {
     createWindow()
     void refreshLocalAgents()
-    void server?.syncSessions()
+    scheduleFocusSync()
     return
   }
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.show()
   mainWindow.focus()
   void refreshLocalAgents()
-  // 聚焦时立即扫描本机 CLI 会话，避免一直「等待命令行同步」。
-  void server?.syncSessions()
+  // Tray / second-instance / focus may converge here; collapse them into one scan.
+  scheduleFocusSync()
 }
 
 function appIconPath(): string {
@@ -116,6 +134,9 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => mainWindow?.show())
+  mainWindow.on('focus', () => {
+    scheduleFocusSync()
+  })
   mainWindow.on('closed', () => {
     mainWindow = null
   })
@@ -128,9 +149,17 @@ function createWindow(): void {
   }
 }
 
+/** Coalesce tool-storm status IPC/tray work (~1 frame) without changing hub semantics. */
+const STATUS_COALESCE_MS = 32
+let pendingStatusSnapshot: StatusSnapshot | null = null
+let statusFlushTimer: NodeJS.Timeout | null = null
+
 function wireHub(): void {
   hub.on('event', (event) => {
     if (!db) return
+    // Skip pure internal quota/session-sync noise from stats DB (keeps dashboard
+    // correct; tool storms still persist lifecycle events for analytics).
+    if (event.internal?.quotaRefresh || event.internal?.sessionSync) return
     try {
       persistEvent(db, event)
     } catch (err) {
@@ -139,8 +168,17 @@ function wireHub(): void {
   })
 
   hub.on('status', (snapshot: StatusSnapshot) => {
-    updateTrayIfChanged(snapshot)
-    broadcast('codepulse:status', snapshot)
+    pendingStatusSnapshot = snapshot
+    if (statusFlushTimer) return
+    statusFlushTimer = setTimeout(() => {
+      statusFlushTimer = null
+      const next = pendingStatusSnapshot
+      pendingStatusSnapshot = null
+      if (!next) return
+      updateTrayIfChanged(next)
+      broadcast('codepulse:status', next)
+    }, STATUS_COALESCE_MS)
+    statusFlushTimer.unref?.()
   })
 
   hub.on('notification', (note: NotificationRequest) => {
@@ -201,7 +239,7 @@ function registerIpc(): void {
   )
   /** 渲染进程主动触发本机 CLI 会话扫盘（不依赖 hook / 用户发消息）。 */
   ipcMain.handle('codepulse:sync-sessions', async () => {
-    await server?.syncSessions()
+    await focusSync.schedule()
     return hub.snapshot()
   })
 }
@@ -295,7 +333,7 @@ async function bootstrap(): Promise<void> {
 
   createWindow()
   // Safety net: rescan after the window is up (covers late-arriving rollouts).
-  void server?.syncSessions()
+  scheduleFocusSync()
   void checkForUpdatesOnce()
 }
 
@@ -507,10 +545,22 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+/**
+ * Tray menus should rebuild only when labels/state change — not on every
+ * token % / lastEventAt tick (tool storms used to rebuild the menu constantly).
+ */
 function trayStatusKey(snapshot: StatusSnapshot): string {
   return JSON.stringify({
     overall: snapshot.overall,
-    agents: snapshot.agents.filter((agent) => !agent.taskHidden),
+    agents: snapshot.agents
+      .filter((agent) => !agent.taskHidden)
+      .map((agent) => ({
+        t: agent.agentType,
+        s: agent.state,
+        u: agent.unread,
+        w: agent.workspacePath ?? '',
+        m: agent.model ?? '',
+      })),
   })
 }
 
@@ -591,6 +641,7 @@ if (cleanupMode) {
   })
 
   app.on('before-quit', () => {
+    focusSync.cancel()
     hub.stopWatchdog()
     stopMaintenanceTimers()
     tray?.destroy()

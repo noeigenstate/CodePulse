@@ -8,6 +8,7 @@ import {
   detectClaudeAgent,
   detectCodexAgent,
   detectGrokAgent,
+  detectKimiAgent,
 } from '@codepulse/local-server'
 
 test('Claude detection falls back when the Windows cmd shim is broken', async () => {
@@ -73,6 +74,32 @@ test('Grok detection reports installed CLI and CodePulse hook file', async () =>
   assert.equal(agent.configured, true)
   assert.equal(agent.type, 'grok')
   assert.equal(agent.version, 'grok 0.2.100')
+})
+
+test('Kimi detection probes its private install and main TOML hook config', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'codepulse-kimi-detect-'))
+  const kimiHome = join(home, '.kimi-code')
+  await mkdir(kimiHome, { recursive: true })
+  await writeFile(
+    join(kimiHome, 'config.toml'),
+    '[[hooks]]\nevent = "Stop"\ncommand = "node kimi-hook.js"\n',
+    'utf8',
+  )
+  const commands: string[] = []
+  const agent = await detectKimiAgent({
+    homeDir: home,
+    platform: 'win32',
+    runCommand: async (command) => {
+      commands.push(command)
+      return { ok: true, stdout: '0.26.0' }
+    },
+  })
+
+  assert.equal(commands[0], join(kimiHome, 'bin', 'kimi.exe'))
+  assert.equal(agent.installed, true)
+  assert.equal(agent.configured, true)
+  assert.equal(agent.type, 'kimi')
+  assert.equal(agent.version, '0.26.0')
 })
 
 test('macOS CLI candidates include Homebrew and bare command for GUI PATH gaps', async () => {

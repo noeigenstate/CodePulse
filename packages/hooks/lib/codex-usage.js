@@ -27,6 +27,7 @@ export async function readLatestCodexUsage(raw, options = {}) {
     let tokenCount = null
     let tokenCountWithLimits = null
     let taskStarted = null
+    let modelConfig = null
     const nowMs = Date.now()
 
     for (let i = lines.length - 1; i >= 0; i--) {
@@ -36,6 +37,7 @@ export async function readLatestCodexUsage(raw, options = {}) {
       } catch {
         continue
       }
+      if (!modelConfig) modelConfig = readCodexModelConfig(item)
       if (item?.type !== 'event_msg') continue
       const payload = item.payload
       if (payload?.type === 'token_count') {
@@ -49,11 +51,11 @@ export async function readLatestCodexUsage(raw, options = {}) {
         }
       }
       if (!taskStarted && payload?.type === 'task_started') taskStarted = payload
-      if (tokenCount && tokenCountWithLimits && taskStarted) break
+      if (tokenCount && tokenCountWithLimits && taskStarted && modelConfig) break
     }
 
-    if (!tokenCount) return {}
-    const patch = toUsagePatch(tokenCount, taskStarted)
+    if (!tokenCount && !modelConfig) return {}
+    const patch = tokenCount ? toUsagePatch(tokenCount, taskStarted) : {}
     // Prefer limits on the latest event; only backfill from an earlier *active* snapshot.
     if (!patch.rate_limits && tokenCountWithLimits && tokenCountWithLimits !== tokenCount) {
       const limitPatch = toUsagePatch(tokenCountWithLimits, taskStarted)
@@ -63,16 +65,81 @@ export async function readLatestCodexUsage(raw, options = {}) {
         if (limitPatch.rate_limit_name) patch.rate_limit_name = limitPatch.rate_limit_name
       }
     } else if (patch.rate_limits && !rateLimitPatchIsActive(patch.rate_limits, nowMs)) {
-      // Latest event still carries expired limits — drop them so we do not keep
-      // flashing pre-reset percentages after the plan has rolled over.
-      delete patch.rate_limits
-      delete patch.rate_limit_id
-      delete patch.rate_limit_name
+      // Soft-reset (match local-server quota-watcher): keep windows at 0% with past
+      // resets_at so the hub can show "可刷新" instead of sticky pre-reset high %.
+      // Deleting limits left mergeToken holding the previous high sample forever.
+      patch.rate_limits = softResetExpiredRateLimits(patch.rate_limits, nowMs)
     }
-    return { ...patch, usage_source_path: file }
+    return { ...patch, ...modelConfig, usage_source_path: file }
   } catch {
     return {}
   }
+}
+
+/**
+ * Reads one timestamped Codex model configuration from a rollout envelope.
+ *
+ * The model and reasoning effort are intentionally extracted from the same
+ * payload. Mixing an older effort with a newer model would misrepresent the
+ * active turn after a `/model` or effort change.
+ *
+ * @param {unknown} item Parsed JSONL envelope.
+ * @returns {{model: string, reasoning_effort?: string, model_observed_at?: number} | null}
+ *     The canonical model configuration, or null when this envelope has none.
+ */
+function readCodexModelConfig(item) {
+  const entry = objectValue(item)
+  const payload = objectValue(entry?.payload)
+  if (!entry || !payload) return null
+
+  const collaboration = objectValue(payload.collaboration_mode)
+  const candidates =
+    entry.type === 'turn_context'
+      ? [payload, objectValue(collaboration?.settings)]
+      : [objectValue(payload.thread_settings), objectValue(collaboration?.settings)]
+
+  for (const settings of candidates) {
+    const model = stringValue(settings?.model)
+    if (!model) continue
+    const effort = stringValue(
+      settings?.reasoning_effort ?? settings?.reasoningEffort ?? settings?.effort,
+    )
+    const observedAt = parseRolloutTimestamp(entry.timestamp)
+    return {
+      model,
+      ...(effort ? { reasoning_effort: effort } : {}),
+      ...(observedAt !== undefined ? { model_observed_at: observedAt } : {}),
+    }
+  }
+  return null
+}
+
+/**
+ * Converts a JSONL envelope timestamp into epoch milliseconds.
+ *
+ * @param {unknown} value ISO timestamp or numeric epoch value from Codex.
+ * @returns {number | undefined} Finite epoch milliseconds when parseable.
+ */
+function parseRolloutTimestamp(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value < 1_000_000_000_000 ? value * 1000 : value
+  }
+  if (typeof value !== 'string' || !value.trim()) return undefined
+  const parsed = Date.parse(value)
+  if (Number.isFinite(parsed)) return parsed
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return undefined
+  return numeric < 1_000_000_000_000 ? numeric * 1000 : numeric
+}
+
+/**
+ * Narrows an unknown JSON value to a record without accepting arrays.
+ *
+ * @param {unknown} value Value to inspect.
+ * @returns {Record<string, unknown> | undefined} Object record when available.
+ */
+function objectValue(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : undefined
 }
 
 function tokenCountHasRateLimits(payload) {
@@ -116,6 +183,35 @@ function rateLimitPatchIsActive(rateLimits, nowMs = Date.now()) {
   if (!sawReset) return true
   // Every known reset is in the past → stale pre-reset snapshot.
   return false
+}
+
+/**
+ * Soft-reset expired windows to 0% while keeping resets_at (past) so UI can show
+ * "可刷新" instead of wiping limits (which left sticky pre-reset high % in the hub).
+ */
+function softResetExpiredRateLimits(rateLimits, nowMs = Date.now()) {
+  if (!rateLimits || typeof rateLimits !== 'object') return rateLimits
+  const out = { ...rateLimits }
+  for (const key of ['five_hour', 'seven_day', 'fiveHour', 'sevenDay']) {
+    if (!out[key] || typeof out[key] !== 'object') continue
+    out[key] = softResetExpiredWindow(out[key], nowMs)
+  }
+  return out
+}
+
+function softResetExpiredWindow(window, nowMs) {
+  if (!window || typeof window !== 'object') return window
+  const resetsAt = window.resets_at ?? window.resetsAt
+  if (typeof resetsAt !== 'number' || !Number.isFinite(resetsAt)) {
+    return { ...window, used_percent: 0, usedPercent: 0 }
+  }
+  const resetMs = resetsAt < 1_000_000_000_000 ? resetsAt * 1000 : resetsAt
+  if (resetMs > nowMs) return window
+  return {
+    ...window,
+    used_percent: 0,
+    usedPercent: 0,
+  }
 }
 
 /**

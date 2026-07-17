@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { StatusHub } from '@codepulse/core'
+import { TurnState } from '@codepulse/shared'
 import { SessionSyncService } from '@codepulse/local-server'
 
 test('SessionSyncService hydrates Codex project from local rollout within one scan', async () => {
@@ -20,7 +21,21 @@ test('SessionSyncService hydrates Codex project from local rollout within one sc
     [
       JSON.stringify({
         type: 'session_meta',
-        payload: { id: sessionId, cwd, model: 'gpt-5.3-codex' },
+        payload: { id: sessionId, cwd },
+      }),
+      JSON.stringify({
+        timestamp: '2026-07-14T12:00:00.000Z',
+        type: 'turn_context',
+        payload: { model: 'gpt-5.6-sol', effort: 'max' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: { type: 'noise', value: 'x'.repeat(600_000) },
+      }),
+      JSON.stringify({
+        timestamp: '2026-07-14T12:01:00.000Z',
+        type: 'turn_context',
+        payload: { model: 'gpt-5.6-terra', effort: 'ultra' },
       }),
       JSON.stringify({
         type: 'event_msg',
@@ -67,7 +82,227 @@ test('SessionSyncService hydrates Codex project from local rollout within one sc
       `expected context % from last_token_usage, got ${codex?.token?.contextUsedPercent}`,
     )
     assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 37)
-    assert.equal(codex?.model, 'gpt-5.3-codex')
+    assert.equal(codex?.model, 'gpt-5.6-terra')
+    assert.equal(codex?.reasoningEffort, 'ultra')
+    assert.equal(codex?.modelObservedAt, Date.parse('2026-07-14T12:01:00.000Z'))
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService synchronizes Codex native active and completed task timing', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-codex-timing-')
+  const sessions = join(home, 'sessions', '2026', '07', '16')
+  const sessionId = '019f7009-aaaa-bbbb-cccc-ddddeeeeffff'
+  const cwd = 'E:/work/codex-timing'
+  const rollout = join(sessions, `rollout-2026-07-16T12-00-00-${sessionId}.jsonl`)
+  const completedStartSeconds = Math.floor(Date.now() / 1000) - 20
+  const completedAtSeconds = completedStartSeconds + 4
+
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    rollout,
+    [
+      JSON.stringify({ type: 'session_meta', payload: { id: sessionId, cwd } }),
+      JSON.stringify({
+        timestamp: new Date((completedStartSeconds - 30) * 1000).toISOString(),
+        type: 'event_msg',
+        payload: {
+          type: 'task_started',
+          turn_id: 'historical-unmatched-start',
+          started_at: completedStartSeconds - 30,
+        },
+      }),
+      JSON.stringify({
+        timestamp: new Date(completedStartSeconds * 1000).toISOString(),
+        type: 'event_msg',
+        payload: {
+          type: 'task_started',
+          turn_id: 'turn-complete',
+          started_at: completedStartSeconds,
+        },
+      }),
+      JSON.stringify({
+        timestamp: new Date(completedAtSeconds * 1000).toISOString(),
+        type: 'event_msg',
+        payload: {
+          type: 'task_complete',
+          turn_id: 'turn-complete',
+          completed_at: completedAtSeconds,
+          duration_ms: 4_321,
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+  await utimes(rollout, new Date(), new Date())
+
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: home,
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    codexProcessAlive: () => true,
+  })
+
+  try {
+    await sync.syncNow(['codex'])
+    let codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.deepEqual(codex?.turnTiming, {
+      state: 'completed',
+      startedAt: completedStartSeconds * 1000,
+      elapsedMs: 4_321,
+      observedAt: completedAtSeconds * 1000,
+    })
+    assert.equal(
+      codex?.state,
+      TurnState.IDLE,
+      'an unmatched historical start must not revive a completed Codex task',
+    )
+
+    const activeStartSeconds = completedAtSeconds + 1
+    await writeFile(
+      rollout,
+      [
+        JSON.stringify({
+          timestamp: new Date((activeStartSeconds - 1) * 1000).toISOString(),
+          type: 'event_msg',
+          payload: {
+            type: 'task_started',
+            turn_id: 'turn-after-terminal-earlier',
+            started_at: activeStartSeconds - 1,
+          },
+        }),
+        JSON.stringify({
+          timestamp: new Date(activeStartSeconds * 1000).toISOString(),
+          type: 'event_msg',
+          payload: { type: 'task_started', turn_id: 'turn-active', started_at: activeStartSeconds },
+        }),
+      ]
+        .map((line) => `\n${line}`)
+        .join(''),
+      { encoding: 'utf8', flag: 'a' },
+    )
+    await utimes(rollout, new Date(), new Date())
+    await sync.syncNow(['codex'])
+
+    codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.deepEqual(codex?.turnTiming, {
+      state: 'active',
+      startedAt: activeStartSeconds * 1000,
+      observedAt: activeStartSeconds * 1000,
+    })
+    assert.equal(codex?.turnStartedAt, activeStartSeconds * 1000)
+    assert.equal(codex?.state, TurnState.PROMPT_SUBMITTED)
+
+    // A fresh server process has no hook memory. The native active snapshot
+    // must still recover a running card. A static record is not a heartbeat;
+    // only a later real rollout write refreshes the watchdog timestamp.
+    let restartNow = Date.now()
+    const restartedHub = new StatusHub({ sessionThrottleMs: 0 })
+    const restartedSync = new SessionSyncService({
+      hub: restartedHub,
+      userHome: home,
+      codexHome: home,
+      grokHome: join(home, 'no-grok'),
+      claudeHome: join(home, 'no-claude'),
+      disableWatch: true,
+      now: () => restartNow,
+      codexProcessAlive: () => true,
+    })
+    try {
+      await restartedSync.syncNow(['codex'])
+      let restored = restartedHub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+      assert.equal(restored?.state, TurnState.PROMPT_SUBMITTED)
+      assert.equal(restored?.terminalAt, undefined)
+      const restoredAt = restored?.lastEventAt
+
+      restartNow += 3_500
+      await restartedSync.syncNow(['codex'])
+      restored = restartedHub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+      assert.equal(restored?.lastEventAt, restoredAt)
+      assert.equal(restored?.terminalAt, undefined)
+
+      await writeFile(
+        rollout,
+        `\n${JSON.stringify({ type: 'event_msg', payload: { type: 'progress' } })}`,
+        { encoding: 'utf8', flag: 'a' },
+      )
+      await utimes(rollout, new Date(restartNow), new Date(restartNow))
+      await restartedSync.syncNow(['codex'])
+      restored = restartedHub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+      assert.equal(restored?.lastEventAt, restartNow)
+    } finally {
+      restartedSync.stop()
+    }
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService prefers the newest model config over a newer same-workspace mtime', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-model-priority-')
+  const sessions = join(home, 'sessions', '2026', '07', '16')
+  const cwd = 'E:/work/same-workspace'
+  const solId = '019f7004-aaaa-bbbb-cccc-ddddeeeeffff'
+  const terraId = '019f7005-aaaa-bbbb-cccc-ddddeeeeffff'
+  const solRollout = join(sessions, `rollout-2026-07-16T12-00-00-${solId}.jsonl`)
+  const terraRollout = join(sessions, `rollout-2026-07-16T12-01-00-${terraId}.jsonl`)
+
+  await mkdir(sessions, { recursive: true })
+  const writeRollout = async (
+    file: string,
+    sessionId: string,
+    model: string,
+    effort: string,
+    timestamp: string,
+  ): Promise<void> => {
+    await writeFile(
+      file,
+      [
+        JSON.stringify({ type: 'session_meta', payload: { id: sessionId, cwd } }),
+        JSON.stringify({ timestamp, type: 'turn_context', payload: { model, effort } }),
+        JSON.stringify({
+          type: 'event_msg',
+          payload: {
+            type: 'token_count',
+            info: { last_token_usage: { input_tokens: 100, output_tokens: 1, total_tokens: 101 } },
+          },
+        }),
+      ].join('\n'),
+      'utf8',
+    )
+  }
+
+  await writeRollout(solRollout, solId, 'gpt-5.6-sol', 'max', '2026-07-16T12:00:00.000Z')
+  await writeRollout(terraRollout, terraId, 'gpt-5.6-terra', 'ultra', '2026-07-16T12:01:00.000Z')
+  const now = Date.now()
+  // Simulate an older Sol session writing a later token snapshot after Terra changed model.
+  await utimes(terraRollout, new Date(now - 1_000), new Date(now - 1_000))
+  await utimes(solRollout, new Date(now), new Date(now))
+
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: home,
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    codexProcessAlive: () => true,
+  })
+
+  try {
+    await sync.syncNow(['codex'])
+    const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.equal(codex?.externalSessionId, terraId)
+    assert.equal(codex?.model, 'gpt-5.6-terra')
+    assert.equal(codex?.reasoningEffort, 'ultra')
   } finally {
     sync.stop()
     await rm(home, { recursive: true, force: true })
@@ -231,6 +466,8 @@ test('SessionSyncService hydrates Grok only from live active_sessions', async ()
   const liveDir = join(home, 'sessions', encodeURIComponent(liveCwd), liveId)
   const staleDir = join(home, 'sessions', encodeURIComponent(staleCwd), staleId)
   const logs = join(home, 'logs')
+  const grokTurnStartedAt = Date.now() - 5_000
+  const grokTurnEndedAt = grokTurnStartedAt + 3_250
 
   await mkdir(liveDir, { recursive: true })
   await mkdir(staleDir, { recursive: true })
@@ -263,6 +500,20 @@ test('SessionSyncService hydrates Grok only from live active_sessions', async ()
       'utf8',
     )
   }
+  await writeFile(
+    join(liveDir, 'events.jsonl'),
+    [
+      JSON.stringify({
+        type: 'turn_started',
+        ts: new Date(grokTurnStartedAt).toISOString(),
+      }),
+      JSON.stringify({
+        type: 'turn_ended',
+        ts: new Date(grokTurnEndedAt).toISOString(),
+      }),
+    ].join('\n'),
+    'utf8',
+  )
 
   const periodEnd = new Date(Date.now() + 3 * 24 * 60 * 60_000).toISOString()
   await writeFile(
@@ -300,6 +551,12 @@ test('SessionSyncService hydrates Grok only from live active_sessions', async ()
     assert.equal(grokAgents[0]?.workspacePath?.replace(/\\/g, '/'), liveCwd.replace(/\\/g, '/'))
     assert.equal(grokAgents[0]?.token?.contextUsedPercent, 42)
     assert.equal(grokAgents[0]?.token?.rateLimits?.sevenDay?.usedPercent, 18)
+    assert.deepEqual(grokAgents[0]?.turnTiming, {
+      state: 'completed',
+      startedAt: grokTurnStartedAt,
+      elapsedMs: 3_250,
+      observedAt: grokTurnEndedAt,
+    })
   } finally {
     sync.stop()
     await rm(home, { recursive: true, force: true })
@@ -365,9 +622,12 @@ test('SessionSyncService hydrates Claude from live sessions pid + transcript', a
   const sessionsDir = join(home, 'sessions')
   const projectDir = join(home, 'projects', 'E-------work-claude-open')
   const transcript = join(projectDir, `${sessionId}.jsonl`)
+  const promptAt = Date.now() - 6_000
+  const completedAt = promptAt + 4_000
 
   await mkdir(sessionsDir, { recursive: true })
   await mkdir(projectDir, { recursive: true })
+  await writeFile(join(home, 'settings.json'), JSON.stringify({ effortLevel: 'high' }), 'utf8')
   await writeFile(
     join(sessionsDir, '424242.json'),
     JSON.stringify({
@@ -384,6 +644,12 @@ test('SessionSyncService hydrates Claude from live sessions pid + transcript', a
     [
       JSON.stringify({ type: 'mode', mode: 'normal', sessionId }),
       JSON.stringify({
+        type: 'user',
+        timestamp: new Date(promptAt).toISOString(),
+        userType: 'external',
+        message: { role: 'user' },
+      }),
+      JSON.stringify({
         type: 'assistant',
         cwd,
         sessionId,
@@ -396,6 +662,12 @@ test('SessionSyncService hydrates Claude from live sessions pid + transcript', a
             output_tokens: 200,
           },
         },
+      }),
+      JSON.stringify({
+        type: 'system',
+        subtype: 'turn_duration',
+        timestamp: new Date(completedAt).toISOString(),
+        durationMs: 4_000,
       }),
     ].join('\n'),
     'utf8',
@@ -418,11 +690,88 @@ test('SessionSyncService hydrates Claude from live sessions pid + transcript', a
     assert.ok(claude, 'expected claude_code agent after disk sync')
     assert.equal(claude?.workspacePath?.replace(/\\/g, '/'), cwd.replace(/\\/g, '/'))
     assert.equal(claude?.model, 'claude-opus-4')
+    assert.equal(claude?.reasoningEffort, 'high')
+    assert.deepEqual(claude?.turnTiming, {
+      state: 'completed',
+      startedAt: promptAt,
+      elapsedMs: 4_000,
+      observedAt: completedAt,
+    })
     // contextInput = 100+40000+500 = 40600 / 200000 ≈ 20.3%
     assert.ok(
       (claude?.token?.contextUsedPercent ?? 0) > 15,
       `expected context % from transcript usage, got ${claude?.token?.contextUsedPercent}`,
     )
+
+    // Claude has no common turn ID here. A later external user row that cannot
+    // be reconciled with `turn_duration` must not be attached as this turn's
+    // start, while the native completed duration remains displayable.
+    const mismatchedCompletedAt = Date.now() - 500
+    await writeFile(
+      transcript,
+      [
+        JSON.stringify({
+          type: 'user',
+          timestamp: new Date(mismatchedCompletedAt - 855).toISOString(),
+          userType: 'external',
+          message: { role: 'user' },
+        }),
+        JSON.stringify({
+          type: 'system',
+          subtype: 'turn_duration',
+          timestamp: new Date(mismatchedCompletedAt).toISOString(),
+          durationMs: 592_873,
+        }),
+      ]
+        .map((line) => `\n${line}`)
+        .join(''),
+      { encoding: 'utf8', flag: 'a' },
+    )
+    await sync.syncNow(['claude_code'])
+    const unpairedClaude = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
+    assert.deepEqual(unpairedClaude?.turnTiming, {
+      state: 'completed',
+      elapsedMs: 592_873,
+      observedAt: mismatchedCompletedAt,
+    })
+
+    const activePromptAt = Date.now()
+    await writeFile(
+      join(sessionsDir, '424242.json'),
+      JSON.stringify({
+        pid: 424_242,
+        sessionId,
+        cwd,
+        status: 'busy',
+        startedAt: promptAt - 60_000,
+        updatedAt: activePromptAt,
+      }),
+      'utf8',
+    )
+    await writeFile(
+      transcript,
+      `\n${JSON.stringify({
+        type: 'user',
+        timestamp: new Date(activePromptAt).toISOString(),
+        userType: 'external',
+        message: { role: 'user' },
+      })}`,
+      { encoding: 'utf8', flag: 'a' },
+    )
+    await sync.syncNow(['claude_code'])
+    const activeClaude = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
+    assert.deepEqual(activeClaude?.turnTiming, {
+      state: 'active',
+      startedAt: activePromptAt,
+      observedAt: activePromptAt,
+    })
+
+    // A parsed settings file that no longer defines effort is an authoritative
+    // unknown value, rather than a reason to keep the previous level forever.
+    await writeFile(join(home, 'settings.json'), JSON.stringify({ model: 'opus' }), 'utf8')
+    await sync.syncNow(['claude_code'])
+    const refreshed = hub.snapshot().agents.find((a) => a.agentType === 'claude_code')
+    assert.equal(refreshed?.reasoningEffort, undefined)
   } finally {
     sync.stop()
     await rm(home, { recursive: true, force: true })
@@ -535,6 +884,79 @@ test('SessionSyncService skips unchanged fingerprint on second scan', async () =
   }
 })
 
+test('SessionSyncService can scan only the dirty source', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-source-')
+  const codexHome = join(home, 'codex')
+  const claudeHome = join(home, 'claude')
+  const codexSessions = join(codexHome, 'sessions', '2026', '07', '16')
+  const codexSessionId = '019f7004-aaaa-bbbb-cccc-ddddeeeeffff'
+  const claudeSessionId = 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff'
+  const rollout = join(codexSessions, `rollout-2026-07-16-${codexSessionId}.jsonl`)
+
+  await mkdir(codexSessions, { recursive: true })
+  await writeFile(
+    rollout,
+    [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: codexSessionId, cwd: 'E:/work/dirty-codex' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: { last_token_usage: { input_tokens: 10, output_tokens: 1, total_tokens: 11 } },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+  await utimes(rollout, new Date(), new Date())
+  await mkdir(join(claudeHome, 'sessions'), { recursive: true })
+  await writeFile(
+    join(claudeHome, 'sessions', '515151.json'),
+    JSON.stringify({
+      pid: 515_151,
+      sessionId: claudeSessionId,
+      cwd: 'E:/work/clean-claude',
+      updatedAt: Date.now(),
+    }),
+    'utf8',
+  )
+
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome,
+    grokHome: join(home, 'no-grok'),
+    claudeHome,
+    disableWatch: true,
+    codexProcessAlive: () => true,
+    isPidAlive: () => true,
+  })
+
+  try {
+    await sync.syncNow(['codex'])
+    assert.deepEqual(
+      hub.snapshot().agents.map((agent) => agent.agentType),
+      ['codex'],
+    )
+
+    await sync.syncNow(['claude_code'])
+    assert.deepEqual(
+      hub
+        .snapshot()
+        .agents.map((agent) => agent.agentType)
+        .sort(),
+      ['claude_code', 'codex'],
+    )
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
 test('SessionSyncService shares highest same-window weekly % across projects (not stale mtime)', async () => {
   const home = await mkdtempJoin('codepulse-session-sync-quota-share-')
   const sessions = join(home, 'sessions', '2026', '07', '15')
@@ -624,6 +1046,269 @@ test('SessionSyncService shares highest same-window weekly % across projects (no
   }
 })
 
+test('SessionSyncService keeps Codex weekly quota from a parallel same-workspace rollout', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-parallel-quota-')
+  const sessions = join(home, 'sessions', '2026', '07', '17')
+  const cwd = 'E:/work/parallel-codex'
+  const quotaId = '019f9000-aaaa-bbbb-cccc-ddddeeeeff01'
+  const modelId = '019f9000-aaaa-bbbb-cccc-ddddeeeeff02'
+  const futureReset = Math.floor(Date.now() / 1000) + 5 * 24 * 60 * 60
+  const olderModelAt = new Date(Date.now() - 60_000).toISOString()
+  const newerModelAt = new Date().toISOString()
+  await mkdir(sessions, { recursive: true })
+
+  const quotaRollout = join(sessions, `rollout-2026-07-17T01-00-00-${quotaId}.jsonl`)
+  await writeFile(
+    quotaRollout,
+    [
+      JSON.stringify({ type: 'session_meta', payload: { id: quotaId, cwd } }),
+      JSON.stringify({
+        timestamp: olderModelAt,
+        type: 'turn_context',
+        payload: { model: 'gpt-5.6-sol', effort: 'high' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 256000,
+            last_token_usage: { input_tokens: 20_000, output_tokens: 10, total_tokens: 20_010 },
+          },
+          rate_limits: {
+            limit_id: 'codex',
+            primary: {
+              used_percent: 42,
+              window_minutes: 10080,
+              resets_at: futureReset,
+            },
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  const modelRollout = join(sessions, `rollout-2026-07-17T01-01-00-${modelId}.jsonl`)
+  await writeFile(
+    modelRollout,
+    [
+      JSON.stringify({ type: 'session_meta', payload: { id: modelId, cwd } }),
+      JSON.stringify({
+        timestamp: newerModelAt,
+        type: 'turn_context',
+        payload: { model: 'gpt-5.6-terra', effort: 'max' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 256000,
+            last_token_usage: { input_tokens: 30_000, output_tokens: 20, total_tokens: 30_020 },
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  const now = new Date()
+  await utimes(quotaRollout, now, now)
+  await utimes(modelRollout, now, now)
+
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: home,
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    codexProcessAlive: () => true,
+  })
+
+  try {
+    await sync.syncNow(['codex'])
+    const agents = hub.snapshot().agents.filter((agent) => agent.agentType === 'codex')
+    assert.equal(agents.length, 1)
+    assert.equal(agents[0]?.model, 'gpt-5.6-terra')
+    assert.equal(agents[0]?.token?.contextUsedPercent, (30_000 / 256_000) * 100)
+    assert.equal(agents[0]?.token?.rateLimits?.sevenDay?.usedPercent, 42)
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService quota fallback skips a newer rollout without rate limits', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-quota-fallback-')
+  const sessions = join(home, 'sessions', '2026', '07', '17')
+  const quotaId = '019f9100-aaaa-bbbb-cccc-ddddeeeeff01'
+  const emptyId = '019f9100-aaaa-bbbb-cccc-ddddeeeeff02'
+  const futureReset = Math.floor(Date.now() / 1000) + 4 * 24 * 60 * 60
+  await mkdir(sessions, { recursive: true })
+
+  const quotaRollout = join(sessions, `rollout-2026-07-17T00-00-00-${quotaId}.jsonl`)
+  await writeFile(
+    quotaRollout,
+    JSON.stringify({
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: { last_token_usage: { input_tokens: 1_000, total_tokens: 1_010 } },
+        rate_limits: {
+          limit_id: 'codex',
+          primary: {
+            used_percent: 31,
+            window_minutes: 10080,
+            resets_at: futureReset,
+          },
+        },
+      },
+    }),
+    'utf8',
+  )
+
+  const emptyRollout = join(sessions, `rollout-2026-07-17T00-01-00-${emptyId}.jsonl`)
+  await writeFile(
+    emptyRollout,
+    JSON.stringify({
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: { last_token_usage: { input_tokens: 2_000, total_tokens: 2_010 } },
+      },
+    }),
+    'utf8',
+  )
+
+  const idleAt = Date.now() - 10 * 60_000
+  await utimes(quotaRollout, new Date(idleAt - 1_000), new Date(idleAt - 1_000))
+  await utimes(emptyRollout, new Date(idleAt), new Date(idleAt))
+
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: home,
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    codexProcessAlive: () => true,
+  })
+
+  try {
+    await sync.syncNow(['codex'])
+    const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.ok(codex)
+    assert.equal(codex?.workspacePath, undefined)
+    assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 31)
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService hydrates Kimi model, effort, context, and native timing', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-kimi-')
+  const sessionId = 'session_kimi_sync'
+  const cwd = 'E:/work/kimi-open'
+  const sessionDir = join(home, 'sessions', 'wd_kimi', sessionId)
+  const agentDir = join(sessionDir, 'agents', 'main')
+  const wirePath = join(agentDir, 'wire.jsonl')
+  const promptAt = Date.now() - 4_000
+  const stepAt = promptAt + 20
+  await mkdir(agentDir, { recursive: true })
+  await writeFile(
+    join(home, 'session_index.jsonl'),
+    `${JSON.stringify({ sessionId, sessionDir, workDir: cwd })}\n`,
+    'utf8',
+  )
+  await writeFile(
+    wirePath,
+    [
+      JSON.stringify({ type: 'turn.prompt', time: promptAt }),
+      JSON.stringify({
+        type: 'context.append_loop_event',
+        event: { type: 'step.begin' },
+        time: stepAt,
+      }),
+      JSON.stringify({
+        type: 'llm.request',
+        modelAlias: 'kimi-code/k3',
+        thinkingEffort: 'max',
+        maxTokens: 150_000,
+        time: stepAt + 1,
+      }),
+      JSON.stringify({
+        type: 'usage.record',
+        model: 'kimi-code/k3',
+        usage: { inputOther: 1_000, inputCacheRead: 49_000, inputCacheCreation: 0, output: 300 },
+        time: stepAt + 2,
+      }),
+      JSON.stringify({
+        type: 'context.append_loop_event',
+        event: { type: 'step.end' },
+        time: stepAt + 3,
+      }),
+      JSON.stringify({
+        type: 'context.append_loop_event',
+        event: { type: 'step.begin' },
+        time: stepAt + 4,
+      }),
+      JSON.stringify({
+        type: 'llm.request',
+        modelAlias: 'kimi-code/k3',
+        thinkingEffort: 'max',
+        maxTokens: 149_700,
+        time: stepAt + 5,
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: join(home, 'no-codex'),
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    kimiHome: home,
+    kimiProcessAlive: () => true,
+    kimiQuotaResolver: async () => ({
+      rateLimits: {
+        fiveHour: { usedPercent: 100, resetsAt: 1_800_000_000, windowMinutes: 300 },
+        sevenDay: { usedPercent: 20, resetsAt: 1_800_604_800, windowMinutes: 10_080 },
+      },
+      updatedAt: Date.now(),
+      source: 'api',
+    }),
+    disableWatch: true,
+  })
+  try {
+    await sync.syncNow(['kimi'])
+    const kimi = hub.snapshot().agents.find((agent) => agent.agentType === 'kimi')
+    assert.ok(kimi)
+    assert.equal(kimi?.model, 'kimi-code/k3')
+    assert.equal(kimi?.reasoningEffort, 'max')
+    assert.equal(kimi?.token?.input, 50_000)
+    assert.equal(kimi?.token?.contextWindow, 200_000)
+    assert.equal(kimi?.token?.contextUsedPercent, 25.15)
+    assert.equal(kimi?.token?.rateLimits?.fiveHour?.usedPercent, 100)
+    assert.equal(kimi?.token?.rateLimits?.sevenDay?.usedPercent, 20)
+    assert.deepEqual(kimi?.turnTiming, {
+      state: 'active',
+      startedAt: promptAt,
+      observedAt: stepAt + 4,
+    })
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
 test('StatusHub does not let same-window weekly % go backwards from stale snapshots', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const future = Math.floor(Date.now() / 1000) + 86_400
@@ -659,6 +1344,43 @@ test('StatusHub does not let same-window weekly % go backwards from stale snapsh
 
   const codex = hub.snapshot().agents.find((a) => a.agentType === 'codex')
   assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 35)
+})
+
+test('StatusHub keeps soft-reset 0% on expired window against stale high %', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const past = Math.floor(Date.now() / 1000) - 3_600
+
+  hub.ingest({
+    id: 'soft-zero',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    cwd: 'E:/work/reset',
+    timestamp: 100,
+    token: {
+      accuracy: 'estimated',
+      rateLimitId: 'codex',
+      rateLimits: {
+        sevenDay: { usedPercent: 0, resetsAt: past, windowMinutes: 10_080 },
+      },
+    },
+  })
+  hub.ingest({
+    id: 'stale-pre-reset',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    cwd: 'E:/work/reset',
+    timestamp: 200,
+    token: {
+      accuracy: 'estimated',
+      rateLimitId: 'codex',
+      rateLimits: {
+        sevenDay: { usedPercent: 88, resetsAt: past, windowMinutes: 10_080 },
+      },
+    },
+  })
+
+  const codex = hub.snapshot().agents.find((a) => a.agentType === 'codex')
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 0)
 })
 
 async function mkdtempJoin(prefix: string): Promise<string> {

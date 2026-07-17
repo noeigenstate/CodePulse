@@ -8,6 +8,7 @@ import type { FastifyInstance } from 'fastify'
 import { normalizeEvent, type StatusHub } from '@codepulse/core'
 import { normalizeRawEvent } from '@codepulse/adapters'
 import { writeClaudeQuotaCache } from '../claude-quota.js'
+import { resolveEventWorkspacePaths, WorkspacePathResolver } from '../workspace-path.js'
 
 const MAX_EVENT_BATCH = 1000
 
@@ -17,12 +18,16 @@ const MAX_EVENT_BATCH = 1000
  * 接受单个原始 hook 载荷或其数组。每一项先经适配器
  * （`normalizeRawEvent`）再经归一化器（`normalizeEvent`）处理后
  * 投喂给 hub。无法识别的项被计数并忽略，而不是让整个请求失败。
- * 至少接受一个事件时返回 `202`，否则返回 `400`。
+ * 至少接受一个事件时返回 `202`，否则返回 `400`。每个路由实例还持有
+ * 一个有界路径解析器，在 StatusHub 推导项目键之前归一化符号链接和
+ * junction 别名。
  *
  * @param app 注册路由的 Fastify 实例。
- * @param hub 接收已接受事件的状态 hub。
+ * @param hub 接收已归一化事件的状态 hub。
  */
 export function registerEventRoutes(app: FastifyInstance, hub: StatusHub): void {
+  const workspacePaths = new WorkspacePathResolver()
+
   app.post('/api/events', async (request, reply) => {
     const body = request.body
     const items = Array.isArray(body) ? body : [body]
@@ -35,11 +40,12 @@ export function registerEventRoutes(app: FastifyInstance, hub: StatusHub): void 
     const ignored: unknown[] = []
 
     for (const item of items) {
-      const input = normalizeRawEvent(item)
-      if (!input) {
+      const rawInput = normalizeRawEvent(item)
+      if (!rawInput) {
         ignored.push(item)
         continue
       }
+      const input = await resolveEventWorkspacePaths(rawInput, workspacePaths)
       const event = normalizeEvent(input)
       hub.ingest(event)
       // Persist Claude account quota so session-sync can re-apply it without statusline.

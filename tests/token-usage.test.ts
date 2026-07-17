@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { fromClaudeStatusLine, fromCodexHook, fromGrokHook } from '@codepulse/adapters'
+import {
+  fromClaudeHook,
+  fromClaudeStatusLine,
+  fromCodexHook,
+  fromGrokHook,
+  fromKimiHook,
+} from '@codepulse/adapters'
 
 test('Claude status line sums current_usage cache tokens into context input', () => {
   const event = fromClaudeStatusLine({
@@ -26,6 +32,8 @@ test('Claude status line sums current_usage cache tokens into context input', ()
   assert.equal(event?.token?.output, 1200)
   assert.equal(event?.token?.total, 16700)
   assert.equal(event?.token?.contextUsedPercent, 7.75)
+  // No official used_percentage → derived math is estimated.
+  assert.equal(event?.token?.accuracy, 'estimated')
   assert.equal(event?.token?.rateLimits?.fiveHour?.usedPercent, 23.5)
   assert.equal(event?.token?.rateLimits?.fiveHour?.resetsAt, 1738425600)
   assert.equal(event?.token?.rateLimits?.sevenDay?.usedPercent, 41.2)
@@ -42,6 +50,7 @@ test('Claude status line parses 1M context window strings as one million tokens'
 
   assert.equal(event?.token?.contextWindow, 1_000_000)
   assert.equal(event?.token?.contextUsedPercent, 50)
+  assert.equal(event?.token?.accuracy, 'estimated')
 })
 
 test('Claude status line prefers official used_percentage when present', () => {
@@ -65,6 +74,7 @@ test('Claude status line prefers official used_percentage when present', () => {
   assert.equal(event?.token?.output, 1000)
   assert.equal(event?.token?.total, 25000)
   assert.equal(event?.token?.contextUsedPercent, 12.5)
+  assert.equal(event?.token?.accuracy, 'exact')
 })
 
 test('Claude status line does not use cumulative total input as context percent fallback', () => {
@@ -83,6 +93,25 @@ test('Claude status line does not use cumulative total input as context percent 
 
   assert.equal(event?.token?.input, 800000)
   assert.equal(event?.token?.contextUsedPercent, 20)
+  assert.equal(event?.token?.accuracy, 'estimated')
+})
+
+test('Claude adapters map native effort fields without using reasoning output tokens as depth', () => {
+  const hook = fromClaudeHook({
+    hook_event_name: 'UserPromptSubmit',
+    model: 'claude-opus-4-8',
+    effortLevel: 'HIGH',
+    usage: { reasoning_output_tokens: 12_345 },
+  })
+  const statusLine = fromClaudeStatusLine({
+    model: { display_name: 'Claude Opus 4.8' },
+    settings: { effortLevel: 'xhigh' },
+    usage: { reasoning_output_tokens: 54_321 },
+  })
+
+  assert.equal(hook?.reasoningEffort, 'high')
+  assert.equal(statusLine?.reasoningEffort, 'xhigh')
+  assert.equal(statusLine?.token?.reasoningOutput, 54_321)
 })
 
 test('Codex hook does not double count cached input for context percent', () => {
@@ -117,6 +146,21 @@ test('Codex hook parses 1M context window strings as one million tokens', () => 
 
   assert.equal(event?.token?.contextWindow, 1_000_000)
   assert.equal(event?.token?.contextUsedPercent, 25)
+})
+
+test('Codex hook keeps reasoning effort separate from reasoning output tokens', () => {
+  const event = fromCodexHook({
+    hook_event_name: 'UserPromptSubmit',
+    model: 'gpt-5.6-terra',
+    reasoning_effort: 'ultra',
+    model_observed_at: 1_784_513_490_123,
+    usage: { reasoning_output_tokens: 12_345 },
+  })
+
+  assert.equal(event?.model, 'gpt-5.6-terra')
+  assert.equal(event?.reasoningEffort, 'ultra')
+  assert.equal(event?.modelObservedAt, 1_784_513_490_123)
+  assert.equal(event?.token?.reasoningOutput, 12_345)
 })
 
 test('Codex hook carries quota bucket identity from rate limits', () => {
@@ -179,5 +223,33 @@ test('Grok hook maps signals-style context and weekly credit rate limits', () =>
   assert.equal(event?.token?.rateLimits?.sevenDay?.usedPercent, 1)
   assert.equal(event?.token?.rateLimits?.sevenDay?.resetsAt, 1_784_000_000)
   assert.equal(event?.token?.rateLimitName, 'SuperGrok')
+  assert.equal(event?.token?.accuracy, 'estimated')
+})
+
+test('Kimi hook maps native effort and injected local context usage', () => {
+  const event = fromKimiHook({
+    hook_event_name: 'UserPromptSubmit',
+    session_id: 'kimi-session',
+    cwd: 'E:/work/kimi',
+    model: 'kimi-code/k3',
+    thinking_effort: 'max',
+    prompt: 'implement the feature',
+    usage: {
+      input_tokens: 50_000,
+      cached_input_tokens: 48_000,
+      output_tokens: 400,
+      total_tokens: 50_400,
+    },
+    context_window_size: 200_000,
+    context_used_percent: 25,
+  })
+
+  assert.equal(event?.source, 'kimi')
+  assert.equal(event?.eventType, 'prompt_submit')
+  assert.equal(event?.model, 'kimi-code/k3')
+  assert.equal(event?.reasoningEffort, 'max')
+  assert.equal(event?.token?.input, 50_000)
+  assert.equal(event?.token?.cachedInput, 48_000)
+  assert.equal(event?.token?.contextUsedPercent, 25)
   assert.equal(event?.token?.accuracy, 'estimated')
 })

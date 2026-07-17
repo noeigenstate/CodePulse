@@ -10,10 +10,12 @@ import { asRecord, pickString } from './util.js'
 import { fromCodexHook } from './codex/index.js'
 import { fromClaudeHook, fromClaudeStatusLine } from './claude-code/index.js'
 import { fromGrokHook } from './grok/index.js'
+import { fromKimiHook } from './kimi/index.js'
 
 export * from './codex/index.js'
 export * from './claude-code/index.js'
 export * from './grok/index.js'
+export * from './kimi/index.js'
 export * from './util.js'
 
 /**
@@ -38,6 +40,9 @@ export function normalizeRawEvent(raw: unknown): AgentEventInput | null {
   }
   if (source === 'grok') {
     return fromGrokHook(raw)
+  }
+  if (source === 'kimi') {
+    return fromKimiHook(raw)
   }
   return null
 }

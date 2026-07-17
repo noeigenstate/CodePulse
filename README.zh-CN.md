@@ -259,6 +259,23 @@ CodePulse 确认看到了真实授权请求或明确输入请求。
 | `GET`  | `/api/health`        | 存活探针                                   |
 | `WS`   | `/ws`                | 推送通道：`status` + `notification` 消息   |
 
+## 局域网设备 API（可选）
+
+ESP32 等只读显示设备使用独立的 `0.0.0.0:17889` 服务。它默认关闭、使用单独的
+设备 token，且不包含事件写入、确认任务或静音接口，因此不会改变上面的回环 API
+安全边界。
+
+```bash
+CODEPULSE_DEVICE_SERVER_ENABLED=1 pnpm dev
+TOKEN="$(tr -d '\r\n' < ~/.codepulse/device-auth)"
+curl -H "X-CodePulse-Device-Token: $TOKEN" \
+  http://<电脑局域网IP>:17889/api/v1/device/status
+```
+
+状态协议包含 CLI 状态、项目名、原始 token、上下文占用、5 小时/每周额度与重置时间，
+并支持 ETag/`304`，让水墨屏在内容未变化时跳过刷新。完整字段、安装版启用方法和固件
+轮询规则见 [局域网设备协议 v1](docs/device-api-v1.md)。
+
 ## 数据与隐私
 
 CodePulse 把单个 SQLite 数据库存放在 Electron 的 user-data 目录：
@@ -273,6 +290,8 @@ CodePulse 把单个 SQLite 数据库存放在 Electron 的 user-data 目录：
 提示词只保存短预览，绝不保存全文。删除该文件即可重置全部历史。
 
 **本地统计后台** 只在本机读取上述数据库做聚合展示，不会把用量或项目路径上传到任何服务器。
+局域网设备服务默认关闭；启用后把项目标识缩减为目录名而非绝对工作区路径，并要求独立设备
+token。
 
 ## 开发
 

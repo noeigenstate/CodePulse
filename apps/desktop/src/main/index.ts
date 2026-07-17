@@ -24,8 +24,12 @@ import {
 import {
   cleanupAgents,
   configureAgents,
+  defaultDeviceAuthPath,
   detectAgents,
+  readDeviceServerConfig,
+  startDeviceServer,
   startLocalServer,
+  type DeviceServer,
   type LocalServer,
 } from '@codepulse/local-server'
 import { TrayController } from './tray.js'
@@ -46,6 +50,7 @@ const EVENT_PRUNE_INTERVAL_MS = 24 * 60 * 60_000
 let mainWindow: BrowserWindow | null = null
 let tray: TrayController | null = null
 let server: LocalServer | null = null
+let deviceServer: DeviceServer | null = null
 /** 本地 HTTP 服务是否已成功监听（失败时禁止配置 Hook，避免打到其它进程）。 */
 let localServerReady = false
 let db: DB | null = null
@@ -234,6 +239,31 @@ async function bootstrap(): Promise<void> {
     server = null
     console.error('[codepulse] failed to start local server — hooks will NOT be configured', err)
   }
+
+  const deviceConfig = readDeviceServerConfig()
+  if (deviceConfig.enabled) {
+    try {
+      deviceServer = await startDeviceServer({
+        hub,
+        host: deviceConfig.host,
+        port: deviceConfig.port,
+        authToken: deviceConfig.authToken,
+      })
+      console.log(`[codepulse] LAN device server listening on ${deviceServer.url}`)
+      console.log(
+        deviceServer.authTokenPath
+          ? `[codepulse] device token stored at ${deviceServer.authTokenPath}`
+          : '[codepulse] device token loaded from CODEPULSE_DEVICE_TOKEN',
+      )
+    } catch (err) {
+      deviceServer = null
+      console.error(
+        `[codepulse] failed to start LAN device server (default token path: ${defaultDeviceAuthPath()})`,
+        err,
+      )
+    }
+  }
+
   // Only wire CLI hooks when our loopback server owns the port.
   if (localServerReady) {
     await refreshLocalAgents()
@@ -565,5 +595,6 @@ if (cleanupMode) {
     stopMaintenanceTimers()
     tray?.destroy()
     void server?.close()
+    void deviceServer?.close()
   })
 }

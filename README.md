@@ -284,6 +284,24 @@ hooks elsewhere with the `CODEPULSE_URL` environment variable.
 | `GET`  | `/api/health`        | Liveness probe                                    |
 | `WS`   | `/ws`                | Push channel: `status` + `notification` messages  |
 
+## LAN device API (opt-in)
+
+Read-only displays such as an ESP32 use a separate `0.0.0.0:17889` service. It is
+disabled by default, uses its own device token, and exposes no event-ingestion,
+acknowledgement, or mute endpoints, so the loopback API above remains private.
+
+```bash
+CODEPULSE_DEVICE_SERVER_ENABLED=1 pnpm dev
+TOKEN="$(tr -d '\r\n' < ~/.codepulse/device-auth)"
+curl -H "X-CodePulse-Device-Token: $TOKEN" \
+  http://<desktop-lan-ip>:17889/api/v1/device/status
+```
+
+The versioned response includes CLI state, project basename, raw token usage,
+context usage, five-hour/weekly quotas, and reset times. ETag/`304` support lets an
+e-paper client skip refreshes when display data is unchanged. See the
+[LAN device protocol v1](docs/device-api-v1.md) for setup, fields, and polling rules.
+
 ## Data & privacy
 
 CodePulse stores a single SQLite database in the Electron user-data directory:
@@ -301,6 +319,9 @@ history.
 
 The **local analytics console** only reads this database on-device for rollups.
 Usage totals and project paths are never uploaded to a remote server.
+The LAN device server is disabled by default. When enabled, it reduces project
+identity to a basename instead of an absolute workspace path and requires a
+separate device token.
 
 ## Development
 

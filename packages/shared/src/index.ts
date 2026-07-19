@@ -32,3 +32,6 @@ export const DEFAULT_DEVICE_SERVER_HOST = '0.0.0.0'
 
 /** 只读局域网设备服务器的默认端口。 */
 export const DEFAULT_DEVICE_SERVER_PORT = 17889
+
+/** 水墨屏固件匿名 health 服务的固定端口。 */
+export const DEFAULT_DISPLAY_DEVICE_PORT = 17890

@@ -299,6 +299,9 @@ hooks elsewhere with the `CODEPULSE_URL` environment variable.
 Read-only displays such as an ESP32 use a separate `0.0.0.0:17889` service. It is
 disabled by default, uses its own device token, and exposes no event-ingestion,
 acknowledgement, or mute endpoints, so the loopback API above remains private.
+When enabled, CodePulse keeps a stable pairing ID in
+`~/.codepulse/device-server-id` and publishes `_codepulse._tcp.local` with the
+protocol version, pairing ID, and status path.
 
 ```bash
 CODEPULSE_DEVICE_SERVER_ENABLED=1 pnpm dev
@@ -306,6 +309,13 @@ TOKEN="$(tr -d '\r\n' < ~/.codepulse/device-auth)"
 curl -H "X-CodePulse-Device-Token: $TOKEN" \
   http://<desktop-lan-ip>:17889/api/v1/device/status
 ```
+
+Open **Settings → E-paper display setup** to scan USB CDC ports and provision a
+CodePulse display over CP1. Serial enumeration, Wi-Fi provisioning, token access,
+and status polling all stay in the Electron main process. The UI reports success
+only after the firmware returns `ready`; it then verifies the matching
+`_codepulse-dsp._tcp.local` service against the display's anonymous port `17890`
+health response. Wi-Fi passwords and device tokens are never persisted or logged.
 
 The versioned response includes CLI state, project basename, raw token usage,
 context usage, five-hour/weekly quotas, and reset times. ETag/`304` support lets an

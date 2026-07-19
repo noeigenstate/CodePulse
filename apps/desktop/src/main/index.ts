@@ -1,10 +1,14 @@
 import { spawn } from 'node:child_process'
 import { readFileSync, writeFileSync, unlinkSync } from 'node:fs'
+import { networkInterfaces } from 'node:os'
 import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain, Menu, powerMonitor, shell } from 'electron'
 import {
   type Agent,
   type AgentType,
+  type DeviceProvisioningErrorCode,
+  type DeviceProvisioningRequest,
+  type DeviceProvisioningSnapshot,
   type NotificationRequest,
   type StatusSnapshot,
   type UiLocale,
@@ -35,6 +39,12 @@ import {
 import { TrayController } from './tray.js'
 import { showNotification } from './notifications.js'
 import { FocusSyncScheduler } from './focus-sync.js'
+import { DisplayDeviceBrowser } from './device-browser.js'
+import {
+  DeviceProvisioningFailure,
+  DeviceUsbManager,
+  type DeviceProvisionProgress,
+} from './device-usb.js'
 import {
   checkForUpdate,
   computeUpdateSnoozeUntil,
@@ -54,6 +64,8 @@ let mainWindow: BrowserWindow | null = null
 let tray: TrayController | null = null
 let server: LocalServer | null = null
 let deviceServer: DeviceServer | null = null
+let deviceUsb: DeviceUsbManager | null = null
+let displayBrowser: DisplayDeviceBrowser | null = null
 /** 本地 HTTP 服务是否已成功监听（失败时禁止配置 Hook，避免打到其它进程）。 */
 let localServerReady = false
 let db: DB | null = null
@@ -66,8 +78,17 @@ let updateTimer: NodeJS.Timeout | null = null
 let pruneTimer: NodeJS.Timeout | null = null
 let latestUpdate: UpdateInfo | null = null
 let checkingUpdate = false
+let shutdownStarted = false
 let installingUpdate = false
 let lastTrayStatusKey: string | undefined
+let deviceProvisioning: DeviceProvisioningSnapshot = {
+  serverAvailable: false,
+  scanning: false,
+  devices: [],
+  displays: [],
+  phase: 'idle',
+  updatedAt: Date.now(),
+}
 
 const hub = new StatusHub()
 const focusSync = new FocusSyncScheduler(async () => {
@@ -88,6 +109,14 @@ function scheduleFocusSync(): void {
 
 function broadcast(channel: string, payload: unknown): void {
   mainWindow?.webContents.send(channel, payload)
+}
+
+function updateDeviceProvisioning(
+  patch: Partial<DeviceProvisioningSnapshot>,
+): DeviceProvisioningSnapshot {
+  deviceProvisioning = { ...deviceProvisioning, ...patch, updatedAt: Date.now() }
+  broadcast('codepulse:device-provisioning', deviceProvisioning)
+  return deviceProvisioning
 }
 
 function showWindow(): void {
@@ -242,6 +271,90 @@ function registerIpc(): void {
     await focusSync.schedule()
     return hub.snapshot()
   })
+  ipcMain.handle('codepulse:get-device-provisioning', () => deviceProvisioning)
+  ipcMain.handle('codepulse:start-device-scan', () => {
+    if (!deviceUsb) return deviceProvisioning
+    updateDeviceProvisioning({
+      scanning: true,
+      phase: deviceProvisioning.phase === 'sending' ? 'sending' : 'scanning',
+      errorCode: undefined,
+    })
+    deviceUsb.startScanning()
+    return deviceProvisioning
+  })
+  ipcMain.handle('codepulse:stop-device-scan', () => {
+    deviceUsb?.stopScanning()
+    return updateDeviceProvisioning({
+      scanning: false,
+      phase: deviceProvisioning.phase === 'scanning' ? 'idle' : deviceProvisioning.phase,
+    })
+  })
+  ipcMain.handle('codepulse:provision-device', async (_event, input: unknown) => {
+    const request = parseProvisioningRequest(input)
+    if (input && typeof input === 'object' && !Array.isArray(input)) {
+      const rawInput = input as Record<string, unknown>
+      if (typeof rawInput['wifiPassword'] === 'string') rawInput['wifiPassword'] = ''
+    }
+    if (!request) {
+      return updateDeviceProvisioning({ phase: 'error', errorCode: 'invalid_input' })
+    }
+    if (!deviceUsb || !deviceServer) {
+      return updateDeviceProvisioning({
+        phase: 'error',
+        errorCode: 'device_server_unavailable',
+      })
+    }
+
+    deviceUsb.stopScanning()
+    updateDeviceProvisioning({
+      scanning: false,
+      phase: 'sending',
+      activeDeviceId: request.deviceId,
+      runtimeState: undefined,
+      errorCode: undefined,
+    })
+    try {
+      const result = await deviceUsb.provision(
+        request,
+        {
+          serverId: deviceServer.serverId,
+          deviceToken: deviceServer.authToken,
+          fallbackHost: request.fallbackHost || preferredLanIpv4(),
+          fallbackPort: deviceServer.port,
+        },
+        onDeviceProvisionProgress,
+      )
+      if (result.state === 'wifi_error') {
+        return updateDeviceProvisioning({
+          phase: 'wifi_error',
+          runtimeState: 'wifi_error',
+          errorCode: undefined,
+        })
+      }
+
+      const snapshot = updateDeviceProvisioning({
+        phase: 'ready',
+        runtimeState: 'ready',
+        errorCode: undefined,
+      })
+      void displayBrowser?.waitForDevice(result.deviceId, 15_000)
+      return snapshot
+    } catch (error) {
+      const errorCode = deviceProvisioningErrorCode(error)
+      return updateDeviceProvisioning({
+        phase: errorCode === 'cancelled' ? 'cancelled' : 'error',
+        errorCode,
+      })
+    }
+  })
+  ipcMain.handle('codepulse:cancel-device-provisioning', async () => {
+    await deviceUsb?.cancelProvisioning()
+    return updateDeviceProvisioning({
+      scanning: false,
+      phase: 'cancelled',
+      errorCode: 'cancelled',
+    })
+  })
 }
 
 async function bootstrap(): Promise<void> {
@@ -286,6 +399,7 @@ async function bootstrap(): Promise<void> {
         host: deviceConfig.host,
         port: deviceConfig.port,
         authToken: deviceConfig.authToken,
+        onMdnsError: (message) => console.warn(`[codepulse] device mDNS: ${message}`),
       })
       console.log(`[codepulse] LAN device server listening on ${deviceServer.url}`)
       console.log(
@@ -301,6 +415,8 @@ async function bootstrap(): Promise<void> {
       )
     }
   }
+
+  startDeviceIntegrations()
 
   // Only wire CLI hooks when our loopback server owns the port.
   if (localServerReady) {
@@ -337,6 +453,85 @@ async function bootstrap(): Promise<void> {
   void checkForUpdatesOnce()
 }
 
+function startDeviceIntegrations(): void {
+  const fallbackHost = preferredLanIpv4()
+  deviceProvisioning = {
+    serverAvailable: deviceServer !== null,
+    ...(deviceServer ? { serverId: deviceServer.serverId, serverPort: deviceServer.port } : {}),
+    ...(fallbackHost ? { fallbackHost } : {}),
+    scanning: false,
+    devices: [],
+    displays: [],
+    phase: 'idle',
+    updatedAt: Date.now(),
+  }
+
+  deviceUsb = new DeviceUsbManager({
+    onDevices: (devices) => updateDeviceProvisioning({ devices }),
+  })
+  try {
+    displayBrowser = new DisplayDeviceBrowser({
+      onUpdate: (displays) => updateDeviceProvisioning({ displays }),
+      onError: (message) => console.warn(`[codepulse] display discovery: ${message}`),
+    })
+    displayBrowser.start()
+  } catch (error) {
+    displayBrowser = null
+    console.warn(`[codepulse] display discovery unavailable: ${safeErrorMessage(error)}`)
+  }
+}
+
+function onDeviceProvisionProgress(progress: DeviceProvisionProgress): void {
+  updateDeviceProvisioning({
+    activeDeviceId: progress.deviceId,
+    phase: progress.state,
+    ...(progress.state === 'sending' ? {} : { runtimeState: progress.state }),
+    errorCode: undefined,
+  })
+}
+
+function preferredLanIpv4(): string | undefined {
+  const addresses = Object.values(networkInterfaces()).flatMap((entries) => entries ?? [])
+  const ipv4 = addresses.filter(
+    (address) => address.family === 'IPv4' && !address.internal && address.address !== '0.0.0.0',
+  )
+  return (
+    ipv4.find((address) => /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(address.address))
+      ?.address ?? ipv4[0]?.address
+  )
+}
+
+function parseProvisioningRequest(value: unknown): DeviceProvisioningRequest | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const input = value as Record<string, unknown>
+  if (
+    typeof input['path'] !== 'string' ||
+    typeof input['deviceId'] !== 'string' ||
+    typeof input['wifiSsid'] !== 'string' ||
+    typeof input['wifiPassword'] !== 'string' ||
+    (input['fallbackHost'] !== undefined && typeof input['fallbackHost'] !== 'string') ||
+    (input['fallbackPort'] !== undefined && typeof input['fallbackPort'] !== 'number')
+  ) {
+    return undefined
+  }
+  return {
+    path: input['path'],
+    deviceId: input['deviceId'],
+    wifiSsid: input['wifiSsid'],
+    wifiPassword: input['wifiPassword'],
+    ...(typeof input['fallbackHost'] === 'string' ? { fallbackHost: input['fallbackHost'] } : {}),
+    ...(typeof input['fallbackPort'] === 'number' ? { fallbackPort: input['fallbackPort'] } : {}),
+  }
+}
+
+function deviceProvisioningErrorCode(error: unknown): DeviceProvisioningErrorCode {
+  return error instanceof DeviceProvisioningFailure ? error.code : 'unknown'
+}
+
+function safeErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'unknown error'
+}
+
 function startMaintenanceTimers(): void {
   prunePersistedEvents()
 
@@ -349,6 +544,31 @@ function startMaintenanceTimers(): void {
     void checkForUpdatesOnce()
   }, UPDATE_CHECK_INTERVAL_MS)
   updateTimer.unref?.()
+}
+
+async function shutdownRuntime(): Promise<void> {
+  focusSync.cancel()
+  hub.stopWatchdog()
+  stopMaintenanceTimers()
+  tray?.destroy()
+
+  const cleanup = Promise.allSettled([
+    deviceUsb?.close(),
+    displayBrowser?.close(),
+    server?.close(),
+    deviceServer?.close(),
+  ])
+  let timeout: NodeJS.Timeout | undefined
+  try {
+    await Promise.race([
+      cleanup,
+      new Promise<void>((resolve) => {
+        timeout = setTimeout(resolve, 2_000)
+      }),
+    ])
+  } finally {
+    if (timeout) clearTimeout(timeout)
+  }
 }
 
 function stopMaintenanceTimers(): void {
@@ -640,12 +860,10 @@ if (cleanupMode) {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 
-  app.on('before-quit', () => {
-    focusSync.cancel()
-    hub.stopWatchdog()
-    stopMaintenanceTimers()
-    tray?.destroy()
-    void server?.close()
-    void deviceServer?.close()
+  app.on('before-quit', (event) => {
+    if (shutdownStarted) return
+    event.preventDefault()
+    shutdownStarted = true
+    void shutdownRuntime().finally(() => app.quit())
   })
 }

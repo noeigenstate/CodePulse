@@ -40,6 +40,28 @@ open -a CodePulse
 launchctl unsetenv CODEPULSE_DEVICE_SERVER_ENABLED
 ```
 
+启用后还会创建固定配对身份：
+
+- `~/.codepulse/device-server-id`：首次生成 UUID，后续启动保持不变；
+- `~/.codepulse/device-auth`：独立设备 token，不复用 `17888` Hook API 的鉴权；
+- `_codepulse._tcp.local`：端口为实际设备 API 端口，TXT 仅包含
+  `pv=1`、`id=<serverId>`、`path=/api/v1/device/status`。
+
+mDNS 发布失败不会关闭 HTTP 服务，固件仍可使用 USB 配入的后备 IP 和端口。
+
+### 1.1 App 内 USB 配网
+
+打开“设置 → 水墨屏配网”后，Electron main process 每 2 秒枚举一次 USB CDC 串口，
+并用 `CP1 hello` 确认设备身份。选择设备、输入 Wi-Fi 后，main process 会读取设备
+token，发送 `provision`，再以 750 ms 间隔轮询 `getStatus`（总超时 60 秒）。只有固件
+返回 `ready`，且 `provisioned`、`wifiConnected`、`desktopReachable` 均为真时，界面
+才显示配网成功。
+
+固件联网后，App 浏览 `_codepulse-dsp._tcp.local`，请求
+`http://<display-ip>:17890/api/v1/device/health`，并核对 TXT `id` 与响应中的
+`deviceId`。串口只在 Electron main process 打开；Wi-Fi 密码和设备 token 不进入
+renderer 快照、持久化存储或日志。
+
 ## 2. HTTP 接口
 
 | 方法  | 路径                    | 认证 | 说明               |

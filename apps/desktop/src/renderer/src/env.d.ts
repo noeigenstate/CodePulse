@@ -2,6 +2,8 @@
 import type {
   Agent,
   AgentType,
+  DeviceProvisioningRequest,
+  DeviceProvisioningSnapshot,
   StatusSnapshot,
   UiLocale,
   UpdateDownloadProgress,
@@ -25,11 +27,17 @@ export interface CodePulseApi {
   installUpdate: () => Promise<UpdateInstallResult>
   getStats: (query?: UsageStatsQuery) => Promise<UsageStatsSnapshot>
   syncSessions: () => Promise<StatusSnapshot>
+  getDeviceProvisioning: () => Promise<DeviceProvisioningSnapshot>
+  startDeviceScan: () => Promise<DeviceProvisioningSnapshot>
+  stopDeviceScan: () => Promise<DeviceProvisioningSnapshot>
+  provisionDevice: (request: DeviceProvisioningRequest) => Promise<DeviceProvisioningSnapshot>
+  cancelDeviceProvisioning: () => Promise<DeviceProvisioningSnapshot>
   onStatus: (cb: (snapshot: StatusSnapshot) => void) => Unsubscribe
   onAgents: (cb: (agents: Agent[]) => void) => Unsubscribe
   onMute: (cb: (muted: boolean) => void) => Unsubscribe
   onUpdateAvailable: (cb: (update: UpdateInfo) => void) => Unsubscribe
   onUpdateProgress: (cb: (progress: UpdateDownloadProgress) => void) => Unsubscribe
+  onDeviceProvisioning: (cb: (snapshot: DeviceProvisioningSnapshot) => void) => Unsubscribe
 }
 
 declare global {

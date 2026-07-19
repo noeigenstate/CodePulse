@@ -10,6 +10,7 @@ test('desktop installer uses maximum compression without unpacking native packag
   }
 
   assert.match(config, /^compression: maximum$/m)
+  assert.match(config, /^nativeRebuilder: legacy$/m)
   assert.match(config, /^electronLanguages:\n\s+- en-US\n\s+- zh-CN$/m)
   assert.match(config, /^afterPack: scripts\/after-pack\.cjs$/m)
   assert.match(config, /^\s+- '\*\*\/\*\.node'$/m)
@@ -17,18 +18,21 @@ test('desktop installer uses maximum compression without unpacking native packag
   assert.match(config, /^\s+- '!\*\*\/\*\.d\.ts'$/m)
   assert.match(config, /^\s+- '!\*\*\/node_modules\/better-sqlite3\/deps\/\*\*'$/m)
   assert.match(config, /^\s+- '!\*\*\/node_modules\/better-sqlite3\/src\/\*\*'$/m)
+  assert.match(config, /^\s+- '!\*\*\/node_modules\/@serialport\/bindings-cpp\/src\/\*\*'$/m)
+  assert.match(config, /^\s+- '!\*\*\/node_modules\/@serialport\/bindings-cpp\/build\/\*\*'$/m)
   assert.doesNotMatch(config, /^\s+- '\*\*\/better-sqlite3\/\*\*'$/m)
   // better-sqlite3 requires these at runtime — must not be stripped from the installer.
   assert.doesNotMatch(config, /\{[^}]*\bbindings\b[^}]*\}/)
   assert.doesNotMatch(config, /\{[^}]*\bfile-uri-to-path\b[^}]*\}/)
   assert.match(config, /node_modules\/better-sqlite3\/\*\*/)
-  // Pure JS server/ORM deps are bundled; only the native addon is a runtime dependency.
+  // Pure JS server/ORM/mDNS deps are bundled; native addons stay runtime dependencies.
   assert.equal(
     Object.keys(desktopPackage.dependencies ?? {})
       .sort()
       .join(','),
-    'better-sqlite3',
+    'better-sqlite3,serialport',
   )
+  assert.ok(desktopPackage.devDependencies?.['bonjour-service'])
   assert.ok(desktopPackage.devDependencies?.fastify)
   assert.ok(desktopPackage.devDependencies?.['drizzle-orm'])
 })

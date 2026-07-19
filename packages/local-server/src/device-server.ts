@@ -12,6 +12,16 @@ import {
   loadOrCreateDeviceAuthToken,
   registerDeviceAuthGuard,
 } from './device-auth.js'
+import {
+  publishDeviceMdns,
+  type DeviceMdnsPublisher,
+  type DeviceMdnsPublisherOptions,
+} from './device-discovery.js'
+import {
+  assertValidDeviceServerId,
+  defaultDeviceServerIdPath,
+  loadOrCreateDeviceServerId,
+} from './device-server-id.js'
 
 export const DEVICE_STATUS_PATH = '/api/v1/device/status'
 export const DEVICE_HEALTH_PATH = '/api/v1/device/health'
@@ -37,14 +47,24 @@ export interface DeviceServerOptions {
   logger?: boolean
   authToken?: string
   authTokenPath?: string
+  serverId?: string
+  serverIdPath?: string
+  /** 测试或诊断时可关闭广播；生产默认开启。 */
+  publishMdns?: boolean
+  mdns?: DeviceMdnsPublisherOptions['mdns']
+  onMdnsError?: (message: string) => void
 }
 
 /** 一个运行中的局域网设备服务器。 */
 export interface DeviceServer {
   app: FastifyInstance
   url: string
+  port: number
   authToken: string
   authTokenPath?: string
+  serverId: string
+  serverIdPath?: string
+  mdns?: DeviceMdnsPublisher
   close: () => Promise<void>
 }
 
@@ -86,6 +106,12 @@ export async function startDeviceServer(options: DeviceServerOptions): Promise<D
   const authToken = options.authToken
     ? assertValidDeviceAuthToken(options.authToken)
     : loadOrCreateDeviceAuthToken(authTokenPath)
+  const serverIdPath = options.serverId
+    ? undefined
+    : (options.serverIdPath ?? defaultDeviceServerIdPath())
+  const serverId = options.serverId
+    ? assertValidDeviceServerId(options.serverId)
+    : loadOrCreateDeviceServerId(serverIdPath)
 
   const app = Fastify({ logger: options.logger ?? false })
   registerDeviceAuthGuard(app, authToken)
@@ -127,13 +153,42 @@ export async function startDeviceServer(options: DeviceServerOptions): Promise<D
   const address = app.server.address()
   const boundPort = address && typeof address !== 'string' ? address.port : port
   const urlHost = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host
+  let mdns: DeviceMdnsPublisher | undefined
+  if (options.publishMdns !== false) {
+    try {
+      mdns = publishDeviceMdns({
+        serverId,
+        port: boundPort,
+        statusPath: DEVICE_STATUS_PATH,
+        ...(options.mdns ? { mdns: options.mdns } : {}),
+        ...(options.onMdnsError ? { onError: options.onMdnsError } : {}),
+      })
+    } catch (error) {
+      options.onMdnsError?.(
+        error instanceof Error ? error.message : 'Unable to publish the device API over mDNS',
+      )
+    }
+  }
+
+  let closing: Promise<void> | undefined
 
   return {
     app,
     url: `http://${urlHost}:${boundPort}`,
+    port: boundPort,
     authToken,
     authTokenPath,
-    close: async () => app.close(),
+    serverId,
+    serverIdPath,
+    mdns,
+    close: () => {
+      if (closing) return closing
+      closing = (async () => {
+        await mdns?.close()
+        await app.close()
+      })()
+      return closing
+    },
   }
 }
 

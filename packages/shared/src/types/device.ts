@@ -97,3 +97,95 @@ export interface DeviceStatusV1 {
   /** 所有 Agent 最近一次事件时间（Unix epoch 毫秒）；无事件时为 0。 */
   updatedAt: number
 }
+
+/** 固件通过 USB `getStatus` 返回的运行时阶段。 */
+export type DeviceProvisionRuntimeState =
+  | 'unprovisioned'
+  | 'applying'
+  | 'wifi_error'
+  | 'desktop_unreachable'
+  | 'ready'
+
+/** App 已通过 CP1 `hello` 验证的 USB 水墨屏。 */
+export interface CodePulseUsbDevice {
+  path: string
+  deviceId: string
+  firmwareVersion: string
+  hardwareRevision: number
+  provisioned: boolean
+  capabilities: string[]
+  /** `getConfig` 只允许返回这些非敏感字段。 */
+  config?: {
+    wifiSsid: string
+    serverId: string
+    fallbackHost: string
+    fallbackPort: number
+  }
+}
+
+/** 通过 `_codepulse-dsp._tcp.local` 与匿名 health 双重验证的局域网水墨屏。 */
+export interface CodePulseDisplayDevice {
+  deviceId: string
+  address: string
+  port: number
+  path: string
+  firmwareVersion: string
+  hardwareRevision: number
+  provisioned: boolean
+  lastSeenAt: number
+}
+
+/** 桌面端配网状态机；只有 `ready` 表示 USB 配网成功。 */
+export type DeviceProvisioningPhase =
+  | 'idle'
+  | 'scanning'
+  | 'sending'
+  | DeviceProvisionRuntimeState
+  | 'cancelled'
+  | 'error'
+
+/** 允许跨 IPC 返回的稳定错误码；不携带底层串口报错或敏感请求内容。 */
+export type DeviceProvisioningErrorCode =
+  | 'invalid_json'
+  | 'invalid_request'
+  | 'unsupported_protocol'
+  | 'unknown_operation'
+  | 'invalid_params'
+  | 'line_too_long'
+  | 'storage_error'
+  | 'identity_error'
+  | 'internal_error'
+  | 'device_server_unavailable'
+  | 'invalid_input'
+  | 'serial_unavailable'
+  | 'device_not_found'
+  | 'device_mismatch'
+  | 'timeout'
+  | 'cancelled'
+  | 'unknown'
+
+/** Renderer 可读取的配网快照。密码与设备 token 永远不出现在该对象中。 */
+export interface DeviceProvisioningSnapshot {
+  serverAvailable: boolean
+  serverId?: string
+  serverPort?: number
+  fallbackHost?: string
+  scanning: boolean
+  devices: CodePulseUsbDevice[]
+  displays: CodePulseDisplayDevice[]
+  phase: DeviceProvisioningPhase
+  activeDeviceId?: string
+  runtimeState?: DeviceProvisionRuntimeState
+  errorCode?: DeviceProvisioningErrorCode
+  updatedAt: number
+}
+
+/** 一次性 IPC 输入；调用方不得把 `wifiPassword` 写入持久化存储或日志。 */
+export interface DeviceProvisioningRequest {
+  path: string
+  deviceId: string
+  wifiSsid: string
+  wifiPassword: string
+  fallbackHost?: string
+  fallbackPort?: number
+}

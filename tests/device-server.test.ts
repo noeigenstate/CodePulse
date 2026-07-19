@@ -30,6 +30,8 @@ test('LAN device server is read-only, authenticated, and supports conditional GE
     host: '127.0.0.1',
     port: 0,
     authToken: TOKEN,
+    serverId: 'device-server-test',
+    publishMdns: false,
   })
   openServers.push(server)
 

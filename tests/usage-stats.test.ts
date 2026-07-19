@@ -5,17 +5,13 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { openDb, persistEvent, queryUsageStats } from '@codepulse/storage'
 
-test('queryUsageStats aggregates tokens, turns, and projects from SQLite', async (t) => {
+test('queryUsageStats aggregates tokens, turns, and projects from SQLite', async () => {
   const home = await mkdtemp(join(tmpdir(), 'codepulse-stats-'))
   let opened: ReturnType<typeof openDb>
   try {
     opened = openDb(join(home, 'codepulse.sqlite'))
   } catch (error) {
     await rm(home, { recursive: true, force: true })
-    if (isNativeSqliteAbiMismatch(error)) {
-      t.skip('better-sqlite3 native module is built for a different runtime')
-      return
-    }
     throw error
   }
 
@@ -116,8 +112,3 @@ test('queryUsageStats returns empty snapshot without db', () => {
   assert.equal(stats.kpis.totalTokens, 0)
   assert.equal(stats.projectRank.length, 0)
 })
-
-function isNativeSqliteAbiMismatch(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error)
-  return message.includes('NODE_MODULE_VERSION') || message.includes('ERR_DLOPEN_FAILED')
-}

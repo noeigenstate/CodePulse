@@ -373,6 +373,11 @@ Workspace packages are consumed from TypeScript **source** (each package's
 `exports` points at `src/index.ts`); electron-vite and esbuild bundle the
 source directly, so there is no per-package compile step during development.
 
+Native dependency ABIs are switched explicitly: `pnpm test` rebuilds
+`better-sqlite3` for the current Node.js runtime, while `pnpm dev` / `pnpm start`
+rebuild native dependencies for Electron first. Packaging performs its own
+Electron rebuild, so tests never silently run against an Electron-only binary.
+
 ### Building a distributable
 
 ```bash
@@ -459,13 +464,11 @@ The native `better-sqlite3` build doesn't match your runtime's ABI. The live
 Dashboard still works; only history persistence is off. Rebuild for Electron:
 
 ```bash
-# <ELECTRON_VERSION> = the version in node_modules/electron/package.json
-cd node_modules/better-sqlite3
-node ../.bin/prebuild-install --runtime electron --target <ELECTRON_VERSION> --arch x64
+pnpm --filter @codepulse/desktop rebuild:electron
 ```
 
-(`electron-builder install-app-deps` does not work under pnpm's hoisted
-layout — use the command above.)
+To switch the native module back to the current Node.js runtime, run `pnpm test`;
+its `pretest` step performs the correct rebuild automatically.
 
 </details>
 

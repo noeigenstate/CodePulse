@@ -37,6 +37,21 @@ test('desktop installer uses maximum compression without unpacking native packag
   assert.ok(desktopPackage.devDependencies?.['drizzle-orm'])
 })
 
+test('native dependency scripts keep Node tests and Electron runtime ABIs separate', () => {
+  const desktopPackage = JSON.parse(readFileSync('apps/desktop/package.json', 'utf8')) as {
+    scripts?: Record<string, string>
+  }
+  const rootPackage = JSON.parse(readFileSync('package.json', 'utf8')) as {
+    scripts?: Record<string, string>
+  }
+
+  assert.equal(desktopPackage.scripts?.postinstall, undefined)
+  assert.equal(desktopPackage.scripts?.['rebuild:electron'], 'electron-builder install-app-deps')
+  assert.equal(desktopPackage.scripts?.predev, 'pnpm rebuild:electron')
+  assert.equal(desktopPackage.scripts?.prestart, 'pnpm rebuild:electron')
+  assert.equal(rootPackage.scripts?.pretest, 'npm rebuild better-sqlite3')
+})
+
 test('desktop package scripts and builder config include Windows, Linux, and macOS targets', () => {
   const desktopPackage = JSON.parse(readFileSync('apps/desktop/package.json', 'utf8')) as {
     scripts?: Record<string, string>
@@ -81,6 +96,8 @@ test('desktop package scripts and builder config include Windows, Linux, and mac
   assert.match(workflow, /pnpm dist:win/)
   assert.match(workflow, /pnpm dist:linux/)
   assert.match(workflow, /runs-on: ubuntu-latest/)
+  assert.match(workflow, /node: \[20, 22\]/)
+  assert.match(workflow, /needs: \[prepare, verify\]/)
   assert.match(workflow, /\.AppImage/)
   assert.match(workflow, /mac-arm64\.dmg/)
   assert.match(workflow, /mac-x64\.dmg/)

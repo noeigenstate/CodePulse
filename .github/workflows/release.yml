@@ -89,9 +89,49 @@ jobs:
             package.json
             apps/desktop/package.json
 
+  verify:
+    name: Verify (Node ${{ matrix.node }})
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - name: Restore versioned package manifests
+        uses: actions/download-artifact@v4
+        with:
+          name: codepulse-versioned-manifests-${{ needs.prepare.outputs.tag }}
+          path: .
+
+      - name: Install dependencies for Node tests
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify
+        run: |
+          pnpm typecheck
+          pnpm test
+          pnpm smoke
+          pnpm lint
+
   windows:
     name: Build Windows installer
-    needs: prepare
+    needs: [prepare, verify]
     runs-on: windows-latest
 
     steps:
@@ -120,13 +160,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Verify
-        run: |
-          pnpm typecheck
-          pnpm test
-          pnpm smoke
-          pnpm lint
-
       - name: Clean release output
         shell: pwsh
         run: Remove-Item -Path 'apps/desktop/release' -Recurse -Force -ErrorAction SilentlyContinue
@@ -146,7 +179,7 @@ jobs:
 
   linux:
     name: Build Linux AppImage
-    needs: prepare
+    needs: [prepare, verify]
     runs-on: ubuntu-latest
 
     steps:
@@ -174,13 +207,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Verify
-        run: |
-          pnpm typecheck
-          pnpm test
-          pnpm smoke
-          pnpm lint
 
       - name: Clean release output
         run: rm -rf apps/desktop/release
@@ -219,7 +245,7 @@ jobs:
 
   macos:
     name: Build macOS installer
-    needs: prepare
+    needs: [prepare, verify]
     runs-on: macos-latest
 
     steps:
@@ -247,13 +273,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Verify
-        run: |
-          pnpm typecheck
-          pnpm test
-          pnpm smoke
-          pnpm lint
 
       - name: Clean release output
         run: rm -rf apps/desktop/release

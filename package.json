@@ -20,6 +20,7 @@
     "dist:mac:arm64": "pnpm --filter @codepulse/desktop dist:mac:arm64",
     "dist:mac:x64": "pnpm --filter @codepulse/desktop dist:mac:x64",
     "typecheck": "pnpm -r typecheck && tsc --noEmit -p tests/tsconfig.json",
+    "pretest": "npm rebuild better-sqlite3",
     "test": "node tests/run-tests.mjs",
     "smoke": "node scripts/run-smoke.mjs",
     "lint": "prettier --check \"**/*.{ts,tsx,js,json,md}\"",
@@ -28,9 +29,11 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@types/ws": "^8.18.1",
     "esbuild": "^0.21.5",
     "prettier": "^3.4.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "ws": "^8.18.3"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

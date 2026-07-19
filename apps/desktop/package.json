@@ -6,7 +6,9 @@
   "main": "./out/main/index.js",
   "author": "CodePulse",
   "scripts": {
+    "predev": "pnpm rebuild:electron",
     "dev": "electron-vite dev",
+    "prestart": "pnpm rebuild:electron",
     "start": "electron-vite preview",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
@@ -17,7 +19,7 @@
     "dist:mac:arm64": "electron-vite build && electron-builder --mac --arm64",
     "dist:mac:x64": "electron-vite build && electron-builder --mac --x64",
     "dist:dir": "electron-vite build && electron-builder --dir",
-    "postinstall": "electron-builder install-app-deps"
+    "rebuild:electron": "electron-builder install-app-deps"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",

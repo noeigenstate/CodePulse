@@ -196,7 +196,6 @@ export class Cp1Client {
         }, options.timeoutMs),
         ...(options.signal ? { signal: options.signal } : {}),
       }
-      pending.timer.unref?.()
       if (options.signal) {
         pending.abortListener = () =>
           this.finishPending(id, new DeviceProvisioningFailure('cancelled'))
@@ -726,7 +725,6 @@ function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
       signal.removeEventListener('abort', abort)
       resolve()
     }, ms)
-    timer.unref?.()
     const abort = (): void => {
       clearTimeout(timer)
       reject(new DeviceProvisioningFailure('cancelled'))

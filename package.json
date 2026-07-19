@@ -15,6 +15,7 @@
     "build:packages": "pnpm -r --filter ./packages/* build",
     "dist": "pnpm --filter @codepulse/desktop dist",
     "dist:win": "pnpm --filter @codepulse/desktop dist:win",
+    "dist:linux": "pnpm --filter @codepulse/desktop dist:linux",
     "dist:mac": "pnpm --filter @codepulse/desktop dist:mac",
     "dist:mac:arm64": "pnpm --filter @codepulse/desktop dist:mac:arm64",
     "dist:mac:x64": "pnpm --filter @codepulse/desktop dist:mac:x64",

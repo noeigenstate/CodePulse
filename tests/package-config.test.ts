@@ -37,7 +37,7 @@ test('desktop installer uses maximum compression without unpacking native packag
   assert.ok(desktopPackage.devDependencies?.['drizzle-orm'])
 })
 
-test('desktop package scripts and builder config include Windows and macOS targets', () => {
+test('desktop package scripts and builder config include Windows, Linux, and macOS targets', () => {
   const desktopPackage = JSON.parse(readFileSync('apps/desktop/package.json', 'utf8')) as {
     scripts?: Record<string, string>
   }
@@ -48,6 +48,10 @@ test('desktop package scripts and builder config include Windows and macOS targe
   const workflow = readFileSync('.github/workflows/release.yml', 'utf8')
 
   assert.match(String(desktopPackage.scripts?.['dist:win'] ?? ''), /electron-builder --win/)
+  assert.match(
+    String(desktopPackage.scripts?.['dist:linux'] ?? ''),
+    /electron-builder --linux AppImage --x64/,
+  )
   assert.match(
     String(desktopPackage.scripts?.['dist:mac'] ?? ''),
     /electron-builder --mac --arm64 --x64/,
@@ -61,17 +65,23 @@ test('desktop package scripts and builder config include Windows and macOS targe
     /electron-builder --mac --x64/,
   )
   assert.equal(rootPackage.scripts?.['dist:win'], 'pnpm --filter @codepulse/desktop dist:win')
+  assert.equal(rootPackage.scripts?.['dist:linux'], 'pnpm --filter @codepulse/desktop dist:linux')
   assert.equal(rootPackage.scripts?.['dist:mac'], 'pnpm --filter @codepulse/desktop dist:mac')
   assert.match(config, /^\s+- target: dmg$/m)
   assert.match(config, /^\s+- arm64$/m)
   assert.match(config, /^\s+- x64$/m)
   assert.match(config, /CodePulse_\$\{version\}_mac-\$\{arch\}\.\$\{ext\}/)
+  assert.match(config, /CodePulse_\$\{version\}_linux-\$\{arch\}\.\$\{ext\}/)
+  assert.match(config, /^linux:\n(?:.*\n)*?\s+- target: AppImage$/m)
   // Must not build a single universal binary target.
   assert.doesNotMatch(config, /^\s+- universal\s*$/m)
   assert.doesNotMatch(config, /target:\s*universal/)
   assert.match(workflow, /runs-on: macos-latest/)
   assert.match(workflow, /pnpm dist:mac/)
   assert.match(workflow, /pnpm dist:win/)
+  assert.match(workflow, /pnpm dist:linux/)
+  assert.match(workflow, /runs-on: ubuntu-latest/)
+  assert.match(workflow, /\.AppImage/)
   assert.match(workflow, /mac-arm64\.dmg/)
   assert.match(workflow, /mac-x64\.dmg/)
 })

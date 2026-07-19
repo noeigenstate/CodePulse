@@ -8,7 +8,7 @@
 无需切回终端反复确认。
 
 [![status](https://img.shields.io/badge/status-v1.3.1-brightgreen)](#功能特性)
-[![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue)](#下载)
+[![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#下载)
 [![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#开发)
 [![pnpm](https://img.shields.io/badge/pnpm-%E2%89%A59-F69220?logo=pnpm&logoColor=white)](#开发)
@@ -141,6 +141,14 @@ Fastify · better-sqlite3 · Drizzle ORM。
 - **Windows：** `CodePulse_*_x64-setup.exe`
 - **macOS Apple Silicon：** `CodePulse_*_mac-arm64.dmg`（M 系列芯片）
 - **macOS Intel：** `CodePulse_*_mac-x64.dmg`
+- **Linux x64：** `CodePulse_*_linux-x86_64.AppImage`
+
+Linux 下载后需要先添加可执行权限，再启动 AppImage：
+
+```bash
+chmod +x CodePulse_*_linux-x86_64.AppImage
+./CodePulse_*_linux-x86_64.AppImage
+```
 
 ### macOS 首次打开（未签名构建）
 
@@ -329,13 +337,14 @@ workspace 内的包以 TypeScript **源码** 形式被消费（每个包的 `exp
 pnpm build        # 构建各包，再把应用打包进 apps/desktop/out
 pnpm dist         # 为当前操作系统打包安装包到 apps/desktop/release
 pnpm dist:win     # Windows NSIS 安装包（.exe）
+pnpm dist:linux   # Linux x64 AppImage
 pnpm dist:mac     # macOS DMG：分别打 arm64 与 Intel x64（非 universal）
 pnpm dist:mac:arm64
 pnpm dist:mac:x64
 pnpm dist:dir     # 免安装目录（更快，便于本地测试）
 ```
 
-`pnpm dist` / `dist:win` / `dist:mac` 使用 `package.json` 与
+`pnpm dist` / `dist:win` / `dist:linux` / `dist:mac` 使用 `package.json` 与
 `apps/desktop/package.json` 里的版本号；发版前必须让它们与 tag 一致。推送 tag 前，
 请新增或更新 `docs/release-notes/vX.Y.Z.md`，GitHub Release 会直接使用该文件作为发版说明。
 如果用户可见行为发生变化，请在同一次改动里同步更新英文 README 和本中文版。
@@ -354,8 +363,9 @@ macOS CI 产物为**未签名、未公证**构建。用户侧请按上文
 仓库只保留一个 GitHub Actions workflow：`Build and Release CodePulse`。
 
 它会在推送 `v*` tag 或从 GitHub Actions 手动运行时触发。流程会**并行**构建
-Windows 与 macOS 安装包，并在各平台任务中执行 `typecheck` / `test` / `smoke` /
-`lint`，最后汇总上传 `.exe`、`.dmg`、blockmap 与发版说明，创建或更新 GitHub Release。
+Windows、Linux 与 macOS 安装包，并在各平台任务中执行 `typecheck` / `test` / `smoke` /
+`lint`，最后汇总上传 `.exe`、`.AppImage`、`.dmg`、blockmap 与发版说明，创建或更新
+GitHub Release。
 
 发版说明来自 `docs/release-notes/vX.Y.Z.md`。内容保持简短、面向用户：只写这版更新了什么，
 不要写内部实现流水账。

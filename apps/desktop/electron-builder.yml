@@ -88,8 +88,11 @@ mac:
         - x64
 linux:
   icon: build/icon.png
+  artifactName: CodePulse_${version}_linux-${arch}.${ext}
   target:
-    - AppImage
+    - target: AppImage
+      arch:
+        - x64
   category: Development
 nsis:
   oneClick: false

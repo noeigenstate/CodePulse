@@ -58,6 +58,7 @@ test('buildUpdateInfo selects the latest Windows installer asset', () => {
       ],
     },
     '0.1.5',
+    'win32',
   )
 
   assert.deepEqual(info, {
@@ -114,6 +115,7 @@ test('buildUpdateInfo still reports newer releases without a matching installer'
       assets: [{ name: 'latest.yml', browser_download_url: 'https://example.test/latest.yml' }],
     },
     '0.1.5',
+    'win32',
   )
 
   assert.equal(info?.releaseNotes, undefined)
@@ -141,6 +143,31 @@ test('buildUpdateInfo does not auto-install mismatched installer assets', () => 
       ],
     },
     '0.1.5',
+    'win32',
+  )
+
+  assert.equal(info?.installable, false)
+  assert.equal(info?.installerName, undefined)
+  assert.equal(info?.installerUrl, undefined)
+})
+
+test('buildUpdateInfo never offers a Windows installer on Linux', () => {
+  const info = buildUpdateInfo(
+    {
+      tag_name: 'v0.1.6',
+      assets: [
+        {
+          name: 'CodePulse_0.1.6_x64-setup.exe',
+          browser_download_url: 'https://example.test/installer',
+        },
+        {
+          name: 'CodePulse_0.1.6_linux-x86_64.AppImage',
+          browser_download_url: 'https://example.test/appimage',
+        },
+      ],
+    },
+    '0.1.5',
+    'linux',
   )
 
   assert.equal(info?.installable, false)

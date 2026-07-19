@@ -8,7 +8,7 @@ Know at a glance whether Codex, Claude Code, Grok, and Kimi Code are working, wa
 you, finished, or stuck — without alt-tabbing back to a terminal.
 
 [![status](https://img.shields.io/badge/status-v1.3.1-brightgreen)](#features)
-[![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue)](#download)
+[![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#download)
 [![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#development)
 [![pnpm](https://img.shields.io/badge/pnpm-%E2%89%A59-F69220?logo=pnpm&logoColor=white)](#development)
@@ -159,6 +159,14 @@ Download installers from
 - **Windows:** `CodePulse_*_x64-setup.exe`
 - **macOS Apple Silicon:** `CodePulse_*_mac-arm64.dmg` (M-series)
 - **macOS Intel:** `CodePulse_*_mac-x64.dmg`
+- **Linux x64:** `CodePulse_*_linux-x86_64.AppImage`
+
+On Linux, make the downloaded AppImage executable and run it:
+
+```bash
+chmod +x CodePulse_*_linux-x86_64.AppImage
+./CodePulse_*_linux-x86_64.AppImage
+```
 
 ### macOS first open (unsigned builds)
 
@@ -371,13 +379,14 @@ source directly, so there is no per-package compile step during development.
 pnpm build        # build packages, then bundle the app into apps/desktop/out
 pnpm dist         # package an installer for the current OS into apps/desktop/release
 pnpm dist:win     # Windows NSIS installer (.exe)
+pnpm dist:linux   # Linux x64 AppImage
 pnpm dist:mac     # macOS DMGs: separate arm64 + Intel x64 (not universal)
 pnpm dist:mac:arm64
 pnpm dist:mac:x64
 pnpm dist:dir     # unpacked build (faster, for local testing)
 ```
 
-`pnpm dist` / `dist:win` / `dist:mac` use the versions in `package.json` and
+`pnpm dist` / `dist:win` / `dist:linux` / `dist:mac` use the versions in `package.json` and
 `apps/desktop/package.json`. Keep them aligned with the release tag. Before
 publishing a tag, add or update `docs/release-notes/vX.Y.Z.md`; GitHub Releases
 will use that file as the release body. If user-facing behavior changes, update
@@ -398,9 +407,9 @@ macOS CI builds are **unsigned and not notarized**. End users should follow
 The repository has one GitHub Actions workflow: `Build and Release CodePulse`.
 
 It runs when you push a `v*` tag or start it manually from GitHub Actions. The
-workflow builds **Windows** and **macOS** installers in parallel, runs
+workflow builds **Windows**, **Linux**, and **macOS** installers in parallel, runs
 `typecheck` / `test` / `smoke` / `lint` on each platform job, then publishes a
-single GitHub Release with `.exe`, `.dmg`, blockmaps, and release notes.
+single GitHub Release with `.exe`, `.AppImage`, `.dmg`, blockmaps, and release notes.
 
 Release notes come from `docs/release-notes/vX.Y.Z.md`. Keep them short and
 user-facing: list what changed, not the internal implementation log.

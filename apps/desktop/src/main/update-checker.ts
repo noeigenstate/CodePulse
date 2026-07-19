@@ -74,12 +74,19 @@ const httpsAgent = new HttpsAgent({
   keepAliveMsecs: 15_000,
 })
 
-export async function checkForUpdate(currentVersion: string): Promise<UpdateInfo | null> {
+export async function checkForUpdate(
+  currentVersion: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<UpdateInfo | null> {
   const release = await requestJson(LATEST_RELEASE_URL)
-  return buildUpdateInfo(release, currentVersion)
+  return buildUpdateInfo(release, currentVersion, platform)
 }
 
-export function buildUpdateInfo(release: unknown, currentVersion: string): UpdateInfo | null {
+export function buildUpdateInfo(
+  release: unknown,
+  currentVersion: string,
+  platform: NodeJS.Platform = process.platform,
+): UpdateInfo | null {
   const payload = asReleasePayload(release)
   if (!payload) return null
 
@@ -87,7 +94,10 @@ export function buildUpdateInfo(release: unknown, currentVersion: string): Updat
   const version = tag ? parseVersionString(tag) : undefined
   if (!tag || !version || !isNewerVersion(version, currentVersion)) return null
 
-  const installer = findWindowsInstaller(payload.assets, version)
+  // Automatic replacement is currently implemented with the Windows NSIS
+  // installer only. macOS and Linux users are sent to the release page so an
+  // AppImage never tries to launch a Windows executable as an updater.
+  const installer = platform === 'win32' ? findWindowsInstaller(payload.assets, version) : null
   const releaseNotes = parseReleaseNotes(pickString(payload.body))
 
   return {

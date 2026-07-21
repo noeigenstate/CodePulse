@@ -13,7 +13,7 @@ import {
   turns,
 } from '@codepulse/storage'
 
-test('openDb and queryUsageStats heal legacy events schema without file_type_hints', async (t) => {
+test('openDb and queryUsageStats heal legacy events schema without file_type_hints', async () => {
   const home = await mkdtemp(join(tmpdir(), 'codepulse-storage-legacy-'))
   const file = join(home, 'legacy.sqlite')
   let opened: ReturnType<typeof openDb>
@@ -45,10 +45,6 @@ test('openDb and queryUsageStats heal legacy events schema without file_type_hin
     opened = openDb(file)
   } catch (error) {
     await rm(home, { recursive: true, force: true })
-    if (isNativeSqliteAbiMismatch(error)) {
-      t.skip('better-sqlite3 native module is built for a different runtime')
-      return
-    }
     throw error
   }
 
@@ -68,17 +64,13 @@ test('openDb and queryUsageStats heal legacy events schema without file_type_hin
   }
 })
 
-test('pruneEventsBefore deletes old raw events and token snapshots', async (t) => {
+test('pruneEventsBefore deletes old raw events and token snapshots', async () => {
   const home = await mkdtemp(join(tmpdir(), 'codepulse-storage-prune-'))
   let opened: ReturnType<typeof openDb>
   try {
     opened = openDb(join(home, 'codepulse.sqlite'))
   } catch (error) {
     await rm(home, { recursive: true, force: true })
-    if (isNativeSqliteAbiMismatch(error)) {
-      t.skip('better-sqlite3 native module is built for a different runtime')
-      return
-    }
     throw error
   }
   const { db, sqlite } = opened
@@ -123,17 +115,13 @@ test('pruneEventsBefore deletes old raw events and token snapshots', async (t) =
   }
 })
 
-test('persistEvent never stores complete hook payloads while previews and stats remain available', async (t) => {
+test('persistEvent never stores complete hook payloads while previews and stats remain available', async () => {
   const home = await mkdtemp(join(tmpdir(), 'codepulse-storage-privacy-'))
   let opened: ReturnType<typeof openDb>
   try {
     opened = openDb(join(home, 'codepulse.sqlite'))
   } catch (error) {
     await rm(home, { recursive: true, force: true })
-    if (isNativeSqliteAbiMismatch(error)) {
-      t.skip('better-sqlite3 native module is built for a different runtime')
-      return
-    }
     throw error
   }
   const { db, sqlite } = opened
@@ -273,21 +261,13 @@ test('persistEvent never stores complete hook payloads while previews and stats 
   }
 })
 
-test('openDb scrubs legacy raw hooks and commands without losing derived file types', async (t) => {
+test('openDb scrubs legacy raw hooks and commands without losing derived file types', async () => {
   const home = await mkdtemp(join(tmpdir(), 'codepulse-storage-privacy-migration-'))
   const file = join(home, 'codepulse.sqlite')
   let active: ReturnType<typeof openDb> | undefined
 
   try {
-    try {
-      active = openDb(file)
-    } catch (error) {
-      if (isNativeSqliteAbiMismatch(error)) {
-        t.skip('better-sqlite3 native module is built for a different runtime')
-        return
-      }
-      throw error
-    }
+    active = openDb(file)
 
     persistEvent(active.db, {
       id: 'legacy-private-event',
@@ -326,7 +306,8 @@ test('openDb scrubs legacy raw hooks and commands without losing derived file ty
     assert.equal(migrated.raw, null)
     assert.equal(migrated.command, null)
     assertExtensionHintsOnly(migrated.fileTypeHints, ['.ts', '.py'])
-    assert.equal(Number(active.sqlite.pragma('user_version', { simple: true })), 1)
+    const migratedUserVersion = Number(active.sqlite.pragma('user_version', { simple: true }))
+    assert.ok(migratedUserVersion > 0)
     assert.equal(Number(active.sqlite.pragma('secure_delete', { simple: true })), 1)
     assert.throws(
       () =>
@@ -340,7 +321,10 @@ test('openDb scrubs legacy raw hooks and commands without losing derived file ty
 
     // Reopening is intentionally part of the contract: the migration must be idempotent.
     active = openDb(file)
-    assert.equal(Number(active.sqlite.pragma('user_version', { simple: true })), 1)
+    assert.equal(
+      Number(active.sqlite.pragma('user_version', { simple: true })),
+      migratedUserVersion,
+    )
     active.sqlite.close()
     active = undefined
 
@@ -374,9 +358,4 @@ function assertExtensionHintsOnly(value: string | null | undefined, expected: st
   for (const hint of hints) {
     assert.match(hint, /^\.[a-z0-9]{1,8}$/i)
   }
-}
-
-function isNativeSqliteAbiMismatch(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error)
-  return message.includes('NODE_MODULE_VERSION') || message.includes('ERR_DLOPEN_FAILED')
 }

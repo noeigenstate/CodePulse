@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type {
   Agent,
   AgentType,
+  DeviceProvisioningRequest,
+  DeviceProvisioningSnapshot,
   StatusSnapshot,
   UiLocale,
   UpdateDownloadProgress,
@@ -35,6 +37,16 @@ const api = {
     ipcRenderer.invoke('codepulse:get-stats', query),
   /** 主动扫本机 Codex/Grok 会话目录，返回最新 StatusHub 快照。 */
   syncSessions: (): Promise<StatusSnapshot> => ipcRenderer.invoke('codepulse:sync-sessions'),
+  getDeviceProvisioning: (): Promise<DeviceProvisioningSnapshot> =>
+    ipcRenderer.invoke('codepulse:get-device-provisioning'),
+  startDeviceScan: (): Promise<DeviceProvisioningSnapshot> =>
+    ipcRenderer.invoke('codepulse:start-device-scan'),
+  stopDeviceScan: (): Promise<DeviceProvisioningSnapshot> =>
+    ipcRenderer.invoke('codepulse:stop-device-scan'),
+  provisionDevice: (request: DeviceProvisioningRequest): Promise<DeviceProvisioningSnapshot> =>
+    ipcRenderer.invoke('codepulse:provision-device', request),
+  cancelDeviceProvisioning: (): Promise<DeviceProvisioningSnapshot> =>
+    ipcRenderer.invoke('codepulse:cancel-device-provisioning'),
   onStatus: (cb: (snapshot: StatusSnapshot) => void): Unsubscribe =>
     subscribe('codepulse:status', cb),
   onAgents: (cb: (agents: Agent[]) => void): Unsubscribe => subscribe('codepulse:agents', cb),
@@ -43,6 +55,8 @@ const api = {
     subscribe('codepulse:update-available', cb),
   onUpdateProgress: (cb: (progress: UpdateDownloadProgress) => void): Unsubscribe =>
     subscribe('codepulse:update-progress', cb),
+  onDeviceProvisioning: (cb: (snapshot: DeviceProvisioningSnapshot) => void): Unsubscribe =>
+    subscribe('codepulse:device-provisioning', cb),
 }
 
 export type CodePulseApi = typeof api

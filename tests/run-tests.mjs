@@ -33,7 +33,14 @@ if (tsTestFiles.length > 0) {
     sourcemap: 'inline',
     outdir,
     entryNames: '[name]',
-    external: ['fastify', '@fastify/websocket', 'better-sqlite3'],
+    external: [
+      'fastify',
+      '@fastify/websocket',
+      'better-sqlite3',
+      'bonjour-service',
+      'serialport',
+      'ws',
+    ],
     alias: {
       '@codepulse/shared': './packages/shared/src/index.ts',
       '@codepulse/core': './packages/core/src/index.ts',

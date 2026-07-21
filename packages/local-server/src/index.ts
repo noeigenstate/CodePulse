@@ -209,3 +209,37 @@ export {
   LOCAL_AUTH_HEADER,
   LOCAL_AUTH_QUERY,
 } from './local-auth.js'
+export {
+  defaultDeviceAuthPath,
+  generateDeviceAuthToken,
+  loadOrCreateDeviceAuthToken,
+  readDeviceAuthToken,
+  DEVICE_AUTH_HEADER,
+} from './device-auth.js'
+export {
+  assertValidDeviceServerId,
+  defaultDeviceServerIdPath,
+  generateDeviceServerId,
+  loadOrCreateDeviceServerId,
+  readDeviceServerId,
+} from './device-server-id.js'
+export {
+  publishDeviceMdns,
+  DEVICE_MDNS_PROTOCOL,
+  DEVICE_MDNS_TYPE,
+  type DeviceMdnsPublisher,
+  type DeviceMdnsPublisherOptions,
+} from './device-discovery.js'
+export {
+  readDeviceServerConfig,
+  startDeviceServer,
+  DEVICE_HEALTH_PATH,
+  DEVICE_SERVER_ENABLED_ENV,
+  DEVICE_SERVER_HOST_ENV,
+  DEVICE_SERVER_PORT_ENV,
+  DEVICE_SERVER_TOKEN_ENV,
+  DEVICE_STATUS_PATH,
+  type DeviceServer,
+  type DeviceServerConfig,
+  type DeviceServerOptions,
+} from './device-server.js'

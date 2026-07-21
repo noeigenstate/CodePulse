@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:net'
 import { afterEach, test } from 'node:test'
+import WebSocket from 'ws'
 import { StatusHub } from '@codepulse/core'
 import { startLocalServer, type LocalServer } from '@codepulse/local-server'
 import type {
@@ -365,17 +366,8 @@ interface BufferedWebSocket {
   next: () => Promise<ServerPushMessage>
 }
 
-function nativeWebSocket(): new (url: string) => TestWebSocket {
-  const websocket = (
-    globalThis as typeof globalThis & { WebSocket?: new (url: string) => TestWebSocket }
-  ).WebSocket
-  if (!websocket) throw new Error('This Node runtime does not expose global WebSocket')
-  return websocket
-}
-
 async function connectWebSocket(url: string): Promise<BufferedWebSocket> {
-  const WebSocket = nativeWebSocket()
-  const socket = new WebSocket(url)
+  const socket = new WebSocket(url) as unknown as TestWebSocket
   const messages: ServerPushMessage[] = []
   const waiters: Array<(message: ServerPushMessage) => void> = []
 

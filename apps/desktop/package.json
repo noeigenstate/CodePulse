@@ -6,20 +6,24 @@
   "main": "./out/main/index.js",
   "author": "CodePulse",
   "scripts": {
+    "predev": "pnpm rebuild:electron",
     "dev": "electron-vite dev",
+    "prestart": "pnpm rebuild:electron",
     "start": "electron-vite preview",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "dist": "electron-vite build && electron-builder",
     "dist:win": "electron-vite build && electron-builder --win",
+    "dist:linux": "electron-vite build && electron-builder --linux AppImage --x64",
     "dist:mac": "electron-vite build && electron-builder --mac --arm64 --x64",
     "dist:mac:arm64": "electron-vite build && electron-builder --mac --arm64",
     "dist:mac:x64": "electron-vite build && electron-builder --mac --x64",
     "dist:dir": "electron-vite build && electron-builder --dir",
-    "postinstall": "electron-builder install-app-deps"
+    "rebuild:electron": "electron-builder install-app-deps"
   },
   "dependencies": {
-    "better-sqlite3": "^11.8.1"
+    "better-sqlite3": "^11.8.1",
+    "serialport": "^13.0.0"
   },
   "devDependencies": {
     "@codepulse/adapters": "workspace:*",
@@ -32,6 +36,7 @@
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
+    "bonjour-service": "^1.4.3",
     "drizzle-orm": "^0.38.3",
     "electron": "^33.3.1",
     "electron-builder": "^25.1.8",

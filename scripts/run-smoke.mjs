@@ -11,7 +11,7 @@ await build({
   bundle: true,
   platform: 'node',
   format: 'esm',
-  external: ['fastify', '@fastify/websocket', 'better-sqlite3'],
+  external: ['fastify', '@fastify/websocket', 'better-sqlite3', 'bonjour-service'],
   alias: {
     '@codepulse/shared': './packages/shared/src/index.ts',
     '@codepulse/core': './packages/core/src/index.ts',

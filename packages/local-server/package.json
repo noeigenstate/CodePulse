@@ -21,6 +21,7 @@
     "@codepulse/core": "workspace:*",
     "@codepulse/shared": "workspace:*",
     "@fastify/websocket": "^11.0.2",
+    "bonjour-service": "^1.4.3",
     "fastify": "^5.2.1"
   }
 }

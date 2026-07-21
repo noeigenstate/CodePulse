@@ -89,9 +89,49 @@ jobs:
             package.json
             apps/desktop/package.json
 
+  verify:
+    name: Verify (Node ${{ matrix.node }})
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - name: Restore versioned package manifests
+        uses: actions/download-artifact@v4
+        with:
+          name: codepulse-versioned-manifests-${{ needs.prepare.outputs.tag }}
+          path: .
+
+      - name: Install dependencies for Node tests
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify
+        run: |
+          pnpm typecheck
+          pnpm test
+          pnpm smoke
+          pnpm lint
+
   windows:
     name: Build Windows installer
-    needs: prepare
+    needs: [prepare, verify]
     runs-on: windows-latest
 
     steps:
@@ -120,13 +160,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Verify
-        run: |
-          pnpm typecheck
-          pnpm test
-          pnpm smoke
-          pnpm lint
-
       - name: Clean release output
         shell: pwsh
         run: Remove-Item -Path 'apps/desktop/release' -Recurse -Force -ErrorAction SilentlyContinue
@@ -144,10 +177,10 @@ jobs:
             apps/desktop/release/*.blockmap
             apps/desktop/release/latest.yml
 
-  macos:
-    name: Build macOS installer
-    needs: prepare
-    runs-on: macos-latest
+  linux:
+    name: Build Linux AppImage
+    needs: [prepare, verify]
+    runs-on: ubuntu-latest
 
     steps:
       - name: Check out repository
@@ -175,12 +208,71 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Verify
+      - name: Clean release output
+        run: rm -rf apps/desktop/release
+
+      - name: Build Linux x64 AppImage
+        run: pnpm dist:linux
+
+      - name: Verify Linux AppImage exists and is executable
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          pnpm typecheck
-          pnpm test
-          pnpm smoke
-          pnpm lint
+          set -euo pipefail
+          appimage="apps/desktop/release/CodePulse_${RELEASE_VERSION}_linux-x86_64.AppImage"
+
+          echo "Release directory contents:"
+          ls -lah apps/desktop/release
+
+          if [ ! -f "${appimage}" ]; then
+            echo "Missing Linux AppImage: ${appimage}"
+            exit 1
+          fi
+          if [ ! -x "${appimage}" ]; then
+            echo "Linux AppImage is not executable: ${appimage}"
+            exit 1
+          fi
+
+          "${appimage}" --appimage-version
+          echo "OK Linux AppImage: ${appimage} ($(wc -c < "${appimage}") bytes)"
+
+      - name: Upload Linux AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: codepulse-linux-${{ needs.prepare.outputs.tag }}
+          if-no-files-found: error
+          path: apps/desktop/release/*.AppImage
+
+  macos:
+    name: Build macOS installer
+    needs: [prepare, verify]
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Restore versioned package manifests
+        uses: actions/download-artifact@v4
+        with:
+          name: codepulse-versioned-manifests-${{ needs.prepare.outputs.tag }}
+          path: .
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Clean release output
         run: rm -rf apps/desktop/release
@@ -229,7 +321,7 @@ jobs:
 
   publish:
     name: Publish GitHub release
-    needs: [prepare, windows, macos]
+    needs: [prepare, windows, linux, macos]
     if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
@@ -248,6 +340,12 @@ jobs:
         with:
           name: codepulse-macos-${{ needs.prepare.outputs.tag }}
           path: release-assets/macos
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: codepulse-linux-${{ needs.prepare.outputs.tag }}
+          path: release-assets/linux
 
       - name: Download release notes
         uses: actions/download-artifact@v4
@@ -269,9 +367,10 @@ jobs:
           fi
 
           mapfile -t assets < <(
-            find release-assets/windows release-assets/macos -type f \( \
+            find release-assets/windows release-assets/macos release-assets/linux -type f \( \
               -name '*.exe' -o \
               -name '*.dmg' -o \
+              -name '*.AppImage' -o \
               -name '*.zip' -o \
               -name '*.blockmap' -o \
               -name 'latest.yml' -o \

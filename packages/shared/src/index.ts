@@ -15,6 +15,7 @@ export * from './types/session.js'
 export * from './types/event.js'
 export * from './types/timing.js'
 export * from './types/runtime.js'
+export * from './types/device.js'
 export * from './types/update.js'
 export * from './types/stats.js'
 export * from './token-format.js'
@@ -25,3 +26,12 @@ export const DEFAULT_SERVER_HOST = '127.0.0.1'
 
 /** 本地 HTTP/WebSocket 服务器的默认端口（需求 §5.9）。 */
 export const DEFAULT_SERVER_PORT = 17888
+
+/** 只读局域网设备服务器的默认绑定地址（需显式启用）。 */
+export const DEFAULT_DEVICE_SERVER_HOST = '0.0.0.0'
+
+/** 只读局域网设备服务器的默认端口。 */
+export const DEFAULT_DEVICE_SERVER_PORT = 17889
+
+/** 水墨屏固件匿名 health 服务的固定端口。 */
+export const DEFAULT_DISPLAY_DEVICE_PORT = 17890

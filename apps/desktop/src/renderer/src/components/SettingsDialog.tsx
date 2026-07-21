@@ -1,6 +1,7 @@
 import { useEffect, useRef, type MouseEvent } from 'react'
 import type { SettingsCopy } from '../lib/i18n.js'
 import { CLI_TOOL_TYPES, type CliToolType, type ThemePreference } from '../lib/dashboardSettings.js'
+import { DeviceProvisioningPanel } from './DeviceProvisioningPanel.js'
 
 interface Props {
   copy: SettingsCopy
@@ -93,7 +94,7 @@ export function SettingsDialog({
       <section
         aria-label={copy.title}
         aria-modal="true"
-        className="settings-dialog w-full max-w-sm"
+        className="settings-dialog flex max-h-[min(90vh,52rem)] w-full max-w-2xl flex-col"
         ref={dialogRef}
         role="dialog"
         tabIndex={-1}
@@ -114,7 +115,7 @@ export function SettingsDialog({
           </button>
         </div>
 
-        <div className="grid gap-6 px-5 py-5">
+        <div className="grid min-h-0 gap-6 overflow-y-auto px-5 py-5">
           <section>
             <h3 className="text-sm font-semibold text-ink">{copy.theme}</h3>
             <p className="mt-1.5 text-meta leading-5 text-ink-500">{copy.themeAutoHint}</p>
@@ -154,6 +155,8 @@ export function SettingsDialog({
               ))}
             </div>
           </section>
+
+          <DeviceProvisioningPanel copy={copy.deviceProvisioning} />
         </div>
       </section>
     </div>

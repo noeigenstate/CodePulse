@@ -2,6 +2,9 @@ appId: dev.codepulse.desktop
 productName: CodePulse
 electronVersion: 33.3.1
 electronDist: ../../node_modules/electron/dist
+# SerialPort ships an N-API prebuild. The legacy rebuilder preserves it instead of
+# invoking node-gyp, which also keeps packaging reliable from paths containing spaces.
+nativeRebuilder: legacy
 compression: maximum
 electronLanguages:
   - en-US
@@ -18,7 +21,7 @@ files:
   - out/renderer/**
   - build/icon.png
   - package.json
-  # Keep installers lean — only native sqlite should remain under node_modules.
+  # Keep installers lean — native sqlite + serialport remain under node_modules.
   - '!**/*.map'
   - '!**/*.d.ts'
   - '!**/*.md'
@@ -45,6 +48,9 @@ files:
   - '!**/node_modules/better-sqlite3/build/Release/*.iobj'
   - '!**/node_modules/better-sqlite3/build/Release/*.ipdb'
   - '!**/node_modules/better-sqlite3/build/Release/*.pdb'
+  - '!**/node_modules/@serialport/bindings-cpp/src/**'
+  - '!**/node_modules/@serialport/bindings-cpp/build/**'
+  - '!**/node_modules/@serialport/bindings-cpp/binding.gyp'
   # NOTE: Do NOT exclude `bindings` / `file-uri-to-path` — better-sqlite3 loads
   # the native addon via `require('bindings')('better_sqlite3.node')`. Stripping
   # them leaves the installer's SQLite dead (live UI works, analytics empty).
@@ -56,7 +62,7 @@ extraResources:
       - bin/**
       - lib/**
       - package.json
-# Native addon must stay unpacked from the asar archive so it can be dlopen'd.
+# Native addons (SQLite + serialport bindings) must stay unpacked for dlopen().
 asarUnpack:
   - '**/*.node'
   - '**/node_modules/better-sqlite3/**'
@@ -82,8 +88,11 @@ mac:
         - x64
 linux:
   icon: build/icon.png
+  artifactName: CodePulse_${version}_linux-${arch}.${ext}
   target:
-    - AppImage
+    - target: AppImage
+      arch:
+        - x64
   category: Development
 nsis:
   oneClick: false

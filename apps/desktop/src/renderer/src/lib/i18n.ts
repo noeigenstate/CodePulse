@@ -55,6 +55,40 @@ export interface SettingsCopy {
   claudeCode: string
   grok: string
   kimi: string
+  deviceProvisioning: DeviceProvisioningCopy
+}
+
+export interface DeviceProvisioningCopy {
+  title: string
+  description: string
+  scan: string
+  scanning: string
+  unavailable: string
+  serverUnavailable: string
+  serverReady: string
+  connectHint: string
+  noDevice: string
+  wifiSsid: string
+  wifiPassword: string
+  passwordHint: string
+  fallbackHost: string
+  configuredNetwork: string
+  sending: string
+  applying: string
+  desktopUnreachable: string
+  wifiError: string
+  ready: string
+  cancelled: string
+  timeout: string
+  invalidInput: string
+  deviceMismatch: string
+  failed: string
+  lanVerified: string
+  lanWaiting: string
+  cancel: string
+  provisioning: string
+  provision: string
+  securityNote: string
 }
 
 export interface StatsCopy {
@@ -326,7 +360,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
       projectRoot: '项目根目录',
     },
     settings: {
-      title: '显示与外观',
+      title: '设置',
       close: '关闭设置',
       theme: '主题',
       themeAuto: '自动',
@@ -339,6 +373,40 @@ const UI_COPY: Record<Locale, UiCopy> = {
       claudeCode: 'Claude Code',
       grok: 'Grok',
       kimi: 'Kimi Code',
+      deviceProvisioning: {
+        title: 'CodePulse 水墨屏',
+        description: '通过 USB 自动识别设备并写入 Wi-Fi。请正常长按功能键 3 秒开机，不要按 BOOT。',
+        scan: '重新扫描',
+        scanning: '扫描中…',
+        unavailable: '当前版本的主进程不支持设备配网，请重启或更新 CodePulse。',
+        serverUnavailable:
+          '设备 API 尚未启动。开发模式请使用 CODEPULSE_DEVICE_SERVER_ENABLED=1 pnpm dev。',
+        serverReady: '设备 API 已就绪，后备地址：{host}:17889',
+        connectHint: '正在查找 USB 水墨屏，请连接设备并正常开机。',
+        noDevice: '尚未发现 CodePulse USB 设备，连接后点击重新扫描。',
+        wifiSsid: 'Wi-Fi 名称（SSID）',
+        wifiPassword: 'Wi-Fi 密码',
+        passwordHint: '开放网络可留空；密码不会保存到 App 设置或日志。',
+        fallbackHost: '电脑后备局域网 IP',
+        configuredNetwork: '当前配置：{ssid}',
+        sending: '正在安全写入配置…',
+        applying: '配置已保存，水墨屏正在连接 Wi-Fi…',
+        desktopUnreachable: 'Wi-Fi 已连接，正在查找并验证 CodePulse App…',
+        wifiError: 'Wi-Fi 连接失败，请检查名称、密码和信号后重试。',
+        ready: '配网成功：水墨屏已完成鉴权状态请求。',
+        cancelled: '配网已取消。',
+        timeout: '等待设备就绪超时，请检查网络后重试。',
+        invalidInput: 'Wi-Fi 或后备地址格式不正确。',
+        deviceMismatch: 'USB 设备身份发生变化，请重新扫描。',
+        failed: '配网失败，请重新连接设备后重试。',
+        lanVerified: '已通过 mDNS 与 17890 health 核对设备身份。',
+        lanWaiting: '正在等待水墨屏的局域网服务广播。',
+        cancel: '取消',
+        provisioning: '配网中…',
+        provision: '开始配网',
+        securityNote:
+          '串口操作只在主进程执行；设备 token 不会发送给界面，密码和 token 均不会写入日志。',
+      },
     },
     stats: {
       title: '本地开发数据统计',
@@ -506,7 +574,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
       projectRoot: 'Project root',
     },
     settings: {
-      title: 'Display & appearance',
+      title: 'Settings',
       close: 'Close settings',
       theme: 'Theme',
       themeAuto: 'Auto',
@@ -520,6 +588,43 @@ const UI_COPY: Record<Locale, UiCopy> = {
       claudeCode: 'Claude Code',
       grok: 'Grok',
       kimi: 'Kimi Code',
+      deviceProvisioning: {
+        title: 'CodePulse display',
+        description:
+          'Connect over USB to identify and provision Wi-Fi. Power on normally by holding the function button for 3 seconds; do not press BOOT.',
+        scan: 'Scan again',
+        scanning: 'Scanning…',
+        unavailable:
+          'This main process does not support device provisioning. Restart or update CodePulse.',
+        serverUnavailable:
+          'The device API is disabled. For development, run CODEPULSE_DEVICE_SERVER_ENABLED=1 pnpm dev.',
+        serverReady: 'Device API ready; fallback address: {host}:17889',
+        connectHint: 'Looking for a USB display. Connect it and power it on normally.',
+        noDevice: 'No CodePulse USB display found. Connect one and scan again.',
+        wifiSsid: 'Wi-Fi name (SSID)',
+        wifiPassword: 'Wi-Fi password',
+        passwordHint:
+          'Leave blank for an open network. The password is never saved in app settings or logs.',
+        fallbackHost: 'Computer fallback LAN IP',
+        configuredNetwork: 'Current network: {ssid}',
+        sending: 'Securely writing configuration…',
+        applying: 'Configuration saved. The display is connecting to Wi-Fi…',
+        desktopUnreachable: 'Wi-Fi connected. Discovering and authenticating with CodePulse…',
+        wifiError: 'Wi-Fi failed. Check the network name, password, and signal, then retry.',
+        ready: 'Provisioning complete: the display made an authenticated status request.',
+        cancelled: 'Provisioning cancelled.',
+        timeout: 'Timed out waiting for the display. Check the network and retry.',
+        invalidInput: 'The Wi-Fi or fallback address is invalid.',
+        deviceMismatch: 'The USB device identity changed. Scan again.',
+        failed: 'Provisioning failed. Reconnect the display and retry.',
+        lanVerified: 'Device identity verified through mDNS and the port 17890 health endpoint.',
+        lanWaiting: 'Waiting for the display to advertise its LAN service.',
+        cancel: 'Cancel',
+        provisioning: 'Provisioning…',
+        provision: 'Start provisioning',
+        securityNote:
+          'Serial operations stay in the main process. The UI never receives the device token, and passwords/tokens are never logged.',
+      },
     },
     stats: {
       title: 'Local development analytics',

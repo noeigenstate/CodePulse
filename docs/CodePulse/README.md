@@ -21,4 +21,5 @@
 - **第一波（已完成）**：扫盘/debounce/进程缓存 + status 合并 + soft-reset 统一
 - **第二波（已完成）**：internal SQLite 过滤、Codex reader 合一、Claude 窗口、时钟/store
 - **第三波（已完成）**：按源扫盘、focus 补扫、路径 realpath、列表虚拟化
+- **第四波（已完成）**：Linux x64 AppImage 本地构建与 GitHub Release 发布链路
 - **后续**：评估 lifecycle SQLite 异步批写（不改变统计语义）

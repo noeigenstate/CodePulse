@@ -15,10 +15,11 @@ const bundleIntoApp = [
   'drizzle-orm',
   'fastify',
   '@fastify/websocket',
+  'bonjour-service',
 ]
 
 /** Native modules that must not be bundled into the main process. */
-const nativeExternals = ['better-sqlite3'] as const
+const nativeExternals = ['better-sqlite3', 'serialport'] as const
 
 const emptyNativeStub = resolve(__dirname, 'scripts/empty-native-stub.cjs')
 

@@ -7,7 +7,7 @@
 Know at a glance whether Codex, Claude Code, Grok, and Kimi Code are working, waiting on
 you, finished, or stuck — without alt-tabbing back to a terminal.
 
-[![status](https://img.shields.io/badge/status-v1.3.1-brightgreen)](#features)
+[![status](https://img.shields.io/badge/status-v1.3.3-brightgreen)](#features)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#download)
 [![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#development)
@@ -36,9 +36,8 @@ machine, and surfaces the result in a few focused ways:
   from your local SQLite history; refresh anytime.
 - 🎨 **Color-coded tray icon** — the overall state of every agent, visible at
   all times.
-- 🔔 **Desktop notifications** — project-first completion toasts with a short
-  summary of your prompt (≤15 Chinese characters / ≤15 English words), throttled
-  and deduplicated.
+- 🔔 **Desktop notifications** — alerts only when a turn completes or appears
+  stuck. Completion toasts use the project name and a short prompt summary.
 
 Everything runs **100% locally**. The server binds to loopback only, prompts
 are stored as short previews (never in full), and the hooks fail silently when
@@ -74,14 +73,14 @@ nothing is uploaded. _(Sample data shown.)_
 |                                     |                                                                                                                                         |
 | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | 🚦 **Unified state machine**        | One turn lifecycle for every agent: idle → processing → tool running → waiting for permission/input → done / error / cancelled / stuck. |
-| 🧭 **Multi-agent, multi-workspace** | Concurrent Codex, Claude Code, Grok, and Kimi Code sessions across projects, each tracked separately.                                   |
+| 🧭 **Multi-agent, multi-workspace** | Concurrent Codex, Claude Code, Grok, and Kimi Code sessions stay separate, while project card order remains fixed across updates.       |
 | 🪟 **Adaptive panes**               | Only CLIs with active tasks or retained quota appear — from one pane up to four panes.                                                  |
 | 🎨 **Automatic light/dark theme**   | Automatic mode uses light from 08:00–20:00 and dark overnight; light and dark can also be selected manually.                            |
 | ⚙️ **Configurable CLI panels**      | The gear menu lets you show or hide each CLI panel without stopping background sync or notifications.                                   |
 | 🧠 **Model, depth, and timing**     | Stable model identity, thinking depth when available, and native CLI elapsed time remain visible across refreshes.                      |
-| 📈 **Context tracking**             | Compact context-window usage from all four supported CLIs, using exact CLI data when available.                                         |
-| 🎟️ **Quota awareness**              | Claude / Kimi: 5-hour + weekly. Codex / Grok: weekly only, matched to the CLI model or quota bucket.                                    |
-| 🔔 **Glanceable toasts**            | Completion title is the project name; body is a cleaned prompt summary — no CLI branding noise.                                         |
+| 📈 **Context tracking**             | Context usage grows monotonically; small readback drops are ignored while confirmed compression is handled correctly.                   |
+| 🎟️ **Quota awareness**              | Last known quota stays visible; increases update immediately, while repeated lower reads confirm an official reset.                     |
+| 🔔 **Glanceable toasts**            | Only completed or likely stuck turns notify; completion uses the project name and a cleaned prompt summary.                             |
 | 🕰️ **Stuck detection**              | A watchdog flags turns with no activity so silent failures don't burn your afternoon.                                                   |
 | 💾 **Local history**                | Events, sessions, turns, and token snapshots persisted to SQLite — yours to query or delete.                                            |
 | 📊 **Local analytics console**      | SQLite rollups of tokens, coding time, projects, and dialogs — today / 7d / 30d, with day / week / month trends.                        |

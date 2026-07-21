@@ -53,6 +53,9 @@ export function registerWebSocket(app: FastifyInstance, hub: StatusHub): void {
  * @param message 待序列化并发送的推送消息。
  */
 function broadcast(clients: Set<WebSocket>, message: ServerPushMessage): void {
+  // The Electron renderer uses IPC, so most desktop sessions have no WebSocket
+  // clients. Avoid serializing every hook-driven status snapshot in that common case.
+  if (clients.size === 0) return
   const data = JSON.stringify(message)
   for (const client of clients) {
     if (client.readyState === client.OPEN) client.send(data)

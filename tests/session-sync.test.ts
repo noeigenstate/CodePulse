@@ -110,7 +110,6 @@ test('SessionSyncService synchronizes Codex native active and completed task tim
         type: 'event_msg',
         payload: {
           type: 'task_started',
-          turn_id: 'historical-unmatched-start',
           started_at: completedStartSeconds - 30,
         },
       }),
@@ -154,6 +153,7 @@ test('SessionSyncService synchronizes Codex native active and completed task tim
     let codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
     assert.deepEqual(codex?.turnTiming, {
       state: 'completed',
+      externalTurnId: 'turn-complete',
       startedAt: completedStartSeconds * 1000,
       elapsedMs: 4_321,
       observedAt: completedAtSeconds * 1000,
@@ -161,7 +161,7 @@ test('SessionSyncService synchronizes Codex native active and completed task tim
     assert.equal(
       codex?.state,
       TurnState.IDLE,
-      'an unmatched historical start must not revive a completed Codex task',
+      'an unidentified historical start must not revive a completed Codex task',
     )
 
     const activeStartSeconds = completedAtSeconds + 1
@@ -193,6 +193,7 @@ test('SessionSyncService synchronizes Codex native active and completed task tim
     codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
     assert.deepEqual(codex?.turnTiming, {
       state: 'active',
+      externalTurnId: 'turn-active',
       startedAt: activeStartSeconds * 1000,
       observedAt: activeStartSeconds * 1000,
     })
@@ -239,6 +240,376 @@ test('SessionSyncService synchronizes Codex native active and completed task tim
     } finally {
       restartedSync.stop()
     }
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService validates Codex native terminal timing against the root turn', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-codex-root-turn-')
+  const sessions = join(home, 'sessions', '2026', '07', '20')
+  const sessionId = '019f8000-aaaa-bbbb-cccc-ddddeeeeffff'
+  const cwd = 'E:/work/codex-root-turn'
+  const rollout = join(sessions, `rollout-2026-07-20T12-00-00-${sessionId}.jsonl`)
+
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    rollout,
+    [
+      JSON.stringify({ type: 'session_meta', payload: { id: sessionId, cwd } }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: { last_token_usage: { input_tokens: 100, total_tokens: 100 } },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+  await utimes(rollout, new Date(), new Date())
+
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const notifications: Array<{ dedupeKey: string }> = []
+  hub.on('notification', (notification) => notifications.push(notification))
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: home,
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    codexProcessAlive: () => true,
+  })
+
+  /** Appends native Codex lifecycle rows and forces a new file revision. */
+  const appendLifecycleRows = async (
+    rows: Array<{ timestamp: number; payload: Record<string, unknown> }>,
+  ): Promise<void> => {
+    await writeFile(
+      rollout,
+      rows
+        .map(({ timestamp, payload }) =>
+          JSON.stringify({
+            timestamp: new Date(timestamp).toISOString(),
+            type: 'event_msg',
+            payload,
+          }),
+        )
+        .map((line) => `\n${line}`)
+        .join(''),
+      { encoding: 'utf8', flag: 'a' },
+    )
+    const revision = rows.at(-1)?.timestamp ?? Date.now()
+    const changedAt = new Date(Date.now() + (revision % 10_000))
+    await utimes(rollout, changedAt, changedAt)
+  }
+
+  /** Appends one paired native Codex task and its terminal outcome. */
+  const appendTask = async (
+    turnId: string,
+    outcome: 'task_complete' | 'turn_aborted',
+    startedAt: number,
+  ): Promise<void> => {
+    const completedAt = startedAt + 1_000
+    await appendLifecycleRows([
+      {
+        timestamp: startedAt,
+        payload: { type: 'task_started', turn_id: turnId, started_at: startedAt / 1_000 },
+      },
+      {
+        timestamp: completedAt,
+        payload: {
+          type: outcome,
+          turn_id: turnId,
+          completed_at: completedAt / 1_000,
+          duration_ms: 1_000,
+        },
+      },
+    ])
+  }
+
+  try {
+    const rootStartedAt = Date.now()
+    await appendLifecycleRows([
+      {
+        timestamp: rootStartedAt,
+        payload: {
+          type: 'task_started',
+          turn_id: 'root-a',
+          started_at: rootStartedAt / 1_000,
+        },
+      },
+    ])
+    await appendTask('nested-b', 'task_complete', rootStartedAt + 1_000)
+    await sync.syncNow(['codex'])
+    let codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.equal(codex?.state, TurnState.PROMPT_SUBMITTED)
+    assert.equal(codex?.externalTurnId, 'root-a')
+    assert.equal(notifications.length, 0)
+
+    hub.ingest({
+      id: 'root-a-stop',
+      source: 'codex',
+      eventType: 'turn_stop',
+      externalSessionId: sessionId,
+      externalTurnId: 'root-a',
+      cwd,
+      timestamp: rootStartedAt + 3_000,
+    })
+    codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.equal(codex?.state, TurnState.DONE)
+    assert.equal(notifications.length, 1)
+
+    await appendLifecycleRows([
+      {
+        timestamp: rootStartedAt + 3_000,
+        payload: {
+          type: 'task_complete',
+          turn_id: 'root-a',
+          completed_at: (rootStartedAt + 3_000) / 1_000,
+          duration_ms: 3_000,
+        },
+      },
+    ])
+    await sync.syncNow(['codex'])
+    assert.equal(notifications.length, 1)
+    assert.equal(notifications[0]?.dedupeKey.startsWith('done:'), true)
+
+    hub.ingest({
+      id: 'root-c-prompt',
+      source: 'codex',
+      eventType: 'prompt_submit',
+      externalSessionId: sessionId,
+      externalTurnId: 'root-c',
+      cwd,
+      timestamp: rootStartedAt + 5_000,
+    })
+    await appendTask('root-c', 'turn_aborted', rootStartedAt + 6_000)
+    await sync.syncNow(['codex'])
+    codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.equal(codex?.state, TurnState.CANCELLED)
+    assert.equal(notifications.length, 1, 'cancelled turns must not emit a completion toast')
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService never lets a Codex subagent rollout end the root turn', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-codex-subagent-')
+  const sessions = join(home, 'sessions', '2026', '07', '20')
+  const rootSessionId = '019f8100-aaaa-bbbb-cccc-ddddeeeeffff'
+  const childThreadId = '019f8101-aaaa-bbbb-cccc-ddddeeeeffff'
+  const cwd = 'E:/work/codex-subagent'
+  const rootRollout = join(sessions, `rollout-root-${rootSessionId}.jsonl`)
+  const childRollout = join(sessions, `rollout-child-${childThreadId}.jsonl`)
+  const rootStartedAt = Date.now() - 2_000
+  const childStartedAt = rootStartedAt + 500
+
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    childRollout,
+    [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: {
+          id: childThreadId,
+          session_id: rootSessionId,
+          cwd,
+          // Put the only child-lineage marker beyond the normal 512 KiB head.
+          padding: 'x'.repeat(600_000),
+          forked_from_id: rootSessionId,
+        },
+      }),
+      JSON.stringify({
+        timestamp: new Date(rootStartedAt).toISOString(),
+        type: 'event_msg',
+        payload: { type: 'task_started', turn_id: 'root-a', started_at: rootStartedAt / 1_000 },
+      }),
+      JSON.stringify({
+        timestamp: new Date(childStartedAt).toISOString(),
+        type: 'event_msg',
+        payload: {
+          type: 'task_started',
+          turn_id: 'child-b',
+          started_at: childStartedAt / 1_000,
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+  await utimes(childRollout, new Date(), new Date())
+
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const notifications: Array<{ dedupeKey: string }> = []
+  hub.on('notification', (notification) => notifications.push(notification))
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: home,
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    codexProcessAlive: () => true,
+  })
+
+  try {
+    await sync.syncNow(['codex'])
+    let codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.equal(codex?.externalSessionId, rootSessionId)
+    assert.equal(codex?.externalTurnId, undefined)
+    assert.equal(codex?.state, TurnState.IDLE)
+    assert.equal(notifications.length, 0)
+
+    await writeFile(
+      rootRollout,
+      [
+        JSON.stringify({
+          type: 'session_meta',
+          payload: { id: rootSessionId, session_id: rootSessionId, cwd },
+        }),
+        JSON.stringify({
+          timestamp: new Date(rootStartedAt).toISOString(),
+          type: 'event_msg',
+          payload: {
+            type: 'task_started',
+            turn_id: 'root-a',
+            started_at: rootStartedAt / 1_000,
+          },
+        }),
+      ].join('\n'),
+      'utf8',
+    )
+    await utimes(rootRollout, new Date(Date.now() + 1_000), new Date(Date.now() + 1_000))
+    await sync.syncNow(['codex'])
+    codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.equal(codex?.state, TurnState.PROMPT_SUBMITTED)
+    assert.equal(codex?.externalTurnId, 'root-a')
+    assert.equal(notifications.length, 0)
+
+    const childCompletedAt = childStartedAt + 1_000
+    await writeFile(
+      childRollout,
+      `\n${JSON.stringify({
+        timestamp: new Date(childCompletedAt).toISOString(),
+        type: 'event_msg',
+        payload: {
+          type: 'task_complete',
+          turn_id: 'child-b',
+          completed_at: childCompletedAt / 1_000,
+          duration_ms: 1_000,
+        },
+      })}`,
+      { encoding: 'utf8', flag: 'a' },
+    )
+    await utimes(childRollout, new Date(Date.now() + 2_000), new Date(Date.now() + 2_000))
+    await sync.syncNow(['codex'])
+    codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.equal(codex?.state, TurnState.PROMPT_SUBMITTED)
+    assert.equal(codex?.externalTurnId, 'root-a')
+    assert.equal(notifications.length, 0)
+
+    const rootCompletedAt = rootStartedAt + 4_000
+    await writeFile(
+      rootRollout,
+      `\n${JSON.stringify({
+        timestamp: new Date(rootCompletedAt).toISOString(),
+        type: 'event_msg',
+        payload: {
+          type: 'task_complete',
+          turn_id: 'root-a',
+          completed_at: rootCompletedAt / 1_000,
+          duration_ms: 4_000,
+        },
+      })}`,
+      { encoding: 'utf8', flag: 'a' },
+    )
+    await utimes(rootRollout, new Date(Date.now() + 3_000), new Date(Date.now() + 3_000))
+    await sync.syncNow(['codex'])
+    codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.equal(codex?.state, TurnState.DONE)
+    assert.equal(notifications.length, 1)
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService keeps a user-created Codex fork as a root rollout', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-codex-user-fork-')
+  const sessions = join(home, 'sessions', '2026', '07', '20')
+  const parentSessionId = '019f8200-aaaa-bbbb-cccc-ddddeeeeffff'
+  const forkSessionId = '019f8201-aaaa-bbbb-cccc-ddddeeeeffff'
+  const cwd = 'E:/work/codex-user-fork'
+  const rollout = join(sessions, `rollout-user-fork-${forkSessionId}.jsonl`)
+  const startedAt = Date.now() - 1_000
+
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    rollout,
+    [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: {
+          id: forkSessionId,
+          session_id: forkSessionId,
+          cwd,
+          thread_source: 'user',
+          forked_from_id: parentSessionId,
+        },
+      }),
+      JSON.stringify({
+        timestamp: new Date(startedAt).toISOString(),
+        type: 'event_msg',
+        payload: { type: 'task_started', turn_id: 'fork-root-a', started_at: startedAt / 1_000 },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+  await utimes(rollout, new Date(), new Date())
+
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const notifications: Array<{ dedupeKey: string }> = []
+  hub.on('notification', (notification) => notifications.push(notification))
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: home,
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    codexProcessAlive: () => true,
+  })
+
+  try {
+    await sync.syncNow(['codex'])
+    let codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.equal(codex?.externalSessionId, forkSessionId)
+    assert.equal(codex?.externalTurnId, 'fork-root-a')
+    assert.equal(codex?.state, TurnState.PROMPT_SUBMITTED)
+
+    const completedAt = startedAt + 1_000
+    await writeFile(
+      rollout,
+      `\n${JSON.stringify({
+        timestamp: new Date(completedAt).toISOString(),
+        type: 'event_msg',
+        payload: {
+          type: 'task_complete',
+          turn_id: 'fork-root-a',
+          completed_at: completedAt / 1_000,
+          duration_ms: 1_000,
+        },
+      })}`,
+      { encoding: 'utf8', flag: 'a' },
+    )
+    await utimes(rollout, new Date(Date.now() + 1_000), new Date(Date.now() + 1_000))
+    await sync.syncNow(['codex'])
+    codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.equal(codex?.state, TurnState.DONE)
+    assert.equal(notifications.length, 1)
   } finally {
     sync.stop()
     await rm(home, { recursive: true, force: true })
@@ -533,6 +904,8 @@ test('SessionSyncService hydrates Grok only from live active_sessions', async ()
   )
 
   const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const notifications: Array<{ dedupeKey: string }> = []
+  hub.on('notification', (notification) => notifications.push(notification))
   const sync = new SessionSyncService({
     hub,
     userHome: home,
@@ -557,6 +930,71 @@ test('SessionSyncService hydrates Grok only from live active_sessions', async ()
       elapsedMs: 3_250,
       observedAt: grokTurnEndedAt,
     })
+
+    const rootTurnId = 'grok-root-a'
+    const nestedTurnId = 'grok-nested-b'
+    const rootStartedAt = Date.now()
+    hub.ingest({
+      id: 'grok-root-prompt',
+      source: 'grok',
+      eventType: 'prompt_submit',
+      externalSessionId: liveId,
+      externalTurnId: rootTurnId,
+      cwd: liveCwd,
+      timestamp: rootStartedAt,
+    })
+    const eventsFile = join(liveDir, 'events.jsonl')
+    const nestedStartedAt = rootStartedAt + 100
+    const nestedEndedAt = nestedStartedAt + 500
+    await writeFile(
+      eventsFile,
+      [
+        JSON.stringify({
+          type: 'turn_started',
+          turn_id: nestedTurnId,
+          ts: new Date(nestedStartedAt).toISOString(),
+        }),
+        JSON.stringify({
+          type: 'turn_ended',
+          turn_id: nestedTurnId,
+          ts: new Date(nestedEndedAt).toISOString(),
+        }),
+      ]
+        .map((line) => `\n${line}`)
+        .join(''),
+      { encoding: 'utf8', flag: 'a' },
+    )
+    await utimes(eventsFile, new Date(Date.now() + 1_000), new Date(Date.now() + 1_000))
+    await sync.syncNow(['grok'])
+    let grok = hub.snapshot().agents.find((agent) => agent.agentType === 'grok')
+    assert.equal(grok?.state, TurnState.PROMPT_SUBMITTED)
+    assert.equal(grok?.externalTurnId, rootTurnId)
+    assert.equal(notifications.length, 0)
+
+    const rootEndedAt = rootStartedAt + 1_000
+    await writeFile(
+      eventsFile,
+      [
+        JSON.stringify({
+          type: 'turn_started',
+          turn_id: rootTurnId,
+          ts: new Date(rootStartedAt).toISOString(),
+        }),
+        JSON.stringify({
+          type: 'turn_ended',
+          turn_id: rootTurnId,
+          ts: new Date(rootEndedAt).toISOString(),
+        }),
+      ]
+        .map((line) => `\n${line}`)
+        .join(''),
+      { encoding: 'utf8', flag: 'a' },
+    )
+    await utimes(eventsFile, new Date(Date.now() + 2_000), new Date(Date.now() + 2_000))
+    await sync.syncNow(['grok'])
+    grok = hub.snapshot().agents.find((agent) => agent.agentType === 'grok')
+    assert.equal(grok?.state, TurnState.DONE)
+    assert.equal(notifications.length, 1)
   } finally {
     sync.stop()
     await rm(home, { recursive: true, force: true })
@@ -674,6 +1112,8 @@ test('SessionSyncService hydrates Claude from live sessions pid + transcript', a
   )
 
   const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const notifications: Array<{ dedupeKey: string }> = []
+  hub.on('notification', (notification) => notifications.push(notification))
   const sync = new SessionSyncService({
     hub,
     userHome: home,
@@ -731,6 +1171,7 @@ test('SessionSyncService hydrates Claude from live sessions pid + transcript', a
     const unpairedClaude = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
     assert.deepEqual(unpairedClaude?.turnTiming, {
       state: 'completed',
+      canEndActiveTurn: false,
       elapsedMs: 592_873,
       observedAt: mismatchedCompletedAt,
     })
@@ -765,6 +1206,52 @@ test('SessionSyncService hydrates Claude from live sessions pid + transcript', a
       startedAt: activePromptAt,
       observedAt: activePromptAt,
     })
+
+    const sidechainDurationAt = activePromptAt + 500
+    await writeFile(
+      transcript,
+      `\n${JSON.stringify({
+        type: 'system',
+        subtype: 'turn_duration',
+        isSidechain: true,
+        timestamp: new Date(sidechainDurationAt).toISOString(),
+        durationMs: 500,
+      })}`,
+      { encoding: 'utf8', flag: 'a' },
+    )
+    await sync.syncNow(['claude_code'])
+    const afterSidechainClaude = hub
+      .snapshot()
+      .agents.find((agent) => agent.agentType === 'claude_code')
+    assert.equal(afterSidechainClaude?.state, TurnState.PROMPT_SUBMITTED)
+    assert.deepEqual(afterSidechainClaude?.turnTiming, {
+      state: 'active',
+      startedAt: activePromptAt,
+      observedAt: activePromptAt,
+    })
+
+    const unrelatedDurationAt = activePromptAt + 1_000
+    await writeFile(
+      transcript,
+      `\n${JSON.stringify({
+        type: 'system',
+        subtype: 'turn_duration',
+        timestamp: new Date(unrelatedDurationAt).toISOString(),
+        durationMs: 592_873,
+      })}`,
+      { encoding: 'utf8', flag: 'a' },
+    )
+    await sync.syncNow(['claude_code'])
+    const stillActiveClaude = hub
+      .snapshot()
+      .agents.find((agent) => agent.agentType === 'claude_code')
+    assert.equal(stillActiveClaude?.state, TurnState.PROMPT_SUBMITTED)
+    assert.deepEqual(stillActiveClaude?.turnTiming, {
+      state: 'active',
+      startedAt: activePromptAt,
+      observedAt: activePromptAt,
+    })
+    assert.equal(notifications.length, 0)
 
     // A parsed settings file that no longer defines effort is an authoritative
     // unknown value, rather than a reason to keep the previous level forever.
@@ -884,6 +1371,207 @@ test('SessionSyncService skips unchanged fingerprint on second scan', async () =
   }
 })
 
+test('SessionSyncService reuses unchanged Codex rollout parses and invalidates changed files', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-rollout-cache-')
+  const sessions = join(home, 'sessions', '2026', '07', '20')
+  const sessionId = '019fa003-aaaa-bbbb-cccc-ddddeeeeffff'
+  const rollout = join(sessions, `rollout-2026-07-20-${sessionId}.jsonl`)
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    rollout,
+    JSON.stringify({
+      type: 'session_meta',
+      payload: { id: sessionId, cwd: 'E:/work/cached-rollout' },
+    }),
+    'utf8',
+  )
+
+  let parseCount = 0
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: home,
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    codexProcessAlive: () => true,
+    codexRolloutReader: async () => {
+      parseCount += 1
+      return {
+        model: 'gpt-5.6-terra',
+        modelObservedAt: Date.now(),
+        token: {
+          contextWindow: 256_000,
+          contextUsedPercent: 10,
+          accuracy: 'estimated',
+        },
+      }
+    },
+  })
+
+  try {
+    await sync.syncNow(['codex'])
+    await sync.syncNow(['codex'])
+    assert.equal(parseCount, 1, 'unchanged rollout should reuse its parsed snapshot')
+
+    const changedAt = new Date(Date.now() + 2_000)
+    await utimes(rollout, changedAt, changedAt)
+    await sync.syncNow(['codex'])
+    assert.equal(parseCount, 2, 'mtime change should invalidate the parsed snapshot')
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService throttles Claude account quota resolution across steady scans', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-claude-quota-cache-')
+  let resolveCount = 0
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: join(home, 'no-codex'),
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    claudeQuotaResolver: async () => {
+      resolveCount += 1
+      return {
+        rateLimits: {
+          sevenDay: {
+            usedPercent: 12,
+            resetsAt: Math.floor(Date.now() / 1000) + 86_400,
+            windowMinutes: 10_080,
+          },
+        },
+        updatedAt: Date.now(),
+        source: 'oauth',
+      }
+    },
+  })
+
+  try {
+    await sync.syncNow(['claude_code'])
+    await sync.syncNow(['claude_code'])
+    assert.equal(resolveCount, 1, 'quota endpoint should run at most once per cache interval')
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService retains Claude quota when a later refresh is unavailable', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-claude-quota-expiry-')
+  let now = Date.now()
+  const observedAt = now
+  let authenticated = true
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    now: () => now,
+    userHome: home,
+    codexHome: join(home, 'no-codex'),
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    claudeQuotaResolver: async () =>
+      authenticated
+        ? {
+            rateLimits: {
+              sevenDay: {
+                usedPercent: 18,
+                resetsAt: Math.floor(observedAt / 1000) + 7 * 86_400,
+                windowMinutes: 10_080,
+              },
+            },
+            updatedAt: observedAt,
+            source: 'oauth',
+          }
+        : undefined,
+  })
+
+  try {
+    await sync.syncNow(['claude_code'])
+    let claude = hub.snapshot(now).agents.find((agent) => agent.agentType === 'claude_code')
+    assert.equal(claude?.token?.rateLimits?.sevenDay?.usedPercent, 18)
+
+    authenticated = false
+    now += 11 * 60_000
+    await sync.syncNow(['claude_code'])
+    claude = hub.snapshot(now).agents.find((agent) => agent.agentType === 'claude_code')
+    assert.equal(claude?.token?.rateLimits?.sevenDay?.usedPercent, 18)
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService coalesces refreshes requested during an active scan', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-coalesced-')
+  let releaseFirstScan!: () => void
+  let releaseSecondScan!: () => void
+  let markFirstScanStarted!: () => void
+  let markSecondScanStarted!: () => void
+  const firstScanGate = new Promise<void>((resolve) => {
+    releaseFirstScan = resolve
+  })
+  const secondScanGate = new Promise<void>((resolve) => {
+    releaseSecondScan = resolve
+  })
+  const firstScanStarted = new Promise<void>((resolve) => {
+    markFirstScanStarted = resolve
+  })
+  const secondScanStarted = new Promise<void>((resolve) => {
+    markSecondScanStarted = resolve
+  })
+  let processChecks = 0
+  const sync = new SessionSyncService({
+    hub: new StatusHub({ sessionThrottleMs: 0 }),
+    userHome: home,
+    codexHome: join(home, 'no-codex'),
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    codexProcessAlive: async () => {
+      processChecks += 1
+      if (processChecks === 1) {
+        markFirstScanStarted()
+        await firstScanGate
+      } else if (processChecks === 2) {
+        markSecondScanStarted()
+        await secondScanGate
+      }
+      return false
+    },
+  })
+
+  try {
+    const first = sync.syncNow(['codex'])
+    await firstScanStarted
+    const second = sync.syncNow(['codex'])
+    const third = sync.syncNow(['codex'])
+    releaseFirstScan()
+    await first
+    await secondScanStarted
+    let trailingResolved = false
+    void second.then(() => {
+      trailingResolved = true
+    })
+    await Promise.resolve()
+    assert.equal(trailingResolved, false, 'trailing callers must await their own generation')
+    releaseSecondScan()
+    await Promise.all([second, third])
+    assert.equal(processChecks, 2, 'overlapping requests should share one trailing scan')
+  } finally {
+    releaseFirstScan()
+    releaseSecondScan()
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
 test('SessionSyncService can scan only the dirty source', async () => {
   const home = await mkdtempJoin('codepulse-session-sync-source-')
   const codexHome = join(home, 'codex')
@@ -960,7 +1648,10 @@ test('SessionSyncService can scan only the dirty source', async () => {
 test('SessionSyncService shares highest same-window weekly % across projects (not stale mtime)', async () => {
   const home = await mkdtempJoin('codepulse-session-sync-quota-share-')
   const sessions = join(home, 'sessions', '2026', '07', '15')
-  const futureReset = Math.floor(Date.now() / 1000) + 86_400
+  const futureSeconds = Math.floor(Date.now() / 1000) + 86_400
+  // These resets straddle the old five-minute rounding boundary by two seconds.
+  const resetBeforeBoundary = Math.floor(futureSeconds / 300) * 300 + 149
+  const resetAfterBoundary = resetBeforeBoundary + 2
   const staleId = '019f8000-aaaa-bbbb-cccc-ddddeeeeff01'
   const freshId = '019f8000-aaaa-bbbb-cccc-ddddeeeeff02'
   const sparkId = '019f8000-aaaa-bbbb-cccc-ddddeeeeff03'
@@ -977,6 +1668,7 @@ test('SessionSyncService shares highest same-window weekly % across projects (no
     limitId: string,
     limitName: string | null,
     mtimeOffsetSec: number,
+    resetsAt: number,
   ) {
     const file = join(sessions, `rollout-2026-07-15T12-00-00-${sessionId}.jsonl`)
     await writeFile(
@@ -1000,7 +1692,7 @@ test('SessionSyncService shares highest same-window weekly % across projects (no
               primary: {
                 used_percent: usedPercent,
                 window_minutes: 10080,
-                resets_at: futureReset,
+                resets_at: resetsAt,
               },
             },
           },
@@ -1013,9 +1705,17 @@ test('SessionSyncService shares highest same-window weekly % across projects (no
   }
 
   // Freshest mtime is Spark 0% — must NOT win over main weekly 35%.
-  await writeRollout(staleId, staleCwd, 2, 'codex', null, -30)
-  await writeRollout(freshId, freshCwd, 35, 'codex', null, -10)
-  await writeRollout(sparkId, sparkCwd, 0, 'codex_bengalfox', 'GPT-5.3-Codex-Spark', 0)
+  await writeRollout(staleId, staleCwd, 2, 'codex', null, -30, resetAfterBoundary)
+  await writeRollout(freshId, freshCwd, 35, 'codex', null, -10, resetBeforeBoundary)
+  await writeRollout(
+    sparkId,
+    sparkCwd,
+    0,
+    'codex_bengalfox',
+    'GPT-5.3-Codex-Spark',
+    0,
+    resetAfterBoundary,
+  )
 
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const sync = new SessionSyncService({
@@ -1040,6 +1740,179 @@ test('SessionSyncService shares highest same-window weekly % across projects (no
         `${agent.workspacePath} should show shared 35% weekly, not stale/spark`,
       )
     }
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService keeps same-window Codex quota stable as live rollouts rotate', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-quota-rotation-')
+  const sessions = join(home, 'sessions', '2026', '07', '20')
+  const highId = '019fa100-aaaa-bbbb-cccc-ddddeeeeff01'
+  const lowId = '019fa100-aaaa-bbbb-cccc-ddddeeeeff02'
+  const highPath = join(sessions, `rollout-2026-07-20-${highId}.jsonl`)
+  const lowPath = join(sessions, `rollout-2026-07-20-${lowId}.jsonl`)
+  const firstReset = Math.floor(Date.now() / 1000) + 86_400
+  const nextReset = firstReset + 7 * 24 * 60 * 60
+  await mkdir(sessions, { recursive: true })
+
+  /** Writes one minimal Codex quota rollout for the requested account window. */
+  async function writeQuotaRollout(
+    path: string,
+    sessionId: string,
+    cwd: string,
+    usedPercent: number,
+    resetsAt: number,
+  ): Promise<void> {
+    await writeFile(
+      path,
+      [
+        JSON.stringify({ type: 'session_meta', payload: { id: sessionId, cwd } }),
+        JSON.stringify({
+          type: 'event_msg',
+          payload: {
+            type: 'token_count',
+            info: {
+              model_context_window: 256000,
+              last_token_usage: { input_tokens: 1_000, total_tokens: 1_000 },
+            },
+            rate_limits: {
+              limit_id: 'codex',
+              primary: { used_percent: usedPercent, window_minutes: 10080, resets_at: resetsAt },
+            },
+          },
+        }),
+      ].join('\n'),
+      'utf8',
+    )
+  }
+
+  await writeQuotaRollout(highPath, highId, 'E:/work/quota-high', 35, firstReset)
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: home,
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    codexProcessAlive: () => true,
+  })
+
+  try {
+    await sync.syncNow(['codex'])
+
+    const staleAt = new Date(Date.now() - 10 * 60_000)
+    await utimes(highPath, staleAt, staleAt)
+    await writeQuotaRollout(lowPath, lowId, 'E:/work/quota-low', 2, firstReset)
+    await sync.syncNow(['codex'])
+    let low = hub.snapshot().agents.find((agent) => agent.workspacePath === 'E:/work/quota-low')
+    assert.equal(low?.token?.rateLimits?.sevenDay?.usedPercent, 35)
+
+    await writeQuotaRollout(lowPath, lowId, 'E:/work/quota-low', 2, nextReset)
+    const changedAt = new Date(Date.now() + 2_000)
+    await utimes(lowPath, changedAt, changedAt)
+    await sync.syncNow(['codex'])
+    low = hub.snapshot().agents.find((agent) => agent.workspacePath === 'E:/work/quota-low')
+    assert.equal(low?.token?.rateLimits?.sevenDay?.usedPercent, 35)
+    for (let confirmation = 0; confirmation < 4; confirmation += 1) {
+      await sync.syncNow(['codex'])
+    }
+    low = hub.snapshot().agents.find((agent) => agent.workspacePath === 'E:/work/quota-low')
+    assert.equal(low?.token?.rateLimits?.sevenDay?.usedPercent, 2)
+    assert.equal(low?.token?.rateLimits?.sevenDay?.resetsAt, nextReset)
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService rebinds an unchanged Codex quota to its newer rollout source', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-quota-rebind-')
+  const sessions = join(home, 'sessions', '2026', '07', '20')
+  const projectId = '019fa200-aaaa-bbbb-cccc-ddddeeeeff01'
+  const firstQuotaId = '019fa200-aaaa-bbbb-cccc-ddddeeeeff02'
+  const secondQuotaId = '019fa200-aaaa-bbbb-cccc-ddddeeeeff03'
+  const projectPath = join(sessions, `rollout-2026-07-20-${projectId}.jsonl`)
+  const firstQuotaPath = join(sessions, `rollout-2026-07-20-${firstQuotaId}.jsonl`)
+  const secondQuotaPath = join(sessions, `rollout-2026-07-20-${secondQuotaId}.jsonl`)
+  const resetAt = Math.floor(Date.now() / 1000) + 6 * 86_400
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    projectPath,
+    [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: projectId, cwd: 'E:/work/quota-rebind-project' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            model_context_window: 256000,
+            last_token_usage: { input_tokens: 2_000, total_tokens: 2_000 },
+          },
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  )
+
+  /** Writes an account-quota rollout whose displayed values remain unchanged. */
+  async function writeQuotaSource(path: string, sessionId: string): Promise<void> {
+    await writeFile(
+      path,
+      [
+        JSON.stringify({
+          type: 'session_meta',
+          payload: { id: sessionId, cwd: `E:/work/${sessionId}` },
+        }),
+        JSON.stringify({
+          type: 'event_msg',
+          payload: {
+            type: 'token_count',
+            info: { last_token_usage: { input_tokens: 1_000, total_tokens: 1_000 } },
+            rate_limits: {
+              limit_id: 'codex',
+              primary: { used_percent: 24, window_minutes: 10080, resets_at: resetAt },
+            },
+          },
+        }),
+      ].join('\n'),
+      'utf8',
+    )
+  }
+
+  await writeQuotaSource(firstQuotaPath, firstQuotaId)
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const projectQuotaPaths: Array<string | undefined> = []
+  hub.on('event', (event) => {
+    if (event.eventType === 'token_snapshot' && event.externalSessionId === projectId) {
+      projectQuotaPaths.push(event.tokenSourcePath)
+    }
+  })
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: home,
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    codexProcessAlive: () => true,
+  })
+
+  try {
+    await sync.syncNow(['codex'])
+    assert.equal(projectQuotaPaths.at(-1), firstQuotaPath)
+
+    await writeQuotaSource(secondQuotaPath, secondQuotaId)
+    const newer = new Date(Date.now() + 2_000)
+    await utimes(secondQuotaPath, newer, newer)
+    await sync.syncNow(['codex'])
+    assert.equal(projectQuotaPaths.at(-1), secondQuotaPath)
+    assert.equal(projectQuotaPaths.length, 2, 'source change should emit one quota-only rebind')
   } finally {
     sync.stop()
     await rm(home, { recursive: true, force: true })
@@ -1309,6 +2182,87 @@ test('SessionSyncService hydrates Kimi model, effort, context, and native timing
   }
 })
 
+test('SessionSyncService does not treat a Kimi step.end as whole-turn completion', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-kimi-step-')
+  const sessionId = 'session_kimi_multi_step'
+  const cwd = 'E:/work/kimi-multi-step'
+  const sessionDir = join(home, 'sessions', 'wd_kimi', sessionId)
+  const agentDir = join(sessionDir, 'agents', 'main')
+  const wirePath = join(agentDir, 'wire.jsonl')
+  const promptAt = Date.now() - 1_000
+  const stepAt = promptAt + 20
+  const activeRows = [
+    JSON.stringify({ type: 'turn.prompt', time: promptAt }),
+    JSON.stringify({
+      type: 'context.append_loop_event',
+      event: { type: 'step.begin' },
+      time: stepAt,
+    }),
+  ]
+  await mkdir(agentDir, { recursive: true })
+  await writeFile(
+    join(home, 'session_index.jsonl'),
+    `${JSON.stringify({ sessionId, sessionDir, workDir: cwd })}\n`,
+    'utf8',
+  )
+  await writeFile(wirePath, activeRows.join('\n'), 'utf8')
+
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const notifications: Array<{ dedupeKey: string }> = []
+  hub.on('notification', (notification) => notifications.push(notification))
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: join(home, 'no-codex'),
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    kimiHome: home,
+    kimiProcessAlive: () => true,
+    kimiQuotaResolver: async () => undefined,
+    disableWatch: true,
+  })
+
+  try {
+    await sync.syncNow(['kimi'])
+    let kimi = hub.snapshot().agents.find((agent) => agent.agentType === 'kimi')
+    assert.equal(kimi?.state, TurnState.PROMPT_SUBMITTED)
+
+    await writeFile(
+      wirePath,
+      [
+        ...activeRows,
+        JSON.stringify({
+          type: 'context.append_loop_event',
+          event: { type: 'step.end' },
+          time: stepAt + 100,
+        }),
+      ].join('\n'),
+      'utf8',
+    )
+    const changedAt = new Date(Date.now() + 1_000)
+    await utimes(wirePath, changedAt, changedAt)
+    await sync.syncNow(['kimi'])
+
+    kimi = hub.snapshot().agents.find((agent) => agent.agentType === 'kimi')
+    assert.equal(kimi?.state, TurnState.PROMPT_SUBMITTED)
+    assert.equal(notifications.length, 0)
+
+    hub.ingest({
+      id: 'kimi-real-stop',
+      source: 'kimi',
+      eventType: 'turn_stop',
+      externalSessionId: sessionId,
+      cwd,
+      timestamp: stepAt + 200,
+    })
+    assert.equal(notifications.length, 1)
+    assert.equal(notifications[0]?.dedupeKey.startsWith('done:'), true)
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
 test('StatusHub does not let same-window weekly % go backwards from stale snapshots', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const future = Math.floor(Date.now() / 1000) + 86_400
@@ -1346,7 +2300,7 @@ test('StatusHub does not let same-window weekly % go backwards from stale snapsh
   assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 35)
 })
 
-test('StatusHub keeps soft-reset 0% on expired window against stale high %', () => {
+test('StatusHub accepts a higher official reading immediately after a zero sample', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const past = Math.floor(Date.now() / 1000) - 3_600
 
@@ -1380,7 +2334,7 @@ test('StatusHub keeps soft-reset 0% on expired window against stale high %', () 
   })
 
   const codex = hub.snapshot().agents.find((a) => a.agentType === 'codex')
-  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 0)
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 88)
 })
 
 async function mkdtempJoin(prefix: string): Promise<string> {

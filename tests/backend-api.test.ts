@@ -284,6 +284,22 @@ test('GET /ws sends the initial snapshot and pushes later status changes', async
   }
 })
 
+test('status updates skip serialization when no WebSocket client is connected', async () => {
+  const { hub } = await createApi()
+
+  assert.doesNotThrow(() => {
+    hub.ingest({
+      id: 'ws-no-client-serialization',
+      source: 'codex',
+      eventType: 'token_snapshot',
+      // BigInt is an intentional serialization sentinel. It must remain harmless
+      // while the WebSocket client set is empty because no payload will be sent.
+      token: { input: 1n as unknown as number, accuracy: 'unknown' },
+      timestamp: Date.now(),
+    })
+  })
+})
+
 async function createApi(): Promise<{ base: string; hub: StatusHub }> {
   const hub = new StatusHub({ sessionThrottleMs: 0, permissionThrottleMs: 0 })
   const server = await startLocalServer({

@@ -51,6 +51,12 @@ import {
   visibleRateLimitWindows,
 } from './lib/panelFormat.js'
 import { formatQuotaReset } from './lib/quotaFormat.js'
+import {
+  latestProjectItem,
+  readProjectOrder,
+  reconcileProjectOrder,
+  writeProjectOrder,
+} from './lib/projectOrder.js'
 import { useNow } from './lib/useNow.js'
 import { buildVirtualListLayout, findVirtualListRange } from './lib/virtualList.js'
 import {
@@ -107,7 +113,15 @@ export function App(): JSX.Element {
   const [dashboardSettings, setDashboardSettings] = useState<DashboardSettings>(() =>
     readDashboardSettings(window.localStorage),
   )
-  const allPanels = useMemo(() => buildAgentPanels(snapshot.agents), [snapshot.agents])
+  const [projectOrder, setProjectOrder] = useState<string[]>(() =>
+    readProjectOrder(window.localStorage),
+  )
+  const unorderedPanels = useMemo(() => buildAgentPanels(snapshot.agents), [snapshot.agents])
+  const orderedProjects = useMemo(
+    () => reconcileProjectOrder(unorderedPanels, projectOrder),
+    [projectOrder, unorderedPanels],
+  )
+  const allPanels = orderedProjects.panels
   const panels = useMemo(
     // Display preferences only filter renderer panels; hook delivery and disk sync keep running.
     () => allPanels.filter((panel) => dashboardSettings.visibleTools[panel.agentType]),
@@ -145,6 +159,12 @@ export function App(): JSX.Element {
     // Storage may be unavailable; the writer deliberately preserves the in-memory selection.
     writeDashboardSettings(window.localStorage, dashboardSettings)
   }, [dashboardSettings])
+
+  useEffect(() => {
+    if (!orderedProjects.changed) return
+    setProjectOrder(orderedProjects.order)
+    writeProjectOrder(window.localStorage, orderedProjects.order)
+  }, [orderedProjects])
 
   useEffect(() => init(), [init])
 
@@ -728,7 +748,7 @@ const AgentPanelView = memo(function AgentPanelView({
   copy: UiCopy
   onAck: (agentType: AgentType, workspacePath?: string) => void
 }): JSX.Element {
-  const latest = panel.workspaces[0]?.agent
+  const latest = latestProjectItem(panel.workspaces)?.agent
   const style = turnStateStyle(latest?.state ?? TurnState.IDLE)
   const projectCount = panel.workspaces.filter((item) => item.agent.lastEventAt > 0).length
   const brand = brandClass(panel.agentType)

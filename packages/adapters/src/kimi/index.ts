@@ -40,7 +40,8 @@ export function fromKimiHook(raw: unknown): AgentEventInput | null {
     source: 'kimi',
     eventType,
     externalSessionId: pickString(record, 'session_id', 'sessionId'),
-    externalTurnId: pickString(record, 'turn_id', 'turnId', 'tool_use_id', 'toolUseId'),
+    // Tool-use IDs identify one tool call, not the user-visible conversation turn.
+    externalTurnId: pickString(record, 'turn_id', 'turnId'),
     cwd: pickString(record, 'cwd'),
     workspacePath: pickString(record, 'workspace', 'project_dir', 'workspace_root', 'cwd'),
     model: pickString(record, 'model', 'modelAlias', 'model_alias'),

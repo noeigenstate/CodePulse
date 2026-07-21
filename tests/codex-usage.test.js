@@ -552,7 +552,8 @@ test('Codex usage reader ignores stale transcript_path after fork when model is 
     const usage = await readLatestCodexUsage(
       {
         transcript_path: parentFile,
-        session_id: forkId,
+        session_id: parentId,
+        thread_id: forkId,
         cwd,
         model: 'gpt-5.6-sol',
       },
@@ -749,12 +750,12 @@ test('Codex usage reader keeps quota from an earlier token_count when the latest
   }
 })
 
-test('Codex usage reader does not backfill pre-reset high weekly usage after reset time', async () => {
+test('Codex usage reader retains the last official weekly usage after reset time', async () => {
   const home = join(tmpdir(), `codepulse-codex-quota-expired-${Date.now()}`)
   const sessions = join(home, 'sessions', '2026', '07', '14')
   const sessionId = 'session-quota-expired'
   const rollout = join(sessions, `rollout-2026-07-14T12-00-00-${sessionId}.jsonl`)
-  // Reset already passed — this is a pre-reset snapshot that must not stick.
+  // Reset already passed, but Codex has not published a replacement value yet.
   const pastReset = Math.floor(Date.now() / 1000) - 3600
 
   await mkdir(sessions, { recursive: true })
@@ -799,15 +800,16 @@ test('Codex usage reader does not backfill pre-reset high weekly usage after res
 
   try {
     const usage = await readLatestCodexUsage({ session_id: sessionId }, { codexHome: home })
-    // Expired earlier snapshot must not be backfilled onto a context-only latest event.
-    assert.equal(usage.rate_limits, undefined)
-    assert.equal(usage.rate_limit_id, undefined)
+    // Expiry alone is not an official 0% observation; retain the last CLI value.
+    assert.equal(usage.rate_limits?.seven_day?.used_percentage, 88)
+    assert.equal(usage.rate_limits?.seven_day?.resets_at, pastReset)
+    assert.equal(usage.rate_limit_id, 'codex')
   } finally {
     await rm(home, { recursive: true, force: true })
   }
 })
 
-test('Codex usage reader soft-resets expired limits on the latest token_count to 0%', async () => {
+test('Codex usage reader does not fabricate 0% for expired limits', async () => {
   const home = join(tmpdir(), `codepulse-codex-soft-reset-${Date.now()}`)
   const sessions = join(home, 'sessions', '2026', '07', '14')
   const sessionId = 'session-soft-reset'
@@ -846,8 +848,8 @@ test('Codex usage reader soft-resets expired limits on the latest token_count to
 
   try {
     const usage = await readLatestCodexUsage({ session_id: sessionId }, { codexHome: home })
-    assert.ok(usage.rate_limits, 'must keep rate_limits for soft-reset UI')
-    assert.equal(usage.rate_limits.seven_day?.used_percent, 0)
+    assert.ok(usage.rate_limits, 'must retain the last official rate-limit snapshot')
+    assert.equal(usage.rate_limits.seven_day?.used_percentage, 91)
     assert.equal(usage.rate_limits.seven_day?.resets_at, pastReset)
   } finally {
     await rm(home, { recursive: true, force: true })

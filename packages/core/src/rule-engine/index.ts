@@ -4,6 +4,7 @@ import {
   type NotificationRequest,
   type UiLocale,
   TurnState,
+  isActiveState,
   workspaceKey,
 } from '@codepulse/shared'
 import type { TransitionResult } from '../state-machine/index.js'
@@ -19,19 +20,16 @@ export interface RuleEngineOptions {
   permissionThrottleMs?: number
 }
 
-const DEFAULTS = {
-  sessionThrottleMs: 30_000,
-}
-
-const FIRED_KEY_RETENTION_MS = 10 * 60_000
+/** Bounds once-per-turn notification history without time-based re-firing. */
+const MAX_FIRED_KEYS = 2_048
 
 /**
  * Turns runtime transitions into user notifications.
  *
- * The product notification policy is intentionally narrow: only completed turns
- * should reach the OS/toast layer. Context, quota, permission, error, cancel and
- * stuck states remain visible in the dashboard state, but they do not create
- * pop-up notifications.
+ * The product notification policy is intentionally narrow: only a confirmed
+ * active-to-completed transition or the watchdog's active-to-timeout transition
+ * reaches the OS/toast layer. Context, quota, permission, error, cancel, and
+ * usage-limit states remain visible without pop-up notifications.
  */
 export class RuleEngine {
   private lastFiredAt = new Map<string, number>()
@@ -48,12 +46,28 @@ export class RuleEngine {
 
   onTransition(result: TransitionResult, now = Date.now()): NotificationRequest[] {
     const { next, previous, previousState } = result
-    if (next.state === previousState || next.state !== TurnState.DONE) return []
+    if (next.state === previousState || !isActiveState(previousState)) return []
 
     const out: NotificationRequest[] = []
     const scope = agentScope(next)
     const locale = this.options.locale ?? 'zh'
     const project = projectLabel(next.workspacePath, locale)
+    const turn = next.externalTurnId ?? previous.externalTurnId ?? previous.turnStartedAt ?? now
+
+    if (next.state === TurnState.TIMEOUT) {
+      this.push(out, now, {
+        level: 'strong',
+        title: locale === 'zh' ? `⚠️ ${project} 疑似卡住` : `⚠️ ${project} may be stuck`,
+        body:
+          locale === 'zh'
+            ? '长时间没有新活动，请打开 CodePulse 检查'
+            : 'No activity for a while. Open CodePulse to check.',
+        dedupeKey: `stuck:${scope}:${turn}`,
+      })
+      return out
+    }
+
+    if (next.state !== TurnState.DONE) return []
     const promptSummary = completionNotificationBody(
       next.lastUserPrompt ?? previous.lastUserPrompt,
       locale,
@@ -68,9 +82,7 @@ export class RuleEngine {
           : `${completionEmoji(project)} ${project} completed`,
       // Body is a short word-capped summary of the user question, not agent name.
       body: promptSummary,
-      dedupeKey: `done:${scope}:${
-        next.externalTurnId ?? previous.externalTurnId ?? previous.turnStartedAt ?? now
-      }`,
+      dedupeKey: `done:${scope}:${turn}`,
     })
     return out
   }
@@ -87,14 +99,11 @@ export class RuleEngine {
       title: string
       body: string
       dedupeKey: string
-      throttleMs?: number
     },
   ): void {
-    this.pruneFiredKeys(now)
-    const throttle = spec.throttleMs ?? this.options.sessionThrottleMs ?? DEFAULTS.sessionThrottleMs
-    const last = this.lastFiredAt.get(spec.dedupeKey)
-    if (last != null && now - last < throttle) return
+    if (this.lastFiredAt.has(spec.dedupeKey)) return
     this.lastFiredAt.set(spec.dedupeKey, now)
+    this.pruneFiredKeys()
     out.push({
       level: spec.level,
       title: spec.title,
@@ -105,9 +114,12 @@ export class RuleEngine {
     })
   }
 
-  private pruneFiredKeys(now: number): void {
-    for (const [key, firedAt] of this.lastFiredAt) {
-      if (now - firedAt > FIRED_KEY_RETENTION_MS) this.lastFiredAt.delete(key)
+  /** Removes the oldest once-per-turn keys after the fixed memory bound. */
+  private pruneFiredKeys(): void {
+    while (this.lastFiredAt.size > MAX_FIRED_KEYS) {
+      const oldest = this.lastFiredAt.keys().next().value as string | undefined
+      if (!oldest) return
+      this.lastFiredAt.delete(oldest)
     }
   }
 }

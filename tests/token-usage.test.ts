@@ -253,3 +253,21 @@ test('Kimi hook maps native effort and injected local context usage', () => {
   assert.equal(event?.token?.contextUsedPercent, 25)
   assert.equal(event?.token?.accuracy, 'estimated')
 })
+
+test('Kimi and Grok adapters do not promote tool-use ids to conversation turn ids', () => {
+  const kimi = fromKimiHook({
+    hook_event_name: 'PreToolUse',
+    session_id: 'kimi-session',
+    tool_use_id: 'kimi-tool-call',
+    tool_name: 'shell',
+  })
+  const grok = fromGrokHook({
+    hookEventName: 'PreToolUse',
+    sessionId: 'grok-session',
+    toolUseId: 'grok-tool-call',
+    toolName: 'shell',
+  })
+
+  assert.equal(kimi?.externalTurnId, undefined)
+  assert.equal(grok?.externalTurnId, undefined)
+})

@@ -6,13 +6,12 @@ import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { RuleEngine, STUCK_STRONG_MS, STUCK_VISIBLE_MS, StatusHub } from '@codepulse/core'
+import { RuleEngine, STUCK_VISIBLE_MS, StatusHub } from '@codepulse/core'
 import { detectCodexAgent, startLocalServer } from '@codepulse/local-server'
 import {
   formatTokenCount,
   formatTokenPercent,
   formatTokenUsage,
-  type AgentRuntimeState,
   type NotificationRequest,
   TurnState,
 } from '@codepulse/shared'
@@ -181,6 +180,8 @@ try {
 
   // --- 卡住状态应进入 TIMEOUT / stuck ---------------------------------
   const stuckHub = new StatusHub({ sessionThrottleMs: 0 })
+  const stuckNotifications: NotificationRequest[] = []
+  stuckHub.on('notification', (notification) => stuckNotifications.push(notification))
   const stuckAt = 1_000_000
   stuckHub.ingest({
     id: 'stuck-prompt',
@@ -196,27 +197,16 @@ try {
     stuckSnap.agents[0]?.state === TurnState.TIMEOUT,
   )
   check('watchdog makes aggregate stuck reachable', stuckSnap.overall === 'stuck')
-
-  const terminalRuleEngine = new RuleEngine({ sessionThrottleMs: 0 })
-  const timeoutAgent: AgentRuntimeState = {
-    agentType: 'codex',
-    state: TurnState.TIMEOUT,
-    toolCallCount: 0,
-    needPermission: false,
-    needUserInput: false,
-    lastEventAt: stuckAt,
-    unread: false,
-  }
-  const timeoutStrongNotes = terminalRuleEngine.onTick(timeoutAgent, stuckAt + STUCK_STRONG_MS + 1)
-  check('rule engine suppresses stuck notifications', timeoutStrongNotes.length === 0)
   check(
-    'rule engine keeps repeated stuck checks silent',
-    terminalRuleEngine.onTick(timeoutAgent, stuckAt + STUCK_STRONG_MS + 2).length === 0,
+    'watchdog emits one strong stuck notification',
+    stuckNotifications.length === 1 && stuckNotifications[0]?.level === 'strong',
   )
+  ;(stuckHub as unknown as { tick(now?: number): void }).tick(stuckAt + STUCK_VISIBLE_MS + 2)
+  check('watchdog keeps repeated stuck checks silent', stuckNotifications.length === 1)
 
-  // --- 通知去重缓存应清理旧键 -----------------------------------------
+  // --- 通知去重缓存应永久记住近期轮次，并保持固定内存上限 ---------------
   const cleanupEngine = new RuleEngine({ sessionThrottleMs: 0 })
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 2_050; i++) {
     cleanupEngine.onTransition(
       {
         previous: {
@@ -247,7 +237,7 @@ try {
     )
   }
   const firedMap = (cleanupEngine as unknown as { lastFiredAt: Map<string, number> }).lastFiredAt
-  check('rule engine prunes old fired notification keys', firedMap.size < 8)
+  check('rule engine bounds fired notification keys', firedMap.size === 2_048)
 
   // --- 存储：终结状态不可被后续重复 stop 覆盖，token turnId 使用内部 id ----
   const fakeDb = createFakeDb()

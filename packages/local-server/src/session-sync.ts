@@ -23,13 +23,19 @@ import {
   pickRateLimitName,
   pickRateLimits,
 } from '@codepulse/adapters'
-import { readCodexRolloutSnapshotFromFile } from './quota-watcher.js'
-import { mergeClaudeContextWithQuota, resolveClaudeAccountQuota } from './claude-quota.js'
+import { readCodexRolloutSnapshotFromFile, type CodexRolloutSnapshot } from './quota-watcher.js'
+import {
+  mergeClaudeContextWithQuota,
+  resolveClaudeAccountQuota,
+  type ClaudeQuotaSnapshot,
+} from './claude-quota.js'
 import { resolveKimiAccountQuota, type KimiQuotaSnapshot } from './kimi-quota.js'
 import { WorkspacePathResolver } from './workspace-path.js'
 
 const MAX_CODEX_FILES = 80
 const CODEX_META_HEAD = 512 * 1024
+/** Rare oversized session headers are extended through their first JSONL row. */
+const CODEX_META_FIRST_LINE_MAX = 4 * 1024 * 1024
 /** Align with quota-watcher / hooks tails so token_count is not buried under tool noise. */
 const CODEX_TAIL = 4 * 1024 * 1024
 /**
@@ -42,6 +48,12 @@ const CODEX_LIVE_MS = 5 * 60_000
 const KIMI_LIVE_MS = 5 * 60_000
 /** Kimi's account endpoint is independent of wire activity; avoid polling it every steady scan. */
 const KIMI_QUOTA_REFRESH_MS = 30_000
+/** Claude's OAuth endpoint is account-wide and must not run on every filesystem scan. */
+const CLAUDE_QUOTA_REFRESH_MS = 30_000
+/** Bound the parsed rollout cache while retaining two full live-scan generations. */
+const MAX_CODEX_CACHE_ENTRIES = MAX_CODEX_FILES * 2
+/** Maximum server reset-time jitter accepted as one canonical quota period. */
+const QUOTA_RESET_TOLERANCE_MS = 60_000
 /** 进程在线但完全无近期写入时，取最近一份 rollout 只刷新账号额度（不复活多项目卡片）。 */
 const CODEX_QUOTA_FALLBACK_MS = 48 * 60 * 60_000
 /** Fewer boot rescans → less mutex pile-up; 0 + 0.5s + 2s still catches late writers. */
@@ -80,6 +92,10 @@ export interface SessionSyncOptions {
   kimiProcessAlive?: () => boolean | Promise<boolean>
   /** Test seam for Kimi's managed account-usage endpoint. */
   kimiQuotaResolver?: () => Promise<KimiQuotaSnapshot | undefined>
+  /** Test seam for Claude's OAuth/cache account-usage resolver. */
+  claudeQuotaResolver?: () => Promise<ClaudeQuotaSnapshot | undefined>
+  /** Test seam for parsing a Codex rollout tail. */
+  codexRolloutReader?: (sourcePath: string) => Promise<CodexRolloutSnapshot>
   /** 测试注入：Grok/Claude session 的 pid 是否存活 */
   isPidAlive?: (pid: number) => boolean
   /** 测试/嵌入时可替换 realpath 解析器。 */
@@ -105,6 +121,8 @@ export class SessionSyncService {
   private readonly codexProcessAlive: () => boolean | Promise<boolean>
   private readonly kimiProcessAlive: () => boolean | Promise<boolean>
   private readonly kimiQuotaResolver: () => Promise<KimiQuotaSnapshot | undefined>
+  private readonly claudeQuotaResolver: () => Promise<ClaudeQuotaSnapshot | undefined>
+  private readonly codexRolloutReader: (sourcePath: string) => Promise<CodexRolloutSnapshot>
   private readonly pidAlive: (pid: number) => boolean
   /** Canonicalizes aliases before dedupe keys and fingerprints are calculated. */
   private readonly workspacePaths: Pick<WorkspacePathResolver, 'resolve'>
@@ -114,15 +132,31 @@ export class SessionSyncService {
   private watchers: FSWatcher[] = []
   /** Sources touched by fs.watch since the last debounced, source-scoped watch scan. */
   private dirtySources = new Set<SessionSyncSource>()
-  private running = false
+  /** Sources requested while a scan is active; drained as a coalesced trailing generation. */
+  private pendingSyncSources = new Set<SessionSyncSource>()
+  /** Trigger labels coalesced with {@link pendingSyncSources} for diagnostics. */
+  private pendingSyncReasons = new Set<string>()
+  /** Callers waiting for the next coalesced generation rather than the active one. */
+  private pendingSyncWaiters: Array<() => void> = []
+  private pendingSyncQueuedAt?: number
+  private activeSync?: Promise<void>
   private stopped = false
   private lastLogAt = 0
   private kimiQuota?: KimiQuotaSnapshot
   private nextKimiQuotaRefreshAt = 0
+  private claudeQuota?: ClaudeQuotaSnapshot
+  private claudeQuotaRefresh?: Promise<ClaudeQuotaSnapshot | undefined>
+  private nextClaudeQuotaRefreshAt = 0
+  /** Account-wide Codex quota snapshots retained across transient rollout-set changes. */
+  private codexAccountQuotaFamilies: CodexAccountQuotaFamilies = {}
+  /** Parsed rollout data keyed by path and invalidated by size, mtime, or quota reset. */
+  private codexRolloutCache = new Map<string, CodexRolloutCacheEntry>()
   /** sessionKey → full fingerprint (activity + quota) of last ingested payload */
   private fingerprints = new Map<string, string>()
   /** sessionKey → activity-only fingerprint (mtime/context; excludes rate limits) */
   private activityFingerprints = new Map<string, string>()
+  /** Monotonic suffix that keeps rapid quota scans distinct inside one millisecond. */
+  private quotaObservationSequence = 0
   private firstSync: Promise<void>
   private resolveFirstSync!: () => void
   private firstSyncDone = false
@@ -149,6 +183,15 @@ export class SessionSyncService {
           now: () => this.now(),
           timeoutMs: 1_200,
         }))
+    this.claudeQuotaResolver =
+      options.claudeQuotaResolver ??
+      (() =>
+        resolveClaudeAccountQuota({
+          home: this.userHome,
+          now: () => this.now(),
+          timeoutMs: 1_200,
+        }))
+    this.codexRolloutReader = options.codexRolloutReader ?? readCodexRolloutSnapshotFromFile
     this.pidAlive = options.isPidAlive ?? isPidAlive
     this.workspacePaths = options.workspacePathResolver ?? new WorkspacePathResolver()
     this.firstSync = new Promise<void>((resolve) => {
@@ -209,6 +252,10 @@ export class SessionSyncService {
     }
     this.watchers = []
     this.dirtySources.clear()
+    this.pendingSyncSources.clear()
+    this.pendingSyncReasons.clear()
+    this.pendingSyncQueuedAt = undefined
+    for (const resolve of this.pendingSyncWaiters.splice(0)) resolve()
     if (!this.firstSyncDone) {
       this.firstSyncDone = true
       this.resolveFirstSync()
@@ -278,7 +325,7 @@ export class SessionSyncService {
   }
 
   /**
-   * Serializes one disk-scan attempt to prevent boot, watch, and manual scans interleaving.
+   * Coalesces boot, watch, steady, and manual requests into serialized scan generations.
    *
    * @param reason Trigger label used for diagnostics.
    * @param requestedSources Sources selected for this attempt.
@@ -290,12 +337,68 @@ export class SessionSyncService {
     if (this.stopped) return
     const sources = [...new Set(requestedSources)]
     if (sources.length === 0) return
-    // Serialize scans so boot/watch/manual do not interleave.
-    while (this.running) {
-      await sleep(40)
-      if (this.stopped) return
+    if (!this.activeSync) {
+      await this.startSyncGeneration(reason, sources, this.now())
+      return
     }
-    this.running = true
+
+    for (const source of sources) this.pendingSyncSources.add(source)
+    this.pendingSyncReasons.add(reason)
+    this.pendingSyncQueuedAt ??= this.now()
+    await new Promise<void>((resolve) => this.pendingSyncWaiters.push(resolve))
+  }
+
+  /**
+   * Starts one scan generation and schedules at most one coalesced successor.
+   *
+   * The returned promise covers only this generation, so boot/manual callers are
+   * not delayed indefinitely by a continuous stream of filesystem notifications.
+   *
+   * @param reason Coalesced trigger label used for diagnostics.
+   * @param sources CLI sources included in this generation.
+   * @param queuedAt Epoch milliseconds when the generation was first requested.
+   * @returns Promise resolved after this generation completes.
+   */
+  private startSyncGeneration(
+    reason: string,
+    sources: readonly SessionSyncSource[],
+    queuedAt: number,
+  ): Promise<void> {
+    const task = Promise.resolve().then(() => {
+      if (!this.stopped) return this.runSyncScan(reason, sources, queuedAt)
+    })
+    this.activeSync = task
+    void task.finally(() => {
+      this.activeSync = undefined
+      if (this.stopped || this.pendingSyncSources.size === 0) return
+
+      const nextSources = [...this.pendingSyncSources]
+      const nextReason = [...this.pendingSyncReasons].join('+') || 'queued'
+      const nextQueuedAt = this.pendingSyncQueuedAt ?? this.now()
+      const waiters = this.pendingSyncWaiters.splice(0)
+      this.pendingSyncSources.clear()
+      this.pendingSyncReasons.clear()
+      this.pendingSyncQueuedAt = undefined
+      const next = this.startSyncGeneration(nextReason, nextSources, nextQueuedAt)
+      void next.finally(() => {
+        for (const resolve of waiters) resolve()
+      })
+    })
+    return task
+  }
+
+  /**
+   * Executes one source-union scan and records its result without rejecting timers.
+   *
+   * @param reason Coalesced trigger label used for diagnostics.
+   * @param sources CLI sources included in this generation.
+   * @param queuedAt Epoch milliseconds when the current drain started.
+   */
+  private async runSyncScan(
+    reason: string,
+    sources: readonly SessionSyncSource[],
+    queuedAt: number,
+  ): Promise<void> {
     const t0 = this.now()
     try {
       const counts: Record<SessionSyncSource, number> = {
@@ -315,14 +418,12 @@ export class SessionSyncService {
       const elapsed = this.now() - t0
       if (reason !== 'steady' || this.now() - this.lastLogAt > 60_000) {
         console.log(
-          `[codepulse] session-sync (${reason}; ${sources.join(',')}): codex=${counts.codex} grok=${counts.grok} claude=${counts.claude_code} kimi=${counts.kimi} in ${elapsed}ms`,
+          `[codepulse] session-sync (${reason}; ${sources.join(',')}): codex=${counts.codex} grok=${counts.grok} claude=${counts.claude_code} kimi=${counts.kimi} in ${elapsed}ms (queued ${Math.max(0, t0 - queuedAt)}ms)`,
         )
         this.lastLogAt = this.now()
       }
     } catch (err) {
       console.error('[codepulse] session sync failed', err)
-    } finally {
-      this.running = false
     }
   }
 
@@ -332,6 +433,7 @@ export class SessionSyncService {
 
     const sessionsRoot = join(this.codexHome, 'sessions')
     const now = this.now()
+    const usageSampleId = this.nextUsageSampleId('codex', now)
     const files = await listLiveCodexRollouts(sessionsRoot, now, CODEX_LIVE_MS)
     // No recently-active projects: still refresh account quota from the freshest
     // rollout, but do not resurrect multi-project cards from hours-old sessions.
@@ -340,8 +442,8 @@ export class SessionSyncService {
       const quotaRows: CodexQuotaRow[] = []
       for (const file of fallback) {
         try {
-          const rollout = await readCodexRolloutSnapshotFromFile(file.path)
-          const token = rollout.token ?? (await readCodexTokenFallback(file.path))
+          const rollout = await this.readCodexRollout(file)
+          const token = rollout.snapshot.token
           if (!token?.rateLimits) continue
           quotaRows.push({ file, token })
           // Main Codex weekly is the quota-only panel's preferred family. Stop
@@ -351,24 +453,24 @@ export class SessionSyncService {
           console.error('[codepulse] session-sync codex quota fallback failed', file.path, err)
         }
       }
-      const accountFamilies = pickSharedCodexAccountQuotaFamilies(quotaRows)
+      const accountFamilies = this.rememberCodexAccountQuotaFamilies(
+        pickSharedCodexAccountQuotaFamilies(quotaRows),
+      )
       const accountPrimary = accountFamilies.main ?? accountFamilies.spark
-      const token = accountPrimary?.token
-      if (!token?.rateLimits) return 0
-      const mapKey = 'codex:quota-only'
-      const fp = fingerprint('codex', 'quota-only', '', 0, token, undefined)
-      if (this.fingerprints.get(mapKey) === fp) return 0
-      this.fingerprints.set(mapKey, fp)
-      this.hub.ingest({
-        id: `session-sync:codex:quota:${now}`,
-        source: 'codex',
-        eventType: 'token_snapshot',
+      const token = withSharedCodexAccountQuota(
+        { accuracy: 'estimated' },
+        accountFamilies.main,
+        accountFamilies.spark,
+      )
+      return this.publishAccountQuotaObservation(
+        'codex',
         token,
-        tokenSourcePath: accountPrimary?.path,
-        timestamp: now,
-        internal: { sessionSync: true, quotaRefresh: true },
-      })
-      return 1
+        now,
+        usageSampleId,
+        accountPrimary?.path,
+      )
+        ? 1
+        : 0
     }
 
     let count = 0
@@ -380,24 +482,24 @@ export class SessionSyncService {
 
     for (const file of files) {
       try {
-        const rollout = await readCodexRolloutSnapshotFromFile(file.path)
-        const token = rollout.token ?? (await readCodexTokenFallback(file.path))
+        const rollout = await this.readCodexRollout(file, true)
+        const token = rollout.snapshot.token
         if (token?.rateLimits) quotaRows.push({ file, token })
 
-        const meta = await readCodexRolloutMeta(file.path)
+        const meta = rollout.meta ?? {}
         let cwd = meta.cwd
         if (!cwd) cwd = await findCwdInTail(file.path)
         if (!cwd) continue
         // Resolve aliases before project dedupe/fingerprints so one project has one hub key.
         cwd = await this.workspacePaths.resolve(cwd)
 
-        const modelConfig = rollout.model
+        const modelConfig = rollout.snapshot.model
           ? {
-              model: rollout.model,
-              reasoningEffort: rollout.reasoningEffort,
+              model: rollout.snapshot.model,
+              reasoningEffort: rollout.snapshot.reasoningEffort,
               // JSONL envelopes normally carry ISO timestamps. File mtime is only
               // a stable fallback for legacy envelopes that omit one.
-              modelObservedAt: rollout.modelObservedAt ?? Math.floor(file.mtimeMs),
+              modelObservedAt: rollout.snapshot.modelObservedAt ?? Math.floor(file.mtimeMs),
             }
           : {}
 
@@ -407,10 +509,21 @@ export class SessionSyncService {
           file,
           meta: { ...meta, cwd, ...modelConfig },
           token,
-          turnTiming: rollout.turnTiming,
+          // A subagent rollout is a child task inside the visible user turn.
+          // Its completion may refresh liveness, but must never close the card.
+          turnTiming: meta.isSubagent ? undefined : rollout.snapshot.turnTiming,
+          activityMtimeMs: file.mtimeMs,
         }
-        if (!prev || shouldPreferCodexWorkspaceCandidate(candidate, prev)) {
+        if (!prev) {
           byCwd.set(key, candidate)
+        } else {
+          const preferred = shouldPreferCodexWorkspaceCandidate(candidate, prev) ? candidate : prev
+          byCwd.set(key, {
+            ...preferred,
+            // Child rollouts often keep writing while the root rollout waits.
+            // Fold their mtime into the root heartbeat without using child timing.
+            activityMtimeMs: Math.max(prev.activityMtimeMs, candidate.activityMtimeMs),
+          })
         }
       } catch (err) {
         console.error('[codepulse] session-sync codex file failed', file.path, err)
@@ -418,10 +531,17 @@ export class SessionSyncService {
     }
 
     // Account weekly/5h quotas are global — pick best main + Spark separately.
-    const accountFamilies = pickSharedCodexAccountQuotaFamilies(quotaRows)
+    const accountFamilies = this.rememberCodexAccountQuotaFamilies(
+      pickSharedCodexAccountQuotaFamilies(quotaRows),
+    )
     const accountPrimary = accountFamilies.main ?? accountFamilies.spark
+    const accountToken = withSharedCodexAccountQuota(
+      { accuracy: 'estimated' },
+      accountFamilies.main,
+      accountFamilies.spark,
+    )
 
-    for (const { file, meta, token, turnTiming } of byCwd.values()) {
+    for (const { file, meta, token, turnTiming, activityMtimeMs } of byCwd.values()) {
       const sessionId = meta.sessionId ?? sessionIdFromRolloutName(file.path)
       const cwd = meta.cwd!
       const payloadToken = withSharedCodexAccountQuota(
@@ -429,27 +549,27 @@ export class SessionSyncService {
         accountFamilies.main,
         accountFamilies.spark,
       )
+      const preferPath =
+        (modelLooksLikeSpark(meta.model)
+          ? accountFamilies.spark?.path
+          : accountFamilies.main?.path) ??
+        accountPrimary?.path ??
+        file.path
       const mapKey = `codex:${sessionId}`
       const skip = this.classifyUnchanged(
         mapKey,
         'codex',
         sessionId,
         cwd,
-        file.mtimeMs,
+        activityMtimeMs,
         payloadToken,
         meta.model,
         meta.reasoningEffort,
         meta.modelObservedAt,
         turnTiming,
+        preferPath,
       )
       if (skip === 'skip') continue
-
-      const preferPath =
-        (tokenLooksLikeSpark(payloadToken)
-          ? accountFamilies.spark?.path
-          : accountFamilies.main?.path) ??
-        accountPrimary?.path ??
-        file.path
 
       this.ingestHydrate({
         source: 'codex',
@@ -462,17 +582,101 @@ export class SessionSyncService {
         token: payloadToken,
         tokenSourcePath: preferPath,
         now,
+        usageSampleId,
         // Quota-only churn must not refresh lastEventAt or unhide idle project cards.
         quotaOnly: skip === 'quota',
         activityRefresh: skip === 'activity',
       })
       count += 1
     }
-    return count
+    const firstCodex = byCwd.values().next().value as CodexWorkspaceCandidate | undefined
+    const publishedQuota = this.publishAccountQuotaObservation(
+      'codex',
+      accountToken,
+      now,
+      usageSampleId,
+      accountPrimary?.path,
+      firstCodex
+        ? {
+            sessionId: firstCodex.meta.sessionId ?? sessionIdFromRolloutName(firstCodex.file.path),
+            cwd: firstCodex.meta.cwd,
+          }
+        : undefined,
+    )
+    return count === 0 && publishedQuota ? 1 : count
+  }
+
+  /**
+   * Reads one rollout once per stable filesystem revision.
+   *
+   * Quota parsing is time-sensitive at reset boundaries, so a cache entry also
+   * expires when its nearest future reset arrives even if the file is unchanged.
+   * Metadata is loaded lazily because quota-only fallback scans do not need it.
+   *
+   * @param file Rollout path and filesystem revision.
+   * @param includeMeta Whether the session header is required by the caller.
+   * @returns Cached or freshly parsed rollout data.
+   */
+  private async readCodexRollout(
+    file: RolloutFile,
+    includeMeta = false,
+  ): Promise<CodexRolloutCacheEntry> {
+    const now = this.now()
+    let cached = this.codexRolloutCache.get(file.path)
+    const revisionMatches =
+      cached?.mtimeMs === file.mtimeMs && cached.size === file.size && now < cached.refreshAt
+
+    if (!cached || !revisionMatches) {
+      let snapshot = await this.codexRolloutReader(file.path)
+      if (!snapshot.token) {
+        const token = await readCodexTokenFallback(file.path)
+        if (token) snapshot = { ...snapshot, token }
+      }
+      cached = {
+        mtimeMs: file.mtimeMs,
+        size: file.size,
+        snapshot,
+        refreshAt: nextCodexSnapshotRefreshAt(snapshot, now),
+      }
+      this.codexRolloutCache.delete(file.path)
+      this.codexRolloutCache.set(file.path, cached)
+      this.trimCodexRolloutCache()
+    }
+
+    if (includeMeta && !cached.meta) {
+      cached.meta = await readCodexRolloutMeta(file.path)
+    }
+    return cached
+  }
+
+  /** Removes least-recently parsed rollout entries beyond the fixed cache bound. */
+  private trimCodexRolloutCache(): void {
+    while (this.codexRolloutCache.size > MAX_CODEX_CACHE_ENTRIES) {
+      const oldest = this.codexRolloutCache.keys().next().value as string | undefined
+      if (!oldest) return
+      this.codexRolloutCache.delete(oldest)
+    }
+  }
+
+  /**
+   * Retains the latest observed account families across transient rollout gaps.
+   *
+   * @param incoming Best main and Spark candidates from the current scan.
+   * @returns Latest available account families shared by every live Codex project.
+   */
+  private rememberCodexAccountQuotaFamilies(
+    incoming: CodexAccountQuotaFamilies,
+  ): CodexAccountQuotaFamilies {
+    this.codexAccountQuotaFamilies = {
+      main: incoming.main ?? this.codexAccountQuotaFamilies.main,
+      spark: incoming.spark ?? this.codexAccountQuotaFamilies.spark,
+    }
+    return this.codexAccountQuotaFamilies
   }
 
   private async syncGrok(): Promise<number> {
     const now = this.now()
+    const usageSampleId = this.nextUsageSampleId('grok', now)
     const billing = await readGrokBillingQuota(this.grokHome)
     // Only sessions the user currently has open (active_sessions + live pid).
     // Do NOT walk historical ~/.grok/sessions — that resurrects idle projects.
@@ -491,30 +695,32 @@ export class SessionSyncService {
 
     let count = 0
     for (const row of byCwd.values()) {
-      if (await this.ingestGrokSession(row.sessionId, row.cwd, now, billing, row.mtimeMs)) {
+      if (
+        await this.ingestGrokSession(
+          row.sessionId,
+          row.cwd,
+          now,
+          billing,
+          row.mtimeMs,
+          usageSampleId,
+        )
+      ) {
         count += 1
       }
     }
+    const firstGrok = byCwd.values().next().value as
+      | { sessionId: string; cwd: string; mtimeMs: number }
+      | undefined
+    const publishedQuota = this.publishAccountQuotaObservation(
+      'grok',
+      billing.token,
+      now,
+      usageSampleId,
+      billing.sourcePath,
+      firstGrok,
+    )
 
-    // No open sessions but billing available → quota-only shell (no project row).
-    if (count === 0 && billing.token?.rateLimits) {
-      const mapKey = 'grok:quota-only'
-      const fp = fingerprint('grok', 'quota-only', '', 0, billing.token, undefined)
-      if (this.fingerprints.get(mapKey) !== fp) {
-        this.fingerprints.set(mapKey, fp)
-        this.hub.ingest({
-          id: `session-sync:grok:quota:${now}`,
-          source: 'grok',
-          eventType: 'token_snapshot',
-          token: billing.token,
-          tokenSourcePath: billing.sourcePath,
-          timestamp: now,
-          internal: { sessionSync: true, quotaRefresh: true },
-        })
-        count += 1
-      }
-    }
-    return count
+    return count === 0 && publishedQuota ? 1 : count
   }
 
   private async ingestGrokSession(
@@ -523,6 +729,7 @@ export class SessionSyncService {
     now: number,
     billing: { token?: TokenPayload; sourcePath?: string },
     mtimeMs: number,
+    usageSampleId: string,
   ): Promise<boolean> {
     try {
       const usage = await readGrokSessionUsage(this.grokHome, sessionId, cwd)
@@ -552,6 +759,7 @@ export class SessionSyncService {
         undefined,
         undefined,
         turnTiming,
+        sourcePath,
       )
       if (skip === 'skip') return false
 
@@ -564,6 +772,7 @@ export class SessionSyncService {
         token: payloadToken,
         tokenSourcePath: sourcePath,
         now,
+        usageSampleId,
         quotaOnly: skip === 'quota',
         activityRefresh: skip === 'activity',
       })
@@ -579,6 +788,7 @@ export class SessionSyncService {
     if (!(await this.kimiProcessAlive())) return 0
 
     const now = this.now()
+    const usageSampleId = this.nextUsageSampleId('kimi', now)
     const accountQuota = await this.getKimiAccountQuota(now)
     const indexed = await readKimiSessionIndex(this.kimiHome)
     const byCwd = new Map<string, KimiSessionSnapshot>()
@@ -606,6 +816,7 @@ export class SessionSyncService {
         snapshot.reasoningEffort,
         snapshot.modelObservedAt,
         snapshot.turnTiming,
+        snapshot.sourcePath,
       )
       if (skip === 'skip') continue
 
@@ -621,31 +832,23 @@ export class SessionSyncService {
         token: payloadToken,
         tokenSourcePath: snapshot.sourcePath,
         now,
+        usageSampleId,
         quotaOnly: skip === 'quota',
         activityRefresh: skip === 'activity',
       })
       count += 1
     }
+    const firstKimi = byCwd.values().next().value
+    const publishedQuota = this.publishAccountQuotaObservation(
+      'kimi',
+      mergeKimiContextWithQuota(undefined, accountQuota),
+      now,
+      usageSampleId,
+      undefined,
+      firstKimi ? { sessionId: firstKimi.sessionId, cwd: firstKimi.cwd } : undefined,
+    )
 
-    // Keep the account meters visible while Kimi is open even before a project writes a wire row.
-    if (byCwd.size === 0 && accountQuota?.rateLimits) {
-      const mapKey = 'kimi:quota-only'
-      const token = mergeKimiContextWithQuota(undefined, accountQuota)
-      const fp = fingerprint('kimi', 'quota-only', '', 0, token, undefined)
-      if (this.fingerprints.get(mapKey) !== fp) {
-        this.fingerprints.set(mapKey, fp)
-        this.hub.ingest({
-          id: `session-sync:kimi:quota:${now}`,
-          source: 'kimi',
-          eventType: 'token_snapshot',
-          token,
-          timestamp: now,
-          internal: { sessionSync: true, quotaRefresh: true },
-        })
-        count += 1
-      }
-    }
-    return count
+    return count === 0 && publishedQuota ? 1 : count
   }
 
   /** Returns the cached Kimi quota and refreshes it at a bounded account-level cadence. */
@@ -665,12 +868,9 @@ export class SessionSyncService {
    */
   private async syncClaude(): Promise<number> {
     const now = this.now()
+    const usageSampleId = this.nextUsageSampleId('claude_code', now)
     // Account-wide quota (OAuth usage or statusline cache) — independent of transcripts.
-    const quota = await resolveClaudeAccountQuota({
-      home: this.userHome,
-      now: () => this.now(),
-      timeoutMs: 1_200,
-    }).catch(() => undefined)
+    const quota = await this.getClaudeAccountQuota(now)
     const thinkingConfig = await readClaudeThinkingConfig(this.claudeHome, now)
 
     const active = await readClaudeActiveSessions(this.claudeHome)
@@ -699,31 +899,97 @@ export class SessionSyncService {
           row.status,
           quota,
           thinkingConfig,
+          usageSampleId,
         )
       ) {
         count += 1
       }
     }
+    const firstClaude = byCwd.values().next().value
+    const publishedQuota = this.publishAccountQuotaObservation(
+      'claude_code',
+      mergeClaudeContextWithQuota(undefined, quota),
+      now,
+      usageSampleId,
+      undefined,
+      firstClaude ? { sessionId: firstClaude.sessionId, cwd: firstClaude.cwd } : undefined,
+    )
 
-    // No open project but we have account quota → quota-only shell (same as Grok).
-    if (count === 0 && quota?.rateLimits) {
-      const mapKey = 'claude_code:quota-only'
-      const token = mergeClaudeContextWithQuota(undefined, quota)
-      const fp = fingerprint('claude_code', 'quota-only', '', 0, token, undefined)
-      if (this.fingerprints.get(mapKey) !== fp) {
-        this.fingerprints.set(mapKey, fp)
-        this.hub.ingest({
-          id: `session-sync:claude:quota:${now}`,
-          source: 'claude_code',
-          eventType: 'token_snapshot',
-          token,
-          timestamp: now,
-          internal: { sessionSync: true, quotaRefresh: true },
-        })
-        count += 1
-      }
-    }
-    return count
+    return count === 0 && publishedQuota ? 1 : count
+  }
+
+  /**
+   * Returns Claude account quota at a bounded cadence with in-flight deduplication.
+   *
+   * @param now Current epoch milliseconds.
+   * @returns The latest successful account-quota snapshot.
+   */
+  private async getClaudeAccountQuota(now: number): Promise<ClaudeQuotaSnapshot | undefined> {
+    if (now < this.nextClaudeQuotaRefreshAt) return this.claudeQuota
+    if (this.claudeQuotaRefresh) return this.claudeQuotaRefresh
+
+    this.nextClaudeQuotaRefreshAt = now + CLAUDE_QUOTA_REFRESH_MS
+    this.claudeQuotaRefresh = this.claudeQuotaResolver()
+      .then((refreshed) => {
+        if (refreshed) this.claudeQuota = refreshed
+        return this.claudeQuota
+      })
+      .catch(() => this.claudeQuota)
+      .finally(() => {
+        this.claudeQuotaRefresh = undefined
+      })
+    return this.claudeQuotaRefresh
+  }
+
+  /**
+   * Publishes one account-level quota observation for a synchronization scan.
+   *
+   * The same account payload may later be copied into many project events. A
+   * shared sample identifier ensures those fan-out events count as one read in
+   * the Hub's lower-usage confirmation streak.
+   *
+   * @param source CLI family that owns the quota.
+   * @param token Token payload containing account rate limits.
+   * @param now Synchronization scan timestamp.
+   * @param usageSampleId Identifier shared by all quota copies from this scan.
+   * @param tokenSourcePath Optional native file that supplied the quota.
+   * @param target Existing live session that should retain the account quota.
+   * @returns Whether a quota observation was published.
+   */
+  private publishAccountQuotaObservation(
+    source: SessionSyncSource,
+    token: TokenPayload | undefined,
+    now: number,
+    usageSampleId: string,
+    tokenSourcePath?: string,
+    target?: { sessionId: string; cwd?: string },
+  ): boolean {
+    const quotaToken = accountQuotaOnlyToken(token)
+    if (!quotaToken) return false
+    return this.hub.observeQuota({
+      id: `${usageSampleId}:account-quota`,
+      source,
+      eventType: 'token_snapshot',
+      externalSessionId: target?.sessionId,
+      cwd: target?.cwd,
+      workspacePath: target?.cwd,
+      token: quotaToken,
+      tokenSourcePath,
+      timestamp: now,
+      internal: { sessionSync: true, quotaRefresh: true, usageSampleId },
+    })
+  }
+
+  /**
+   * Allocates one sample identifier shared by all quota fan-out in a source scan.
+   *
+   * @param source CLI family being synchronized.
+   * @param now Synchronization timestamp.
+   * @returns Process-unique sample identifier for this scan.
+   */
+  private nextUsageSampleId(source: SessionSyncSource, now: number): string {
+    this.quotaObservationSequence += 1
+    return `session-sync:${source}:${now}:${this.quotaObservationSequence}`
   }
 
   private async ingestClaudeSession(
@@ -734,6 +1000,7 @@ export class SessionSyncService {
     status: string | undefined,
     accountQuota?: Awaited<ReturnType<typeof resolveClaudeAccountQuota>>,
     thinkingConfig?: ClaudeThinkingConfig,
+    usageSampleId?: string,
   ): Promise<boolean> {
     try {
       const transcript = await findClaudeTranscript(this.claudeHome, sessionId)
@@ -759,6 +1026,7 @@ export class SessionSyncService {
         reasoningEffort,
         undefined,
         usage?.turnTiming,
+        transcript,
       )
       if (skip === 'skip') return false
 
@@ -773,6 +1041,7 @@ export class SessionSyncService {
         token,
         tokenSourcePath: transcript,
         now,
+        usageSampleId: usageSampleId ?? this.nextUsageSampleId('claude_code', now),
         // Quota-only churn (account %) must not refresh project idle clock.
         quotaOnly: skip === 'quota',
         activityRefresh: skip === 'activity',
@@ -807,6 +1076,7 @@ export class SessionSyncService {
     reasoningEffort?: string,
     modelObservedAt?: number,
     turnTiming?: TurnTiming,
+    tokenSourcePath?: string,
   ): 'skip' | 'activity' | 'quota' | 'rehydrate' {
     const full = fingerprint(
       source,
@@ -818,6 +1088,7 @@ export class SessionSyncService {
       reasoningEffort,
       modelObservedAt,
       turnTiming,
+      tokenSourcePath,
     )
     const activity = activityFingerprint(
       source,
@@ -865,13 +1136,16 @@ export class SessionSyncService {
     token: TokenPayload
     tokenSourcePath?: string
     now: number
+    usageSampleId: string
     /** True when only account rate limits changed — do not bump project recency. */
     quotaOnly?: boolean
     /** True only when the native local source changed since its previous scan. */
     activityRefresh?: boolean
   }): void {
     const startKey = `started:${args.source}:${args.sessionId}`
-    const alreadyStarted = this.fingerprints.has(startKey)
+    const alreadyStarted =
+      this.fingerprints.has(startKey) || this.hubHasSession(args.source, args.sessionId)
+    if (alreadyStarted) this.fingerprints.set(startKey, '1')
     const quotaOnly = args.quotaOnly === true
 
     // Quota-only updates never open a new project card.
@@ -888,6 +1162,7 @@ export class SessionSyncService {
         reasoningEffort: args.reasoningEffort,
         reasoningEffortObservedAt: args.reasoningEffortObservedAt,
         modelObservedAt: args.modelObservedAt,
+        externalTurnId: args.turnTiming?.externalTurnId,
         turnTiming: args.turnTiming,
         timestamp: args.now,
         internal: {
@@ -917,12 +1192,14 @@ export class SessionSyncService {
       reasoningEffort: args.reasoningEffort,
       reasoningEffortObservedAt: args.reasoningEffortObservedAt,
       modelObservedAt: args.modelObservedAt,
+      externalTurnId: args.turnTiming?.externalTurnId,
       turnTiming: args.turnTiming,
       token: args.token,
       tokenSourcePath: args.tokenSourcePath,
       timestamp: args.now,
       internal: {
         sessionSync: true,
+        usageSampleId: args.usageSampleId,
         ...(args.activityRefresh ? { activityRefresh: true } : {}),
         ...(quotaOnly ? { quotaRefresh: true } : {}),
       },
@@ -935,11 +1212,27 @@ export class SessionSyncService {
 interface RolloutFile {
   path: string
   mtimeMs: number
+  size: number
+}
+
+/** Parsed data retained while a rollout's filesystem revision is unchanged. */
+interface CodexRolloutCacheEntry {
+  mtimeMs: number
+  size: number
+  snapshot: CodexRolloutSnapshot
+  meta?: CodexMeta
+  /** Epoch milliseconds when time-sensitive quota parsing must run again. */
+  refreshAt: number
 }
 
 interface CodexMeta {
   cwd?: string
+  /** Root CLI session shared by the parent and all of its subagent threads. */
   sessionId?: string
+  /** Current rollout/thread identity from the native session header. */
+  threadId?: string
+  /** Whether this rollout belongs to a spawned subagent rather than the user thread. */
+  isSubagent?: boolean
   model?: string
   reasoningEffort?: string
   modelObservedAt?: number
@@ -951,6 +1244,8 @@ interface CodexWorkspaceCandidate {
   meta: CodexMeta
   token?: TokenPayload
   turnTiming?: TurnTiming
+  /** Freshest write in this workspace, including safe child-task heartbeats. */
+  activityMtimeMs: number
 }
 
 /**
@@ -968,6 +1263,9 @@ function shouldPreferCodexWorkspaceCandidate(
   candidate: CodexWorkspaceCandidate,
   current: CodexWorkspaceCandidate,
 ): boolean {
+  if (candidate.meta.isSubagent !== current.meta.isSubagent) {
+    return current.meta.isSubagent === true
+  }
   const candidateObservedAt = candidate.meta.modelObservedAt ?? 0
   const currentObservedAt = current.meta.modelObservedAt ?? 0
   if (candidateObservedAt !== currentObservedAt) return candidateObservedAt > currentObservedAt
@@ -1010,7 +1308,7 @@ async function walkRollouts(
     try {
       const info = await stat(full)
       if (now - info.mtimeMs > maxAgeMs) continue
-      out.push({ path: full, mtimeMs: info.mtimeMs })
+      out.push({ path: full, mtimeMs: info.mtimeMs, size: info.size })
     } catch {
       // ignore locked/missing
     }
@@ -1027,7 +1325,7 @@ async function walkRollouts(
  * @returns Workspace and session identifiers available near the file head.
  */
 async function readCodexRolloutMeta(file: string): Promise<CodexMeta> {
-  const text = await readHead(file, CODEX_META_HEAD)
+  const text = await readCodexMetaHead(file)
   let meta: CodexMeta = {}
   for (const line of text.split(/\r?\n/)) {
     if (!line.trim()) continue
@@ -1036,17 +1334,21 @@ async function readCodexRolloutMeta(file: string): Promise<CodexMeta> {
       const p = item.payload
       if (!p) continue
       if (item.type === 'session_meta' || item.type === 'turn_context') {
+        const threadId = stringVal(p.id) ?? meta.threadId
+        const rootSessionId =
+          stringVal(p.session_id) ?? stringVal(p.sessionId) ?? meta.sessionId ?? threadId
         meta = {
           ...meta,
           cwd: stringVal(p.cwd) ?? meta.cwd,
-          sessionId:
-            stringVal(p.id) ?? stringVal(p.session_id) ?? stringVal(p.sessionId) ?? meta.sessionId,
+          sessionId: rootSessionId,
+          threadId,
+          isSubagent: isCodexSubagentMeta(p) || meta.isSubagent,
         }
       }
     } catch {
       // Truncated huge first line — try regex extraction.
       const partial = extractMetaFromPartialLine(line)
-      if (partial.cwd || partial.sessionId) {
+      if (partial.cwd || partial.sessionId || partial.threadId || partial.isSubagent) {
         meta = { ...meta, ...partial }
       }
       continue
@@ -1061,22 +1363,103 @@ async function readCodexRolloutMeta(file: string): Promise<CodexMeta> {
   return meta
 }
 
-/** Recover cwd/session id when session_meta JSON is truncated by head limit. */
+/**
+ * Detects a spawned Codex thread from stable lineage fields in `session_meta`.
+ *
+ * Child rollouts copy portions of their parent's lifecycle history. Treating
+ * those rows as a top-level turn can therefore emit a completion notification
+ * while the parent is still running.
+ *
+ * @param payload Parsed native session metadata payload.
+ * @returns `true` when the rollout is explicitly linked to a parent thread.
+ */
+function isCodexSubagentMeta(payload: Record<string, unknown>): boolean {
+  const threadSource = stringVal(payload.thread_source)?.toLowerCase()
+  // User-created `/fork` sessions also carry `forked_from_id`; an explicit user
+  // source therefore wins over every heuristic below.
+  if (threadSource === 'user') return false
+  if (threadSource === 'subagent') return true
+  if (stringVal(payload.parent_thread_id) || stringVal(payload.parentThreadId)) return true
+
+  const source = asRecord(payload.source)
+  const subagent = asRecord(source?.subagent)
+  const spawn = asRecord(subagent?.thread_spawn) ?? asRecord(subagent?.threadSpawn)
+  const nestedParent =
+    stringVal(spawn?.parent_thread_id) ??
+    stringVal(spawn?.parentThreadId) ??
+    stringVal(subagent?.parent_thread_id) ??
+    stringVal(subagent?.parentThreadId)
+  if (nestedParent) return true
+
+  const threadId = stringVal(payload.id)
+  const rootSessionId = stringVal(payload.session_id) ?? stringVal(payload.sessionId)
+  const forkedFromId = stringVal(payload.forked_from_id) ?? stringVal(payload.forkedFromId)
+  return Boolean(forkedFromId && threadId && rootSessionId && threadId !== rootSessionId)
+}
+
+/**
+ * Recovers session lineage when a large `session_meta` row is head-truncated.
+ *
+ * @param text Partial native metadata text.
+ * @returns Root session, current thread, workspace, and subagent markers found.
+ */
 function extractMetaFromPartialLine(text: string): CodexMeta {
   const cwd =
     text.match(/"cwd"\s*:\s*"((?:\\.|[^"\\])*)"/)?.[1] ??
     text.match(/"cwd"\s*:\s*'((?:\\.|[^'\\])*)'/)?.[1]
-  const sessionId =
-    text.match(
-      /"id"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i,
-    )?.[1] ??
+  const threadId = text.match(
+    /"id"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i,
+  )?.[1]
+  const rootSessionId =
     text.match(
       /"session_id"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i,
+    )?.[1] ??
+    text.match(
+      /"sessionId"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i,
     )?.[1]
+  const parentThreadId =
+    text.match(
+      /"parent_thread_id"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i,
+    )?.[1] ??
+    text.match(
+      /"parentThreadId"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i,
+    )?.[1]
+  const forkedFromId =
+    text.match(
+      /"forked_from_id"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i,
+    )?.[1] ??
+    text.match(
+      /"forkedFromId"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i,
+    )?.[1]
+  const threadSource = text.match(/"thread_source"\s*:\s*"([^"]+)"/i)?.[1]?.toLowerCase()
+  const isSubagent =
+    threadSource !== 'user' &&
+    (threadSource === 'subagent' ||
+      parentThreadId != null ||
+      Boolean(forkedFromId && threadId && rootSessionId && threadId !== rootSessionId))
   return {
     cwd: cwd ? unescapeJsonString(cwd) : undefined,
-    sessionId: sessionId ?? undefined,
+    sessionId: rootSessionId ?? threadId ?? undefined,
+    threadId: threadId ?? undefined,
+    ...(isSubagent ? { isSubagent: true } : {}),
   }
+}
+
+/**
+ * Reads the normal metadata head and completes an unusually large first row.
+ *
+ * Codex stores subagent lineage in the first `session_meta` JSONL record. A
+ * fixed 512 KiB cut can hide a late `forked_from_id`, so oversized headers are
+ * retried with a bounded larger read instead of silently treating a child as a
+ * root rollout.
+ *
+ * @param file Absolute rollout JSONL path.
+ * @returns Metadata text containing the complete first row whenever bounded.
+ */
+async function readCodexMetaHead(file: string): Promise<string> {
+  const initial = await readHead(file, CODEX_META_HEAD)
+  if (/\r?\n/u.test(initial)) return initial
+  return readHead(file, CODEX_META_FIRST_LINE_MAX)
 }
 
 function unescapeJsonString(value: string): string {
@@ -1117,7 +1500,7 @@ async function findCwdInTail(file: string): Promise<string | undefined> {
 /**
  * Fallback when the primary quota reader returns nothing.
  * Context only from last_token_usage — never total_token_usage, never raw expired limits
- * (rate limits always go through readCodexQuotaTokenFromFile soft-reset path).
+ * (rate limits always go through readCodexQuotaTokenFromFile's official-snapshot path).
  */
 async function readCodexTokenFallback(file: string): Promise<TokenPayload | undefined> {
   try {
@@ -1163,6 +1546,22 @@ function sessionIdFromRolloutName(file: string): string {
 
 type CodexQuotaRow = { file: RolloutFile; token?: TokenPayload }
 type AccountQuotaPick = { token: TokenPayload; mtimeMs: number; path: string }
+type CodexAccountQuotaFamilies = { main?: AccountQuotaPick; spark?: AccountQuotaPick }
+
+/**
+ * Returns the next instant when an unchanged rollout must be reparsed.
+ *
+ * @param snapshot Parsed rollout snapshot.
+ * @param now Current epoch milliseconds.
+ * @returns Nearest future quota reset, or positive infinity for stable data.
+ */
+function nextCodexSnapshotRefreshAt(snapshot: CodexRolloutSnapshot, now: number): number {
+  const windows = snapshot.token?.rateLimits
+  const futureResets = [windows?.fiveHour?.resetsAt, windows?.sevenDay?.resetsAt]
+    .map(normalizeResetAtMs)
+    .filter((resetAt) => resetAt > now)
+  return futureResets.length > 0 ? Math.min(...futureResets) : Number.POSITIVE_INFINITY
+}
 
 /**
  * Context is per-project; rate limits are account-wide.
@@ -1223,8 +1622,8 @@ function pickSharedCodexAccountQuotaFamilies(rows: CodexQuotaRow[]): {
   const withLimits = rows.filter((row) => row.token?.rateLimits)
   if (withLimits.length === 0) return {}
 
-  let main: AccountQuotaPick | undefined
-  let spark: AccountQuotaPick | undefined
+  const main: AccountQuotaPick[] = []
+  const spark: AccountQuotaPick[] = []
   for (const row of withLimits) {
     const token = row.token!
     const candidate: AccountQuotaPick = {
@@ -1232,46 +1631,89 @@ function pickSharedCodexAccountQuotaFamilies(rows: CodexQuotaRow[]): {
       mtimeMs: row.file.mtimeMs,
       path: row.file.path,
     }
-    if (tokenLooksLikeSpark(token)) {
-      if (!spark || compareAccountQuotaSnapshots(candidate, spark) > 0) spark = candidate
-    } else if (!main || compareAccountQuotaSnapshots(candidate, main) > 0) {
-      main = candidate
-    }
+    if (tokenLooksLikeSpark(token)) spark.push(candidate)
+    else main.push(candidate)
   }
-  return { main, spark }
+  return {
+    main: pickCodexAccountQuotaSnapshot(main),
+    spark: pickCodexAccountQuotaSnapshot(spark),
+  }
 }
 
-/** Positive when `a` is a better account-wide snapshot than `b` (weekly-first). */
-function compareAccountQuotaSnapshots(a: AccountQuotaPick, b: AccountQuotaPick): number {
-  const aSeven = a.token.rateLimits?.sevenDay
-  const bSeven = b.token.rateLimits?.sevenDay
-  const aFive = a.token.rateLimits?.fiveHour
-  const bFive = b.token.rateLimits?.fiveHour
+/**
+ * Selects one authoritative account snapshot from concurrent Codex rollouts.
+ *
+ * Candidates are clustered against the latest reset timestamp rather than a
+ * rounded wall-clock bucket. This keeps near-identical server timestamps in one
+ * period even when they straddle an arbitrary five-minute boundary.
+ *
+ * @param candidates Same-family account quota snapshots.
+ * @returns Best snapshot from the latest quota period.
+ */
+function pickCodexAccountQuotaSnapshot(
+  candidates: AccountQuotaPick[],
+): AccountQuotaPick | undefined {
+  if (candidates.length === 0) return undefined
 
-  // Prefer later weekly reset, then higher weekly %; five-hour only as weak tiebreak.
-  const aWeekReset = normalizeResetAtMs(aSeven?.resetsAt)
-  const bWeekReset = normalizeResetAtMs(bSeven?.resetsAt)
-  if (aWeekReset !== bWeekReset) return aWeekReset - bWeekReset
+  const withReset = candidates.map((candidate) => ({
+    candidate,
+    resetAt: primaryCodexQuotaResetAt(candidate.token),
+  }))
+  const knownResets = withReset.filter((entry) => entry.resetAt > 0)
+  const latestResetAt =
+    knownResets.length > 0 ? Math.max(...knownResets.map((entry) => entry.resetAt)) : 0
+  const period =
+    latestResetAt > 0
+      ? knownResets
+          .filter((entry) => latestResetAt - entry.resetAt <= QUOTA_RESET_TOLERANCE_MS)
+          .map((entry) => entry.candidate)
+      : candidates
+  const expired = latestResetAt > 0 && latestResetAt <= Date.now()
 
-  const aWeekUsed = aSeven?.usedPercent ?? -1
-  const bWeekUsed = bSeven?.usedPercent ?? -1
-  if (aWeekUsed !== bWeekUsed) return aWeekUsed - bWeekUsed
+  return [...period].sort((a, b) => {
+    const aUsed = primaryCodexQuotaUsedPercent(a.token)
+    const bUsed = primaryCodexQuotaUsedPercent(b.token)
+    if (aUsed < 0) return bUsed < 0 ? b.mtimeMs - a.mtimeMs : 1
+    if (bUsed < 0) return -1
+    if (aUsed !== bUsed) return expired ? aUsed - bUsed : bUsed - aUsed
+    return b.mtimeMs - a.mtimeMs
+  })[0]
+}
 
-  const aFiveReset = normalizeResetAtMs(aFive?.resetsAt)
-  const bFiveReset = normalizeResetAtMs(bFive?.resetsAt)
-  if (aFiveReset !== bFiveReset) return aFiveReset - bFiveReset
+/**
+ * Returns the weekly-first reset timestamp used to cluster Codex snapshots.
+ *
+ * @param token Codex quota token.
+ * @returns Reset timestamp in epoch milliseconds, or zero when unavailable.
+ */
+function primaryCodexQuotaResetAt(token: TokenPayload): number {
+  const window = token.rateLimits?.sevenDay ?? token.rateLimits?.fiveHour
+  return normalizeResetAtMs(window?.resetsAt)
+}
 
-  const aFiveUsed = aFive?.usedPercent ?? -1
-  const bFiveUsed = bFive?.usedPercent ?? -1
-  if (aFiveUsed !== bFiveUsed) return aFiveUsed - bFiveUsed
-
-  return a.mtimeMs - b.mtimeMs
+/**
+ * Returns the weekly-first used percentage used to rank Codex snapshots.
+ *
+ * @param token Codex quota token.
+ * @returns Used percentage, or `-1` when unavailable.
+ */
+function primaryCodexQuotaUsedPercent(token: TokenPayload): number {
+  const window = token.rateLimits?.sevenDay ?? token.rateLimits?.fiveHour
+  return typeof window?.usedPercent === 'number' && Number.isFinite(window.usedPercent)
+    ? window.usedPercent
+    : -1
 }
 
 function tokenLooksLikeSpark(token: TokenPayload | undefined): boolean {
   if (!token) return false
   const s = `${token.rateLimitId ?? ''} ${token.rateLimitName ?? ''}`.toLowerCase()
   return s.includes('spark') || s.includes('bengalfox')
+}
+
+/** Returns whether a Codex model belongs to the separate Spark quota family. */
+function modelLooksLikeSpark(model: string | undefined): boolean {
+  const normalized = model?.trim().toLowerCase() ?? ''
+  return normalized.includes('spark') || normalized.includes('bengalfox')
 }
 
 function normalizeResetAtMs(resetsAt: number | undefined): number {
@@ -1536,6 +1978,7 @@ async function readClaudeTurnTiming(
         !latestCompletion &&
         item.type === 'system' &&
         stringVal(item.subtype) === 'turn_duration' &&
+        item.isSidechain !== true &&
         timestamp != null
       ) {
         const elapsedMs = num(item.durationMs) ?? num(item.duration_ms)
@@ -1578,6 +2021,7 @@ function selectClaudeTurnTiming(
     return {
       state: 'completed',
       ...(startedAt != null ? { startedAt } : {}),
+      ...(startedAt == null ? { canEndActiveTurn: false } : {}),
       elapsedMs: completion.elapsedMs,
       observedAt: completion.observedAt,
     }
@@ -1800,19 +2244,13 @@ async function readKimiSessionSnapshot(
   const modelObservedAt = num(requestRecord?.time) ?? num(usageRecord?.time)
   const reasoningEffort = normalizeKimiEffort(stringVal(requestRecord?.thinkingEffort))
   const active = stepBeginAt != null && (stepEndAt == null || stepBeginAt > stepEndAt)
-  const completedAt = !active && promptAt != null && stepEndAt != null ? stepEndAt : undefined
-  const turnTiming = promptAt
-    ? active
+  // `step.end` closes one agent-loop step, not the user's entire turn. Kimi can
+  // start another step immediately afterwards, so only an unmatched step.begin
+  // is a safe native liveness signal. Whole-turn completion comes from Stop.
+  const turnTiming =
+    promptAt != null && active
       ? { state: 'active' as const, startedAt: promptAt, observedAt: stepBeginAt ?? mtimeMs }
-      : completedAt != null
-        ? {
-            state: 'completed' as const,
-            startedAt: promptAt,
-            elapsedMs: Math.max(0, completedAt - promptAt),
-            observedAt: completedAt,
-          }
-        : undefined
-    : undefined
+      : undefined
 
   return {
     ...row,
@@ -2042,7 +2480,14 @@ async function readGrokTurnTiming(
     const text = await readTailFile(join(sessionDir, 'events.jsonl'), 512 * 1024)
     const startedById = new Map<string, number>()
     const anonymousStarts: number[] = []
-    let latestCompleted: { startedAt: number; elapsedMs: number; observedAt: number } | undefined
+    let latestCompleted:
+      | {
+          externalTurnId?: string
+          startedAt: number
+          elapsedMs: number
+          observedAt: number
+        }
+      | undefined
 
     for (const line of text.trim().split(/\r?\n/)) {
       let item: Record<string, unknown>
@@ -2075,22 +2520,40 @@ async function readGrokTurnTiming(
       if (startedAt == null) continue
       const elapsedMs = Math.max(0, timestamp - startedAt)
       if (!latestCompleted || timestamp >= latestCompleted.observedAt) {
-        latestCompleted = { startedAt, elapsedMs, observedAt: timestamp }
+        latestCompleted = {
+          ...(turnId ? { externalTurnId: turnId } : {}),
+          startedAt,
+          elapsedMs,
+          observedAt: timestamp,
+        }
       }
     }
 
-    const activeStartedAt = [...startedById.values(), ...anonymousStarts].reduce<
-      number | undefined
-    >(
-      (earliest, startedAt) => (!earliest || startedAt < earliest ? startedAt : earliest),
+    const active = [
+      ...[...startedById.entries()].map(([externalTurnId, startedAt]) => ({
+        externalTurnId,
+        startedAt,
+      })),
+      ...anonymousStarts.map((startedAt) => ({ startedAt })),
+    ].reduce<{ externalTurnId?: string; startedAt: number } | undefined>(
+      (earliest, candidate) =>
+        !earliest || candidate.startedAt < earliest.startedAt ? candidate : earliest,
       undefined,
     )
-    if (activeStartedAt != null) {
-      return { state: 'active', startedAt: activeStartedAt, observedAt: activeStartedAt }
+    if (active) {
+      return {
+        state: 'active',
+        ...(active.externalTurnId ? { externalTurnId: active.externalTurnId } : {}),
+        startedAt: active.startedAt,
+        observedAt: active.startedAt,
+      }
     }
     if (latestCompleted) {
       return {
         state: 'completed',
+        ...(latestCompleted.externalTurnId
+          ? { externalTurnId: latestCompleted.externalTurnId }
+          : {}),
         startedAt: latestCompleted.startedAt,
         elapsedMs: latestCompleted.elapsedMs,
         observedAt: latestCompleted.observedAt,
@@ -2254,6 +2717,29 @@ function mergeGrokToken(
 
 // ─── utils ───────────────────────────────────────────────────────────────────
 
+/**
+ * Removes project context from an account-level quota observation.
+ *
+ * @param token Mixed project and account token payload.
+ * @returns Quota-only payload, or `undefined` when no quota windows are present.
+ */
+function accountQuotaOnlyToken(token: TokenPayload | undefined): TokenPayload | undefined {
+  if (!token) return undefined
+  if (
+    !token.rateLimits &&
+    !Object.values(token.quotaBuckets ?? {}).some((bucket) => bucket.rateLimits)
+  ) {
+    return undefined
+  }
+  return {
+    accuracy: token.accuracy,
+    rateLimits: token.rateLimits,
+    quotaBuckets: token.quotaBuckets,
+    rateLimitId: token.rateLimitId,
+    rateLimitName: token.rateLimitName,
+  }
+}
+
 /** Full payload identity including account rate limits. */
 function fingerprint(
   source: SessionSyncSource | string,
@@ -2265,6 +2751,7 @@ function fingerprint(
   reasoningEffort?: string,
   modelObservedAt?: number,
   turnTiming?: TurnTiming,
+  tokenSourcePath?: string,
 ): string {
   return [
     activityFingerprint(
@@ -2283,7 +2770,34 @@ function fingerprint(
     token?.rateLimits?.sevenDay?.usedPercent ?? '',
     token?.rateLimits?.sevenDay?.resetsAt ?? '',
     token?.rateLimitId ?? '',
+    quotaBucketsFingerprint(token),
+    tokenSourcePath ? normalizePathKey(tokenSourcePath) : '',
   ].join('|')
+}
+
+/**
+ * Builds a stable identity for named account-quota buckets.
+ *
+ * @param token Token payload that may contain multiple quota families.
+ * @returns Order-independent bucket fingerprint.
+ */
+function quotaBucketsFingerprint(token: TokenPayload | undefined): string {
+  return Object.entries(token?.quotaBuckets ?? {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, bucket]) =>
+      [
+        key,
+        bucket.rateLimitId ?? '',
+        bucket.rateLimitName ?? '',
+        bucket.rateLimits?.fiveHour?.usedPercent ?? '',
+        bucket.rateLimits?.fiveHour?.resetsAt ?? '',
+        bucket.rateLimits?.fiveHour?.windowMinutes ?? '',
+        bucket.rateLimits?.sevenDay?.usedPercent ?? '',
+        bucket.rateLimits?.sevenDay?.resetsAt ?? '',
+        bucket.rateLimits?.sevenDay?.windowMinutes ?? '',
+      ].join(':'),
+    )
+    .join(',')
 }
 
 /**
@@ -2310,6 +2824,9 @@ function activityFingerprint(
     reasoningEffort ?? '',
     modelObservedAt ?? '',
     turnTiming?.state ?? '',
+    turnTiming?.externalTurnId ?? '',
+    turnTiming?.canEndActiveTurn ?? '',
+    turnTiming?.outcome ?? '',
     turnTiming?.startedAt ?? '',
     turnTiming?.elapsedMs ?? '',
     turnTiming?.observedAt ?? '',
@@ -2417,8 +2934,4 @@ function normalizeEpochMilliseconds(value: unknown): number | undefined {
 
 function normalizePathKey(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }

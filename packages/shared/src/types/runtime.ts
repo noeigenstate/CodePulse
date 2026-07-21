@@ -23,7 +23,7 @@ export interface AgentRuntimeState {
   state: TurnState
   /** agent 分配的会话 id（如已知）。 */
   externalSessionId?: string
-  /** agent 分配的轮次 id（如已知）。 */
+  /** agent 分配给当前用户可见根轮次的 id（如已知）。 */
   externalTurnId?: string
   /** agent 正在工作的工作区路径。 */
   workspacePath?: string

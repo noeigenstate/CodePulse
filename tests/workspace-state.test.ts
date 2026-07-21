@@ -159,6 +159,250 @@ test('StatusHub ignores a stale native timing snapshot after a newer prompt hook
   })
 })
 
+test('StatusHub keeps the root turn identity when a stale foreign timing is rejected', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const notifications: NotificationRequest[] = []
+  hub.on('notification', (notification) => notifications.push(notification))
+
+  hub.ingest({
+    id: 'root-prompt',
+    source: 'codex',
+    eventType: 'prompt_submit',
+    externalSessionId: 'timing-identity-session',
+    externalTurnId: 'root-a',
+    cwd: 'E:/project/timing-identity',
+    timestamp: 2_000,
+  })
+  hub.ingest({
+    id: 'root-stop',
+    source: 'codex',
+    eventType: 'turn_stop',
+    externalSessionId: 'timing-identity-session',
+    externalTurnId: 'root-a',
+    cwd: 'E:/project/timing-identity',
+    timestamp: 3_000,
+  })
+  const completedTiming = hub
+    .snapshot()
+    .agents.find((agent) => agent.agentType === 'codex')?.turnTiming
+
+  hub.ingest({
+    id: 'stale-foreign-active',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'timing-identity-session',
+    externalTurnId: 'nested-b',
+    cwd: 'E:/project/timing-identity',
+    timestamp: 4_000,
+    turnTiming: {
+      state: 'active',
+      externalTurnId: 'nested-b',
+      startedAt: 1_000,
+      observedAt: 1_000,
+    },
+    internal: { sessionSync: true },
+  })
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.state, TurnState.DONE)
+  assert.equal(codex?.externalTurnId, 'root-a')
+  assert.deepEqual(codex?.turnTiming, completedTiming)
+  assert.equal(notifications.length, 1)
+})
+
+test('StatusHub does not let an unpaired Claude duration end an active turn', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const notifications: NotificationRequest[] = []
+  hub.on('notification', (notification) => notifications.push(notification))
+
+  hub.ingest({
+    id: 'claude-prompt',
+    source: 'claude_code',
+    eventType: 'prompt_submit',
+    externalSessionId: 'claude-unpaired-session',
+    cwd: 'E:/project/claude-unpaired',
+    timestamp: 10_000,
+  })
+  hub.ingest({
+    id: 'claude-unpaired-duration',
+    source: 'claude_code',
+    eventType: 'token_snapshot',
+    externalSessionId: 'claude-unpaired-session',
+    cwd: 'E:/project/claude-unpaired',
+    timestamp: 20_000,
+    turnTiming: {
+      state: 'completed',
+      canEndActiveTurn: false,
+      elapsedMs: 592_873,
+      observedAt: 19_000,
+    },
+    internal: { sessionSync: true },
+  })
+
+  const claude = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
+  assert.equal(claude?.state, TurnState.PROMPT_SUBMITTED)
+  assert.deepEqual(claude?.turnTiming, {
+    state: 'active',
+    startedAt: 10_000,
+    observedAt: 10_000,
+  })
+  assert.equal(notifications.length, 0)
+})
+
+test('StatusHub does not let a late task ID claim an ID-less root prompt', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const notifications: NotificationRequest[] = []
+  hub.on('notification', (notification) => notifications.push(notification))
+
+  hub.ingest({
+    id: 'idless-root-prompt',
+    source: 'grok',
+    eventType: 'prompt_submit',
+    externalSessionId: 'idless-native-session',
+    cwd: 'E:/project/idless-native',
+    timestamp: 10_000,
+  })
+  hub.ingest({
+    id: 'nested-native-completion',
+    source: 'grok',
+    eventType: 'token_snapshot',
+    externalSessionId: 'idless-native-session',
+    externalTurnId: 'nested-b',
+    cwd: 'E:/project/idless-native',
+    timestamp: 11_100,
+    turnTiming: {
+      state: 'completed',
+      externalTurnId: 'nested-b',
+      startedAt: 10_000,
+      elapsedMs: 1_000,
+      observedAt: 11_000,
+    },
+    internal: { sessionSync: true },
+  })
+
+  const grok = hub.snapshot().agents.find((agent) => agent.agentType === 'grok')
+  assert.equal(grok?.state, TurnState.PROMPT_SUBMITTED)
+  assert.equal(grok?.externalTurnId, undefined)
+  assert.equal(notifications.length, 0)
+})
+
+test('StatusHub accepts only the matching native completion for an active root turn', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const notifications: NotificationRequest[] = []
+  hub.on('notification', (notification) => notifications.push(notification))
+
+  const base = {
+    source: 'grok' as const,
+    externalSessionId: 'grok-root-session',
+    cwd: 'E:/project/grok-root',
+  }
+  hub.ingest({
+    ...base,
+    id: 'root-prompt',
+    eventType: 'prompt_submit',
+    externalTurnId: 'root-a',
+    timestamp: 10_000,
+  })
+  hub.ingest({
+    ...base,
+    id: 'nested-completion',
+    eventType: 'token_snapshot',
+    externalTurnId: 'nested-b',
+    timestamp: 12_000,
+    turnTiming: {
+      state: 'completed',
+      externalTurnId: 'nested-b',
+      startedAt: 10_500,
+      elapsedMs: 1_000,
+      observedAt: 11_500,
+    },
+    internal: { sessionSync: true },
+  })
+
+  let grok = hub.snapshot().agents.find((agent) => agent.agentType === 'grok')
+  assert.equal(grok?.state, TurnState.PROMPT_SUBMITTED)
+  assert.equal(grok?.externalTurnId, 'root-a')
+  assert.equal(notifications.length, 0)
+
+  hub.ingest({
+    ...base,
+    id: 'anonymous-completion',
+    eventType: 'token_snapshot',
+    timestamp: 12_500,
+    turnTiming: {
+      state: 'completed',
+      startedAt: 11_000,
+      elapsedMs: 1_000,
+      observedAt: 12_000,
+    },
+    internal: { sessionSync: true },
+  })
+  grok = hub.snapshot().agents.find((agent) => agent.agentType === 'grok')
+  assert.equal(grok?.state, TurnState.PROMPT_SUBMITTED)
+  assert.equal(grok?.externalTurnId, 'root-a')
+  assert.equal(notifications.length, 0)
+
+  hub.ingest({
+    ...base,
+    id: 'root-completion',
+    eventType: 'token_snapshot',
+    externalTurnId: 'root-a',
+    timestamp: 13_000,
+    turnTiming: {
+      state: 'completed',
+      externalTurnId: 'root-a',
+      startedAt: 10_000,
+      elapsedMs: 2_500,
+      observedAt: 12_500,
+    },
+    internal: { sessionSync: true },
+  })
+
+  grok = hub.snapshot().agents.find((agent) => agent.agentType === 'grok')
+  assert.equal(grok?.state, TurnState.DONE)
+  assert.equal(notifications.length, 1)
+})
+
+test('StatusHub accepts a delayed native terminal snapshot for the matching root ID', () => {
+  for (const outcome of ['completed', 'cancelled'] as const) {
+    const hub = new StatusHub({ sessionThrottleMs: 0 })
+    const notifications: NotificationRequest[] = []
+    hub.on('notification', (notification) => notifications.push(notification))
+
+    hub.ingest({
+      id: `${outcome}-prompt`,
+      source: 'codex',
+      eventType: 'prompt_submit',
+      externalSessionId: `${outcome}-session`,
+      externalTurnId: `${outcome}-root`,
+      cwd: 'E:/project/delayed-terminal',
+      timestamp: 2_000,
+    })
+    hub.ingest({
+      id: `${outcome}-native-terminal`,
+      source: 'codex',
+      eventType: 'token_snapshot',
+      externalSessionId: `${outcome}-session`,
+      externalTurnId: `${outcome}-root`,
+      cwd: 'E:/project/delayed-terminal',
+      timestamp: 2_100,
+      turnTiming: {
+        state: 'completed',
+        externalTurnId: `${outcome}-root`,
+        outcome,
+        startedAt: 1_500,
+        elapsedMs: 490,
+        observedAt: 1_990,
+      },
+      internal: { sessionSync: true },
+    })
+
+    const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.equal(codex?.state, outcome === 'cancelled' ? TurnState.CANCELLED : TurnState.DONE)
+    assert.equal(notifications.length, outcome === 'completed' ? 1 : 0)
+  }
+})
+
 test('StatusHub lets native completion duration refine the same hook-observed turn', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const startedAt = 1_000_000
@@ -296,6 +540,157 @@ test('StatusHub only revives a timeout after a real local-session activity refre
     hub.snapshot().agents.find((agent) => agent.agentType === 'codex')?.state,
     TurnState.PROMPT_SUBMITTED,
   )
+})
+
+test('StatusHub does not let a foreign task take over after the root times out', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const notifications: NotificationRequest[] = []
+  hub.on('notification', (notification) => notifications.push(notification))
+  const startedAt = 1_000_000
+  const timeoutAt = startedAt + STUCK_VISIBLE_MS + 1
+
+  hub.ingest({
+    id: 'root-prompt',
+    source: 'codex',
+    eventType: 'prompt_submit',
+    externalSessionId: 'timeout-root-session',
+    externalTurnId: 'root-a',
+    cwd: 'E:/project/timeout-root',
+    timestamp: startedAt,
+  })
+  ;(hub as unknown as { tick(now?: number): void }).tick(timeoutAt)
+
+  hub.ingest({
+    id: 'foreign-active',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'timeout-root-session',
+    externalTurnId: 'nested-b',
+    cwd: 'E:/project/timeout-root',
+    timestamp: timeoutAt + 1,
+    turnTiming: {
+      state: 'active',
+      externalTurnId: 'nested-b',
+      startedAt: timeoutAt + 1,
+      observedAt: timeoutAt + 1,
+    },
+    internal: { sessionSync: true, activityRefresh: true },
+  })
+  hub.ingest({
+    id: 'foreign-completed',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'timeout-root-session',
+    externalTurnId: 'nested-b',
+    cwd: 'E:/project/timeout-root',
+    timestamp: timeoutAt + 2,
+    turnTiming: {
+      state: 'completed',
+      externalTurnId: 'nested-b',
+      startedAt: timeoutAt + 1,
+      elapsedMs: 1_000,
+      observedAt: timeoutAt + 1_001,
+    },
+    internal: { sessionSync: true, activityRefresh: true },
+  })
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.state, TurnState.TIMEOUT)
+  assert.equal(codex?.externalTurnId, 'root-a')
+  assert.equal(notifications.length, 1)
+  assert.equal(notifications[0]?.dedupeKey.startsWith('stuck:'), true)
+
+  hub.ingest({
+    id: 'foreign-session-start',
+    source: 'codex',
+    eventType: 'session_start',
+    externalSessionId: 'timeout-root-session',
+    externalTurnId: 'nested-b',
+    cwd: 'E:/project/timeout-root',
+    timestamp: timeoutAt + 2,
+  })
+  let afterDirectHook = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(afterDirectHook?.state, TurnState.TIMEOUT)
+  assert.equal(afterDirectHook?.externalTurnId, 'root-a')
+
+  hub.ingest({
+    id: 'foreign-tool-start',
+    source: 'codex',
+    eventType: 'tool_start',
+    externalSessionId: 'timeout-root-session',
+    externalTurnId: 'nested-b',
+    cwd: 'E:/project/timeout-root',
+    toolName: 'Agent',
+    timestamp: timeoutAt + 3,
+  })
+  hub.ingest({
+    id: 'foreign-stop',
+    source: 'codex',
+    eventType: 'turn_stop',
+    externalSessionId: 'timeout-root-session',
+    externalTurnId: 'nested-b',
+    cwd: 'E:/project/timeout-root',
+    timestamp: timeoutAt + 4,
+  })
+  afterDirectHook = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(afterDirectHook?.state, TurnState.TOOL_RUNNING)
+  assert.equal(afterDirectHook?.externalTurnId, 'root-a')
+  assert.equal(notifications.length, 1)
+
+  hub.ingest({
+    id: 'root-stop-after-timeout',
+    source: 'codex',
+    eventType: 'turn_stop',
+    externalSessionId: 'timeout-root-session',
+    externalTurnId: 'root-a',
+    cwd: 'E:/project/timeout-root',
+    timestamp: timeoutAt + 5,
+  })
+  afterDirectHook = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(afterDirectHook?.state, TurnState.DONE)
+  assert.equal(notifications.length, 2)
+  assert.equal(notifications[1]?.dedupeKey.startsWith('done:'), true)
+})
+
+test('StatusHub lets fresh matching-root activity recover a timed-out turn', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const notifications: NotificationRequest[] = []
+  hub.on('notification', (notification) => notifications.push(notification))
+  const startedAt = 1_000_000
+  const timeoutAt = startedAt + STUCK_VISIBLE_MS + 1
+
+  hub.ingest({
+    id: 'root-prompt',
+    source: 'codex',
+    eventType: 'prompt_submit',
+    externalSessionId: 'matching-timeout-session',
+    externalTurnId: 'root-a',
+    cwd: 'E:/project/matching-timeout',
+    timestamp: startedAt,
+  })
+  ;(hub as unknown as { tick(now?: number): void }).tick(timeoutAt)
+  hub.ingest({
+    id: 'matching-root-resumed',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'matching-timeout-session',
+    externalTurnId: 'root-a',
+    cwd: 'E:/project/matching-timeout',
+    timestamp: timeoutAt + 1,
+    turnTiming: {
+      state: 'active',
+      externalTurnId: 'root-a',
+      startedAt,
+      observedAt: timeoutAt + 1,
+    },
+    internal: { sessionSync: true, activityRefresh: true },
+  })
+
+  const resumed = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(resumed?.state, TurnState.PROMPT_SUBMITTED)
+  assert.equal(resumed?.externalTurnId, 'root-a')
+  assert.equal(notifications.length, 1)
+  assert.equal(notifications[0]?.dedupeKey.startsWith('stuck:'), true)
 })
 
 test('StatusHub keeps the newest Codex model and thinking-depth snapshot atomic', () => {
@@ -962,6 +1357,8 @@ test('StatusHub expires error, cancelled, and usage-limited projects', () => {
 
 test('StatusHub does not mark long-running tools as TIMEOUT at the visible threshold', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const notifications: NotificationRequest[] = []
+  hub.on('notification', (notification) => notifications.push(notification))
   const startedAt = 1_000_000
 
   hub.ingest({
@@ -988,6 +1385,11 @@ test('StatusHub does not mark long-running tools as TIMEOUT at the visible thres
   ;(hub as unknown as { tick(now?: number): void }).tick(startedAt + STUCK_STRONG_MS + 2_000)
   codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
   assert.equal(codex?.state, TurnState.TIMEOUT)
+  assert.equal(notifications.length, 1)
+  assert.equal(notifications[0]?.level, 'strong')
+  assert.equal(notifications[0]?.dedupeKey.startsWith('stuck:'), true)
+  ;(hub as unknown as { tick(now?: number): void }).tick(startedAt + STUCK_STRONG_MS + 3_000)
+  assert.equal(notifications.length, 1, 'one stuck turn should notify only once')
 })
 
 test('StatusHub keeps permission waits from being marked TIMEOUT by the watchdog', () => {
@@ -1108,7 +1510,7 @@ test('StatusHub marks context snapshots stale at session boundaries', () => {
   assert.equal(updated?.token?.contextStale, false)
 })
 
-test('StatusHub only emits notifications for completed turns', () => {
+test('StatusHub only emits notifications for completed or stuck turns', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0, permissionThrottleMs: 0 })
   const notifications: NotificationRequest[] = []
   hub.on('notification', (notification) => notifications.push(notification))
@@ -1146,7 +1548,7 @@ test('StatusHub only emits notifications for completed turns', () => {
     message: '请帮我修复更新超时并优化下载',
     timestamp: startedAt + 2,
   })
-  ;(hub as unknown as { tick(now?: number): void }).tick(startedAt + STUCK_VISIBLE_MS + 3)
+  ;(hub as unknown as { tick(now?: number): void }).tick(startedAt + STUCK_VISIBLE_MS - 1)
 
   assert.equal(notifications.length, 0)
 
@@ -1173,6 +1575,212 @@ test('StatusHub only emits notifications for completed turns', () => {
   assert.ok(
     [...(notifications[0]?.body ?? '')].filter((ch) => /[\u3400-\u9fff]/u.test(ch)).length <= 15,
   )
+})
+
+test('StatusHub ignores a Codex Stop from a nested turn', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const notifications: NotificationRequest[] = []
+  hub.on('notification', (notification) => notifications.push(notification))
+
+  hub.ingest({
+    id: 'root-prompt',
+    source: 'codex',
+    eventType: 'prompt_submit',
+    externalSessionId: 'nested-session',
+    externalTurnId: 'root-turn',
+    cwd: 'E:/project/nested',
+    timestamp: 1_000,
+  })
+  hub.ingest({
+    id: 'nested-tool',
+    source: 'codex',
+    eventType: 'tool_start',
+    externalSessionId: 'nested-session',
+    externalTurnId: 'nested-turn',
+    cwd: 'E:/project/nested',
+    toolName: 'Agent',
+    timestamp: 1_100,
+  })
+  hub.ingest({
+    id: 'nested-stop',
+    source: 'codex',
+    eventType: 'turn_stop',
+    externalSessionId: 'nested-session',
+    externalTurnId: 'nested-turn',
+    cwd: 'E:/project/nested',
+    timestamp: 1_200,
+  })
+
+  let codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.externalTurnId, 'root-turn')
+  assert.equal(codex?.state, TurnState.TOOL_RUNNING)
+  assert.equal(notifications.length, 0)
+
+  hub.ingest({
+    id: 'root-stop',
+    source: 'codex',
+    eventType: 'turn_stop',
+    externalSessionId: 'nested-session',
+    externalTurnId: 'root-turn',
+    cwd: 'E:/project/nested',
+    timestamp: 1_300,
+  })
+  codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.state, TurnState.DONE)
+  assert.equal(notifications.length, 1)
+})
+
+test('StatusHub does not adopt a nested tool ID after an ID-less prompt', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+
+  hub.ingest({
+    id: 'idless-prompt',
+    source: 'kimi',
+    eventType: 'prompt_submit',
+    externalSessionId: 'idless-session',
+    cwd: 'E:/project/idless',
+    timestamp: 1_000,
+  })
+  hub.ingest({
+    id: 'nested-tool',
+    source: 'kimi',
+    eventType: 'tool_start',
+    externalSessionId: 'idless-session',
+    externalTurnId: 'tool-call-id',
+    cwd: 'E:/project/idless',
+    timestamp: 1_100,
+  })
+
+  const kimi = hub.snapshot().agents.find((agent) => agent.agentType === 'kimi')
+  assert.equal(kimi?.state, TurnState.TOOL_RUNNING)
+  assert.equal(kimi?.externalTurnId, undefined)
+})
+
+test('StatusHub ignores a Stop when no turn is active', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const notifications: NotificationRequest[] = []
+  hub.on('notification', (notification) => notifications.push(notification))
+
+  hub.ingest({
+    id: 'idle-stop',
+    source: 'codex',
+    eventType: 'turn_stop',
+    externalSessionId: 'idle-session',
+    externalTurnId: 'orphan-turn',
+    cwd: 'E:/project/idle',
+    timestamp: 1_000,
+  })
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.state, TurnState.IDLE)
+  assert.equal(notifications.length, 0)
+})
+
+test('StatusHub ignores a delayed duplicate session start during an active turn', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+
+  hub.ingest({
+    id: 'active-prompt',
+    source: 'codex',
+    eventType: 'prompt_submit',
+    externalSessionId: 'active-session',
+    externalTurnId: 'root-turn',
+    cwd: 'E:/project/active',
+    timestamp: 1_000,
+  })
+  hub.ingest({
+    id: 'late-session-start',
+    source: 'codex',
+    eventType: 'session_start',
+    externalSessionId: 'active-session',
+    externalTurnId: 'nested-turn',
+    cwd: 'E:/project/active',
+    timestamp: 1_100,
+  })
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.state, TurnState.PROMPT_SUBMITTED)
+  assert.equal(codex?.externalTurnId, 'root-turn')
+})
+
+test('StatusHub does not turn a stronger terminal result into a completion toast', () => {
+  const terminalEvents = ['turn_error', 'turn_cancelled', 'usage_limited', 'turn_timeout'] as const
+
+  for (const [index, terminalEvent] of terminalEvents.entries()) {
+    const hub = new StatusHub({ sessionThrottleMs: 0 })
+    const notifications: NotificationRequest[] = []
+    hub.on('notification', (notification) => notifications.push(notification))
+    const startedAt = 10_000 + index * 1_000
+
+    hub.ingest({
+      id: `${terminalEvent}-prompt`,
+      source: 'codex',
+      eventType: 'prompt_submit',
+      externalSessionId: `${terminalEvent}-session`,
+      externalTurnId: `${terminalEvent}-turn`,
+      cwd: 'E:/project/terminal',
+      timestamp: startedAt,
+    })
+    hub.ingest({
+      id: terminalEvent,
+      source: 'codex',
+      eventType: terminalEvent,
+      externalSessionId: `${terminalEvent}-session`,
+      externalTurnId: `${terminalEvent}-turn`,
+      cwd: 'E:/project/terminal',
+      timestamp: startedAt + 1,
+    })
+    hub.ingest({
+      id: `${terminalEvent}-late-stop`,
+      source: 'codex',
+      eventType: 'turn_stop',
+      externalSessionId: `${terminalEvent}-session`,
+      externalTurnId: `${terminalEvent}-turn`,
+      cwd: 'E:/project/terminal',
+      timestamp: startedAt + 2,
+    })
+
+    const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.notEqual(codex?.state, TurnState.DONE)
+    assert.equal(
+      notifications.some((notification) => notification.dedupeKey.startsWith('done:')),
+      false,
+    )
+  }
+})
+
+test('StatusHub emits at most one completion notification for one root turn', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const notifications: NotificationRequest[] = []
+  hub.on('notification', (notification) => notifications.push(notification))
+
+  const eventBase = {
+    source: 'codex' as const,
+    externalSessionId: 'dedupe-session',
+    externalTurnId: 'dedupe-turn',
+    cwd: 'E:/project/dedupe',
+  }
+  hub.ingest({
+    ...eventBase,
+    id: 'dedupe-prompt',
+    eventType: 'prompt_submit',
+    timestamp: 1_000,
+  })
+  hub.ingest({ ...eventBase, id: 'dedupe-stop-1', eventType: 'turn_stop', timestamp: 2_000 })
+  hub.ingest({
+    ...eventBase,
+    id: 'dedupe-resume',
+    eventType: 'tool_start',
+    timestamp: 20 * 60_000,
+  })
+  hub.ingest({
+    ...eventBase,
+    id: 'dedupe-stop-2',
+    eventType: 'turn_stop',
+    timestamp: 20 * 60_000 + 1,
+  })
+
+  assert.equal(notifications.length, 1)
 })
 
 test('StatusHub applies locale changes to subsequent completion notifications', () => {
@@ -1426,6 +2034,47 @@ test('StatusHub marks contextCompressed when occupancy drops sharply on same win
   assert.equal(afterGrow?.token?.contextCompressed, false)
 })
 
+test('StatusHub ignores small context decreases while keeping coupled token fields atomic', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+
+  hub.ingest({
+    id: 'context-high',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'context-session',
+    cwd: 'E:/project/context-stable',
+    timestamp: 100,
+    token: {
+      input: 102_000,
+      total: 104_000,
+      contextUsedPercent: 40,
+      contextWindow: 256_000,
+      accuracy: 'estimated',
+    },
+  })
+  hub.ingest({
+    id: 'context-small-drop',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'context-session',
+    cwd: 'E:/project/context-stable',
+    timestamp: 200,
+    token: {
+      input: 98_000,
+      total: 100_000,
+      contextUsedPercent: 38,
+      contextWindow: 256_000,
+      accuracy: 'estimated',
+    },
+  })
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.token?.contextUsedPercent, 40)
+  assert.equal(codex?.token?.input, 102_000)
+  assert.equal(codex?.token?.total, 104_000)
+  assert.equal(codex?.token?.contextCompressed, undefined)
+})
+
 test('StatusHub rejects switching weekly quota to a different bucket family on partial updates', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const future = Math.floor(Date.now() / 1000) + 86_400
@@ -1551,7 +2200,7 @@ test('StatusHub preserves quota windows when a zero-only token snapshot arrives'
   assert.equal(codex?.token?.rateLimits?.sevenDay?.resetsAt, 9_000)
 })
 
-test('StatusHub accepts zero quota windows when reset metadata is present', () => {
+test('StatusHub accepts lower quota only after five confirmed observations', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
 
   hub.ingest({
@@ -1569,21 +2218,30 @@ test('StatusHub accepts zero quota windows when reset metadata is present', () =
       accuracy: 'estimated',
     },
   })
-  hub.ingest({
-    id: 'zero-quota-token',
-    source: 'codex',
-    eventType: 'token_snapshot',
-    cwd: 'E:/project/a',
-    timestamp: 200,
-    token: {
-      contextUsedPercent: 26,
-      rateLimits: {
-        fiveHour: { usedPercent: 0, resetsAt: 3_000, windowMinutes: 300 },
-        sevenDay: { usedPercent: 0, resetsAt: 10_000, windowMinutes: 10_080 },
+  for (let read = 1; read <= 5; read += 1) {
+    hub.ingest({
+      id: `zero-quota-token-${read}`,
+      source: 'codex',
+      eventType: 'token_snapshot',
+      cwd: 'E:/project/a',
+      timestamp: 200 + read,
+      token: {
+        contextUsedPercent: 26,
+        rateLimits: {
+          fiveHour: { usedPercent: 0, resetsAt: 3_000, windowMinutes: 300 },
+          sevenDay: { usedPercent: 0, resetsAt: 10_000, windowMinutes: 10_080 },
+        },
+        accuracy: 'estimated',
       },
-      accuracy: 'estimated',
-    },
-  })
+      internal: { usageSampleId: `official-reset-${read}` },
+    })
+
+    if (read < 5) {
+      const pending = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+      assert.equal(pending?.token?.rateLimits?.fiveHour?.usedPercent, 33)
+      assert.equal(pending?.token?.rateLimits?.sevenDay?.usedPercent, 7)
+    }
+  }
 
   const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
   assert.equal(codex?.token?.contextUsedPercent, 26)
@@ -1591,6 +2249,158 @@ test('StatusHub accepts zero quota windows when reset metadata is present', () =
   assert.equal(codex?.token?.rateLimits?.fiveHour?.resetsAt, 3_000)
   assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 0)
   assert.equal(codex?.token?.rateLimits?.sevenDay?.resetsAt, 10_000)
+})
+
+test('StatusHub deduplicates fan-out reads and projects confirmed resets to every session', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const highReset = Math.floor(Date.now() / 1000) + 86_400
+  const lowReset = highReset + 7 * 86_400
+
+  hub.ingest({
+    id: 'initial-high',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    timestamp: 100,
+    token: {
+      accuracy: 'estimated',
+      rateLimitId: 'codex',
+      rateLimits: {
+        sevenDay: { usedPercent: 40, resetsAt: highReset, windowMinutes: 10_080 },
+      },
+    },
+  })
+
+  for (let project = 0; project < 5; project += 1) {
+    hub.ingest({
+      id: `fan-out-${project}`,
+      source: 'codex',
+      eventType: 'token_snapshot',
+      externalSessionId: `session-${project + 2}`,
+      cwd: `E:/project/${project + 2}`,
+      timestamp: 200 + project,
+      token: {
+        accuracy: 'estimated',
+        rateLimitId: 'codex',
+        rateLimits: {
+          sevenDay: { usedPercent: 3, resetsAt: lowReset, windowMinutes: 10_080 },
+        },
+      },
+      internal: { usageSampleId: 'one-account-read' },
+    })
+  }
+  assert.ok(
+    hub.snapshot().agents.every((agent) => agent.token?.rateLimits?.sevenDay?.usedPercent === 40),
+  )
+
+  for (let read = 2; read <= 5; read += 1) {
+    hub.ingest({
+      id: `confirmed-low-${read}`,
+      source: 'codex',
+      eventType: 'token_snapshot',
+      externalSessionId: 'session-a',
+      cwd: 'E:/project/a',
+      timestamp: 300 + read,
+      token: {
+        accuracy: 'estimated',
+        rateLimitId: 'codex',
+        rateLimits: {
+          sevenDay: { usedPercent: 3, resetsAt: lowReset, windowMinutes: 10_080 },
+        },
+      },
+      internal: { usageSampleId: `account-read-${read}` },
+    })
+  }
+
+  const agents = hub.snapshot().agents.filter((agent) => agent.agentType === 'codex')
+  assert.ok(agents.length > 1)
+  assert.ok(agents.every((agent) => agent.token?.rateLimits?.sevenDay?.usedPercent === 3))
+  assert.ok(agents.every((agent) => agent.token?.rateLimits?.sevenDay?.resetsAt === lowReset))
+})
+
+test('StatusHub emits an account observation only when its accepted quota changes', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const firstReset = Math.floor(Date.now() / 1000) + 86_400
+  const nextReset = firstReset + 7 * 86_400
+  hub.ingest({
+    id: 'quota-seed',
+    source: 'kimi',
+    eventType: 'token_snapshot',
+    externalSessionId: 'kimi-session',
+    cwd: 'E:/project/kimi',
+    timestamp: 100,
+    token: {
+      accuracy: 'exact',
+      rateLimits: {
+        sevenDay: { usedPercent: 80, resetsAt: firstReset, windowMinutes: 10_080 },
+      },
+    },
+  })
+
+  let emittedStatuses = 0
+  hub.on('status', () => {
+    emittedStatuses += 1
+  })
+  for (let read = 1; read <= 5; read += 1) {
+    const changed = hub.observeQuota({
+      id: `quota-observation-${read}`,
+      source: 'kimi',
+      eventType: 'token_snapshot',
+      externalSessionId: 'kimi-session',
+      cwd: 'E:/project/kimi',
+      timestamp: 200 + read,
+      token: {
+        accuracy: 'exact',
+        rateLimits: {
+          sevenDay: { usedPercent: 4, resetsAt: nextReset, windowMinutes: 10_080 },
+        },
+      },
+      internal: {
+        quotaRefresh: true,
+        usageSampleId: `quota-observation-${read}`,
+      },
+    })
+    assert.equal(changed, read === 5)
+  }
+
+  const kimi = hub.snapshot().agents.find((agent) => agent.agentType === 'kimi')
+  assert.equal(kimi?.token?.rateLimits?.sevenDay?.usedPercent, 4)
+  assert.equal(emittedStatuses, 1)
+})
+
+test('StatusHub restarts lower-quota confirmation after an equal reading', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const resetAt = Math.floor(Date.now() / 1000) + 86_400
+
+  const ingestUsage = (id: string, usedPercent: number): void => {
+    hub.ingest({
+      id,
+      source: 'claude_code',
+      eventType: 'token_snapshot',
+      externalSessionId: 'claude-session',
+      cwd: 'E:/project/claude',
+      timestamp: 100,
+      token: {
+        accuracy: 'exact',
+        rateLimits: {
+          sevenDay: { usedPercent, resetsAt: resetAt, windowMinutes: 10_080 },
+        },
+      },
+      internal: { usageSampleId: id },
+    })
+  }
+
+  ingestUsage('seed-50', 50)
+  for (let read = 1; read <= 4; read += 1) ingestUsage(`first-low-${read}`, 5)
+  ingestUsage('equal-breaks-streak', 50)
+  for (let read = 1; read <= 4; read += 1) ingestUsage(`second-low-${read}`, 6)
+
+  let claude = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
+  assert.equal(claude?.token?.rateLimits?.sevenDay?.usedPercent, 50)
+  ingestUsage('second-low-5', 6)
+  claude = hub.snapshot().agents.find((agent) => agent.agentType === 'claude_code')
+  assert.equal(claude?.token?.rateLimits?.sevenDay?.usedPercent, 6)
 })
 
 test('StatusHub keeps Codex quota buckets separated by limit id', () => {
@@ -1636,6 +2446,96 @@ test('StatusHub keeps Codex quota buckets separated by limit id', () => {
   assert.equal(codex?.token?.rateLimits?.fiveHour?.usedPercent, 2)
   assert.equal(codex?.token?.quotaBuckets?.codex?.rateLimits?.fiveHour?.usedPercent, 78)
   assert.equal(codex?.token?.quotaBuckets?.codex_bengalfox?.rateLimits?.fiveHour?.usedPercent, 2)
+})
+
+test('StatusHub does not refresh a quota bucket timestamp from an older window', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const capturedAt = Date.now()
+  const nowSeconds = Math.floor(capturedAt / 1000)
+
+  hub.ingest({
+    id: 'new-quota-window',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    model: 'gpt-5.5',
+    timestamp: capturedAt,
+    token: {
+      rateLimitId: 'codex',
+      rateLimits: {
+        sevenDay: {
+          usedPercent: 5,
+          resetsAt: nowSeconds + 6 * 86_400,
+          windowMinutes: 10_080,
+        },
+      },
+      accuracy: 'estimated',
+    },
+  })
+  hub.ingest({
+    id: 'stale-quota-window',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    model: 'gpt-5.5',
+    timestamp: capturedAt + 1_000,
+    token: {
+      rateLimitId: 'codex',
+      rateLimits: {
+        sevenDay: {
+          usedPercent: 82,
+          resetsAt: nowSeconds + 86_400,
+          windowMinutes: 10_080,
+        },
+      },
+      accuracy: 'estimated',
+    },
+  })
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  const bucket = codex?.token?.quotaBuckets?.codex
+  assert.equal(bucket?.rateLimits?.sevenDay?.usedPercent, 5)
+  assert.equal(bucket?.rateLimits?.sevenDay?.resetsAt, nowSeconds + 6 * 86_400)
+  assert.equal(bucket?.updatedAt, capturedAt)
+})
+
+test('StatusHub treats small quota reset drift as the same weekly window', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const futureSeconds = Math.floor(Date.now() / 1000) + 6 * 86_400
+  // One second below a five-minute rounding boundary reproduces the old false period split.
+  const resetAt = Math.floor(futureSeconds / 300) * 300 + 149
+
+  for (const [id, usedPercent, driftSeconds, timestamp] of [
+    ['high-usage', 35, 0, 100],
+    ['clock-drift-higher', 36, -30, 200],
+    ['clock-drift-low', 2, 2, 300],
+  ] as const) {
+    hub.ingest({
+      id,
+      source: 'codex',
+      eventType: 'token_snapshot',
+      externalSessionId: 'session-reset-drift',
+      cwd: 'E:/project/reset-drift',
+      timestamp,
+      token: {
+        rateLimitId: 'codex',
+        rateLimits: {
+          sevenDay: {
+            usedPercent,
+            resetsAt: resetAt + driftSeconds,
+            windowMinutes: 10_080,
+          },
+        },
+        accuracy: 'estimated',
+      },
+    })
+  }
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 36)
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.resetsAt, resetAt)
 })
 
 test('StatusHub keeps previous token data at session boundaries until a new snapshot arrives', () => {
@@ -2085,6 +2985,211 @@ test('collectQuotaMeters prefers higher same-window weekly % over active stale s
           rateLimitId: 'codex',
           rateLimits: {
             sevenDay: { usedPercent: 35, resetsAt: future, windowMinutes: 10_080 },
+          },
+        },
+      },
+    ],
+    'codex',
+  )
+
+  assert.equal(meters[0]?.token.rateLimits?.sevenDay?.usedPercent, 35)
+})
+
+test('collectQuotaMeters prefers a newer weekly period over an older high percentage', () => {
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  const meters = collectQuotaMeters(
+    [
+      {
+        agentType: 'codex',
+        state: TurnState.TOOL_RUNNING,
+        toolCallCount: 1,
+        needPermission: false,
+        needUserInput: false,
+        activity: 'running',
+        lastEventAt: 200,
+        unread: false,
+        workspacePath: 'E:/work/old-period',
+        model: 'gpt-5.3-codex',
+        token: {
+          accuracy: 'estimated',
+          rateLimitId: 'codex',
+          rateLimits: {
+            sevenDay: {
+              usedPercent: 82,
+              resetsAt: nowSeconds + 86_400,
+              windowMinutes: 10_080,
+            },
+          },
+        },
+      },
+      {
+        agentType: 'codex',
+        state: TurnState.IDLE,
+        toolCallCount: 0,
+        needPermission: false,
+        needUserInput: false,
+        lastEventAt: 100,
+        unread: false,
+        workspacePath: 'E:/work/new-period',
+        model: 'gpt-5.3-codex',
+        token: {
+          accuracy: 'estimated',
+          rateLimitId: 'codex',
+          rateLimits: {
+            sevenDay: {
+              usedPercent: 5,
+              resetsAt: nowSeconds + 6 * 86_400,
+              windowMinutes: 10_080,
+            },
+          },
+        },
+      },
+    ],
+    'codex',
+  )
+
+  assert.equal(meters.length, 1)
+  assert.equal(meters[0]?.id, 'codex')
+  assert.equal(meters[0]?.token.rateLimits?.sevenDay?.usedPercent, 5)
+})
+
+test('collectQuotaMeters absorbs minor reset drift within one weekly period', () => {
+  const futureSeconds = Math.floor(Date.now() / 1000) + 6 * 86_400
+  // Straddle the old Math.round(... / 5 minutes) boundary by only two seconds.
+  const resetAt = Math.floor(futureSeconds / 300) * 300 + 149
+  const meters = collectQuotaMeters(
+    [
+      {
+        agentType: 'codex',
+        state: TurnState.IDLE,
+        toolCallCount: 0,
+        needPermission: false,
+        needUserInput: false,
+        lastEventAt: 100,
+        unread: false,
+        workspacePath: 'E:/work/reset-drift-high',
+        model: 'gpt-5.3-codex',
+        token: {
+          accuracy: 'estimated',
+          rateLimitId: 'codex',
+          rateLimits: {
+            sevenDay: { usedPercent: 35, resetsAt: resetAt, windowMinutes: 10_080 },
+          },
+        },
+      },
+      {
+        agentType: 'codex',
+        state: TurnState.IDLE,
+        toolCallCount: 0,
+        needPermission: false,
+        needUserInput: false,
+        lastEventAt: 200,
+        unread: false,
+        workspacePath: 'E:/work/reset-drift-low',
+        model: 'gpt-5.3-codex',
+        token: {
+          accuracy: 'estimated',
+          rateLimitId: 'codex',
+          rateLimits: {
+            sevenDay: { usedPercent: 2, resetsAt: resetAt + 2, windowMinutes: 10_080 },
+          },
+        },
+      },
+    ],
+    'codex',
+  )
+
+  assert.equal(meters[0]?.token.rateLimits?.sevenDay?.usedPercent, 35)
+})
+
+test('collectQuotaMeters keeps a soft-reset zero over an expired same-period high', () => {
+  const expiredReset = Math.floor(Date.now() / 1000) - 60
+  const meters = collectQuotaMeters(
+    [
+      {
+        agentType: 'codex',
+        state: TurnState.TOOL_RUNNING,
+        toolCallCount: 1,
+        needPermission: false,
+        needUserInput: false,
+        activity: 'running',
+        lastEventAt: 200,
+        unread: false,
+        workspacePath: 'E:/work/pre-reset-stale',
+        model: 'gpt-5.3-codex',
+        token: {
+          accuracy: 'estimated',
+          rateLimitId: 'codex',
+          rateLimits: {
+            sevenDay: { usedPercent: 82, resetsAt: expiredReset, windowMinutes: 10_080 },
+          },
+        },
+      },
+      {
+        agentType: 'codex',
+        state: TurnState.IDLE,
+        toolCallCount: 0,
+        needPermission: false,
+        needUserInput: false,
+        lastEventAt: 100,
+        unread: false,
+        workspacePath: 'E:/work/post-reset-zero',
+        model: 'gpt-5.3-codex',
+        token: {
+          accuracy: 'estimated',
+          rateLimitId: 'codex',
+          rateLimits: {
+            sevenDay: { usedPercent: 0, resetsAt: expiredReset, windowMinutes: 10_080 },
+          },
+        },
+      },
+    ],
+    'codex',
+  )
+
+  assert.equal(meters[0]?.token.rateLimits?.sevenDay?.usedPercent, 0)
+})
+
+test('collectQuotaMeters ignores hidden five-hour resets when choosing Codex weekly usage', () => {
+  const weeklyReset = Math.floor(Date.now() / 1000) + 30 * 60
+  const meters = collectQuotaMeters(
+    [
+      {
+        agentType: 'codex',
+        state: TurnState.TOOL_RUNNING,
+        toolCallCount: 1,
+        needPermission: false,
+        needUserInput: false,
+        activity: 'running',
+        lastEventAt: 200,
+        unread: false,
+        workspacePath: 'E:/work/five-hour-noise',
+        model: 'gpt-5.3-codex',
+        token: {
+          accuracy: 'estimated',
+          rateLimitId: 'codex',
+          rateLimits: {
+            fiveHour: { usedPercent: 1, resetsAt: weeklyReset + 4 * 3_600 },
+            sevenDay: { usedPercent: 2, resetsAt: weeklyReset, windowMinutes: 10_080 },
+          },
+        },
+      },
+      {
+        agentType: 'codex',
+        state: TurnState.IDLE,
+        toolCallCount: 0,
+        needPermission: false,
+        needUserInput: false,
+        lastEventAt: 100,
+        unread: false,
+        workspacePath: 'E:/work/weekly-authoritative',
+        model: 'gpt-5.3-codex',
+        token: {
+          accuracy: 'estimated',
+          rateLimitId: 'codex',
+          rateLimits: {
+            fiveHour: { usedPercent: 1, resetsAt: weeklyReset + 60 * 60 },
+            sevenDay: { usedPercent: 35, resetsAt: weeklyReset, windowMinutes: 10_080 },
           },
         },
       },

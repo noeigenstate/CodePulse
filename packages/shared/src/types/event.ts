@@ -45,7 +45,7 @@ export interface AgentEvent {
 
   /** agent 分配的会话 id（如有）。 */
   externalSessionId?: string
-  /** agent 分配的轮次 id（如有）。 */
+  /** agent 分配给该事件的轮次 id；工具/子任务可能不同于用户根轮次。 */
   externalTurnId?: string
   /** agent 上报的工作区路径。 */
   workspacePath?: string
@@ -86,6 +86,8 @@ export interface AgentEvent {
   internal?: {
     /** Token-only quota refreshes must not update project recency or runtime model. */
     quotaRefresh?: boolean
+    /** Stable identifier shared by quota events fanned out from one source read. */
+    usageSampleId?: string
     /**
      * Disk session scan on app open / interval. Updates project lastEventAt when
      * activity changes so background CLI tasks appear without waiting for a hook.

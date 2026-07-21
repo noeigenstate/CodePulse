@@ -41,7 +41,8 @@ export function fromGrokHook(raw: unknown): AgentEventInput | null {
     source: 'grok',
     eventType,
     externalSessionId: pickString(r, 'session_id', 'sessionId'),
-    externalTurnId: pickString(r, 'turn_id', 'turnId', 'toolUseId', 'tool_use_id'),
+    // Tool-use IDs identify one tool call, not the user-visible conversation turn.
+    externalTurnId: pickString(r, 'turn_id', 'turnId'),
     cwd: pickString(r, 'cwd'),
     workspacePath: pickString(
       r,

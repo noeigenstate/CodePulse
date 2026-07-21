@@ -69,6 +69,8 @@ export interface TransitionResult {
 export function reduce(current: AgentRuntimeState, event: AgentEvent): TransitionResult {
   const previousState = current.state
   const tokenOnlyQuotaRefresh = event.internal?.quotaRefresh === true
+  const deferSynchronizedTurnIdentity =
+    !tokenOnlyQuotaRefresh && event.internal?.sessionSync === true && event.turnTiming != null
   const next: AgentRuntimeState = {
     ...current,
     lastEventAt:
@@ -80,7 +82,9 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
   // 继承事件经常刷新的上下文字段。
   if (!tokenOnlyQuotaRefresh) {
     if (event.externalSessionId) next.externalSessionId = event.externalSessionId
-    if (event.externalTurnId) next.externalTurnId = event.externalTurnId
+    if (!deferSynchronizedTurnIdentity && shouldAdoptExternalTurnId(current, event)) {
+      next.externalTurnId = event.externalTurnId
+    }
     // Prefer the project root over tool-hook subdirectory cwd values.
     const incomingWorkspace = event.workspacePath ?? event.cwd
     if (incomingWorkspace) {
@@ -91,6 +95,15 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
   const acceptedTurnTiming = tokenOnlyQuotaRefresh
     ? undefined
     : applyTurnTimingSnapshot(current, next, event)
+  if (deferSynchronizedTurnIdentity && acceptedTurnTiming?.externalTurnId) {
+    const acceptedIdentityEvent = {
+      ...event,
+      externalTurnId: acceptedTurnTiming.externalTurnId,
+    }
+    if (shouldAdoptExternalTurnId(current, acceptedIdentityEvent)) {
+      next.externalTurnId = acceptedTurnTiming.externalTurnId
+    }
+  }
   if (event.token) {
     // Use the accepted runtime model, not the raw event model. A stale rollout
     // snapshot must not affect quota-family selection after it was rejected above.
@@ -108,6 +121,8 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
 
   switch (event.eventType) {
     case 'session_start':
+      // Duplicate or delayed startup hooks must not erase an in-flight turn.
+      if (isActiveState(current.state) || current.state === TurnState.TIMEOUT) break
       next.state = TurnState.IDLE
       next.unread = false
       // Count idle retention from first sighting so disk-hydrated cards expire in 5 min.
@@ -118,6 +133,9 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
 
     case 'prompt_submit':
       next.state = TurnState.PROMPT_SUBMITTED
+      // The prompt turn is the user-visible root turn. Tool/subagent events may
+      // carry different turn IDs and must not replace this completion anchor.
+      next.externalTurnId = event.externalTurnId
       applyPromptTiming(next, acceptedTurnTiming, event.timestamp)
       next.toolCallCount = 0
       next.needPermission = false
@@ -161,6 +179,10 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       break
 
     case 'turn_stop':
+      // A Stop for a nested/different turn does not complete the user's root
+      // turn. Likewise, a late Stop must not overwrite error, cancel, limit, or
+      // timeout states with a misleading successful completion.
+      if (!isActiveState(current.state) || isForeignTurnEvent(current, event)) break
       next.state = TurnState.DONE
       next.turnStartedAt = undefined
       next.turnTiming = completeTurnTiming(current, acceptedTurnTiming, event.timestamp)
@@ -174,6 +196,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       break
 
     case 'turn_error':
+      if (isForeignTurnEvent(current, event)) break
       next.state = TurnState.ERROR
       next.turnStartedAt = undefined
       next.turnTiming = completeTurnTiming(current, acceptedTurnTiming, event.timestamp)
@@ -183,6 +206,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       break
 
     case 'turn_cancelled':
+      if (isForeignTurnEvent(current, event)) break
       next.state = TurnState.CANCELLED
       next.turnStartedAt = undefined
       next.turnTiming = completeTurnTiming(current, acceptedTurnTiming, event.timestamp)
@@ -207,6 +231,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       break
 
     case 'usage_limited':
+      if (isForeignTurnEvent(current, event)) break
       next.state = TurnState.USAGE_LIMITED
       next.turnStartedAt = undefined
       next.turnTiming = completeTurnTiming(current, acceptedTurnTiming, event.timestamp)
@@ -226,6 +251,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       break
 
     case 'session_end':
+      if (isForeignTurnEvent(current, event)) break
       next.state = TurnState.IDLE
       next.turnStartedAt = undefined
       next.turnTiming = completeTurnTiming(current, acceptedTurnTiming, event.timestamp)
@@ -251,6 +277,63 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
 }
 
 /**
+ * Decides whether an event may replace the user-visible root turn identifier.
+ *
+ * Codex gives nested tool/subagent work its own turn IDs while retaining the
+ * parent session ID. Once a prompt establishes the root turn, those nested IDs
+ * must not replace it; otherwise a nested Stop can look like root completion.
+ * A new activity event may establish a turn after a terminal state when the
+ * corresponding prompt hook was missed.
+ *
+ * @param current Runtime state before the event.
+ * @param event Incoming normalized lifecycle event.
+ * @returns Whether `event.externalTurnId` should become the runtime turn ID.
+ */
+function shouldAdoptExternalTurnId(current: AgentRuntimeState, event: AgentEvent): boolean {
+  const incoming = event.externalTurnId
+  if (!incoming) return false
+  if (event.eventType === 'prompt_submit') return true
+  // A timed-out turn retains its root identity until an explicit new prompt.
+  // Nested activity may prove liveness, but it cannot claim the root turn.
+  if (current.state === TurnState.TIMEOUT) return incoming === current.externalTurnId
+  if (event.eventType === 'session_start') return !isActiveState(current.state)
+  if (incoming === current.externalTurnId) return true
+  // During an already-active turn, a late tool/subagent event cannot safely
+  // establish or replace the root identity. After a terminal state, fresh
+  // activity may establish a new turn when its prompt hook was missed.
+  return !isActiveState(current.state) && isTurnActivityEvent(event)
+}
+
+/**
+ * Reports whether an event proves that a turn is actively progressing.
+ *
+ * @param event Incoming normalized event.
+ * @returns `true` for lifecycle events that start or continue active work.
+ */
+function isTurnActivityEvent(event: AgentEvent): boolean {
+  return (
+    event.eventType === 'prompt_submit' ||
+    event.eventType === 'tool_start' ||
+    event.eventType === 'tool_end' ||
+    event.eventType === 'permission_request' ||
+    event.eventType === 'user_input_required' ||
+    (event.eventType === 'token_snapshot' && event.turnTiming?.state === 'active')
+  )
+}
+
+/**
+ * Detects a terminal event belonging to nested work rather than the root turn.
+ *
+ * @param current Runtime state anchored to the latest user prompt turn.
+ * @param event Candidate terminal event.
+ * @returns `true` when both IDs exist and identify different turns.
+ */
+function isForeignTurnEvent(current: AgentRuntimeState, event: AgentEvent): boolean {
+  if (!current.externalTurnId && !event.externalTurnId) return false
+  return current.externalTurnId !== event.externalTurnId
+}
+
+/**
  * Applies a timestamped native CLI timing snapshot when it is newer than the
  * timing currently held by the runtime. The event timestamp is deliberately
  * not used as the task start because session synchronization is intermittent.
@@ -267,12 +350,35 @@ function applyTurnTimingSnapshot(
 ): TurnTiming | undefined {
   const incoming = sanitizeTurnTiming(event.turnTiming)
   if (!incoming) return undefined
+  if (
+    event.internal?.sessionSync === true &&
+    !canSynchronizedCompletionEndActiveTurn(current, incoming)
+  ) {
+    return undefined
+  }
+  if (
+    event.internal?.sessionSync === true &&
+    isForeignTurnTiming(current, incoming) &&
+    (isActiveState(current.state) ||
+      current.state === TurnState.TIMEOUT ||
+      incoming.state !== 'active')
+  ) {
+    return undefined
+  }
+  if (
+    current.state === TurnState.TIMEOUT &&
+    incoming.state === 'active' &&
+    !canRecoverTimedOutTurnFromFreshSync(current, event, incoming)
+  ) {
+    return undefined
+  }
 
   const existingObservedAt = current.turnTiming?.observedAt ?? current.turnStartedAt
   if (
     existingObservedAt != null &&
     incoming.observedAt < existingObservedAt &&
     !isNativeCompletionForCurrentTurn(current.turnTiming, incoming) &&
+    !isIdentifiedCompletionForActiveRoot(current, incoming) &&
     !canRecoverTimedOutTurnFromFreshSync(current, event, incoming)
   ) {
     return undefined
@@ -288,6 +394,62 @@ function applyTurnTimingSnapshot(
   next.turnTiming = incoming
   next.turnStartedAt = incoming.state === 'active' ? incoming.startedAt : undefined
   return incoming
+}
+
+/** Maximum start-time drift accepted when a CLI exposes no stable turn ID. */
+const SYNCHRONIZED_START_MATCH_TOLERANCE_MS = 5_000
+
+/**
+ * Verifies that a native terminal snapshot belongs to the visible active turn.
+ *
+ * A stable root ID is authoritative. For older CLIs without IDs, the native
+ * start must closely match the prompt start. Ambiguous or explicitly unsafe
+ * durations remain displayable while idle but cannot trigger a notification.
+ *
+ * @param current Runtime state anchored to the visible turn.
+ * @param incoming Sanitized native timing snapshot.
+ * @returns Whether the snapshot may drive an active-to-terminal transition.
+ */
+function canSynchronizedCompletionEndActiveTurn(
+  current: AgentRuntimeState,
+  incoming: TurnTiming,
+): boolean {
+  if (!isActiveState(current.state) || incoming.state !== 'completed') return true
+  if (incoming.canEndActiveTurn === false) return false
+  if (current.externalTurnId) return incoming.externalTurnId === current.externalTurnId
+  // An ID that appeared only after an ID-less prompt may belong to nested work.
+  // Do not promote it to the root merely because its start time is nearby.
+  if (incoming.externalTurnId) return false
+
+  const currentStartedAt = current.turnStartedAt ?? current.turnTiming?.startedAt
+  return Boolean(
+    currentStartedAt != null &&
+    incoming.startedAt != null &&
+    Math.abs(currentStartedAt - incoming.startedAt) <= SYNCHRONIZED_START_MATCH_TOLERANCE_MS,
+  )
+}
+
+/**
+ * Accepts a delayed native terminal snapshot for the exact active root turn.
+ *
+ * Hook delivery can lag the CLI's persisted completion timestamp by a few
+ * milliseconds. A stable matching turn ID is stronger evidence than timestamp
+ * ordering and prevents the already-finished turn from later timing out.
+ *
+ * @param current Active runtime anchored to a user-visible root turn.
+ * @param incoming Candidate native timing snapshot.
+ * @returns `true` only for an identified completion of that same root turn.
+ */
+function isIdentifiedCompletionForActiveRoot(
+  current: AgentRuntimeState,
+  incoming: TurnTiming,
+): boolean {
+  return Boolean(
+    isActiveState(current.state) &&
+    incoming.state === 'completed' &&
+    current.externalTurnId &&
+    incoming.externalTurnId === current.externalTurnId,
+  )
 }
 
 /**
@@ -307,11 +469,22 @@ function canRecoverTimedOutTurnFromFreshSync(
   event: AgentEvent,
   incoming: TurnTiming,
 ): boolean {
-  return (
-    current.state === TurnState.TIMEOUT &&
-    incoming.state === 'active' &&
-    event.internal?.sessionSync === true &&
-    event.internal.activityRefresh === true
+  if (
+    current.state !== TurnState.TIMEOUT ||
+    incoming.state !== 'active' ||
+    event.internal?.sessionSync !== true ||
+    event.internal.activityRefresh !== true
+  ) {
+    return false
+  }
+  if (current.externalTurnId) return incoming.externalTurnId === current.externalTurnId
+  if (incoming.externalTurnId) return false
+
+  const timedOutStartedAt = current.turnTiming?.startedAt
+  return Boolean(
+    timedOutStartedAt != null &&
+    incoming.startedAt != null &&
+    Math.abs(timedOutStartedAt - incoming.startedAt) <= SYNCHRONIZED_START_MATCH_TOLERANCE_MS,
   )
 }
 
@@ -454,13 +627,14 @@ function reconcileSynchronizedTimingLifecycle(
   }
 
   if (!isActiveState(current.state)) return
-  next.state = TurnState.DONE
+  const cancelled = timing.outcome === 'cancelled'
+  next.state = cancelled ? TurnState.CANCELLED : TurnState.DONE
   next.turnStartedAt = undefined
   next.needPermission = false
   next.needUserInput = false
   next.toolName = undefined
   next.terminalAt = Math.min(event.timestamp, timing.observedAt)
-  next.activity = '本轮任务已完成'
+  next.activity = cancelled ? '任务已取消' : '本轮任务已完成'
   next.unread = true
 }
 
@@ -481,10 +655,34 @@ function sanitizeTurnTiming(timing: TurnTiming | undefined): TurnTiming | undefi
 
   return {
     state: timing.state,
+    ...(typeof timing.externalTurnId === 'string' && timing.externalTurnId.trim()
+      ? { externalTurnId: timing.externalTurnId.trim() }
+      : {}),
+    ...(typeof timing.canEndActiveTurn === 'boolean'
+      ? { canEndActiveTurn: timing.canEndActiveTurn }
+      : {}),
+    ...(timing.outcome === 'completed' || timing.outcome === 'cancelled'
+      ? { outcome: timing.outcome }
+      : {}),
     ...(startedAt !== undefined ? { startedAt } : {}),
     ...(elapsedMs !== undefined ? { elapsedMs } : {}),
     observedAt: timing.observedAt,
   }
+}
+
+/**
+ * Detects native timing for a nested task rather than the visible root turn.
+ *
+ * @param current Runtime state anchored to the latest user prompt.
+ * @param timing Sanitized native CLI timing snapshot.
+ * @returns `true` when both identifiers exist and do not match.
+ */
+function isForeignTurnTiming(current: AgentRuntimeState, timing: TurnTiming): boolean {
+  return Boolean(
+    current.externalTurnId &&
+    timing.externalTurnId &&
+    current.externalTurnId !== timing.externalTurnId,
+  )
 }
 
 /**
@@ -604,6 +802,7 @@ function mergeToken(
   activeModel?: string,
 ): TokenPayload {
   const keepExactContext = current?.accuracy === 'exact' && patch.accuracy !== 'exact'
+  const applyContextSnapshot = !keepExactContext && shouldApplyContextSnapshot(current, patch)
   const next: TokenPayload = {
     ...current,
     accuracy: bestTokenAccuracy(current?.accuracy, patch.accuracy),
@@ -615,20 +814,20 @@ function mergeToken(
 
   // When context is exact, do not let estimated snapshots clobber usage fields either
   // (avoids totals disagreeing with the exact context bar).
-  if (!keepExactContext) {
+  if (!keepExactContext && (!hasContextSnapshot(patch) || applyContextSnapshot)) {
     if (patch.input !== undefined) next.input = patch.input
     if (patch.cachedInput !== undefined) next.cachedInput = patch.cachedInput
     if (patch.output !== undefined) next.output = patch.output
     if (patch.reasoningOutput !== undefined) next.reasoningOutput = patch.reasoningOutput
     if (patch.total !== undefined) next.total = patch.total
   }
-  if (patch.contextUsedPercent !== undefined && !keepExactContext) {
+  if (patch.contextUsedPercent !== undefined && applyContextSnapshot) {
     next.contextUsedPercent = patch.contextUsedPercent
     next.contextCompressed = detectContextCompressed(current, patch)
   }
-  if (patch.contextWindow !== undefined && !keepExactContext)
+  if (patch.contextWindow !== undefined && applyContextSnapshot)
     next.contextWindow = patch.contextWindow
-  if (hasContextSnapshot(patch) && !keepExactContext) next.contextStale = false
+  if (hasContextSnapshot(patch) && applyContextSnapshot) next.contextStale = false
   if (patch.contextStale !== undefined) next.contextStale = patch.contextStale
   if (patch.contextCompressed !== undefined && patch.contextUsedPercent === undefined) {
     next.contextCompressed = patch.contextCompressed
@@ -650,6 +849,62 @@ function mergeToken(
 /** Drop of ≥8pp on the same window size ⇒ treat as CLI context compression. */
 const CONTEXT_COMPRESS_DROP_PP = 8
 
+/**
+ * Decides whether an incoming context snapshot may replace the visible value.
+ *
+ * Context occupancy grows monotonically inside one session. Small decreases are
+ * parser/read-order noise and remain hidden. A large drop on the same window is
+ * treated as CLI context compression, while a material window-size change starts
+ * a new comparison cohort.
+ *
+ * @param current Currently retained token payload.
+ * @param patch Incoming token payload.
+ * @returns Whether context-coupled usage fields may be applied atomically.
+ */
+function shouldApplyContextSnapshot(
+  current: TokenPayload | undefined,
+  patch: TokenPayload,
+): boolean {
+  const nextPercent = patch.contextUsedPercent
+  const currentPercent = current?.contextUsedPercent
+  if (nextPercent === undefined || currentPercent === undefined) return true
+  if (!Number.isFinite(nextPercent) || !Number.isFinite(currentPercent)) return false
+
+  const currentWindow = current?.contextWindow
+  const nextWindow = patch.contextWindow ?? currentWindow
+  if (contextWindowChanged(currentWindow, nextWindow)) return true
+  if (nextPercent >= currentPercent) return true
+  if (patch.contextCompressed === true) return true
+  return nextPercent <= currentPercent - CONTEXT_COMPRESS_DROP_PP
+}
+
+/**
+ * Reports whether two context-window sizes belong to different cohorts.
+ *
+ * @param currentWindow Retained context-window size.
+ * @param nextWindow Incoming context-window size.
+ * @returns Whether the sizes differ by more than five percent.
+ */
+function contextWindowChanged(
+  currentWindow: number | undefined,
+  nextWindow: number | undefined,
+): boolean {
+  return Boolean(
+    currentWindow != null &&
+    nextWindow != null &&
+    currentWindow > 0 &&
+    nextWindow > 0 &&
+    Math.abs(currentWindow - nextWindow) / currentWindow > 0.05,
+  )
+}
+
+/**
+ * Determines whether an accepted context decrease represents compression.
+ *
+ * @param current Previously retained token payload.
+ * @param patch Accepted incoming token payload.
+ * @returns Compression marker for the visible context snapshot.
+ */
 function detectContextCompressed(
   current: TokenPayload | undefined,
   patch: TokenPayload,
@@ -659,17 +914,12 @@ function detectContextCompressed(
   if (prev == null || nextPct == null || !Number.isFinite(prev) || !Number.isFinite(nextPct)) {
     return current?.contextCompressed
   }
+  if (patch.contextCompressed === true) return true
 
   const prevWindow = current?.contextWindow
   const nextWindow = patch.contextWindow ?? prevWindow
   // Window size change (e.g. 256k → 1M) changes % without compact — not compression.
-  if (
-    prevWindow != null &&
-    nextWindow != null &&
-    prevWindow > 0 &&
-    nextWindow > 0 &&
-    Math.abs(prevWindow - nextWindow) / prevWindow > 0.05
-  ) {
+  if (contextWindowChanged(prevWindow, nextWindow)) {
     return false
   }
 
@@ -754,15 +1004,51 @@ function mergeQuotaBucket(
 
   const key = quotaBucketKey(patch.rateLimitId, patch.rateLimitName)
   const existing = current?.[key]
+  const rejectedAsOlder = isStrictlyOlderRateLimitPatch(existing?.rateLimits, patch.rateLimits)
+  const mergedRateLimits = mergeRateLimits(existing?.rateLimits, patch.rateLimits)
+  const quotaChanged = !sameRateLimits(existing?.rateLimits, mergedRateLimits)
   return {
     ...current,
     [key]: {
       rateLimitId: patch.rateLimitId,
       rateLimitName: patch.rateLimitName,
-      rateLimits: mergeRateLimits(existing?.rateLimits, patch.rateLimits),
-      updatedAt: capturedAt,
+      rateLimits: mergedRateLimits,
+      updatedAt: rejectedAsOlder || !quotaChanged ? existing?.updatedAt : capturedAt,
     },
   }
+}
+
+/**
+ * Reports whether every timestamped window in a patch predates its current window.
+ *
+ * An older rollout is allowed through some asynchronous refresh paths, but its
+ * rate limits are rejected by {@link mergeRateLimitWindow}. Keeping the original
+ * bucket timestamp prevents that rejected snapshot from appearing freshly read
+ * to downstream quota selection. Missing reset metadata is treated as
+ * inconclusive so legitimate same-period observations can still refresh time.
+ *
+ * @param current Currently retained quota windows.
+ * @param patch Incoming quota windows from one snapshot.
+ * @returns `true` when the complete comparable patch is strictly older.
+ */
+function isStrictlyOlderRateLimitPatch(
+  current: TokenPayload['rateLimits'],
+  patch: TokenPayload['rateLimits'],
+): boolean {
+  if (!current || !patch) return false
+
+  let compared = false
+  for (const key of ['fiveHour', 'sevenDay'] as const) {
+    const incomingWindow = patch[key]
+    if (!incomingWindow) continue
+    const currentReset = normalizeResetAtMs(current[key]?.resetsAt)
+    const incomingReset = normalizeResetAtMs(incomingWindow.resetsAt)
+    const resetOrder = compareRateLimitResetAt(incomingReset, currentReset)
+    if (resetOrder === undefined) return false
+    compared = true
+    if (resetOrder >= 0) return false
+  }
+  return compared
 }
 
 function quotaBucketKey(
@@ -793,6 +1079,41 @@ function mergeRateLimits(
   }
 }
 
+/**
+ * Compares two rate-limit payloads by their visible rolling-window fields.
+ *
+ * @param left First rate-limit payload.
+ * @param right Second rate-limit payload.
+ * @returns Whether both payloads carry equivalent quota data.
+ */
+function sameRateLimits(
+  left: TokenPayload['rateLimits'],
+  right: TokenPayload['rateLimits'],
+): boolean {
+  return (
+    sameRateLimitWindow(left?.fiveHour, right?.fiveHour) &&
+    sameRateLimitWindow(left?.sevenDay, right?.sevenDay)
+  )
+}
+
+/**
+ * Compares two rolling quota windows.
+ *
+ * @param left First quota window.
+ * @param right Second quota window.
+ * @returns Whether usage and reset metadata are equal.
+ */
+function sameRateLimitWindow(
+  left: TokenRateLimitWindow | undefined,
+  right: TokenRateLimitWindow | undefined,
+): boolean {
+  return (
+    left?.usedPercent === right?.usedPercent &&
+    left?.resetsAt === right?.resetsAt &&
+    left?.windowMinutes === right?.windowMinutes
+  )
+}
+
 function isZeroOnlyRateLimits(rateLimits: TokenPayload['rateLimits']): boolean {
   const windows = [rateLimits?.fiveHour, rateLimits?.sevenDay].filter(Boolean)
   if (windows.length === 0) return false
@@ -809,6 +1130,8 @@ function isZeroOnlyRateLimits(rateLimits: TokenPayload['rateLimits']): boolean {
 
 /** Weekly plan windows are ≤7d; farther timestamps are almost always bad data. */
 const MAX_REASONABLE_RESET_AHEAD_MS = 10 * 24 * 60 * 60_000
+/** Maximum server reset-time jitter accepted as one canonical quota period. */
+const RATE_LIMIT_RESET_TOLERANCE_MS = 60_000
 
 function mergeRateLimitWindow(
   current: TokenRateLimitWindow | undefined,
@@ -823,6 +1146,7 @@ function mergeRateLimitWindow(
   const saneCurrent = sanitizeRateLimitWindow(current, nowMs) ?? current
   const curResetMs = normalizeResetAtMs(saneCurrent.resetsAt)
   const patchResetMs = normalizeResetAtMs(sanePatch.resetsAt)
+  const resetOrder = compareRateLimitResetAt(patchResetMs, curResetMs)
 
   // Prefer a reasonable reset over an absurd far-future placeholder (e.g. 2000000000).
   const curAbsurd = isAbsurdResetMs(curResetMs, nowMs)
@@ -852,7 +1176,7 @@ function mergeRateLimitWindow(
   }
 
   // A newer billing window fully replaces the previous one (usage may drop to ~0).
-  if (patchResetMs != null && curResetMs != null && patchResetMs > curResetMs) {
+  if (resetOrder != null && resetOrder > 0) {
     return {
       ...saneCurrent,
       ...sanePatch,
@@ -860,7 +1184,7 @@ function mergeRateLimitWindow(
   }
 
   // An older window must never clobber a newer one (stale rollout / hook race).
-  if (patchResetMs != null && curResetMs != null && patchResetMs < curResetMs) {
+  if (resetOrder != null && resetOrder < 0) {
     return saneCurrent
   }
 
@@ -884,7 +1208,9 @@ function mergeRateLimitWindow(
   return {
     ...saneCurrent,
     ...(sanePatch.usedPercent !== undefined ? { usedPercent } : {}),
-    ...(sanePatch.resetsAt !== undefined ? { resetsAt: sanePatch.resetsAt } : {}),
+    ...(saneCurrent.resetsAt === undefined && sanePatch.resetsAt !== undefined
+      ? { resetsAt: sanePatch.resetsAt }
+      : {}),
     ...(sanePatch.windowMinutes !== undefined ? { windowMinutes: sanePatch.windowMinutes } : {}),
   }
 }
@@ -914,6 +1240,25 @@ function isAbsurdResetMs(resetMs: number | undefined, nowMs: number): boolean {
 function normalizeResetAtMs(resetsAt: number | undefined): number | undefined {
   if (typeof resetsAt !== 'number' || !Number.isFinite(resetsAt)) return undefined
   return resetsAt < 1_000_000_000_000 ? resetsAt * 1000 : resetsAt
+}
+
+/**
+ * Compares an incoming reset boundary with the retained canonical boundary.
+ *
+ * Same-period updates preserve the current reset timestamp, so every later
+ * comparison stays anchored to the first accepted value instead of drifting.
+ *
+ * @param incoming Incoming reset in epoch milliseconds.
+ * @param current Current reset in epoch milliseconds.
+ * @returns Signed ordering, or `undefined` when either reset is unavailable.
+ */
+function compareRateLimitResetAt(
+  incoming: number | undefined,
+  current: number | undefined,
+): number | undefined {
+  if (incoming == null || current == null) return undefined
+  const difference = incoming - current
+  return Math.abs(difference) <= RATE_LIMIT_RESET_TOLERANCE_MS ? 0 : difference
 }
 
 /**

@@ -9,19 +9,25 @@
  */
 
 /**
- * The lifecycle state represented by a {@link TurnTiming} snapshot.
+ * Whether a {@link TurnTiming} snapshot is still advancing or has frozen.
  */
 export type TurnTimingState = 'active' | 'completed'
 
 /**
- * A timestamped duration snapshot for the current or most recently completed turn.
+ * A timestamped duration snapshot for the current or most recently ended turn.
  */
 export interface TurnTiming {
-  /** Whether the CLI still considers the observed turn active or has completed it. */
+  /** Whether elapsed time is still advancing or has reached a terminal value. */
   state: TurnTimingState
+  /** CLI-assigned identity of the native task represented by this timing. */
+  externalTurnId?: string
+  /** Whether this terminal snapshot may close an already-active visible turn. */
+  canEndActiveTurn?: boolean
+  /** Terminal result when a frozen duration represents cancellation rather than success. */
+  outcome?: 'completed' | 'cancelled'
   /** Native start time in epoch milliseconds, when the CLI records one. */
   startedAt?: number
-  /** Frozen native or derived elapsed milliseconds for a completed turn. */
+  /** Frozen native or derived elapsed milliseconds for an ended turn. */
   elapsedMs?: number
   /** Time of the newest native timing evidence, in epoch milliseconds. */
   observedAt: number

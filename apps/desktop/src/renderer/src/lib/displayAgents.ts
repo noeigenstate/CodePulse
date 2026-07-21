@@ -115,26 +115,29 @@ export function collectQuotaMeters(
   agents: AgentRuntimeState[],
   agentType: AgentType,
 ): QuotaMeterSource[] {
-  const byId = new Map<string, QuotaMeterSource>()
-
-  // Best-first so equal bucket timestamps cannot let idle/stale sessions overwrite
-  // the active turn's account weekly % (Codex rate limits are account-wide).
-  const ranked = agents
+  const candidatesById = new Map<string, QuotaCandidate[]>()
+  const candidates = agents
     .filter((agent) => agent.agentType === agentType)
     .flatMap((agent) => quotaCandidatesForAgent(agent))
-    .sort(compareQuotaCandidates)
 
-  for (const candidate of ranked) {
+  for (const candidate of candidates) {
     const id = quotaMeterId(candidate.token)
-    if (byId.has(id)) continue
-    byId.set(id, {
+    const group = candidatesById.get(id)
+    if (group) group.push(candidate)
+    else candidatesById.set(id, [candidate])
+  }
+
+  let meters: QuotaMeterSource[] = []
+  for (const [id, groupedCandidates] of candidatesById) {
+    const candidate = pickAuthoritativeQuotaCandidate(groupedCandidates, agentType)
+    if (!candidate) continue
+    meters.push({
       id,
       token: candidate.token,
       updatedAt: candidate.updatedAt,
     })
   }
 
-  let meters = [...byId.values()]
   if (meters.length === 0) return []
 
   const models = relevantQuotaModels(agents.filter((agent) => agent.agentType === agentType))
@@ -143,7 +146,7 @@ export function collectQuotaMeters(
   }
 
   // One bar per family is enough (multiple non-Spark bucket ids all labeled 每周额度).
-  meters = collapseMetersPerFamily(meters)
+  meters = collapseMetersPerFamily(meters, agentType)
 
   return meters.sort(compareQuotaMeters)
 }
@@ -170,7 +173,7 @@ export function latestQuotaToken(
   )
   const pool = recent.length > 0 ? recent : modelBase
 
-  return [...pool].sort(compareQuotaCandidates)[0]?.token
+  return pickLatestQuotaCandidateAcrossTypes(pool)?.token
 }
 
 export function buildWorkspaceAgentGroups(agents: AgentRuntimeState[]): WorkspaceAgentGroup[] {
@@ -241,10 +244,9 @@ function buildAgentWorkspaceItems(
     }
   })
 
-  // Collapse nested project cards (subdir cwd noise) into the parent root card.
-  return coalesceNestedWorkspaceItems(items).sort(
-    (a, b) => b.updatedAt - a.updatedAt || a.name.localeCompare(b.name),
-  )
+  // Collapse nested project cards without applying activity-based visual ordering.
+  // The renderer's persisted project-order layer assigns each card a fixed position.
+  return coalesceNestedWorkspaceItems(items)
 }
 
 /**
@@ -448,48 +450,116 @@ function quotaCandidateFromBucket(
   return { agent, token, updatedAt: bucket.updatedAt ?? agent.lastEventAt }
 }
 
-function compareQuotaCandidates(a: QuotaCandidate, b: QuotaCandidate): number {
-  // Same account window: higher used% is always more recent truth (usage only rises).
-  // Rank this before active/lastEventAt so an idle project at 35% beats an active
-  // fork still carrying a stale 2% snapshot from an older rollout.
-  const sameWindow = compareSameWindowPressure(a.token, b.token, a.agent.agentType)
-  if (sameWindow !== 0) return sameWindow
+/** Maximum reset-time jitter accepted as one account quota period. */
+const QUOTA_RESET_TOLERANCE_MS = 60_000
 
-  const aActive = isActiveState(a.agent.state) ? 1 : 0
-  const bActive = isActiveState(b.agent.state) ? 1 : 0
-  return (
-    bActive - aActive ||
-    b.agent.lastEventAt - a.agent.lastEventAt ||
-    b.updatedAt - a.updatedAt ||
-    quotaPressure(b.token, b.agent.agentType) - quotaPressure(a.token, a.agent.agentType)
-  )
+interface LatestQuotaPeriod<T> {
+  values: T[]
+  resetAt?: number
 }
 
 /**
- * When two candidates share the same resetsAt on a window, prefer higher used%.
- * Array.sort: negative ⇒ `a` before `b` (higher usage first).
+ * Keeps only candidates from the latest reset period.
+ *
+ * The comparison is anchored to the group's maximum reset timestamp. Unlike a
+ * rounded time bucket, this cannot split two near-identical resets at an
+ * arbitrary boundary or create a non-transitive pairwise comparison.
+ *
+ * @param values Candidate values to cluster.
+ * @param getResetAt Extracts a normalized reset timestamp from a value.
+ * @returns Latest-period values and their maximum reset timestamp.
  */
-function compareSameWindowPressure(a: TokenPayload, b: TokenPayload, agentType: AgentType): number {
-  const aWindows = visibleRateLimitWindows(a, agentType)
-  const bWindows = visibleRateLimitWindows(b, agentType)
-  for (const key of ['sevenDay', 'fiveHour'] as const) {
-    const aw = aWindows[key]
-    const bw = bWindows[key]
-    if (!aw || !bw) continue
-    if (!sameResetAt(aw.resetsAt, bw.resetsAt)) continue
-    const ap = normalizedPercent(aw.usedPercent)
-    const bp = normalizedPercent(bw.usedPercent)
-    if (ap < 0 || bp < 0) continue
-    if (ap !== bp) return bp - ap
+function selectLatestQuotaPeriod<T>(
+  values: T[],
+  getResetAt: (value: T) => number | undefined,
+): LatestQuotaPeriod<T> {
+  const withReset = values.flatMap((value) => {
+    const resetAt = getResetAt(value)
+    return resetAt === undefined ? [] : [{ value, resetAt }]
+  })
+  if (withReset.length === 0) return { values }
+
+  const latestResetAt = Math.max(...withReset.map((entry) => entry.resetAt))
+  return {
+    values: withReset
+      .filter((entry) => latestResetAt - entry.resetAt <= QUOTA_RESET_TOLERANCE_MS)
+      .map((entry) => entry.value),
+    resetAt: latestResetAt,
   }
-  return 0
 }
 
-function sameResetAt(a: number | undefined, b: number | undefined): boolean {
-  if (a == null || b == null) return false
-  const am = a < 1_000_000_000_000 ? a * 1000 : a
-  const bm = b < 1_000_000_000_000 ? b * 1000 : b
-  return am === bm
+/**
+ * Selects the authoritative account quota candidate for one meter ID.
+ *
+ * @param candidates Same-ID quota candidates from concurrent sessions.
+ * @param agentType CLI family used to select visible windows.
+ * @returns Best candidate from the latest reset period.
+ */
+function pickAuthoritativeQuotaCandidate(
+  candidates: QuotaCandidate[],
+  agentType: AgentType,
+): QuotaCandidate | undefined {
+  const period = selectLatestQuotaPeriod(candidates, (candidate) =>
+    primaryQuotaResetAt(candidate.token, agentType),
+  )
+  const expired = period.resetAt !== undefined && period.resetAt <= Date.now()
+  return [...period.values].sort((a, b) => {
+    const pressure = comparePrimaryQuotaPressure(a.token, b.token, agentType, expired)
+    if (pressure !== 0) return pressure
+
+    const aActive = isActiveState(a.agent.state) ? 1 : 0
+    const bActive = isActiveState(b.agent.state) ? 1 : 0
+    return (
+      bActive - aActive ||
+      b.agent.lastEventAt - a.agent.lastEventAt ||
+      b.updatedAt - a.updatedAt ||
+      quotaPressure(b.token, agentType) - quotaPressure(a.token, agentType)
+    )
+  })[0]
+}
+
+/**
+ * Selects the newest authoritative candidate when callers provide mixed CLI types.
+ *
+ * @param candidates Quota candidates remaining after model and recency filters.
+ * @returns Best per-type candidate, with the freshest source winning across types.
+ */
+function pickLatestQuotaCandidateAcrossTypes(
+  candidates: QuotaCandidate[],
+): QuotaCandidate | undefined {
+  const byType = new Map<AgentType, QuotaCandidate[]>()
+  for (const candidate of candidates) {
+    const type = candidate.agent.agentType
+    const group = byType.get(type)
+    if (group) group.push(candidate)
+    else byType.set(type, [candidate])
+  }
+  return [...byType.entries()]
+    .flatMap(([type, entries]) => pickAuthoritativeQuotaCandidate(entries, type) ?? [])
+    .sort((a, b) => b.updatedAt - a.updatedAt)[0]
+}
+
+/**
+ * Orders two same-period quota values by their primary visible usage.
+ *
+ * @param a First quota token.
+ * @param b Second quota token.
+ * @param agentType CLI family used to select visible windows.
+ * @param expired Whether the selected period has reached its reset boundary.
+ * @returns Negative when `a` is the more authoritative value.
+ */
+function comparePrimaryQuotaPressure(
+  a: TokenPayload,
+  b: TokenPayload,
+  agentType: AgentType,
+  expired: boolean,
+): number {
+  const ap = primaryQuotaUsedPercent(a, agentType)
+  const bp = primaryQuotaUsedPercent(b, agentType)
+  if (ap < 0) return bp < 0 ? 0 : 1
+  if (bp < 0) return -1
+  if (ap === bp) return 0
+  return expired ? ap - bp : bp - ap
 }
 
 function quotaPressure(token: TokenPayload | undefined, agentType: AgentType): number {
@@ -543,7 +613,10 @@ function filterMetersByModelFamily(
  * Collapse multiple non-Spark (or multiple Spark) rows into one each.
  * Otherwise codex + default + stripped rows all render as duplicate 每周额度.
  */
-function collapseMetersPerFamily(meters: QuotaMeterSource[]): QuotaMeterSource[] {
+function collapseMetersPerFamily(
+  meters: QuotaMeterSource[],
+  agentType: AgentType,
+): QuotaMeterSource[] {
   const spark: QuotaMeterSource[] = []
   const weekly: QuotaMeterSource[] = []
   for (const meter of meters) {
@@ -552,16 +625,61 @@ function collapseMetersPerFamily(meters: QuotaMeterSource[]): QuotaMeterSource[]
   }
   const pickBest = (group: QuotaMeterSource[]): QuotaMeterSource | undefined => {
     if (group.length === 0) return undefined
-    return [...group].sort((a, b) => {
-      const pressure =
-        quotaPressure(b.token, 'codex') - quotaPressure(a.token, 'codex') ||
-        b.updatedAt - a.updatedAt
-      return pressure
+    const period = selectLatestQuotaPeriod(group, (meter) =>
+      primaryQuotaResetAt(meter.token, agentType),
+    )
+    const expired = period.resetAt !== undefined && period.resetAt <= Date.now()
+    return [...period.values].sort((a, b) => {
+      const pressure = comparePrimaryQuotaPressure(a.token, b.token, agentType, expired)
+      return (
+        pressure ||
+        b.updatedAt - a.updatedAt ||
+        quotaPressure(b.token, agentType) - quotaPressure(a.token, agentType)
+      )
     })[0]
   }
   return [pickBest(weekly), pickBest(spark)].filter((meter): meter is QuotaMeterSource =>
     Boolean(meter),
   )
+}
+
+/**
+ * Returns the reset timestamp for the primary visible quota window.
+ *
+ * The weekly window is authoritative whenever present. This prevents Codex's
+ * hidden five-hour metadata from changing which weekly value is displayed.
+ *
+ * @param token Token payload containing zero or more quota windows.
+ * @param agentType CLI family used to filter hidden quota windows.
+ * @returns Normalized reset timestamp, when valid.
+ */
+function primaryQuotaResetAt(token: TokenPayload, agentType: AgentType): number | undefined {
+  const windows = visibleRateLimitWindows(token, agentType)
+  const resetAt = windows.sevenDay?.resetsAt ?? windows.fiveHour?.resetsAt
+  return normalizeResetAt(resetAt)
+}
+
+/**
+ * Returns the primary visible quota percentage for monotonic selection.
+ *
+ * @param token Token payload containing zero or more quota windows.
+ * @param agentType CLI family used to filter hidden quota windows.
+ * @returns Normalized percentage, or `-1` when unavailable.
+ */
+function primaryQuotaUsedPercent(token: TokenPayload, agentType: AgentType): number {
+  const windows = visibleRateLimitWindows(token, agentType)
+  return normalizedPercent(windows.sevenDay?.usedPercent ?? windows.fiveHour?.usedPercent)
+}
+
+/**
+ * Normalizes a Unix-seconds or epoch-milliseconds reset boundary.
+ *
+ * @param value Candidate reset timestamp.
+ * @returns Epoch milliseconds, or `undefined` for invalid input.
+ */
+function normalizeResetAt(value: number | undefined): number | undefined {
+  if (value == null || !Number.isFinite(value) || value <= 0) return undefined
+  return value < 1_000_000_000_000 ? value * 1000 : value
 }
 
 function isActiveState(state: TurnState): boolean {

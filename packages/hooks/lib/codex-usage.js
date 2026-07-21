@@ -21,15 +21,13 @@ export async function readLatestCodexUsage(raw, options = {}) {
     if (!file) return {}
     const lines = (await readTail(file)).trim().split(/\r?\n/)
     // Latest token_count often has context % but omits rate_limits until later.
-    // Keep the newest event for context, and the newest *still-active* quota snapshot
-    // for rate_limits. Never backfill limits whose resets_at are already past — that
-    // re-applies pre-reset high usage and makes the UI jump after official reset.
+    // Keep the newest event for context and the newest official quota snapshot for
+    // rate_limits. An expired resets_at is only a polling hint; it must not fabricate
+    // a 0% reading before Codex writes a genuine post-reset value.
     let tokenCount = null
     let tokenCountWithLimits = null
     let taskStarted = null
     let modelConfig = null
-    const nowMs = Date.now()
-
     for (let i = lines.length - 1; i >= 0; i--) {
       let item
       try {
@@ -42,11 +40,7 @@ export async function readLatestCodexUsage(raw, options = {}) {
       const payload = item.payload
       if (payload?.type === 'token_count') {
         if (!tokenCount) tokenCount = payload
-        if (
-          !tokenCountWithLimits &&
-          tokenCountHasRateLimits(payload) &&
-          rateLimitSnapshotIsActive(payload, nowMs)
-        ) {
+        if (!tokenCountWithLimits && tokenCountHasRateLimits(payload)) {
           tokenCountWithLimits = payload
         }
       }
@@ -56,19 +50,14 @@ export async function readLatestCodexUsage(raw, options = {}) {
 
     if (!tokenCount && !modelConfig) return {}
     const patch = tokenCount ? toUsagePatch(tokenCount, taskStarted) : {}
-    // Prefer limits on the latest event; only backfill from an earlier *active* snapshot.
+    // Prefer limits on the latest event; otherwise retain the latest official snapshot.
     if (!patch.rate_limits && tokenCountWithLimits && tokenCountWithLimits !== tokenCount) {
       const limitPatch = toUsagePatch(tokenCountWithLimits, taskStarted)
-      if (limitPatch.rate_limits && rateLimitPatchIsActive(limitPatch.rate_limits, nowMs)) {
+      if (limitPatch.rate_limits) {
         patch.rate_limits = limitPatch.rate_limits
         if (limitPatch.rate_limit_id) patch.rate_limit_id = limitPatch.rate_limit_id
         if (limitPatch.rate_limit_name) patch.rate_limit_name = limitPatch.rate_limit_name
       }
-    } else if (patch.rate_limits && !rateLimitPatchIsActive(patch.rate_limits, nowMs)) {
-      // Soft-reset (match local-server quota-watcher): keep windows at 0% with past
-      // resets_at so the hub can show "可刷新" instead of sticky pre-reset high %.
-      // Deleting limits left mergeToken holding the previous high sample forever.
-      patch.rate_limits = softResetExpiredRateLimits(patch.rate_limits, nowMs)
     }
     return { ...patch, ...modelConfig, usage_source_path: file }
   } catch {
@@ -186,35 +175,6 @@ function rateLimitPatchIsActive(rateLimits, nowMs = Date.now()) {
 }
 
 /**
- * Soft-reset expired windows to 0% while keeping resets_at (past) so UI can show
- * "可刷新" instead of wiping limits (which left sticky pre-reset high % in the hub).
- */
-function softResetExpiredRateLimits(rateLimits, nowMs = Date.now()) {
-  if (!rateLimits || typeof rateLimits !== 'object') return rateLimits
-  const out = { ...rateLimits }
-  for (const key of ['five_hour', 'seven_day', 'fiveHour', 'sevenDay']) {
-    if (!out[key] || typeof out[key] !== 'object') continue
-    out[key] = softResetExpiredWindow(out[key], nowMs)
-  }
-  return out
-}
-
-function softResetExpiredWindow(window, nowMs) {
-  if (!window || typeof window !== 'object') return window
-  const resetsAt = window.resets_at ?? window.resetsAt
-  if (typeof resetsAt !== 'number' || !Number.isFinite(resetsAt)) {
-    return { ...window, used_percent: 0, usedPercent: 0 }
-  }
-  const resetMs = resetsAt < 1_000_000_000_000 ? resetsAt * 1000 : resetsAt
-  if (resetMs > nowMs) return window
-  return {
-    ...window,
-    used_percent: 0,
-    usedPercent: 0,
-  }
-}
-
-/**
  * Resolve which rollout JSONL to read.
  *
  * IMPORTANT: `rollout_path` / `transcript_path` from Codex hooks are only
@@ -225,8 +185,29 @@ async function findRolloutFile(raw, options) {
   const codexHome = options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex')
   const sessionsDir = join(codexHome, 'sessions')
   const sessionIds = collectSessionIds(raw)
+  const reliableSessionIds = collectReliableSessionIds(raw)
   const cwd = stringValue(raw?.cwd) ?? stringValue(raw?.workspace) ?? stringValue(raw?.project_dir)
   const model = stringValue(raw?.model)
+
+  // Exact hook path + one unambiguous session identity is authoritative and
+  // avoids walking what can be several gigabytes of historical rollouts. Fork
+  // payloads can carry different parent session and child thread ids, so those
+  // must continue through model/cwd scoring instead of taking an early return.
+  const directCandidates = await readDirectRolloutCandidates(raw)
+  const exactDirect =
+    reliableSessionIds.length === 1
+      ? findSessionBoundCandidate(directCandidates, reliableSessionIds)
+      : undefined
+  if (exactDirect) return exactDirect.path
+
+  // When the hook omits a path, locate its explicit session by filename before
+  // the expensive cwd fallback starts opening every rollout header.
+  const exactSession =
+    reliableSessionIds.length === 1
+      ? await findRolloutForSessionIds(sessionsDir, reliableSessionIds)
+      : undefined
+  if (exactSession) return exactSession.path
+
   const files = []
   await collectRolloutFiles(sessionsDir, files)
   files.sort((a, b) => b.mtimeMs - a.mtimeMs)
@@ -240,25 +221,17 @@ async function findRolloutFile(raw, options) {
     candidates.push({ path, mtimeMs })
   }
 
-  // 1) Hook-provided paths — candidates only, never absolute winners.
-  for (const key of ['rollout_path', 'transcript_path', 'token_source_path', 'usage_source_path']) {
-    const directPath = stringValue(raw?.[key])
-    if (!directPath) continue
-    try {
-      const info = await stat(directPath)
-      addCandidate(directPath, info.mtimeMs)
-    } catch {
-      // Path may be stale after resume; ignore.
-    }
-  }
+  // Hook-provided paths remain candidates when their session identity is stale
+  // or absent (common after fork/resume).
+  for (const candidate of directCandidates) addCandidate(candidate.path, candidate.mtimeMs)
 
-  // 2) Filename / meta session ids (fork thread id vs parent id).
+  // Filename / meta session ids (fork thread id vs parent id).
   for (const sessionId of sessionIds) {
     const matched = files.find((file) => basename(file.path).includes(sessionId))
     if (matched) addCandidate(matched.path, matched.mtimeMs)
   }
 
-  // 3) Same workspace cwd (forks share cwd with parent).
+  // Same workspace cwd (forks share cwd with parent).
   if (cwd) {
     const target = normalizePath(cwd)
     for (const file of files) {
@@ -285,6 +258,108 @@ async function findRolloutFile(raw, options) {
   return best?.path
 }
 
+/**
+ * Reads valid hook-provided rollout paths without traversing the sessions tree.
+ *
+ * Direct paths are not automatically trusted because Codex can retain a parent
+ * transcript path after a fork. Callers may return one immediately only when its
+ * filename also contains an explicit current session identifier.
+ *
+ * @param {unknown} raw Raw Codex hook payload.
+ * @returns {Promise<Array<{path: string, mtimeMs: number}>>} Readable path candidates.
+ */
+async function readDirectRolloutCandidates(raw) {
+  const candidates = []
+  const seen = new Set()
+  for (const key of ['rollout_path', 'transcript_path', 'token_source_path', 'usage_source_path']) {
+    const directPath = stringValue(raw?.[key])
+    const normalized = normalizePath(directPath)
+    if (!directPath || !normalized || seen.has(normalized)) continue
+    try {
+      const info = await stat(directPath)
+      if (!info.isFile()) continue
+      seen.add(normalized)
+      candidates.push({ path: directPath, mtimeMs: info.mtimeMs })
+    } catch {
+      // Path may be stale after resume; the bounded session/full fallback handles it.
+    }
+  }
+  return candidates
+}
+
+/**
+ * Returns a direct candidate whose filename is bound to the current session.
+ *
+ * @param {Array<{path: string, mtimeMs: number}>} candidates Hook path candidates.
+ * @param {string[]} sessionIds Explicit session/conversation/thread identifiers.
+ * @returns {{path: string, mtimeMs: number} | undefined} Exact candidate when present.
+ */
+function findSessionBoundCandidate(candidates, sessionIds) {
+  for (const sessionId of sessionIds) {
+    const match = candidates.find((candidate) => basename(candidate.path).includes(sessionId))
+    if (match) return match
+  }
+  return undefined
+}
+
+/**
+ * Locates an explicitly identified rollout by filename without reading unrelated
+ * JSONL headers. Session ids are tried in payload priority order.
+ *
+ * @param {string} sessionsDir Codex sessions root.
+ * @param {string[]} sessionIds Explicit session identifiers.
+ * @returns {Promise<{path: string, mtimeMs: number} | undefined>} Matching rollout.
+ */
+async function findRolloutForSessionIds(sessionsDir, sessionIds) {
+  for (const sessionId of sessionIds) {
+    const budget = { scannedFiles: 0 }
+    const match = await findRolloutForSessionId(sessionsDir, sessionId, budget, 0)
+    if (match) return match
+  }
+  return undefined
+}
+
+/**
+ * Searches newest directory names first and stats only the matching filename.
+ * The file budget mirrors the historical full-scan cap, keeping malformed or
+ * unexpectedly deep trees bounded.
+ *
+ * @param {string} dir Directory currently being inspected.
+ * @param {string} sessionId Session id expected in the rollout filename.
+ * @param {{scannedFiles: number}} budget Shared file-count budget.
+ * @param {number} depth Current recursion depth.
+ * @returns {Promise<{path: string, mtimeMs: number} | undefined>} Matching rollout.
+ */
+async function findRolloutForSessionId(dir, sessionId, budget, depth) {
+  if (depth > 8) return undefined
+  let entries
+  try {
+    entries = await readdir(dir, { withFileTypes: true })
+  } catch {
+    return undefined
+  }
+
+  for (const entry of [...entries].sort((a, b) => b.name.localeCompare(a.name))) {
+    if (budget.scannedFiles >= MAX_ROLLOUT_FILES) return undefined
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) {
+      const match = await findRolloutForSessionId(path, sessionId, budget, depth + 1)
+      if (match) return match
+      continue
+    }
+    if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue
+    budget.scannedFiles += 1
+    if (!entry.name.includes(sessionId)) continue
+    try {
+      const info = await stat(path)
+      return { path, mtimeMs: info.mtimeMs }
+    } catch {
+      // The writer may replace a rollout between readdir and stat; keep searching.
+    }
+  }
+  return undefined
+}
+
 function collectSessionIds(raw) {
   if (!raw || typeof raw !== 'object') return []
   const keys = [
@@ -298,6 +373,31 @@ function collectSessionIds(raw) {
   ]
   const ids = []
   for (const key of keys) {
+    const value = stringValue(raw[key])
+    if (value) ids.push(value)
+  }
+  return [...new Set(ids)]
+}
+
+/**
+ * Collects only identifiers whose field names explicitly denote Codex sessions.
+ * Generic `id` can identify the hook event itself, so it remains available to the
+ * compatibility fallback but must not authorize an early direct-path return.
+ *
+ * @param {unknown} raw Raw Codex hook payload.
+ * @returns {string[]} Session identifiers in native payload priority order.
+ */
+function collectReliableSessionIds(raw) {
+  if (!raw || typeof raw !== 'object') return []
+  const ids = []
+  for (const key of [
+    'session_id',
+    'sessionId',
+    'conversation_id',
+    'conversationId',
+    'thread_id',
+    'threadId',
+  ]) {
     const value = stringValue(raw[key])
     if (value) ids.push(value)
   }

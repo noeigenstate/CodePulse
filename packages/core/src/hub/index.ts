@@ -19,6 +19,7 @@ import {
 } from '@codepulse/shared'
 import { buildStatusSnapshot } from '../aggregate/index.js'
 import { createInitialRuntimeState, reduce } from '../state-machine/index.js'
+import { UsageStabilityRegistry } from '../usage-stability.js'
 import {
   RuleEngine,
   STUCK_STRONG_MS,
@@ -61,6 +62,8 @@ export class StatusHub extends EventEmitter {
   private sessionKeys = new Map<string, string>()
   /** 共享的、有状态的通知规则引擎。 */
   private rules: RuleEngine
+  /** Account-wide quota values shared by every project/session of one CLI. */
+  private readonly usageStability = new UsageStabilityRegistry()
   /** 无活动看门狗定时器句柄（运行中时存在）。 */
   private tickTimer?: NodeJS.Timeout
 
@@ -84,10 +87,34 @@ export class StatusHub extends EventEmitter {
     this.applyEvent(event)
   }
 
+  /**
+   * Records an account-quota read without emitting unchanged synchronization noise.
+   *
+   * Lower readings still advance the global confirmation streak. The event enters
+   * the normal reducer and broadcast pipeline only when the accepted visible quota
+   * changes (or when no runtime slot exists yet).
+   *
+   * @param event Quota-only token snapshot from one physical/API observation.
+   * @returns Whether the observation changed a runtime slot and was emitted.
+   */
+  observeQuota(event: AgentEvent): boolean {
+    const stabilized = this.usageStability.stabilizeEvent(event)
+    const key = this.keyForEvent(stabilized)
+    const current = this.agents.get(key) ?? createInitialRuntimeState(stabilized.source)
+    if (!quotaPatchChangesToken(current.token, stabilized.token)) return false
+    this.applyEvent(stabilized)
+    return true
+  }
+
   private applyEvent(event: AgentEvent, emitStatus = true): void {
     const key = this.keyForEvent(event)
     const current = this.agents.get(key) ?? createInitialRuntimeState(event.source)
-    const result = reduce(current, event)
+    const runtimeEvent = this.usageStability.stabilizeEvent(event)
+    const reduced = reduce(current, runtimeEvent)
+    const result = {
+      ...reduced,
+      next: this.usageStability.projectAgent(reduced.next),
+    }
     this.agents.set(key, result.next)
     this.rememberEventKey(event, key)
 
@@ -138,7 +165,10 @@ export class StatusHub extends EventEmitter {
    * @returns 包含所有 agent 与总体指示的快照。
    */
   snapshot(now = Date.now()): StatusSnapshot {
-    return buildStatusSnapshot([...this.agents.values()].sort(compareRuntimeState), now)
+    const agents = [...this.agents.values()]
+      .map((agent) => this.usageStability.projectAgent(agent))
+      .sort(compareRuntimeState)
+    return buildStatusSnapshot(agents, now)
   }
 
   /**
@@ -341,5 +371,71 @@ function compareRuntimeState(a: AgentRuntimeState, b: AgentRuntimeState): number
     a.agentType.localeCompare(b.agentType) ||
     workspaceKey(a.workspacePath).localeCompare(workspaceKey(b.workspacePath)) ||
     (a.externalSessionId ?? '').localeCompare(b.externalSessionId ?? '')
+  )
+}
+
+/**
+ * Reports whether a stable quota patch changes the targeted runtime token.
+ *
+ * Extra quota families already present on the runtime do not count as a change;
+ * this comparison only evaluates windows supplied by the observation.
+ *
+ * @param current Currently projected runtime token.
+ * @param patch Stable quota-only patch.
+ * @returns Whether applying the patch would alter visible quota data.
+ */
+function quotaPatchChangesToken(
+  current: TokenPayload | undefined,
+  patch: TokenPayload | undefined,
+): boolean {
+  if (!patch) return false
+  if (patch.rateLimits) {
+    if (!sameRateLimits(current?.rateLimits, patch.rateLimits)) return true
+    if (patch.rateLimitId !== undefined && current?.rateLimitId !== patch.rateLimitId) return true
+    if (patch.rateLimitName !== undefined && current?.rateLimitName !== patch.rateLimitName)
+      return true
+  }
+  for (const [key, bucket] of Object.entries(patch.quotaBuckets ?? {})) {
+    if (!bucket.rateLimits) continue
+    const currentBucket = current?.quotaBuckets?.[key]
+    if (!sameRateLimits(currentBucket?.rateLimits, bucket.rateLimits)) return true
+    if (currentBucket?.rateLimitId !== bucket.rateLimitId) return true
+    if (currentBucket?.rateLimitName !== bucket.rateLimitName) return true
+  }
+  return false
+}
+
+/**
+ * Compares two rate-limit payloads by their rolling-window fields.
+ *
+ * @param left First rate-limit payload.
+ * @param right Second rate-limit payload.
+ * @returns Whether both five-hour and weekly windows are equal.
+ */
+function sameRateLimits(
+  left: TokenPayload['rateLimits'],
+  right: TokenPayload['rateLimits'],
+): boolean {
+  return (
+    sameRateLimitWindow(left?.fiveHour, right?.fiveHour) &&
+    sameRateLimitWindow(left?.sevenDay, right?.sevenDay)
+  )
+}
+
+/**
+ * Compares two rolling quota windows.
+ *
+ * @param left First quota window.
+ * @param right Second quota window.
+ * @returns Whether usage and reset metadata are equal.
+ */
+function sameRateLimitWindow(
+  left: NonNullable<TokenPayload['rateLimits']>['fiveHour'],
+  right: NonNullable<TokenPayload['rateLimits']>['fiveHour'],
+): boolean {
+  return (
+    left?.usedPercent === right?.usedPercent &&
+    left?.resetsAt === right?.resetsAt &&
+    left?.windowMinutes === right?.windowMinutes
   )
 }

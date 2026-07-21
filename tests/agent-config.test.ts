@@ -396,3 +396,51 @@ test('Kimi configuration backup and cleanup preserve user TOML content', async (
   assert.equal(cleaned.kimi.changed, true)
   assert.equal(await readFile(configPath, 'utf8'), original)
 })
+
+test('Kimi configuration migrates duplicate legacy CodePulse hook tables', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'codepulse-kimi-config-legacy-'))
+  const kimiDir = join(home, '.kimi-code')
+  const configPath = join(kimiDir, 'config.toml')
+  const legacyCommand = 'node "C:\\old\\CodePulse\\hooks\\bin\\kimi-hook.js"'
+  const userCommand = 'node "C:/my-tools/kimi-hook.js"'
+  const original = [
+    'default_model = "kimi-code/k3"',
+    '',
+    '[[hooks]]',
+    'event = "Stop"',
+    `command = ${JSON.stringify(legacyCommand)}`,
+    '',
+    '[[hooks]]',
+    'event = "Stop"',
+    `command = ${JSON.stringify(legacyCommand)}`,
+    '',
+    '[[hooks]]',
+    'event = "Stop"',
+    'command = "echo keep-user-hook"',
+    '',
+    '[[hooks]]',
+    'event = "Stop"',
+    `command = ${JSON.stringify(userCommand)}`,
+    '',
+  ].join('\n')
+  await mkdir(kimiDir, { recursive: true })
+  await writeFile(configPath, original, 'utf8')
+
+  const first = await configureAgents({ homeDir: home, hookBinDir: join(home, 'hooks') })
+  const second = await configureAgents({ homeDir: home, hookBinDir: join(home, 'hooks') })
+  const configured = await readFile(configPath, 'utf8')
+
+  assert.equal(first.kimi.changed, true)
+  assert.equal(second.kimi.changed, false)
+  assert.equal((configured.match(/kimi-hook\.js/g) ?? []).length, 12)
+  assert.equal((configured.match(/event = "Stop"/g) ?? []).length, 3)
+  assert.match(configured, /echo keep-user-hook/)
+  assert.ok(configured.includes(`command = ${JSON.stringify(userCommand)}`))
+
+  const cleaned = await cleanupAgents({ homeDir: home, hookBinDir: join(home, 'hooks') })
+  const afterCleanup = await readFile(configPath, 'utf8')
+  assert.equal(cleaned.kimi.changed, true)
+  assert.equal((afterCleanup.match(/kimi-hook\.js/g) ?? []).length, 1)
+  assert.match(afterCleanup, /echo keep-user-hook/)
+  assert.ok(afterCleanup.includes(`command = ${JSON.stringify(userCommand)}`))
+})

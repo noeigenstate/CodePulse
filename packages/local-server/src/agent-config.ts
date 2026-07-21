@@ -556,7 +556,9 @@ function quoteArg(value: string): string {
 }
 
 function isCodePulseCommand(command: string, name: string): boolean {
-  const lower = command.toLowerCase().replace(/\\/g, '/')
+  // Raw TOML doubles Windows separators, while parsed JSON contains one.
+  // Collapse both forms before matching known CodePulse paths.
+  const lower = command.toLowerCase().replace(/\\/g, '/').replace(/\/+/g, '/')
   return (
     lower.includes(name.toLowerCase()) &&
     (lower.includes('codepulse') || lower.includes('/.codepulse/hooks/')) &&
@@ -684,7 +686,9 @@ export async function configureKimiAgent(
   try {
     const before = (await readTextIfExists(path)) ?? ''
     const block = buildKimiManagedBlock(command)
-    const next = replaceKimiManagedBlock(before, block)
+    const withoutManagedBlock = removeKimiManagedBlock(before)
+    const withoutLegacyEntries = removeCodePulseKimiHookTables(withoutManagedBlock)
+    const next = replaceKimiManagedBlock(withoutLegacyEntries, block)
     const changed = next !== before
     if (changed) {
       await writeBackupOnce(path, before)
@@ -697,7 +701,7 @@ export async function configureKimiAgent(
 }
 
 /**
- * Removes only the CodePulse-managed Kimi TOML block.
+ * Removes the current managed block and unmarked legacy CodePulse Kimi hooks.
  *
  * @param options Configuration path overrides.
  * @returns The cleanup status without modifying user-owned TOML entries.
@@ -709,7 +713,7 @@ export async function cleanupKimiAgent(
   try {
     const before = await readTextIfExists(path)
     if (before == null) return { path, changed: false, configured: false }
-    const next = removeKimiManagedBlock(before)
+    const next = removeCodePulseKimiHookTables(removeKimiManagedBlock(before))
     const changed = next !== before
     if (changed) await writeText(path, next)
     return { path, changed, configured: false }
@@ -758,6 +762,47 @@ function removeKimiManagedBlock(text: string): string {
   if (text.slice(removeEnd, removeEnd + 2) === '\r\n') removeEnd += 2
   else if (text[removeEnd] === '\n') removeEnd += 1
   return `${text.slice(0, removeStart)}${text.slice(removeEnd)}`
+}
+
+/**
+ * Removes legacy unmarked Kimi hook tables installed by older CodePulse builds.
+ *
+ * Kimi loads every matching `[[hooks]]` table, so retaining an old table beside
+ * the managed block multiplies every lifecycle event and completion notification.
+ * Tables not referencing `kimi-hook.js` remain byte-for-byte unchanged.
+ *
+ * @param text Kimi TOML after removing the current managed block.
+ * @returns TOML without legacy CodePulse Kimi hook tables.
+ */
+function removeCodePulseKimiHookTables(text: string): string {
+  const lines = text.match(/[^\r\n]*(?:\r\n|\n|$)/g)?.filter(Boolean) ?? []
+  const retained: string[] = []
+
+  for (let index = 0; index < lines.length; ) {
+    if (lines[index]?.trim() !== '[[hooks]]') {
+      retained.push(lines[index]!)
+      index += 1
+      continue
+    }
+
+    let end = index + 1
+    while (end < lines.length && !isTomlTableHeader(lines[end]!)) end += 1
+    const table = lines.slice(index, end)
+    if (!isCodePulseCommand(table.join(''), 'kimi-hook')) retained.push(...table)
+    index = end
+  }
+
+  return retained.join('')
+}
+
+/**
+ * Checks whether a TOML line begins a standard or array table.
+ *
+ * @param line One source line, optionally including its newline terminator.
+ * @returns Whether the line is a TOML table header.
+ */
+function isTomlTableHeader(line: string): boolean {
+  return /^\s*\[{1,2}[^\]\r\n]+\]{1,2}\s*(?:#.*)?$/.test(line.trimEnd())
 }
 
 /** Writes the original config once without replacing a previous safety copy. */

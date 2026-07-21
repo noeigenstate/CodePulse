@@ -4,7 +4,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { StatusHub } from '@codepulse/core'
-import { QuotaRefreshWatcher, readCodexQuotaTokenFromFile } from '@codepulse/local-server'
+import {
+  QuotaRefreshWatcher,
+  readCodexQuotaTokenFromFile,
+  readCodexRolloutSnapshotFromFile,
+} from '@codepulse/local-server'
 
 test('readCodexQuotaTokenFromFile reads Codex rate limits from the bound rollout file', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'codepulse-quota-'))
@@ -58,12 +62,111 @@ test('readCodexQuotaTokenFromFile reads Codex rate limits from the bound rollout
   }
 })
 
-test('QuotaRefreshWatcher refreshes only the bound Codex quota source', async () => {
+test('Codex rollout timing retains an aborted turn as a cancelled outcome', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'codepulse-codex-aborted-'))
+  const file = join(dir, 'rollout.jsonl')
+  const startedAt = Date.now() - 5_000
+  const abortedAt = startedAt + 2_000
+  try {
+    await writeFile(
+      file,
+      [
+        JSON.stringify({
+          timestamp: new Date(startedAt).toISOString(),
+          type: 'event_msg',
+          payload: {
+            type: 'task_started',
+            turn_id: 'aborted-turn',
+            started_at: startedAt / 1_000,
+          },
+        }),
+        JSON.stringify({
+          timestamp: new Date(abortedAt).toISOString(),
+          type: 'event_msg',
+          payload: {
+            type: 'turn_aborted',
+            turn_id: 'aborted-turn',
+            completed_at: abortedAt / 1_000,
+            duration_ms: abortedAt - startedAt,
+          },
+        }),
+      ].join('\n'),
+      'utf8',
+    )
+
+    const snapshot = await readCodexRolloutSnapshotFromFile(file)
+    assert.deepEqual(snapshot.turnTiming, {
+      state: 'completed',
+      externalTurnId: 'aborted-turn',
+      outcome: 'cancelled',
+      startedAt,
+      elapsedMs: abortedAt - startedAt,
+      observedAt: abortedAt,
+    })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('Codex rollout timing keeps an unmatched parent active after a nested task ends', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'codepulse-codex-nested-timing-'))
+  const file = join(dir, 'rollout.jsonl')
+  const parentStartedAt = Date.now() - 5_000
+  const nestedStartedAt = parentStartedAt + 1_000
+  const nestedCompletedAt = nestedStartedAt + 1_000
+  try {
+    await writeFile(
+      file,
+      [
+        JSON.stringify({
+          timestamp: new Date(parentStartedAt).toISOString(),
+          type: 'event_msg',
+          payload: {
+            type: 'task_started',
+            turn_id: 'parent-turn',
+            started_at: parentStartedAt / 1_000,
+          },
+        }),
+        JSON.stringify({
+          timestamp: new Date(nestedStartedAt).toISOString(),
+          type: 'event_msg',
+          payload: {
+            type: 'task_started',
+            turn_id: 'nested-turn',
+            started_at: nestedStartedAt / 1_000,
+          },
+        }),
+        JSON.stringify({
+          timestamp: new Date(nestedCompletedAt).toISOString(),
+          type: 'event_msg',
+          payload: {
+            type: 'task_complete',
+            turn_id: 'nested-turn',
+            completed_at: nestedCompletedAt / 1_000,
+            duration_ms: nestedCompletedAt - nestedStartedAt,
+          },
+        }),
+      ].join('\n'),
+      'utf8',
+    )
+
+    const snapshot = await readCodexRolloutSnapshotFromFile(file)
+    assert.deepEqual(snapshot.turnTiming, {
+      state: 'active',
+      externalTurnId: 'parent-turn',
+      startedAt: parentStartedAt,
+      observedAt: parentStartedAt,
+    })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('QuotaRefreshWatcher publishes one bound lower observation without clearing quota', async () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const refreshed = new Promise<void>((resolve) => {
-    hub.on('status', () => {
-      const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
-      if (codex?.token?.rateLimits?.fiveHour?.usedPercent === 0) resolve()
+    hub.on('event', (event) => {
+      if (event.id.startsWith('quota-refresh:')) resolve()
     })
   })
   const watcher = new QuotaRefreshWatcher({
@@ -108,19 +211,18 @@ test('QuotaRefreshWatcher refreshes only the bound Codex quota source', async ()
     assert.equal(codex?.workspacePath, 'E:/project/a')
     assert.equal(codex?.lastEventAt, 900_000)
     assert.equal(codex?.model, 'gpt-5.5')
-    assert.equal(codex?.token?.rateLimits?.fiveHour?.usedPercent, 0)
-    assert.equal(codex?.token?.rateLimits?.fiveHour?.resetsAt, 2_000)
+    assert.equal(codex?.token?.rateLimits?.fiveHour?.usedPercent, 99)
+    assert.equal(codex?.token?.rateLimits?.fiveHour?.resetsAt, 1_000)
   } finally {
     watcher.stop()
   }
 })
 
-test('QuotaRefreshWatcher allows weekly refresh when only the five-hour reset is stale', async () => {
+test('QuotaRefreshWatcher holds the first lower weekly observation independently', async () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const refreshed = new Promise<void>((resolve) => {
-    hub.on('status', () => {
-      const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
-      if (codex?.token?.rateLimits?.sevenDay?.resetsAt === 10_000) resolve()
+    hub.on('event', (event) => {
+      if (event.id.startsWith('quota-refresh:')) resolve()
     })
   })
   const watcher = new QuotaRefreshWatcher({
@@ -163,8 +265,8 @@ test('QuotaRefreshWatcher allows weekly refresh when only the five-hour reset is
     const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
     assert.equal(codex?.lastEventAt, 8_000_000)
     assert.equal(codex?.token?.rateLimits?.fiveHour?.resetsAt, 1_000)
-    assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 0)
-    assert.equal(codex?.token?.rateLimits?.sevenDay?.resetsAt, 10_000)
+    assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 8)
+    assert.equal(codex?.token?.rateLimits?.sevenDay?.resetsAt, 9_000)
   } finally {
     watcher.stop()
   }
@@ -222,7 +324,7 @@ test('QuotaRefreshWatcher skips stale reset reads from unchanged rollout data', 
   }
 })
 
-test('readCodexQuotaTokenFromFile soft-resets expired limits to 0% instead of stripping', async () => {
+test('readCodexQuotaTokenFromFile retains expired official limits without fabricating 0%', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'codepulse-quota-soft-'))
   const file = join(dir, 'rollout.jsonl')
   const past = Math.floor(Date.now() / 1000) - 3_600
@@ -250,9 +352,57 @@ test('readCodexQuotaTokenFromFile soft-resets expired limits to 0% instead of st
     )
 
     const token = await readCodexQuotaTokenFromFile(file)
-    assert.equal(token?.rateLimits?.sevenDay?.usedPercent, 0)
+    assert.equal(token?.rateLimits?.sevenDay?.usedPercent, 87)
     assert.equal(token?.rateLimits?.sevenDay?.resetsAt, past)
-    assert.ok(token?.rateLimits, 'must keep rateLimits so UI is not "等待命令行同步额度"')
+    assert.ok(token?.rateLimits, 'must keep the last official rate-limit snapshot')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('readCodexQuotaTokenFromFile backfills an expired official limit onto newer context', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'codepulse-quota-expired-backfill-'))
+  const file = join(dir, 'rollout.jsonl')
+  const past = Math.floor(Date.now() / 1000) - 3_600
+  try {
+    await writeFile(
+      file,
+      [
+        JSON.stringify({
+          type: 'event_msg',
+          payload: {
+            type: 'token_count',
+            info: {
+              model_context_window: 256_000,
+              last_token_usage: { input_tokens: 10_000, total_tokens: 10_100 },
+            },
+            rate_limits: {
+              limit_id: 'codex',
+              primary: {
+                used_percent: 87,
+                resets_at: past,
+                window_minutes: 10_080,
+              },
+            },
+          },
+        }),
+        JSON.stringify({
+          type: 'event_msg',
+          payload: {
+            type: 'token_count',
+            info: {
+              model_context_window: 256_000,
+              last_token_usage: { input_tokens: 20_000, total_tokens: 20_100 },
+            },
+          },
+        }),
+      ].join('\n') + '\n',
+    )
+
+    const token = await readCodexQuotaTokenFromFile(file)
+    assert.equal(token?.contextUsedPercent, 7.8125)
+    assert.equal(token?.rateLimits?.sevenDay?.usedPercent, 87)
+    assert.equal(token?.rateLimits?.sevenDay?.resetsAt, past)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

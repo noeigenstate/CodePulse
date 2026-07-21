@@ -12,7 +12,7 @@ import type { StatusHub } from '@codepulse/core'
 const TAIL_BYTES = 4 * 1024 * 1024
 const DEFAULT_CODEX_CONTEXT_WINDOW = 256_000
 const DEFAULT_SCHEDULE_OFFSETS_MS = [1_000, 5_000, 15_000, 30_000, 60_000] as const
-/** After a reset (or soft-reset), keep re-reading the bound file for fresh CLI writes. */
+/** After a reset boundary, keep re-reading the bound file for fresh CLI writes. */
 const POST_RESET_RETRY_MS = [2_000, 8_000, 20_000, 45_000, 90_000, 180_000] as const
 /** Steady re-read of remembered rollout paths while CLI may still write after idle. */
 const STEADY_POLL_MS = 12_000
@@ -72,7 +72,10 @@ export class QuotaRefreshWatcher {
 
   observe(event: AgentEvent): void {
     if (event.source !== 'codex' || !event.tokenSourcePath) return
-    // Remember path even when rateLimits were soft-stripped — still need post-reset poll.
+    // Refresh events are outputs of this watcher (or account-only sync). Feeding
+    // them back into scheduling would re-arm the same reset retry indefinitely.
+    if (event.internal?.quotaRefresh) return
+    // Remember the path even when this event omits limits; post-reset polling still needs it.
     if (!event.token) return
 
     const binding: BoundQuotaSource = {
@@ -192,8 +195,10 @@ export class QuotaRefreshWatcher {
       return
     }
 
+    const observedAt = this.now()
+    const usageSampleId = `quota-refresh:${binding.source}:${binding.sourcePath}:${observedAt}`
     this.hub.ingest({
-      id: `quota-refresh:${binding.source}:${workspaceKey(binding.workspacePath ?? binding.cwd)}:${this.now()}`,
+      id: `${usageSampleId}:${workspaceKey(binding.workspacePath ?? binding.cwd)}`,
       source: binding.source,
       eventType: 'token_snapshot',
       externalSessionId: binding.externalSessionId,
@@ -202,8 +207,8 @@ export class QuotaRefreshWatcher {
       cwd: binding.cwd,
       token,
       tokenSourcePath: binding.sourcePath,
-      internal: { quotaRefresh: true },
-      timestamp: this.now(),
+      internal: { quotaRefresh: true, usageSampleId },
+      timestamp: observedAt,
     })
   }
 }
@@ -258,7 +263,7 @@ function rateLimitsDominate(
     if (n?.usedPercent === undefined) continue
     if (!c) return false
     if (!sameResetAtValue(c.resetsAt, n.resetsAt)) return false
-    // Expired windows may soft-reset to 0% — never treat that as "dominated".
+    // Expired windows may later publish a genuine lower value; do not suppress that observation.
     const resetRaw = n.resetsAt ?? c.resetsAt
     if (typeof resetRaw === 'number' && Number.isFinite(resetRaw)) {
       if (normalizeResetAt(resetRaw) <= nowMs) return false
@@ -296,9 +301,7 @@ export async function readCodexRolloutSnapshotFromFile(
   let modelConfig: CodexModelConfig | undefined
   const terminalTasks = new Map<string, CodexTaskTerminal>()
   const activeTasks: CodexTaskStart[] = []
-  let latestCompletedTask: CodexTaskTerminal | undefined
-  const nowMs = Date.now()
-
+  let latestTerminalTask: CodexTaskTerminal | undefined
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i] ?? ''
     // A rollout tail can contain thousands of reasoning and tool-output rows.
@@ -317,11 +320,7 @@ export async function readCodexRolloutSnapshotFromFile(
     const payload = isRecord(item.payload) ? item.payload : undefined
     if (payload?.type === 'token_count') {
       if (!tokenCount) tokenCount = payload
-      if (
-        !tokenCountWithLimits &&
-        tokenCountPayloadHasRateLimits(payload) &&
-        payloadRateLimitsAreActive(payload, nowMs)
-      ) {
+      if (!tokenCountWithLimits && tokenCountPayloadHasRateLimits(payload)) {
         tokenCountWithLimits = payload
       }
     }
@@ -329,10 +328,10 @@ export async function readCodexRolloutSnapshotFromFile(
 
     const taskType = readString(payload, 'type')
     if (payload && (taskType === 'task_complete' || taskType === 'turn_aborted')) {
-      const terminal = readCodexTaskTerminal(payload, item)
+      const terminal = readCodexTaskTerminal(payload, item, taskType)
       if (terminal) {
-        if (!latestCompletedTask || terminal.observedAt >= latestCompletedTask.observedAt) {
-          latestCompletedTask = terminal
+        if (!latestTerminalTask || terminal.observedAt >= latestTerminalTask.observedAt) {
+          latestTerminalTask = terminal
         }
         if (terminal.turnId) terminalTasks.set(terminal.turnId, terminal)
       }
@@ -345,9 +344,9 @@ export async function readCodexRolloutSnapshotFromFile(
   }
 
   const token = tokenCount
-    ? finalizeCodexToken(tokenCount, tokenCountWithLimits, taskStarted, nowMs)
+    ? finalizeCodexToken(tokenCount, tokenCountWithLimits, taskStarted)
     : undefined
-  const turnTiming = selectCodexTurnTiming(activeTasks, latestCompletedTask)
+  const turnTiming = selectCodexTurnTiming(activeTasks, latestTerminalTask)
   return { ...(token ? { token } : {}), ...modelConfig, ...(turnTiming ? { turnTiming } : {}) }
 }
 
@@ -381,33 +380,27 @@ export async function readCodexQuotaTokenFromFile(
 }
 
 /**
- * Applies rate-limit backfill and soft-reset rules to the newest token count.
+ * Backfills the newest official rate-limit snapshot onto the newest token count.
  *
  * @param tokenCount Latest `token_count` payload.
- * @param tokenCountWithLimits Newest active quota-bearing `token_count` payload.
+ * @param tokenCountWithLimits Newest quota-bearing `token_count` payload.
  * @param taskStarted Optional task metadata used for context-window fallback.
- * @param nowMs Current epoch milliseconds for reset validation.
  * @returns Normalized token payload, if usable usage data exists.
  */
 function finalizeCodexToken(
   tokenCount: Record<string, unknown>,
   tokenCountWithLimits: Record<string, unknown> | undefined,
   taskStarted: Record<string, unknown> | undefined,
-  nowMs: number,
 ): TokenPayload | undefined {
   const token = toCodexToken(tokenCount, taskStarted)
   if (!token) return undefined
   if (!token.rateLimits && tokenCountWithLimits && tokenCountWithLimits !== tokenCount) {
     const withLimits = toCodexToken(tokenCountWithLimits, taskStarted)
-    if (withLimits?.rateLimits && tokenRateLimitsAreActive(withLimits.rateLimits, nowMs)) {
+    if (withLimits?.rateLimits) {
       token.rateLimits = withLimits.rateLimits
       token.rateLimitId = withLimits.rateLimitId
       token.rateLimitName = withLimits.rateLimitName
     }
-  } else if (token.rateLimits && !tokenRateLimitsAreActive(token.rateLimits, nowMs)) {
-    // Soft-reset: CLI has not written post-reset token_count yet.
-    // Show 0% + past resetsAt ("可刷新") instead of wiping limits → "等待命令行同步额度".
-    token.rateLimits = softResetExpiredRateLimits(token.rateLimits, nowMs)
   }
   return token
 }
@@ -427,6 +420,7 @@ interface CodexTaskStart {
 
 /** A native Codex terminal task record normalized for lifecycle matching. */
 interface CodexTaskTerminal {
+  outcome: 'completed' | 'aborted'
   turnId?: string
   startedAt?: number
   elapsedMs: number
@@ -456,17 +450,20 @@ function readCodexTaskStart(
  *
  * @param payload Parsed `event_msg` payload.
  * @param envelope Parsed JSONL envelope.
+ * @param taskType Native terminal event kind.
  * @returns A terminal duration record, or `undefined` when native timing is unusable.
  */
 function readCodexTaskTerminal(
   payload: Record<string, unknown>,
   envelope: Record<string, unknown>,
+  taskType: 'task_complete' | 'turn_aborted',
 ): CodexTaskTerminal | undefined {
   const observedAt =
     parseRolloutTimestamp(payload.completed_at) ?? parseRolloutTimestamp(envelope.timestamp)
   const elapsedMs = optionalNumber(payload.duration_ms) ?? optionalNumber(payload.durationMs)
   if (observedAt == null || observedAt <= 0 || elapsedMs == null || elapsedMs < 0) return undefined
   return {
+    outcome: taskType === 'task_complete' ? 'completed' : 'aborted',
     turnId: readString(payload, 'turn_id', 'turnId'),
     elapsedMs,
     observedAt,
@@ -474,24 +471,25 @@ function readCodexTaskTerminal(
 }
 
 /**
- * Picks one card-level timing value from a rollout that may include several
- * agent turns. Only starts newer than the newest terminal can still describe an
- * active foreground turn; this prevents a historical interrupted start from
- * reviving a completed card after a restart. Codex does not expose a stable
- * foreground-turn marker when several tasks remain unclosed, so the newest
- * start is the conservative best-effort proxy for the card's current turn.
+ * Picks one card-level timing value from a rollout that may include nested
+ * tasks. A start with a stable turn ID remains active until a terminal record
+ * with the same ID appears, even when a newer nested task has already ended.
+ * Unidentified starts cannot be paired safely, so only those newer than the
+ * latest terminal are eligible. The newest remaining start represents the card.
  *
  * @param activeTasks Unmatched native task starts from the rollout tail.
- * @param latestCompletedTask Newest native task completion from the rollout tail.
+ * @param latestTerminalTask Newest native completion or abort from the rollout tail.
  * @returns The timing snapshot suitable for the project card, when available.
  */
 function selectCodexTurnTiming(
   activeTasks: readonly CodexTaskStart[],
-  latestCompletedTask: CodexTaskTerminal | undefined,
+  latestTerminalTask: CodexTaskTerminal | undefined,
 ): TurnTiming | undefined {
   const currentTasks = activeTasks.filter(
     (candidate) =>
-      latestCompletedTask == null || candidate.startedAt >= latestCompletedTask.observedAt,
+      candidate.turnId != null ||
+      latestTerminalTask == null ||
+      candidate.startedAt >= latestTerminalTask.observedAt,
   )
   const active = currentTasks.reduce<CodexTaskStart | undefined>(
     (latest, candidate) => (!latest || candidate.startedAt > latest.startedAt ? candidate : latest),
@@ -500,18 +498,21 @@ function selectCodexTurnTiming(
   if (active) {
     return {
       state: 'active',
+      ...(active.turnId ? { externalTurnId: active.turnId } : {}),
       startedAt: active.startedAt,
       observedAt: active.startedAt,
     }
   }
-  if (!latestCompletedTask) return undefined
+  if (!latestTerminalTask) return undefined
   return {
     state: 'completed',
-    ...(latestCompletedTask.startedAt !== undefined
-      ? { startedAt: latestCompletedTask.startedAt }
+    ...(latestTerminalTask.turnId ? { externalTurnId: latestTerminalTask.turnId } : {}),
+    ...(latestTerminalTask.outcome === 'aborted' ? { outcome: 'cancelled' as const } : {}),
+    ...(latestTerminalTask.startedAt !== undefined
+      ? { startedAt: latestTerminalTask.startedAt }
       : {}),
-    elapsedMs: latestCompletedTask.elapsedMs,
-    observedAt: latestCompletedTask.observedAt,
+    elapsedMs: latestTerminalTask.elapsedMs,
+    observedAt: latestTerminalTask.observedAt,
   }
 }
 
@@ -589,54 +590,6 @@ function readString(
     if (typeof value === 'string' && value.trim()) return value.trim()
   }
   return undefined
-}
-
-type RateWindow = NonNullable<NonNullable<TokenPayload['rateLimits']>['fiveHour']>
-
-function softResetExpiredRateLimits(
-  rateLimits: NonNullable<TokenPayload['rateLimits']>,
-  nowMs: number,
-): NonNullable<TokenPayload['rateLimits']> {
-  return {
-    fiveHour: softResetWindow(rateLimits.fiveHour, nowMs),
-    sevenDay: softResetWindow(rateLimits.sevenDay, nowMs),
-  }
-}
-
-function softResetWindow(window: RateWindow | undefined, nowMs: number): RateWindow | undefined {
-  if (!window) return undefined
-  const resetsAt = window.resetsAt
-  if (typeof resetsAt !== 'number' || !Number.isFinite(resetsAt)) {
-    return { ...window, usedPercent: 0 }
-  }
-  const resetMs = resetsAt < 1_000_000_000_000 ? resetsAt * 1000 : resetsAt
-  if (resetMs > nowMs) return window
-  return { ...window, usedPercent: 0 }
-}
-
-function payloadRateLimitsAreActive(payload: Record<string, unknown>, nowMs: number): boolean {
-  const token = toCodexToken(payload, undefined)
-  return tokenRateLimitsAreActive(token?.rateLimits, nowMs)
-}
-
-function tokenRateLimitsAreActive(
-  rateLimits: TokenPayload['rateLimits'] | undefined,
-  nowMs: number,
-): boolean {
-  if (!rateLimits) return false
-  const windows = [rateLimits.fiveHour, rateLimits.sevenDay].filter(Boolean)
-  if (windows.length === 0) return false
-
-  let sawReset = false
-  for (const window of windows) {
-    const resetsAt = window?.resetsAt
-    if (typeof resetsAt !== 'number' || !Number.isFinite(resetsAt)) continue
-    sawReset = true
-    const resetMs = resetsAt < 1_000_000_000_000 ? resetsAt * 1000 : resetsAt
-    if (resetMs > nowMs) return true
-  }
-  if (!sawReset) return true
-  return false
 }
 
 function tokenCountPayloadHasRateLimits(payload: Record<string, unknown>): boolean {

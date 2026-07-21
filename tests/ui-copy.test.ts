@@ -36,6 +36,19 @@ test('thinking depth is localized without deriving it from token usage', () => {
   assert.equal(formatThinkingDepth('future-level', 'en'), 'future-level')
 })
 
+test('empty project panels provide localized agent-specific guidance', () => {
+  const zh = uiCopy('zh').emptyDashboard
+  assert.equal(zh.agentTitle, '当前没有运行中的会话')
+  assert.equal(
+    zh.agentBody.replace('{agent}', 'Claude Code'),
+    'Claude Code 暂无活动，随时准备为你服务',
+  )
+
+  const en = uiCopy('en').emptyDashboard
+  assert.equal(en.agentTitle, 'No active sessions')
+  assert.equal(en.agentBody.replace('{agent}', 'Codex'), 'Codex is idle and ready when you are.')
+})
+
 test('locale toggle switches between Chinese and English labels', () => {
   assert.equal(nextLocale('zh'), 'en')
   assert.equal(nextLocale('en'), 'zh')
@@ -84,6 +97,8 @@ test('Chinese locale does not expose English dashboard chrome', () => {
     copy.settings.cliToolsHint,
     copy.emptyDashboard.settingsHiddenTitle,
     copy.emptyDashboard.settingsHiddenBody,
+    copy.emptyDashboard.agentTitle,
+    copy.emptyDashboard.agentBody.replace('{agent}', 'Claude Code'),
     formatContextWindowStatus(
       { accuracy: 'exact', contextUsedPercent: 79.85, contextWindow: 258_400, contextStale: true },
       undefined,
@@ -139,6 +154,8 @@ test('English locale does not expose Chinese dashboard chrome', () => {
     copy.settings.cliToolsHint,
     copy.emptyDashboard.settingsHiddenTitle,
     copy.emptyDashboard.settingsHiddenBody,
+    copy.emptyDashboard.agentTitle,
+    copy.emptyDashboard.agentBody.replace('{agent}', 'Claude Code'),
     formatContextWindowStatus(
       { accuracy: 'exact', contextUsedPercent: 79.85, contextWindow: 258_400, contextStale: true },
       undefined,

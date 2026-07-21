@@ -14,7 +14,7 @@ import {
 } from '@codepulse/shared'
 import type { Locale, StatsCopy, UiCopy } from '../lib/i18n.js'
 import { formatRelative } from '../lib/format.js'
-import codePulseIcon from '../assets/codepulse-icon.png'
+import codePulseIcon from '../assets/codepulse-icon.svg'
 
 const MODEL_COLORS = ['#6366F1', '#3B82F6', '#F59E0B', '#94A3B8', '#A78BFA', '#34D399', '#F472B6']
 const TYPE_COLORS = ['#6366F1', '#34D399', '#3B82F6', '#94A3B8', '#F59E0B']
@@ -76,93 +76,91 @@ export function StatsDashboard({ locale, copy, onClose }: Props): JSX.Element {
   }, [stats])
 
   return (
-    <div className="fixed inset-0 z-40 flex flex-col bg-[#F6F8FC] text-ink">
-      <div className="app-shell flex h-full min-h-0 flex-col">
-        {/* Top bar */}
-        <header className="shrink-0 border-b border-line bg-white/80 px-5 py-3 backdrop-blur-md">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <img
-                src={codePulseIcon}
-                alt=""
-                className="h-9 w-9 shrink-0 rounded-full object-contain shadow-soft"
-              />
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="truncate text-module font-bold text-ink">{s.title}</h1>
-                  <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-600 ring-1 ring-indigo-100">
-                    {s.pageTitle}
-                  </span>
-                </div>
-                <p className="mt-0.5 truncate text-meta text-ink-500">{s.subtitle}</p>
+    <div className="flex min-h-0 flex-1 flex-col text-ink">
+      {/* Top bar */}
+      <header className="shrink-0 border-b border-line bg-white/80 px-5 py-3 backdrop-blur-md">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <img
+              src={codePulseIcon}
+              alt=""
+              className="h-9 w-9 shrink-0 rounded-full object-contain shadow-soft"
+            />
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="truncate text-module font-bold text-ink">{s.title}</h1>
+                <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-600 ring-1 ring-indigo-100">
+                  {s.pageTitle}
+                </span>
               </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex items-center gap-1 rounded-badge border border-line bg-white px-2.5 py-1.5 text-meta text-ink-700 shadow-soft">
-                <CalendarIcon />
-                <span className="tabular-nums">{rangeLabel}</span>
-              </div>
-              <Segmented
-                value={range}
-                options={[
-                  { value: 'today', label: s.rangeToday },
-                  { value: '7d', label: s.range7d },
-                  { value: '30d', label: s.range30d },
-                ]}
-                onChange={(v) => setRange(v as StatsRangePreset)}
-              />
-              <button
-                type="button"
-                className="control-btn"
-                disabled={loading || refreshing}
-                onClick={() => void load({ silent: true })}
-              >
-                <RefreshIcon spin={refreshing || loading} />
-                <span>{refreshing || loading ? s.refreshing : s.refresh}</span>
-              </button>
-              <button type="button" className="control-btn" onClick={onClose}>
-                <span>{s.backToLive}</span>
-              </button>
+              <p className="mt-0.5 truncate text-meta text-ink-500">{s.subtitle}</p>
             </div>
           </div>
-        </header>
 
-        {/* Body — clip horizontal overflow so 30d charts cannot blow the shell width */}
-        <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-4">
-          {loading && !stats ? (
-            <div className="flex h-full min-h-[20rem] items-center justify-center text-sm text-ink-500">
-              {s.loading}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center gap-1 rounded-badge border border-line bg-white px-2.5 py-1.5 text-meta text-ink-700 shadow-soft">
+              <CalendarIcon />
+              <span className="tabular-nums">{rangeLabel}</span>
             </div>
-          ) : error && !stats ? (
-            <div className="flex h-full min-h-[20rem] flex-col items-center justify-center gap-3">
-              <p className="text-sm text-red-600">{error}</p>
-              <button type="button" className="control-btn" onClick={() => void load()}>
-                {s.refresh}
-              </button>
-            </div>
-          ) : stats ? (
-            <StatsBody
-              stats={stats}
-              s={s}
-              locale={locale}
-              granularity={granularity}
-              onGranularity={setGranularity}
+            <Segmented
+              value={range}
+              options={[
+                { value: 'today', label: s.rangeToday },
+                { value: '7d', label: s.range7d },
+                { value: '30d', label: s.range30d },
+              ]}
+              onChange={(v) => setRange(v as StatsRangePreset)}
             />
-          ) : null}
+            <button
+              type="button"
+              className="control-btn"
+              disabled={loading || refreshing}
+              onClick={() => void load({ silent: true })}
+            >
+              <RefreshIcon spin={refreshing || loading} />
+              <span>{refreshing || loading ? s.refreshing : s.refresh}</span>
+            </button>
+            <button type="button" className="control-btn" onClick={onClose}>
+              <span>{s.backToLive}</span>
+            </button>
+          </div>
         </div>
+      </header>
 
-        <footer className="footer-strip flex shrink-0 items-center justify-between gap-3 px-6 py-2">
-          <span>{s.privacyNote}</span>
-          <span className="tabular-nums">
-            {stats
-              ? locale === 'zh'
-                ? `同步 ${formatRelative(stats.generatedAt, Date.now(), locale)}`
-                : `Synced ${formatRelative(stats.generatedAt, Date.now(), locale)}`
-              : '—'}
-          </span>
-        </footer>
+      {/* Body — clip horizontal overflow so 30d charts cannot blow the shell width */}
+      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-4">
+        {loading && !stats ? (
+          <div className="flex h-full min-h-[20rem] items-center justify-center text-sm text-ink-500">
+            {s.loading}
+          </div>
+        ) : error && !stats ? (
+          <div className="flex h-full min-h-[20rem] flex-col items-center justify-center gap-3">
+            <p className="text-sm text-red-600">{error}</p>
+            <button type="button" className="control-btn" onClick={() => void load()}>
+              {s.refresh}
+            </button>
+          </div>
+        ) : stats ? (
+          <StatsBody
+            stats={stats}
+            s={s}
+            locale={locale}
+            granularity={granularity}
+            onGranularity={setGranularity}
+          />
+        ) : null}
       </div>
+
+      <footer className="footer-strip flex shrink-0 items-center justify-between gap-3 px-6 py-2">
+        <span>{s.privacyNote}</span>
+        <span className="tabular-nums">
+          {stats
+            ? locale === 'zh'
+              ? `同步 ${formatRelative(stats.generatedAt, Date.now(), locale)}`
+              : `Synced ${formatRelative(stats.generatedAt, Date.now(), locale)}`
+            : '—'}
+        </span>
+      </footer>
     </div>
   )
 }

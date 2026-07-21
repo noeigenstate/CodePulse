@@ -1,5 +1,5 @@
 import { headerCopy, type Locale } from '../lib/i18n.js'
-import codePulseIcon from '../assets/codepulse-icon.png'
+import codePulseIcon from '../assets/codepulse-icon.svg'
 
 interface Props {
   locale: Locale
@@ -8,8 +8,6 @@ interface Props {
   onToggleMute: () => void
   onOpenStats: () => void
   onOpenSettings: () => void
-  /** 大屏模式中：按钮变为退出大屏 */
-  statsActive?: boolean
   /** Drives only the gear button's active visual state while the dialog is mounted. */
   settingsOpen?: boolean
 }
@@ -22,11 +20,9 @@ export function Header({
   onToggleMute,
   onOpenStats,
   onOpenSettings,
-  statsActive = false,
   settingsOpen = false,
 }: Props): JSX.Element {
   const copy = headerCopy(locale)
-  const statsLabel = statsActive ? (locale === 'zh' ? '退出大屏' : 'Exit') : copy.stats
 
   return (
     <header className="px-6 pb-3 pt-5">
@@ -35,7 +31,7 @@ export function Header({
           <img
             src={codePulseIcon}
             alt=""
-            className="app-logo h-11 w-11 shrink-0 rounded-full object-contain shadow-soft"
+            className="h-11 w-11 shrink-0 rounded-full object-contain shadow-soft"
           />
           <div className="min-w-0">
             <div className="flex min-w-0 items-baseline gap-2">
@@ -69,18 +65,9 @@ export function Header({
             {muted ? <BellOffIcon /> : <BellIcon />}
             <span>{muted ? copy.muted : copy.mute}</span>
           </button>
-          <button
-            type="button"
-            onClick={onOpenStats}
-            className={`control-btn ${
-              statsActive
-                ? 'border-indigo-200 bg-indigo-50 text-brand-codex hover:bg-indigo-100'
-                : ''
-            }`}
-            title={statsLabel}
-          >
+          <button type="button" onClick={onOpenStats} className="control-btn" title={copy.stats}>
             <ChartIcon />
-            <span>{statsLabel}</span>
+            <span>{copy.stats}</span>
           </button>
           <button
             aria-label={copy.settings}

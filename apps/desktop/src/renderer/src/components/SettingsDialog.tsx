@@ -87,7 +87,7 @@ export function SettingsDialog({
 
   return (
     <div
-      className="settings-backdrop fixed inset-0 z-[60] flex items-center justify-center px-4"
+      className="settings-backdrop absolute inset-0 z-[60] flex items-center justify-center px-4"
       onMouseDown={closeOnBackdrop}
       role="presentation"
     >

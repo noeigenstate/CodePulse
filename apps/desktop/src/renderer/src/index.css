@@ -115,6 +115,37 @@ body {
       var(--canvas);
   }
 
+  /* Let the native frame own outer-window geometry across platforms and window states. */
+  #root > .app-shell {
+    border: 1px solid var(--line);
+  }
+
+  /* Preserve native Windows controls while matching the renderer's active palette. */
+  .window-titlebar {
+    display: flex;
+    height: env(titlebar-area-height, 2rem);
+    flex: 0 0 env(titlebar-area-height, 2rem);
+    align-items: center;
+    gap: 0.4rem;
+    border-bottom: 1px solid var(--line);
+    background: var(--canvas);
+    color: var(--ink-700);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1;
+    padding-left: 0.7rem;
+    user-select: none;
+    -webkit-app-region: drag;
+  }
+
+  .window-titlebar-logo {
+    width: 1.1rem;
+    height: 1.1rem;
+    flex-shrink: 0;
+    border-radius: 999px;
+    object-fit: contain;
+  }
+
   .app-shell::before {
     content: '';
     position: absolute;
@@ -142,7 +173,6 @@ body {
   .surface-card-hover {
     transition:
       box-shadow 180ms ease,
-      transform 180ms ease,
       border-color 180ms ease;
   }
 
@@ -159,24 +189,28 @@ body {
   }
 
   .agent-panel[data-agent='claude_code'] {
+    --agent-accent: var(--claude);
     box-shadow:
       var(--shadow-card),
       inset 3px 0 0 var(--claude);
   }
 
   .agent-panel[data-agent='codex'] {
+    --agent-accent: var(--codex);
     box-shadow:
       var(--shadow-card),
       inset 3px 0 0 var(--codex);
   }
 
   .agent-panel[data-agent='grok'] {
+    --agent-accent: var(--grok);
     box-shadow:
       var(--shadow-card),
       inset 3px 0 0 var(--grok);
   }
 
   .agent-panel[data-agent='kimi'] {
+    --agent-accent: var(--kimi);
     box-shadow:
       var(--shadow-card),
       inset 3px 0 0 var(--kimi);
@@ -189,8 +223,7 @@ body {
     box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
     transition:
       box-shadow 180ms ease,
-      border-color 180ms ease,
-      transform 180ms ease;
+      border-color 180ms ease;
   }
 
   .project-tile:hover {
@@ -304,8 +337,22 @@ body {
     padding: 0.4rem 0.65rem;
   }
 
-  .agent-project-list {
-    scrollbar-width: thin;
+  .agent-empty-state {
+    display: flex;
+    min-height: 12rem;
+    flex: 1 1 0%;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 1.5rem 1.25rem;
+    text-align: center;
+  }
+
+  .agent-empty-illustration {
+    width: 6rem;
+    height: auto;
+    color: var(--agent-accent, var(--claude));
+    filter: drop-shadow(0 8px 12px color-mix(in srgb, currentColor 14%, transparent));
   }
 
   .footer-strip {
@@ -315,22 +362,6 @@ body {
     font-size: 12px;
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
-  }
-
-  .overall-status-chip {
-    display: inline-flex;
-    height: 2.5rem;
-    align-items: center;
-    gap: 0.45rem;
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    background: var(--surface-panel);
-    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
-    color: var(--ink);
-    font-size: 13px;
-    font-weight: 600;
-    padding: 0 0.9rem;
-    white-space: nowrap;
   }
 
   .agent-brand-icon {
@@ -394,10 +425,6 @@ body {
     background: #cbd5e1;
   }
 
-  .app-logo {
-    border: 0;
-  }
-
   /* Surface aliases used by modals / shared chrome */
   .liquid-glass {
     border: 1px solid var(--line);
@@ -406,18 +433,6 @@ body {
     box-shadow: var(--shadow-card);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
-  }
-
-  .glass-subtle {
-    border: 1px solid var(--line);
-    background: var(--surface-solid);
-    box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
-  }
-
-  .control-glass {
-    border: 1px solid var(--line);
-    background: var(--surface-panel);
-    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
   }
 
   .settings-backdrop {

@@ -14,13 +14,19 @@ import type {
 } from '@codepulse/shared'
 
 type Unsubscribe = () => void
+/** Theme values accepted by the native window chrome bridge. */
+type WindowTheme = 'light' | 'dark'
 
 /** 镜像 src/preload/index.ts 通过 contextBridge 暴露的 API。 */
 export interface CodePulseApi {
+  /** Host platform exposed by the constrained preload bridge. */
+  platform: NodeJS.Platform
   getStatus: () => Promise<StatusSnapshot>
   ack: (agent: AgentType, workspacePath?: string) => Promise<boolean>
   setMute: (muted: boolean) => Promise<boolean>
   setLocale: (locale: UiLocale) => Promise<UiLocale>
+  /** Synchronizes native title-bar colors with the resolved renderer theme. */
+  setWindowTheme: (theme: WindowTheme) => Promise<WindowTheme>
   detectAgents: () => Promise<Agent[]>
   getUpdate: () => Promise<UpdateInfo | null>
   dismissUpdate: () => Promise<boolean>

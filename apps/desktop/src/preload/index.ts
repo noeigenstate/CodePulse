@@ -14,6 +14,8 @@ import type {
 } from '@codepulse/shared'
 
 type Unsubscribe = () => void
+/** Theme values accepted by the native window chrome bridge. */
+type WindowTheme = 'light' | 'dark'
 
 function subscribe<T>(channel: string, cb: (payload: T) => void): Unsubscribe {
   const listener = (_event: IpcRendererEvent, payload: T) => cb(payload)
@@ -22,12 +24,17 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): Unsubscribe {
 }
 
 const api = {
+  /** Lets the renderer opt into Windows-only title-bar layout without Node access. */
+  platform: process.platform,
   getStatus: (): Promise<StatusSnapshot> => ipcRenderer.invoke('codepulse:get-status'),
   ack: (agent: AgentType, workspacePath?: string): Promise<boolean> =>
     ipcRenderer.invoke('codepulse:ack', agent, workspacePath),
   setMute: (muted: boolean): Promise<boolean> => ipcRenderer.invoke('codepulse:set-mute', muted),
   setLocale: (locale: UiLocale): Promise<UiLocale> =>
     ipcRenderer.invoke('codepulse:set-locale', locale),
+  /** Keeps native window controls aligned with the renderer's selected palette. */
+  setWindowTheme: (theme: WindowTheme): Promise<WindowTheme> =>
+    ipcRenderer.invoke('codepulse:set-window-theme', theme),
   detectAgents: (): Promise<Agent[]> => ipcRenderer.invoke('codepulse:detect-agents'),
   getUpdate: (): Promise<UpdateInfo | null> => ipcRenderer.invoke('codepulse:get-update'),
   /** User dismissed the update modal — main process snoozes checks for 24h. */

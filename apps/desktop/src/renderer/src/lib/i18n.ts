@@ -183,6 +183,10 @@ export interface StatsCopy {
 export interface EmptyDashboardCopy {
   title: string
   body: string
+  /** Title shown inside a CLI panel that currently has no visible sessions. */
+  agentTitle: string
+  /** Agent-specific idle message. `{agent}` is replaced with the CLI display name. */
+  agentBody: string
   /** Title used when user preferences intentionally hide every CLI panel. */
   settingsHiddenTitle: string
   /** Recovery guidance for the all-tools-hidden state. */
@@ -291,6 +295,8 @@ const UI_COPY: Record<Locale, UiCopy> = {
     emptyDashboard: {
       title: '等待 CLI 任务',
       body: '开始 Claude Code、Codex、Grok 或 Kimi 任务后，对应分屏会自动出现；只用一个 CLI 时只显示一栏。',
+      agentTitle: '当前没有运行中的会话',
+      agentBody: '{agent} 暂无活动，随时准备为你服务',
       settingsHiddenTitle: '所有 CLI 工具已隐藏',
       settingsHiddenBody: '打开右上角设置，重新选择要显示的 CLI 工具。',
     },
@@ -505,6 +511,8 @@ const UI_COPY: Record<Locale, UiCopy> = {
     emptyDashboard: {
       title: 'Waiting for CLI tasks',
       body: 'Panels appear when you start Claude Code, Codex, Grok, or Kimi tasks. If you only use one CLI, only that panel is shown.',
+      agentTitle: 'No active sessions',
+      agentBody: '{agent} is idle and ready when you are.',
       settingsHiddenTitle: 'All CLI tools are hidden',
       settingsHiddenBody: 'Open settings in the upper-right corner to choose tools to display.',
     },

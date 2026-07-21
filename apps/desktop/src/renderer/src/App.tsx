@@ -80,7 +80,7 @@ import {
   type Locale,
   type UiCopy,
 } from './lib/i18n.js'
-import codePulseIcon from './assets/codepulse-icon.png'
+import codePulseIcon from './assets/codepulse-icon.svg'
 
 /**
  * 应用外壳 Dashboard。
@@ -143,7 +143,6 @@ export function App(): JSX.Element {
     dismissedAgentCheckId,
     codexTrustAcknowledged,
   )
-  const now = useNow(30_000)
   const resolvedTheme = useScheduledTheme(dashboardSettings.theme)
 
   useEffect(() => {
@@ -153,6 +152,7 @@ export function App(): JSX.Element {
   useLayoutEffect(() => {
     // Write before paint so the resolved palette never flashes its opposite color.
     applyTheme(document.documentElement, resolvedTheme)
+    void window.codepulse.setWindowTheme(resolvedTheme)
   }, [resolvedTheme])
 
   useEffect(() => {
@@ -218,24 +218,29 @@ export function App(): JSX.Element {
       updatedAt={snapshot.updatedAt}
       locale={locale}
       copy={copy}
-      now={now}
       onAck={(agentType, workspacePath) => ack(agentType, workspacePath)}
     />
   )
 
   return (
     <div className="app-shell flex h-full flex-col text-ink">
-      <Header
-        locale={locale}
-        muted={muted}
-        onToggleLocale={toggleLocale}
-        onToggleMute={toggleMute}
-        onOpenStats={() => setStatsOpen(true)}
-        onOpenSettings={() => setSettingsOpen(true)}
-        statsActive={statsOpen}
-        settingsOpen={settingsOpen}
-      />
-      {liveConsole}
+      {window.codepulse.platform === 'win32' ? <WindowTitleBar /> : null}
+      {statsOpen ? (
+        <StatsDashboard locale={locale} copy={copy} onClose={() => setStatsOpen(false)} />
+      ) : (
+        <>
+          <Header
+            locale={locale}
+            muted={muted}
+            onToggleLocale={toggleLocale}
+            onToggleMute={toggleMute}
+            onOpenStats={() => setStatsOpen(true)}
+            onOpenSettings={() => setSettingsOpen(true)}
+            settingsOpen={settingsOpen}
+          />
+          {liveConsole}
+        </>
+      )}
       {showSetupReminder && (
         <AgentSetupReminderModal
           copy={copy}
@@ -264,9 +269,20 @@ export function App(): JSX.Element {
           visibleTools={dashboardSettings.visibleTools}
         />
       )}
-      {statsOpen && (
-        <StatsDashboard locale={locale} copy={copy} onClose={() => setStatsOpen(false)} />
-      )}
+    </div>
+  )
+}
+
+/**
+ * Renders the draggable brand strip beneath native Windows window controls.
+ *
+ * @returns A non-interactive title-bar surface matching the active app theme.
+ */
+function WindowTitleBar(): JSX.Element {
+  return (
+    <div aria-hidden="true" className="window-titlebar">
+      <img alt="" className="window-titlebar-logo" src={codePulseIcon} />
+      <span>CodePulse</span>
     </div>
   )
 }
@@ -322,7 +338,6 @@ function LiveConsole({
   updatedAt,
   locale,
   copy,
-  now,
   onAck,
 }: {
   allToolsHidden: boolean
@@ -331,9 +346,10 @@ function LiveConsole({
   updatedAt: number
   locale: Locale
   copy: UiCopy
-  now: number
   onAck: (agentType: AgentType, workspacePath?: string) => void
 }): JSX.Element {
+  const now = useNow(30_000)
+
   return (
     <>
       <div className="min-h-0 flex-1 overflow-hidden px-5 pb-3">
@@ -434,7 +450,7 @@ function UpdateAvailableModal({
   const sizeLabel = formatDownloadSize(progress?.received, progress?.total)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-sm">
+    <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-sm">
       <section
         aria-modal="true"
         className="liquid-glass w-full max-w-[28rem] p-5 shadow-card-hover"
@@ -468,7 +484,7 @@ function UpdateAvailableModal({
         {update.releaseNotes && update.releaseNotes.length > 0 ? (
           <div className="mt-4 rounded-card border border-line bg-white/90 px-3.5 py-3 shadow-soft">
             <p className="text-xs font-semibold text-ink">{updateCopy.whatsNew}</p>
-            <ul className="agent-project-list mt-2 max-h-36 space-y-1.5 overflow-y-auto pr-1">
+            <ul className="mt-2 max-h-36 space-y-1.5 overflow-y-auto pr-1">
               {update.releaseNotes.map((note) => (
                 <li key={note} className="flex gap-2 text-[13px] leading-5 text-ink-700">
                   <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-brand-codex" aria-hidden />
@@ -610,7 +626,7 @@ function AgentSetupReminderModal({
     })),
   ]
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-sm">
+    <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-sm">
       <section
         aria-modal="true"
         className="liquid-glass flex max-h-[min(calc(100vh-2rem),42rem)] w-full max-w-[30rem] flex-col overflow-hidden shadow-card-hover"
@@ -829,6 +845,10 @@ function ProjectList({
   locale: Locale
   onAck: (agentType: AgentType, workspacePath?: string) => void
 }): JSX.Element {
+  if (items.length === 0) {
+    return <AgentProjectEmptyState agentType={agentType} copy={copy} />
+  }
+
   if (items.length > VIRTUALIZE_PROJECTS_AFTER) {
     return (
       <VirtualProjectList
@@ -843,7 +863,7 @@ function ProjectList({
   }
 
   return (
-    <div className="agent-project-list grid min-h-0 flex-1 content-start gap-2.5 overflow-y-auto pr-1">
+    <div className="grid min-h-0 flex-1 content-start gap-2.5 overflow-y-auto pr-1">
       {items.map((item) => (
         <ProjectTile
           key={item.id}
@@ -854,6 +874,42 @@ function ProjectList({
           onAck={() => onAck(agentType, item.workspacePath)}
         />
       ))}
+    </div>
+  )
+}
+
+/**
+ * Displays a lightweight placeholder when a CLI has quota data but no visible projects.
+ *
+ * @param props Agent identity and localized dashboard copy.
+ * @returns Centered empty-session content for the remaining panel space.
+ */
+function AgentProjectEmptyState({
+  agentType,
+  copy,
+}: {
+  agentType: AgentType
+  copy: UiCopy
+}): JSX.Element {
+  const body = copy.emptyDashboard.agentBody.replace('{agent}', agentName(agentType))
+
+  return (
+    <div className="agent-empty-state" role="status">
+      <svg aria-hidden="true" className="agent-empty-illustration" viewBox="0 0 128 108">
+        <ellipse cx="64" cy="94" fill="currentColor" opacity="0.08" rx="34" ry="5" />
+        <path d="M64 38 38 48v32l26 11 26-11V48L64 38Z" fill="currentColor" opacity="0.19" />
+        <path d="M38 48 64 58v33L38 80V48Z" fill="currentColor" opacity="0.24" />
+        <path d="m64 58 26-10v32L64 91V58Z" fill="currentColor" opacity="0.14" />
+        <path d="m38 48-13 14 27 10 12-14-26-10Z" fill="currentColor" opacity="0.31" />
+        <path d="m90 48 13 14-27 10-12-14 26-10Z" fill="currentColor" opacity="0.22" />
+        <path
+          d="M64 7c1.1 6.2 4.6 9.7 10.8 10.8C68.6 18.9 65.1 22.4 64 28.6 62.9 22.4 59.4 18.9 53.2 17.8 59.4 16.7 62.9 13.2 64 7Z"
+          fill="currentColor"
+          opacity="0.72"
+        />
+      </svg>
+      <p className="mt-3 text-base font-semibold text-ink">{copy.emptyDashboard.agentTitle}</p>
+      <p className="mt-2 max-w-xs text-sm leading-6 text-ink-500">{body}</p>
     </div>
   )
 }
@@ -943,11 +999,7 @@ function VirtualProjectList({
   }, [])
 
   return (
-    <div
-      ref={viewportRef}
-      className="agent-project-list min-h-0 flex-1 overflow-y-auto pr-1"
-      onScroll={handleScroll}
-    >
+    <div ref={viewportRef} className="min-h-0 flex-1 overflow-y-auto pr-1" onScroll={handleScroll}>
       <div className="relative" style={{ height: layout.totalSize }}>
         {layout.rows.slice(range.start, range.end).map((row) => {
           const item = items[row.index]!

@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="1024"
+  height="1024"
+  viewBox="0 0 1024 1024"
+  preserveAspectRatio="xMidYMid meet"
+  fill="none"
+  role="img"
+  aria-labelledby="codepulse-logo-title codepulse-logo-description"
+>
+  <title id="codepulse-logo-title">CodePulse logo</title>
+  <desc id="codepulse-logo-description">
+    A dimensional black circular badge with a polished gold rim and a bright gold pulse waveform.
+  </desc>
+
+  <defs>
+    <!-- The rim gradients reproduce the original upper-left highlight and lower-right depth. -->
+    <linearGradient id="rim-underlay" x1="159" y1="95" x2="849" y2="905" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#D48608" />
+      <stop offset="0.42" stop-color="#9C5603" />
+      <stop offset="0.76" stop-color="#6D3700" />
+      <stop offset="1" stop-color="#B96B05" />
+    </linearGradient>
+    <linearGradient id="rim-face" x1="162" y1="103" x2="862" y2="895" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFF4A6" />
+      <stop offset="0.13" stop-color="#FFD45A" />
+      <stop offset="0.38" stop-color="#F4A917" />
+      <stop offset="0.68" stop-color="#B76803" />
+      <stop offset="0.86" stop-color="#E99B0D" />
+      <stop offset="1" stop-color="#8F4B01" />
+    </linearGradient>
+    <linearGradient id="rim-highlight" x1="160" y1="93" x2="834" y2="839" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFCE0" stop-opacity="0.95" />
+      <stop offset="0.24" stop-color="#FFE88B" stop-opacity="0.7" />
+      <stop offset="0.58" stop-color="#FFC029" stop-opacity="0.12" />
+      <stop offset="1" stop-color="#FFF0A7" stop-opacity="0.78" />
+    </linearGradient>
+
+    <!-- A restrained radial vignette keeps the black face dimensional at every size. -->
+    <radialGradient id="badge-face" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(352 253) rotate(55) scale(668 647)">
+      <stop offset="0" stop-color="#1D1D20" />
+      <stop offset="0.46" stop-color="#18171B" />
+      <stop offset="0.78" stop-color="#121215" />
+      <stop offset="1" stop-color="#0E0F12" />
+    </radialGradient>
+    <linearGradient id="face-sheen" x1="192" y1="130" x2="748" y2="858" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.025" />
+      <stop offset="0.48" stop-color="#FFFFFF" stop-opacity="0" />
+      <stop offset="1" stop-color="#000000" stop-opacity="0.16" />
+    </linearGradient>
+
+    <!-- The pulse uses the same pale-yellow-to-amber direction visible in the PNG. -->
+    <linearGradient id="pulse-edge" x1="231" y1="330" x2="784" y2="653" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8C83B" />
+      <stop offset="0.48" stop-color="#D98305" />
+      <stop offset="1" stop-color="#A85A00" />
+    </linearGradient>
+    <linearGradient id="pulse-face" x1="236" y1="330" x2="783" y2="647" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFEA6C" />
+      <stop offset="0.18" stop-color="#FFE155" />
+      <stop offset="0.5" stop-color="#FFD445" />
+      <stop offset="0.78" stop-color="#FFCB3C" />
+      <stop offset="1" stop-color="#FFC334" />
+    </linearGradient>
+
+    <filter id="badge-shadow" x="23" y="11" width="970" height="1001" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="13" stdDeviation="13" flood-color="#281500" flood-opacity="0.42" />
+    </filter>
+    <filter id="face-inset" x="74" y="59" width="868" height="892" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#000000" flood-opacity="0.88" />
+    </filter>
+    <filter id="pulse-shadow" x="194" y="279" width="622" height="438" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="6" stdDeviation="5" flood-color="#000000" flood-opacity="0.8" />
+      <feDropShadow dx="0" dy="0" stdDeviation="2" flood-color="#FFB000" flood-opacity="0.5" />
+    </filter>
+  </defs>
+
+  <!-- Dimensional gold backing, main rim, and transparent exterior. -->
+  <g filter="url(#badge-shadow)">
+    <ellipse cx="506" cy="509" rx="445" ry="456" fill="url(#rim-underlay)" />
+    <ellipse cx="506" cy="499" rx="445" ry="457" fill="url(#rim-face)" />
+    <ellipse cx="506" cy="499" rx="442" ry="454" stroke="#FFF0A0" stroke-opacity="0.62" stroke-width="2" />
+  </g>
+
+  <!-- Matte black face and its recessed inner edge. -->
+  <g filter="url(#face-inset)">
+    <ellipse cx="506" cy="502" rx="417" ry="435" fill="url(#badge-face)" />
+    <ellipse cx="506" cy="502" rx="417" ry="435" fill="url(#face-sheen)" />
+    <ellipse cx="506" cy="502" rx="420" ry="438" stroke="#562A04" stroke-width="6" />
+    <ellipse cx="506" cy="502" rx="415" ry="433" stroke="#050506" stroke-opacity="0.72" stroke-width="3" />
+  </g>
+
+  <!-- Fine metallic highlights give the rim its polished, beveled appearance. -->
+  <ellipse cx="506" cy="499" rx="441" ry="453" stroke="url(#rim-highlight)" stroke-width="4" />
+  <path
+    d="M102 333C155 173 305 65 481 48C286 79 142 202 91 382"
+    stroke="#FFFBE0"
+    stroke-opacity="0.58"
+    stroke-width="4"
+    stroke-linecap="round"
+  />
+  <!-- The waveform coordinates and 44 px weight match the source PNG silhouette. -->
+  <g filter="url(#pulse-shadow)">
+    <path
+      d="M249 522H386L438 423L510 654L594 334L656 522H760"
+      stroke="url(#pulse-edge)"
+      stroke-width="50"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M249 522H386L438 423L510 654L594 334L656 522H760"
+      stroke="url(#pulse-face)"
+      stroke-width="44"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </g>
+</svg>

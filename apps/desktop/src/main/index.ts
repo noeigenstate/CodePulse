@@ -52,6 +52,12 @@ import {
   isUpdateSnoozed,
   UPDATE_CHECK_INTERVAL_MS,
 } from './update-checker.js'
+import {
+  normalizeWindowTheme,
+  scheduledWindowTheme,
+  windowChromePalette,
+  type WindowTheme,
+} from './window-chrome.js'
 
 const MUTE_DURATION_MS = 30 * 60_000
 const DISABLE_UPDATE_CHECK_ENV = 'CODEPULSE_DISABLE_UPDATE_CHECKS'
@@ -81,6 +87,8 @@ let checkingUpdate = false
 let shutdownStarted = false
 let installingUpdate = false
 let lastTrayStatusKey: string | undefined
+/** Current native chrome palette, restored by the renderer after it loads. */
+let windowTheme: WindowTheme = scheduledWindowTheme()
 let deviceProvisioning: DeviceProvisioningSnapshot = {
   serverAvailable: false,
   scanning: false,
@@ -144,6 +152,7 @@ function hookBinDir(): string {
 }
 
 function createWindow(): void {
+  const chrome = windowChromePalette(windowTheme)
   mainWindow = new BrowserWindow({
     width: 960,
     height: 680,
@@ -152,8 +161,17 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     title: 'CodePulse',
-    backgroundColor: '#edf6ff',
+    backgroundColor: chrome.backgroundColor,
     icon: appIconPath(),
+    ...(process.platform === 'win32'
+      ? {
+          titleBarStyle: 'hidden' as const,
+          titleBarOverlay: {
+            color: chrome.backgroundColor,
+            symbolColor: chrome.symbolColor,
+          },
+        }
+      : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -235,6 +253,30 @@ function setLocale(value: unknown): UiLocale {
   return locale
 }
 
+/**
+ * Synchronizes BrowserWindow chrome with the renderer's resolved theme.
+ *
+ * @param value Untrusted theme value received over IPC.
+ * @param targetWindow BrowserWindow that originated the theme request.
+ * @returns The normalized theme applied to the native window.
+ */
+function setWindowTheme(value: unknown, targetWindow: BrowserWindow | null): WindowTheme {
+  windowTheme = normalizeWindowTheme(value)
+  const chrome = windowChromePalette(windowTheme)
+
+  if (targetWindow && !targetWindow.isDestroyed()) {
+    targetWindow.setBackgroundColor(chrome.backgroundColor)
+    if (process.platform === 'win32') {
+      targetWindow.setTitleBarOverlay({
+        color: chrome.backgroundColor,
+        symbolColor: chrome.symbolColor,
+      })
+    }
+  }
+
+  return windowTheme
+}
+
 function registerIpc(): void {
   ipcMain.handle('codepulse:get-status', () => hub.snapshot())
   ipcMain.handle('codepulse:ack', (_event, agent: AgentType, workspacePath?: string) => {
@@ -246,6 +288,9 @@ function registerIpc(): void {
     return muted
   })
   ipcMain.handle('codepulse:set-locale', (_event, locale: unknown) => setLocale(locale))
+  ipcMain.handle('codepulse:set-window-theme', (event, theme: unknown) =>
+    setWindowTheme(theme, BrowserWindow.fromWebContents(event.sender)),
+  )
   ipcMain.handle('codepulse:detect-agents', () => refreshLocalAgents())
   ipcMain.handle('codepulse:get-update', () => {
     // Respect 24h "later" snooze even if a previous check still has cached info.

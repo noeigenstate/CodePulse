@@ -84,6 +84,16 @@ export interface SessionSyncOptions {
    */
   userHome?: string
   now?: () => number
+  /**
+   * Keep filesystem watchers and periodic fallback scans running after the initial hydrate.
+   * Desktop HUD mode disables this and relies on hooks plus explicit refreshes to avoid
+   * continuously walking large CLI history trees.
+   */
+  backgroundSync?: boolean
+  /** Test seam for the periodic fallback cadence. */
+  steadyIntervalMs?: number
+  /** Test seam for startup catch-up scans. */
+  bootOffsetsMs?: readonly number[]
   /** 测试时可关闭文件监听 */
   disableWatch?: boolean
   /** 测试注入：是否视为本机有 Codex CLI 进程 */
@@ -117,6 +127,9 @@ export class SessionSyncService {
   private readonly claudeHome: string
   private readonly userHome: string
   private readonly now: () => number
+  private readonly backgroundSync: boolean
+  private readonly steadyIntervalMs: number
+  private readonly bootOffsetsMs: readonly number[]
   private readonly disableWatch: boolean
   private readonly codexProcessAlive: () => boolean | Promise<boolean>
   private readonly kimiProcessAlive: () => boolean | Promise<boolean>
@@ -171,6 +184,9 @@ export class SessionSyncService {
     this.claudeHome =
       options.claudeHome ?? process.env.CLAUDE_HOME ?? join(this.userHome, '.claude')
     this.now = options.now ?? Date.now
+    this.backgroundSync = options.backgroundSync ?? true
+    this.steadyIntervalMs = options.steadyIntervalMs ?? STEADY_INTERVAL_MS
+    this.bootOffsetsMs = options.bootOffsetsMs ?? BOOT_OFFSETS_MS
     this.disableWatch = options.disableWatch ?? false
     this.codexProcessAlive = options.codexProcessAlive ?? (() => isCliProcessAlive('codex'))
     this.kimiProcessAlive = options.kimiProcessAlive ?? (() => isCliProcessAlive('kimi'))
@@ -212,7 +228,9 @@ export class SessionSyncService {
       }
     })
 
-    for (const offset of BOOT_OFFSETS_MS) {
+    if (!this.backgroundSync) return this.firstSync
+
+    for (const offset of this.bootOffsetsMs) {
       if (offset === 0) continue
       const t = setTimeout(() => {
         void this.syncOnce('boot')
@@ -223,7 +241,7 @@ export class SessionSyncService {
 
     this.steady = setInterval(() => {
       void this.syncOnce('steady')
-    }, STEADY_INTERVAL_MS)
+    }, this.steadyIntervalMs)
     this.steady.unref?.()
 
     if (!this.disableWatch) this.startWatchers()

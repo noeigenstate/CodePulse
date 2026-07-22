@@ -1,11 +1,28 @@
 import { useEffect, useRef, type MouseEvent } from 'react'
 import type { SettingsCopy } from '../lib/i18n.js'
-import { CLI_TOOL_TYPES, type CliToolType, type ThemePreference } from '../lib/dashboardSettings.js'
+import {
+  CLI_TOOL_TYPES,
+  HUD_OPACITY_MAX,
+  HUD_OPACITY_MIN,
+  type CliToolType,
+  type HudAttentionEffect,
+  type HudProjectLayout,
+  type ThemePreference,
+} from '../lib/dashboardSettings.js'
 import { DeviceProvisioningPanel } from './DeviceProvisioningPanel.js'
 
 interface Props {
+  standalone?: boolean
   copy: SettingsCopy
+  attentionEffect: HudAttentionEffect
+  hudOpacity: number
+  projectLayout: HudProjectLayout
+  showUsageStrip: boolean
+  onAttentionEffectChange: (effect: HudAttentionEffect) => void
   onClose: () => void
+  onHudOpacityChange: (opacity: number) => void
+  onProjectLayoutChange: (layout: HudProjectLayout) => void
+  onShowUsageStripChange: (visible: boolean) => void
   onThemeChange: (theme: ThemePreference) => void
   onToolVisibilityChange: (tool: CliToolType, visible: boolean) => void
   theme: ThemePreference
@@ -27,8 +44,17 @@ const FOCUSABLE_SELECTOR =
  * @returns The accessible modal settings dialog.
  */
 export function SettingsDialog({
+  standalone = false,
   copy,
+  attentionEffect,
+  hudOpacity,
+  projectLayout,
+  showUsageStrip,
+  onAttentionEffectChange,
   onClose,
+  onHudOpacityChange,
+  onProjectLayoutChange,
+  onShowUsageStripChange,
   onThemeChange,
   onToolVisibilityChange,
   theme,
@@ -82,19 +108,27 @@ export function SettingsDialog({
 
   /** Close only when the user presses the inert backdrop itself. */
   const closeOnBackdrop = (event: MouseEvent<HTMLDivElement>): void => {
-    if (event.target === event.currentTarget) onClose()
+    if (!standalone && event.target === event.currentTarget) onClose()
   }
 
   return (
     <div
-      className="settings-backdrop absolute inset-0 z-[60] flex items-center justify-center px-4"
+      className={
+        standalone
+          ? 'settings-window-page flex h-full min-h-0'
+          : 'settings-backdrop absolute inset-0 z-[60] flex items-center justify-center px-4'
+      }
       onMouseDown={closeOnBackdrop}
       role="presentation"
     >
       <section
         aria-label={copy.title}
-        aria-modal="true"
-        className="settings-dialog flex max-h-[min(90vh,52rem)] w-full max-w-2xl flex-col"
+        aria-modal={standalone ? undefined : true}
+        className={
+          standalone
+            ? 'settings-dialog settings-dialog-standalone flex h-full min-h-0 w-full flex-col'
+            : 'settings-dialog flex max-h-[min(90vh,52rem)] w-full max-w-2xl flex-col'
+        }
         ref={dialogRef}
         role="dialog"
         tabIndex={-1}
@@ -103,19 +137,101 @@ export function SettingsDialog({
           <div>
             <h2 className="text-lg font-semibold text-ink">{copy.title}</h2>
           </div>
-          <button
-            aria-label={copy.close}
-            className="settings-close"
-            onClick={onClose}
-            ref={closeButtonRef}
-            title={copy.close}
-            type="button"
-          >
-            <CloseIcon />
-          </button>
+          {!standalone ? (
+            <button
+              aria-label={copy.close}
+              className="settings-close"
+              onClick={onClose}
+              ref={closeButtonRef}
+              title={copy.close}
+              type="button"
+            >
+              <CloseIcon />
+            </button>
+          ) : null}
         </div>
 
         <div className="grid min-h-0 gap-6 overflow-y-auto px-5 py-5">
+          <section>
+            <h3 className="text-sm font-semibold text-ink">{copy.hudAppearance}</h3>
+            <div className="hud-setting-card mt-3">
+              <div className="flex items-center justify-between gap-4">
+                <label className="text-sm font-medium text-ink" htmlFor="hud-opacity">
+                  {copy.hudOpacity}
+                </label>
+                <output className="hud-opacity-value" htmlFor="hud-opacity">
+                  {hudOpacity}%
+                </output>
+              </div>
+              <input
+                aria-describedby="hud-opacity-hint"
+                className="hud-opacity-slider mt-3 w-full"
+                id="hud-opacity"
+                max={HUD_OPACITY_MAX}
+                min={HUD_OPACITY_MIN}
+                onChange={(event) => onHudOpacityChange(Number(event.target.value))}
+                type="range"
+                value={hudOpacity}
+              />
+              <p className="mt-2 text-meta leading-5 text-ink-500" id="hud-opacity-hint">
+                {copy.hudOpacityHint}
+              </p>
+            </div>
+
+            <div className="mt-4">
+              <h4 className="text-sm font-medium text-ink">{copy.attentionEffect}</h4>
+              <p className="mt-1.5 text-meta leading-5 text-ink-500">{copy.attentionEffectHint}</p>
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <HudEffectOption
+                  active={attentionEffect === 'steady'}
+                  label={copy.attentionSteady}
+                  onClick={() => onAttentionEffectChange('steady')}
+                />
+                <HudEffectOption
+                  active={attentionEffect === 'breathe'}
+                  label={copy.attentionBreathe}
+                  onClick={() => onAttentionEffectChange('breathe')}
+                />
+                <HudEffectOption
+                  active={attentionEffect === 'pulse'}
+                  label={copy.attentionPulse}
+                  onClick={() => onAttentionEffectChange('pulse')}
+                />
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <h4 className="text-sm font-medium text-ink">{copy.projectLayout}</h4>
+              <p className="mt-1.5 text-meta leading-5 text-ink-500">{copy.projectLayoutHint}</p>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <HudLayoutOption
+                  active={projectLayout === 'grid'}
+                  label={copy.projectLayoutGrid}
+                  onClick={() => onProjectLayoutChange('grid')}
+                />
+                <HudLayoutOption
+                  active={projectLayout === 'list'}
+                  label={copy.projectLayoutList}
+                  onClick={() => onProjectLayoutChange('list')}
+                />
+              </div>
+              <label className="settings-tool-row mt-3">
+                <span>
+                  <span className="block font-medium text-ink">{copy.usageStrip}</span>
+                  <span className="mt-1 block text-meta leading-5 text-ink-500">
+                    {copy.usageStripHint}
+                  </span>
+                </span>
+                <input
+                  checked={showUsageStrip}
+                  className="settings-switch"
+                  onChange={(event) => onShowUsageStripChange(event.target.checked)}
+                  type="checkbox"
+                />
+              </label>
+            </div>
+          </section>
+
           <section>
             <h3 className="text-sm font-semibold text-ink">{copy.theme}</h3>
             <p className="mt-1.5 text-meta leading-5 text-ink-500">{copy.themeAutoHint}</p>
@@ -160,6 +276,49 @@ export function SettingsDialog({
         </div>
       </section>
     </div>
+  )
+}
+
+function HudEffectOption({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean
+  label: string
+  onClick: () => void
+}): JSX.Element {
+  return (
+    <button
+      aria-pressed={active}
+      className={`hud-effect-option ${active ? 'is-active' : ''}`}
+      onClick={onClick}
+      type="button"
+    >
+      <span className="hud-effect-dot" aria-hidden="true" />
+      <span>{label}</span>
+    </button>
+  )
+}
+
+function HudLayoutOption({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean
+  label: string
+  onClick: () => void
+}): JSX.Element {
+  return (
+    <button
+      aria-pressed={active}
+      className={`hud-effect-option ${active ? 'is-active' : ''}`}
+      onClick={onClick}
+      type="button"
+    >
+      <span>{label}</span>
+    </button>
   )
 }
 

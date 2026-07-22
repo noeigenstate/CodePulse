@@ -861,6 +861,68 @@ test('display panels collapse nested workspace cards into the project root', () 
   assert.equal(panels[0]?.workspaces[0]?.name, 'gitlab_single_pipe')
 })
 
+test('display panels keep an unread nested result visible ahead of newer active work', () => {
+  const panels = buildAgentPanels([
+    {
+      agentType: 'codex',
+      state: TurnState.TOOL_RUNNING,
+      toolCallCount: 2,
+      needPermission: false,
+      needUserInput: false,
+      unread: false,
+      lastEventAt: 300,
+      workspacePath: 'E:/project/root',
+    },
+    {
+      agentType: 'codex',
+      state: TurnState.DONE,
+      toolCallCount: 1,
+      needPermission: false,
+      needUserInput: false,
+      unread: true,
+      lastEventAt: 200,
+      workspacePath: 'E:/project/root/packages/worker',
+    },
+  ])
+
+  assert.equal(panels[0]?.workspaces.length, 1)
+  assert.equal(panels[0]?.workspaces[0]?.workspacePath, 'E:/project/root')
+  assert.equal(panels[0]?.workspaces[0]?.agent.state, TurnState.DONE)
+  assert.equal(panels[0]?.workspaces[0]?.agent.unread, true)
+})
+
+test('display panels expose pathless HUD alerts instead of leaving an unexplained orange tray', () => {
+  const panels = buildAgentPanels([
+    {
+      agentType: 'grok',
+      state: TurnState.ERROR,
+      externalSessionId: 'pathless-session',
+      toolCallCount: 0,
+      needPermission: false,
+      needUserInput: false,
+      unread: true,
+      lastEventAt: 200,
+      activity: 'Task failed before cwd was reported',
+    },
+    {
+      agentType: 'grok',
+      state: TurnState.DONE,
+      externalSessionId: 'second-pathless-session',
+      toolCallCount: 0,
+      needPermission: false,
+      needUserInput: false,
+      unread: true,
+      lastEventAt: 300,
+      activity: 'Second pathless task completed',
+    },
+  ])
+
+  assert.equal(panels.length, 1)
+  assert.equal(panels[0]?.workspaces.length, 1)
+  assert.equal(panels[0]?.workspaces[0]?.workspacePath, undefined)
+  assert.equal(panels[0]?.workspaces[0]?.agent.state, TurnState.ERROR)
+})
+
 test('display panels do not collapse Desktop projects under the user profile path', () => {
   const panels = buildAgentPanels([
     {
@@ -1125,7 +1187,7 @@ test('StatusHub shows usage limit instead of processing after Claude quota stops
   assert.equal(claude?.turnStartedAt, undefined)
 })
 
-test('StatusHub removes completed projects after five minutes', () => {
+test('StatusHub keeps completed projects until acknowledged, then applies retention', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const startedAt = 1_000_000
   const finishedAt = startedAt + 1_000
@@ -1150,7 +1212,53 @@ test('StatusHub removes completed projects after five minutes', () => {
   ;(hub as unknown as { tick(now?: number): void }).tick(finishedAt + doneRetentionMs - 1)
   assert.equal(hub.snapshot(finishedAt + doneRetentionMs - 1).agents.length, 1)
   ;(hub as unknown as { tick(now?: number): void }).tick(finishedAt + doneRetentionMs)
-  assert.equal(hub.snapshot(finishedAt + doneRetentionMs).agents.length, 0)
+  assert.equal(hub.snapshot(finishedAt + doneRetentionMs).agents.length, 1)
+  assert.equal(hub.snapshot(finishedAt + doneRetentionMs).agents[0]?.unread, true)
+
+  hub.acknowledge('codex', 'E:/project/a')
+  ;(hub as unknown as { tick(now?: number): void }).tick(finishedAt + doneRetentionMs + 1)
+  assert.equal(hub.snapshot(finishedAt + doneRetentionMs + 1).agents.length, 0)
+})
+
+test('StatusHub keeps an unread completion visible when SessionEnd follows Stop', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const startedAt = 1_000_000
+  const finishedAt = startedAt + 1_000
+
+  hub.ingest({
+    id: 'prompt',
+    source: 'codex',
+    eventType: 'prompt_submit',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    timestamp: startedAt,
+  })
+  hub.ingest({
+    id: 'complete',
+    source: 'codex',
+    eventType: 'turn_stop',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    timestamp: finishedAt,
+  })
+  hub.ingest({
+    id: 'session-end',
+    source: 'codex',
+    eventType: 'session_end',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    timestamp: finishedAt + 1,
+  })
+
+  let snapshot = hub.snapshot(finishedAt + 10 * 60_000)
+  assert.equal(snapshot.overall, 'done_unread')
+  assert.equal(snapshot.agents[0]?.state, TurnState.DONE)
+  assert.equal(snapshot.agents[0]?.unread, true)
+
+  hub.acknowledge('codex', 'E:/project/a')
+  ;(hub as unknown as { tick(now?: number): void }).tick(finishedAt + 10 * 60_000 + 1)
+  snapshot = hub.snapshot(finishedAt + 10 * 60_000 + 1)
+  assert.equal(snapshot.agents.length, 0)
 })
 
 test('StatusHub removes idle projects after five minutes', () => {
@@ -1295,7 +1403,7 @@ test('StatusHub keeps quota visible after removing idle project rows', () => {
   assert.equal(codexPanel?.quotaToken?.rateLimits?.sevenDay?.usedPercent, 25)
 })
 
-test('StatusHub clears stuck projects after ten minutes', () => {
+test('StatusHub keeps stuck projects until acknowledged, then applies retention', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const startedAt = 1_000_000
   const timeoutAt = startedAt + STUCK_VISIBLE_MS
@@ -1315,12 +1423,18 @@ test('StatusHub clears stuck projects after ten minutes', () => {
   ;(hub as unknown as { tick(now?: number): void }).tick(timeoutAt + timeoutRetentionMs - 1)
   assert.equal(hub.snapshot(timeoutAt + timeoutRetentionMs - 1).overall, 'stuck')
   ;(hub as unknown as { tick(now?: number): void }).tick(timeoutAt + timeoutRetentionMs)
-  const snapshot = hub.snapshot(timeoutAt + timeoutRetentionMs)
+  let snapshot = hub.snapshot(timeoutAt + timeoutRetentionMs)
+  assert.equal(snapshot.overall, 'stuck')
+  assert.equal(snapshot.agents.length, 1)
+
+  hub.acknowledge('claude_code', 'E:/project/a')
+  ;(hub as unknown as { tick(now?: number): void }).tick(timeoutAt + timeoutRetentionMs + 1)
+  snapshot = hub.snapshot(timeoutAt + timeoutRetentionMs + 1)
   assert.equal(snapshot.overall, 'idle')
   assert.equal(snapshot.agents.length, 0)
 })
 
-test('StatusHub expires error, cancelled, and usage-limited projects', () => {
+test('StatusHub retains unread HUD alerts, while quiet cancellations still expire', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const terminalAt = 1_000_000
 
@@ -1350,7 +1464,17 @@ test('StatusHub expires error, cancelled, and usage-limited projects', () => {
   })
   ;(hub as unknown as { tick(now?: number): void }).tick(terminalAt + 10 * 60_000)
 
-  const snapshot = hub.snapshot(terminalAt + 10 * 60_000)
+  let snapshot = hub.snapshot(terminalAt + 10 * 60_000)
+  assert.equal(snapshot.agents.length, 2)
+  assert.deepEqual(
+    snapshot.agents.map((agent) => agent.state).sort(),
+    [TurnState.ERROR, TurnState.USAGE_LIMITED].sort(),
+  )
+
+  hub.acknowledge('claude_code')
+  ;(hub as unknown as { tick(now?: number): void }).tick(terminalAt + 10 * 60_000 + 1)
+
+  snapshot = hub.snapshot(terminalAt + 10 * 60_000 + 1)
   assert.equal(snapshot.overall, 'idle')
   assert.equal(snapshot.agents.length, 0)
 })
@@ -1867,6 +1991,10 @@ test('StatusHub keeps concurrent sessions in the same workspace separate', () =>
     'E:/project/a',
     'E:/project/a',
   ])
+  const panel = buildAgentPanels(hub.snapshot().agents)[0]
+  assert.equal(panel?.workspaces.length, 1)
+  assert.equal(panel?.workspaces[0]?.agent.state, TurnState.DONE)
+  assert.equal(panel?.workspaces[0]?.agent.unread, true)
 })
 
 test('StatusHub can acknowledge one workspace without clearing another', () => {

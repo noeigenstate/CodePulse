@@ -14,8 +14,8 @@ const DEFAULT_CODEX_CONTEXT_WINDOW = 256_000
 const DEFAULT_SCHEDULE_OFFSETS_MS = [1_000, 5_000, 15_000, 30_000, 60_000] as const
 /** After a reset boundary, keep re-reading the bound file for fresh CLI writes. */
 const POST_RESET_RETRY_MS = [2_000, 8_000, 20_000, 45_000, 90_000, 180_000] as const
-/** Steady re-read of remembered rollout paths while CLI may still write after idle. */
-const STEADY_POLL_MS = 12_000
+/** Low-I/O fallback for remembered rollout paths; hooks remain the real-time signal. */
+const STEADY_POLL_MS = 60_000
 const MAX_TIMEOUT_MS = 2_147_483_647
 type QuotaWindowKey = 'fiveHour' | 'sevenDay'
 

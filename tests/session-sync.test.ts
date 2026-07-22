@@ -740,6 +740,40 @@ test('SessionSyncService start() resolves after first disk hydrate', async () =>
   }
 })
 
+test('SessionSyncService low-I/O mode hydrates once and keeps explicit refresh available', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-low-io-')
+  let codexProcessChecks = 0
+  const sync = new SessionSyncService({
+    hub: new StatusHub({ sessionThrottleMs: 0 }),
+    userHome: home,
+    codexHome: join(home, 'no-codex'),
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    kimiHome: join(home, 'no-kimi'),
+    backgroundSync: false,
+    steadyIntervalMs: 5,
+    bootOffsetsMs: [0, 5, 10],
+    codexProcessAlive: () => {
+      codexProcessChecks += 1
+      return false
+    },
+  })
+
+  try {
+    await sync.start()
+    assert.equal(codexProcessChecks, 1, 'startup should perform exactly one hydrate')
+
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    assert.equal(codexProcessChecks, 1, 'low-I/O mode must not arm background rescans')
+
+    await sync.syncNow(['codex'])
+    assert.equal(codexProcessChecks, 2, 'explicit refresh must remain available')
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
 test('SessionSyncService ignores dormant Codex rollouts and closed CLI', async () => {
   const home = await mkdtempJoin('codepulse-session-sync-dormant-')
   const sessions = join(home, 'sessions', '2026', '07', '14')

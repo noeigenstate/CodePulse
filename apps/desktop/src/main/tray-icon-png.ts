@@ -1,20 +1,17 @@
 import { deflateSync } from 'node:zlib'
-import type { OverallState } from '@codepulse/shared'
+import type { AgentType, OverallState } from '@codepulse/shared'
 
-const STATE_COLORS: Record<OverallState, [number, number, number]> = {
-  idle: [148, 163, 184],
-  running: [59, 130, 246],
-  attention: [234, 179, 8],
-  done_unread: [34, 197, 94],
-  error: [239, 68, 68],
-  stuck: [249, 115, 18],
-  limited: [239, 68, 68],
+export type TrayVisualTone = 'neutral' | 'attention'
+
+const TONE_COLORS: Record<TrayVisualTone, readonly [number, number, number]> = {
+  neutral: [148, 163, 184],
+  attention: [249, 115, 22],
 }
 
 const crcTable = buildCrcTable()
 
 export function trayIconPngFor(state: OverallState, size = 32): Buffer {
-  const [accentR, accentG, accentB] = STATE_COLORS[state]
+  const [accentR, accentG, accentB] = trayVisualColorFor(state)
   const raw = Buffer.alloc(size * (size * 4 + 1))
   const cx = (size - 1) / 2
   const cy = (size - 1) / 2
@@ -41,7 +38,7 @@ export function trayIconPngFor(state: OverallState, size = 32): Buffer {
       }
 
       if (onPulsePath(x, y, size) && Math.hypot(x - cx, y - cy) > size * 0.08) {
-        rgba = blend(rgba, [245, 158, 11, 255])
+        rgba = blend(rgba, [accentR, accentG, accentB, 255])
       }
 
       if (state !== 'idle' && Math.hypot(x - size * 0.72, y - size * 0.72) <= size * 0.1) {
@@ -56,6 +53,23 @@ export function trayIconPngFor(state: OverallState, size = 32): Buffer {
   }
 
   return buildPng(size, size, raw)
+}
+
+/** Keeps routine activity neutral and reserves orange for states needing notice. */
+export function trayVisualToneFor(state: OverallState): TrayVisualTone {
+  return state === 'idle' || state === 'running' ? 'neutral' : 'attention'
+}
+
+export function trayVisualColorFor(state: OverallState): readonly [number, number, number] {
+  return TONE_COLORS[trayVisualToneFor(state)]
+}
+
+/** Human-readable CLI name used by the tray's compact status rows. */
+export function trayAgentNameFor(agentType: AgentType): string {
+  if (agentType === 'codex') return 'Codex'
+  if (agentType === 'grok') return 'Grok'
+  if (agentType === 'kimi') return 'Kimi Code'
+  return 'Claude Code'
 }
 
 function onPulsePath(x: number, y: number, size: number): boolean {

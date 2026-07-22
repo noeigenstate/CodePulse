@@ -27,6 +27,8 @@ export interface CodePulseApi {
   setLocale: (locale: UiLocale) => Promise<UiLocale>
   /** Synchronizes native title-bar colors with the resolved renderer theme. */
   setWindowTheme: (theme: WindowTheme) => Promise<WindowTheme>
+  setHudContentHeight: (height: number) => Promise<boolean>
+  openSettingsWindow: () => Promise<boolean>
   detectAgents: () => Promise<Agent[]>
   getUpdate: () => Promise<UpdateInfo | null>
   dismissUpdate: () => Promise<boolean>
@@ -41,6 +43,7 @@ export interface CodePulseApi {
   onStatus: (cb: (snapshot: StatusSnapshot) => void) => Unsubscribe
   onAgents: (cb: (agents: Agent[]) => void) => Unsubscribe
   onMute: (cb: (muted: boolean) => void) => Unsubscribe
+  onOpenStats: (cb: () => void) => Unsubscribe
   onUpdateAvailable: (cb: (update: UpdateInfo) => void) => Unsubscribe
   onUpdateProgress: (cb: (progress: UpdateDownloadProgress) => void) => Unsubscribe
   onDeviceProvisioning: (cb: (snapshot: DeviceProvisioningSnapshot) => void) => Unsubscribe

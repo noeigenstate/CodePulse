@@ -33,24 +33,24 @@ export interface StateStyle {
 export function turnStateStyle(state: TurnState): StateStyle {
   switch (state) {
     case TurnState.IDLE:
-      return { label: '空闲', dot: 'bg-amber-500', text: 'text-slate-600' }
+      return { label: '空闲', dot: 'bg-slate-400', text: 'text-slate-600' }
     case TurnState.PROMPT_SUBMITTED:
     case TurnState.THINKING:
-      return { label: '处理中', dot: 'bg-blue-500 animate-pulse', text: 'text-blue-700' }
+      return { label: '处理中', dot: 'bg-slate-800 animate-pulse', text: 'text-slate-800' }
     case TurnState.TOOL_RUNNING:
-      return { label: '执行工具', dot: 'bg-blue-500 animate-pulse', text: 'text-blue-700' }
+      return { label: '执行工具', dot: 'bg-slate-800 animate-pulse', text: 'text-slate-800' }
     case TurnState.WAITING_PERMISSION:
-      return { label: '等待授权', dot: 'bg-amber-500', text: 'text-amber-700' }
+      return { label: '等待授权', dot: 'bg-orange-500', text: 'text-orange-700' }
     case TurnState.WAITING_USER_INPUT:
-      return { label: '等待输入', dot: 'bg-amber-500', text: 'text-amber-700' }
+      return { label: '等待输入', dot: 'bg-orange-500', text: 'text-orange-700' }
     case TurnState.DONE:
-      return { label: '已完成', dot: 'bg-emerald-500', text: 'text-emerald-700' }
+      return { label: '已完成', dot: 'bg-slate-700', text: 'text-slate-700' }
     case TurnState.ERROR:
-      return { label: '出错', dot: 'bg-red-500', text: 'text-red-700' }
+      return { label: '出错', dot: 'bg-orange-500', text: 'text-orange-700' }
     case TurnState.TIMEOUT:
       return { label: '疑似卡住', dot: 'bg-orange-500', text: 'text-orange-700' }
     case TurnState.USAGE_LIMITED:
-      return { label: '已达用量上限，任务暂时停止', dot: 'bg-red-500', text: 'text-red-700' }
+      return { label: '已达用量上限，任务暂时停止', dot: 'bg-orange-500', text: 'text-orange-700' }
     case TurnState.CANCELLED:
       return { label: '已取消', dot: 'bg-slate-400', text: 'text-slate-500' }
     default:
@@ -67,19 +67,19 @@ export function turnStateStyle(state: TurnState): StateStyle {
 export function overallStyle(overall: OverallState): StateStyle {
   switch (overall) {
     case 'running':
-      return { label: '执行中', dot: 'bg-blue-500', text: 'text-blue-700' }
+      return { label: '执行中', dot: 'bg-slate-800', text: 'text-slate-800' }
     case 'attention':
-      return { label: '需要介入', dot: 'bg-amber-500', text: 'text-amber-700' }
+      return { label: '需要介入', dot: 'bg-orange-500', text: 'text-orange-700' }
     case 'done_unread':
-      return { label: '一轮完成', dot: 'bg-emerald-500', text: 'text-emerald-700' }
+      return { label: '一轮完成', dot: 'bg-orange-500', text: 'text-orange-700' }
     case 'error':
-      return { label: '出错', dot: 'bg-red-500', text: 'text-red-700' }
+      return { label: '出错', dot: 'bg-orange-500', text: 'text-orange-700' }
     case 'stuck':
       return { label: '疑似卡住', dot: 'bg-orange-500', text: 'text-orange-700' }
     case 'limited':
-      return { label: '用量上限', dot: 'bg-red-500', text: 'text-red-700' }
+      return { label: '用量上限', dot: 'bg-orange-500', text: 'text-orange-700' }
     default:
-      return { label: '空闲', dot: 'bg-amber-500', text: 'text-slate-600' }
+      return { label: '空闲', dot: 'bg-slate-400', text: 'text-slate-600' }
   }
 }
 

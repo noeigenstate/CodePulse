@@ -261,7 +261,7 @@ test('persistEvent never stores complete hook payloads while previews and stats 
   }
 })
 
-test('openDb scrubs legacy raw hooks and commands without losing derived file types', async () => {
+test('openDb scrubs legacy commands across batches, including commands without file types', async () => {
   const home = await mkdtemp(join(tmpdir(), 'codepulse-storage-privacy-migration-'))
   const file = join(home, 'codepulse.sqlite')
   let active: ReturnType<typeof openDb> | undefined
@@ -292,6 +292,30 @@ test('openDb scrubs legacy raw hooks and commands without losing derived file ty
         `node E:/private/${legacySecret}/source.ts && python worker.py`,
         'legacy-private-event',
       )
+
+    const insertLegacyEvent = active.sqlite.prepare(`
+      INSERT INTO events (id, source, event_type, command, raw, timestamp)
+      VALUES (?, 'codex', 'tool_end', ?, ?, ?)
+    `)
+    const insertLegacyBatch = active.sqlite.transaction(() => {
+      // More than one migration batch of commands with no allowlisted extensions.
+      // These rows used to remain NULL and be selected forever on application startup.
+      for (let index = 0; index <= 500; index += 1) {
+        insertLegacyEvent.run(
+          `legacy-no-hint-${index}`,
+          `git status --short ${index}`,
+          JSON.stringify({ prompt: legacySecret }),
+          10_001 + index,
+        )
+      }
+      insertLegacyEvent.run(
+        'legacy-after-no-hint-batch',
+        'node E:/private/after-batch/component.tsx',
+        JSON.stringify({ prompt: legacySecret }),
+        11_000,
+      )
+    })
+    insertLegacyBatch()
     active.sqlite.close()
     active = undefined
 
@@ -306,6 +330,24 @@ test('openDb scrubs legacy raw hooks and commands without losing derived file ty
     assert.equal(migrated.raw, null)
     assert.equal(migrated.command, null)
     assertExtensionHintsOnly(migrated.fileTypeHints, ['.ts', '.py'])
+    const noHint = active.sqlite
+      .prepare('SELECT raw, command, file_type_hints AS fileTypeHints FROM events WHERE id = ?')
+      .get('legacy-no-hint-0') as {
+      raw: string | null
+      command: string | null
+      fileTypeHints: string | null
+    }
+    assert.deepEqual(noHint, { raw: null, command: null, fileTypeHints: null })
+    const afterNoHintBatch = active.sqlite
+      .prepare('SELECT raw, command, file_type_hints AS fileTypeHints FROM events WHERE id = ?')
+      .get('legacy-after-no-hint-batch') as {
+      raw: string | null
+      command: string | null
+      fileTypeHints: string | null
+    }
+    assert.equal(afterNoHintBatch.raw, null)
+    assert.equal(afterNoHintBatch.command, null)
+    assertExtensionHintsOnly(afterNoHintBatch.fileTypeHints, ['.tsx'])
     const migratedUserVersion = Number(active.sqlite.pragma('user_version', { simple: true }))
     assert.ok(migratedUserVersion > 0)
     assert.equal(Number(active.sqlite.pragma('secure_delete', { simple: true })), 1)

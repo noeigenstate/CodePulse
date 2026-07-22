@@ -59,11 +59,9 @@ export const useStore = create<CodePulseStore>((set, get) => ({
       set((state) => ({ agents, agentCheckId: state.agentCheckId + 1 }))
     }
 
-    // Prefer an active disk rescan so cards fill even when hooks never fired.
-    // Fall back to getStatus if preload is older than this build.
-    const bootstrapStatus = api.syncSessions
-      ? api.syncSessions().catch(() => api.getStatus())
-      : api.getStatus()
+    // Main-process bootstrap already performs one disk hydrate before creating the HUD.
+    // Reuse that snapshot instead of immediately walking every CLI history tree again.
+    const bootstrapStatus = api.getStatus()
     void bootstrapStatus.then((snapshot) => applySnapshot(snapshot, true))
     void api.detectAgents().then(applyAgents)
     void api.getUpdate().then((updateInfo) => {

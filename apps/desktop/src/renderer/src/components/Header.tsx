@@ -25,7 +25,7 @@ export function Header({
   const copy = headerCopy(locale)
 
   return (
-    <header className="px-6 pb-3 pt-5">
+    <header className="hud-header px-6 pb-3 pt-5">
       <div className="flex items-center justify-between gap-6">
         <div className="flex min-w-0 items-center gap-3.5">
           <img
@@ -57,9 +57,7 @@ export function Header({
           <button
             type="button"
             onClick={onToggleMute}
-            className={`control-btn ${
-              muted ? 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100' : ''
-            }`}
+            className={`control-btn ${muted ? 'is-active' : ''}`}
             title={muted ? copy.muted : copy.mute}
           >
             {muted ? <BellOffIcon /> : <BellIcon />}

@@ -255,17 +255,24 @@ function countPrivateRows(sqlite: Database.Database): number {
 
 function migrateCommandHintsBatched(sqlite: Database.Database): void {
   const select = sqlite.prepare(
-    `SELECT id, command FROM events
+    `SELECT rowid AS migration_row_id, id, command FROM events
      WHERE command IS NOT NULL
        AND (file_type_hints IS NULL OR file_type_hints = '')
+       AND (? IS NULL OR rowid > ?)
+     ORDER BY rowid
      LIMIT ?`,
   )
   const saveHints = sqlite.prepare(
     "UPDATE events SET file_type_hints = ? WHERE id = ? AND (file_type_hints IS NULL OR file_type_hints = '')",
   )
 
+  let lastRowId: number | null = null
   for (;;) {
-    const batch = select.all(HINT_MIGRATE_BATCH) as Array<{ id: string; command: string }>
+    const batch = select.all(lastRowId, lastRowId, HINT_MIGRATE_BATCH) as Array<{
+      migration_row_id: number
+      id: string
+      command: string
+    }>
     if (batch.length === 0) break
     const tx = sqlite.transaction((rows: Array<{ id: string; command: string }>) => {
       for (const row of rows) {
@@ -273,6 +280,9 @@ function migrateCommandHintsBatched(sqlite: Database.Database): void {
       }
     })
     tx(batch)
+    // Some commands have no allowlisted extension and intentionally remain NULL.
+    // Advance independently of the UPDATE result so those rows cannot be selected forever.
+    lastRowId = batch[batch.length - 1]!.migration_row_id
   }
 }
 

@@ -35,6 +35,11 @@ export interface LocalServerOptions {
   /** 禁用本机 CLI 会话主动扫描（测试用）。 */
   disableSessionSync?: boolean
   /**
+   * Continue periodic scans and filesystem watchers after the initial disk hydrate.
+   * Defaults to true for API compatibility; the desktop HUD opts into low-I/O mode.
+   */
+  backgroundSessionSync?: boolean
+  /**
    * 本机 API 认证：
    * - 省略：生成/复用 `~/.codepulse/local-auth` 中的 token（生产默认）
    * - string：使用给定 token
@@ -101,7 +106,10 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
 
   const sessionSync = options.disableSessionSync
     ? undefined
-    : new SessionSyncService({ hub: options.hub })
+    : new SessionSyncService({
+        hub: options.hub,
+        backgroundSync: options.backgroundSessionSync ?? true,
+      })
   // Await first disk scan so the main process can open the window with
   // already-hydrated projects (no need for the user to start a chat first).
   if (sessionSync) await sessionSync.start()

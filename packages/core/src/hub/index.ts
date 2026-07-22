@@ -335,10 +335,25 @@ function timeoutThreshold(state: TurnState): number {
 }
 
 function isExpiredAgent(agent: AgentRuntimeState, now: number): boolean {
+  // A passive HUD has no out-of-band toast to fall back to. Keep terminal
+  // results that map to an actual HUD alert visible until acknowledgement.
+  // Quiet unread states (notably CANCELLED, or IDLE after session_end) retain
+  // the normal bound so they cannot become invisible-but-permanent cards.
+  if (isPersistentUnreadResult(agent)) return false
   const terminalAt = agent.terminalAt ?? agent.lastEventAt
   if (terminalAt <= 0) return false
   const retentionMs = stateRetentionMs(agent.state)
   return retentionMs != null && now - terminalAt >= retentionMs
+}
+
+function isPersistentUnreadResult(agent: AgentRuntimeState): boolean {
+  if (!agent.unread) return false
+  return (
+    agent.state === TurnState.DONE ||
+    agent.state === TurnState.ERROR ||
+    agent.state === TurnState.TIMEOUT ||
+    agent.state === TurnState.USAGE_LIMITED
+  )
 }
 
 function hasRetainedQuota(token: TokenPayload | undefined): boolean {

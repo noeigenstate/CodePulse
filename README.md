@@ -2,7 +2,7 @@
 
 # CodePulse
 
-**A local status hub for your AI coding agents.**
+**A local companion HUD for your AI coding agents.**
 
 Know at a glance whether Codex, Claude Code, Grok, and Kimi Code are working, waiting on
 you, finished, or stuck — without alt-tabbing back to a terminal.
@@ -24,26 +24,32 @@ you, finished, or stuck — without alt-tabbing back to a terminal.
 AI coding agents are great at working unattended — and terrible at telling you
 when they need you. CodePulse listens to the lifecycle hooks that Codex, Claude
 Code, Grok, and Kimi Code expose, runs every event through a single state
-machine, and surfaces the result in a few focused ways:
+machine, and projects the result into a persistent companion HUD:
 
-- 📊 **Live Dashboard** — adaptive panes for Claude Code / Codex / Grok / Kimi Code
-  (only the CLIs you are using), with brand colors, project cards, context bars,
-  and quota meters.
-- ⚙️ **Display settings** — choose automatic, light, or dark appearance and hide
-  CLI panels you do not need. Automatic mode uses light from 08:00–20:00.
-- 📈 **Local analytics console** — open **Insights** (Chinese UI: **后台**) for
-  full-screen rollups of tokens, coding time, projects, model mix, and peak hours
-  from your local SQLite history; refresh anytime.
-- 🎨 **Color-coded tray icon** — the overall state of every agent, visible at
-  all times.
-- 🔔 **Desktop notifications** — alerts only when a turn completes or appears
-  stuck. Completion toasts use the project name and a short prompt summary.
+- 🪟 **HUD-first desktop surface** — a transparent, frameless, always-on-top panel
+  that prefers a secondary display and reveals attention states without stealing
+  focus.
+- 🟠 **One attention language** — routine work stays neutral; a whole project tile
+  turns orange when it needs notice or action. A global attention rail keeps those
+  projects visible even while Insights is open or their detailed CLI panel is
+  hidden/off-screen. No native OS notification or toast is generated.
+- 📈 **Usage stays in view** — project cards retain context and quota meters, while
+  **Insights** provides local rollups of tokens, coding time, projects, model mix,
+  and peak hours from SQLite.
+- ⚙️ **HUD controls** — choose panel opacity, light/dark appearance, visible CLI
+  panels, and a steady, breathing, or stronger pulse for orange attention.
+- ◐ **Restrained tray cue** — the aggregate tray icon uses neutral for ordinary
+  activity and the same orange only when something needs attention.
 
 Everything runs **100% locally**. The server binds to loopback only, prompts
 are stored as short previews (never in full), and the hooks fail silently when
 CodePulse isn't running — your agents are never blocked or slowed down.
 
 ## Screenshots
+
+> The checked-in screenshots show the upstream v1.3.3 baseline. The HUD concept
+> branch is being visually iterated; its behavior and design contract are recorded
+> in [HUD companion concept](docs/CodePulse/HUD-companion-concept.md).
 
 ### Live console
 
@@ -75,12 +81,13 @@ nothing is uploaded. _(Sample data shown.)_
 | 🚦 **Unified state machine**        | One turn lifecycle for every agent: idle → processing → tool running → waiting for permission/input → done / error / cancelled / stuck. |
 | 🧭 **Multi-agent, multi-workspace** | Concurrent Codex, Claude Code, Grok, and Kimi Code sessions stay separate, while project card order remains fixed across updates.       |
 | 🪟 **Adaptive panes**               | Only CLIs with active tasks or retained quota appear — from one pane up to four panes.                                                  |
-| 🎨 **Automatic light/dark theme**   | Automatic mode uses light from 08:00–20:00 and dark overnight; light and dark can also be selected manually.                            |
-| ⚙️ **Configurable CLI panels**      | The gear menu lets you show or hide each CLI panel without stopping background sync or notifications.                                   |
+| 🪟 **HUD-first shell**              | A transparent, frameless, always-on-top surface prefers a secondary display and reveals attention without taking focus.                 |
+| 🎨 **HUD appearance**               | Set panel opacity, automatic/light/dark appearance, and a steady, breathing, or pulse attention effect.                                 |
+| ⚙️ **Configurable CLI panels**      | The gear menu lets you show or hide each CLI panel without stopping background sync or HUD state updates.                               |
 | 🧠 **Model, depth, and timing**     | Stable model identity, thinking depth when available, and native CLI elapsed time remain visible across refreshes.                      |
 | 📈 **Context tracking**             | Context usage grows monotonically; small readback drops are ignored while confirmed compression is handled correctly.                   |
 | 🎟️ **Quota awareness**              | Last known quota stays visible; increases update immediately, while repeated lower reads confirm an official reset.                     |
-| 🔔 **Glanceable toasts**            | Only completed or likely stuck turns notify; completion uses the project name and a cleaned prompt summary.                             |
+| 🟠 **Single-color attention**       | Neutral carries routine activity; orange is reserved for unread completion, explicit input/permission, and unread failure states.       |
 | 🕰️ **Stuck detection**              | A watchdog flags turns with no activity so silent failures don't burn your afternoon.                                                   |
 | 💾 **Local history**                | Events, sessions, turns, and token snapshots persisted to SQLite — yours to query or delete.                                            |
 | 📊 **Local analytics console**      | SQLite rollups of tokens, coding time, projects, and dialogs — today / 7d / 30d, with day / week / month trends.                        |
@@ -126,9 +133,8 @@ What you get:
  POST /api/events ──► adapters ──► StatusHub (pure reducer + rule engine)
  (Fastify, loopback)   normalize        │
                                         ├─► SQLite (events / sessions / turns / tokens / workspaces)
-                                        ├─► tray icon update
-                                        ├─► desktop notification
-                                        └─► WebSocket / IPC push ──► Dashboard (React)
+                                        ├─► neutral / orange tray cue
+                                        └─► WebSocket / IPC push ──► Companion HUD (React)
                                                                   └─► Analytics (SQLite rollups)
 ```
 
@@ -151,6 +157,11 @@ tests/               Unit tests
 Fastify · better-sqlite3 · Drizzle ORM.
 
 ## Download
+
+> **HUD concept note:** the installers below are upstream CodePulse releases and
+> do **not** contain this HUD branch. The HUD currently runs only from source on
+> `codex/hud-companion-concept`; do not publish a derived installer until the app
+> identity, updater, user-data, hooks, and ports are isolated as documented.
 
 Download installers from
 [GitHub Releases](https://github.com/noeigenstate/CodePulse/releases):
@@ -248,7 +259,8 @@ launchctl setenv KIMI_CLI_PATH "$(which kimi)"
    - `Stop`
 5. Run a Claude Code, Codex, Grok, or Kimi Code task. Only panes for CLIs that report
    activity appear on the dashboard (adaptive layout).
-6. Use the gear button to select automatic/light/dark theme and visible CLI panels.
+6. Use the gear button to set HUD opacity, automatic/light/dark appearance,
+   orange attention motion, and visible CLI panels.
 7. To review spend over time, open **Insights** in the top-right (see
    [Local analytics console](#local-analytics-console)).
 
@@ -266,40 +278,48 @@ curl http://127.0.0.1:17888/api/health
 curl http://127.0.0.1:17888/api/status
 ```
 
-## Tray states
+## HUD attention language
 
-| Color     | Meaning                                     |
-| --------- | ------------------------------------------- |
-| ⚪ Grey   | All idle                                    |
-| 🔵 Blue   | A task is running                           |
-| 🟡 Yellow | Waiting for permission or input — needs you |
-| 🟢 Green  | A turn finished, unread                     |
-| 🔴 Red    | An error                                    |
-| 🟠 Orange | Suspected stuck                             |
+The five semantic levels do not introduce five colors. Typography and state text
+carry detail; only states that need the user turn orange.
 
-Notifications are throttled and deduplicated so you're informed, not nagged.
-On completion, the toast title is `{emoji} {project} done` and the body is a
-short summary of the user prompt (Chinese ≤15 characters, English ≤15 words).
-**Mute** (tray or header button) silences sound for 30 minutes; notifications
-still appear, just silently.
-Claude Code's routine "waiting for your input" idle reminder is ignored; yellow
-means CodePulse saw a real permission or explicit input request.
+| Level    | Runtime meaning                                                | Visual treatment |
+| -------- | -------------------------------------------------------------- | ---------------- |
+| `quiet`  | Idle, cancelled, or an already acknowledged terminal state     | Neutral          |
+| `active` | Prompt submitted, thinking, or running a tool                  | Neutral          |
+| `notice` | A completed turn is unread                                     | Orange           |
+| `action` | An explicit permission or user-input request is waiting        | Orange           |
+| `fault`  | An unread error, timeout/stuck state, or usage-limit condition | Orange           |
+
+CodePulse does not emit native OS notifications or transient toasts in this HUD
+concept. An unread terminal state remains visible until you acknowledge it (or a
+new turn replaces it), so a secondary display can serve as the durable attention
+surface. The tray mirrors the same neutral/orange hierarchy.
+
+**Quiet mode** (tray or header button) lasts 30 minutes and makes animated orange
+attention steady; the state remains visible. Claude Code's routine "waiting for
+your input" idle reminder is ignored—`action` means CodePulse saw a real
+permission or explicit input request.
 
 ## Local API
 
 Loopback-only (`127.0.0.1:17888`) — never exposed to the network. Point the
 hooks elsewhere with the `CODEPULSE_URL` environment variable.
 
-| Method | Path                 | Purpose                                                 |
-| ------ | -------------------- | ------------------------------------------------------- |
-| `POST` | `/api/events`        | Ingest a raw hook payload (or an array, max 1000)       |
-| `GET`  | `/api/status`        | Full `StatusSnapshot` for the Dashboard                 |
-| `GET`  | `/api/device/status` | Minimal status for lightweight local clients            |
-| `GET`  | `/api/agents/detect` | Detect local Codex / Claude / Grok / Kimi CLI and hooks |
-| `POST` | `/api/ack/:agent`    | Mark an agent's terminal result as read                 |
-| `POST` | `/api/mute`          | `{ "muted": true }` to silence notification sound       |
-| `GET`  | `/api/health`        | Liveness probe                                          |
-| `WS`   | `/ws`                | Push channel: `status` + `notification` messages        |
+| Method | Path                 | Purpose                                                    |
+| ------ | -------------------- | ---------------------------------------------------------- |
+| `POST` | `/api/events`        | Ingest a raw hook payload (or an array, max 1000)          |
+| `GET`  | `/api/status`        | Full `StatusSnapshot` for the Dashboard                    |
+| `GET`  | `/api/device/status` | Minimal status for lightweight local clients               |
+| `GET`  | `/api/agents/detect` | Detect local Codex / Claude / Grok / Kimi CLI and hooks    |
+| `POST` | `/api/ack/:agent`    | Mark an agent's terminal result as read                    |
+| `POST` | `/api/mute`          | `{ "muted": true }` to enter quiet mode                    |
+| `GET`  | `/api/health`        | Liveness probe                                             |
+| `WS`   | `/ws`                | `status` plus legacy-named `notification` attention events |
+
+The WebSocket `notification` message name is retained for protocol compatibility;
+the desktop HUD does not turn it into a native OS toast. Quiet mode also clears
+the event's sound hint for clients that still consume that field.
 
 ## LAN device API (opt-in)
 

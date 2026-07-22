@@ -252,15 +252,19 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
 
     case 'session_end':
       if (isForeignTurnEvent(current, event)) break
-      next.state = TurnState.IDLE
+      const preserveUnreadResult = isUnreadResultAwaitingAcknowledgement(current)
+      if (!preserveUnreadResult) next.state = TurnState.IDLE
       next.turnStartedAt = undefined
       next.turnTiming = completeTurnTiming(current, acceptedTurnTiming, event.timestamp)
       next.needPermission = false
       next.needUserInput = false
       next.toolName = undefined
-      next.activity = undefined
-      // Start the 5-minute idle retention clock when the session ends.
-      next.terminalAt = event.timestamp
+      if (!preserveUnreadResult) {
+        next.activity = undefined
+        next.unread = false
+        // Start the 5-minute idle retention clock when the session ends.
+        next.terminalAt = event.timestamp
+      }
       if (!hasContextSnapshot(event.token)) next.token = markContextStale(next.token)
       break
 
@@ -274,6 +278,17 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
     turnEnded: isTerminalState(next.state) && !isTerminalState(previousState),
     previousState,
   }
+}
+
+/** Keeps a user-visible terminal result intact when its CLI session closes. */
+function isUnreadResultAwaitingAcknowledgement(agent: AgentRuntimeState): boolean {
+  if (!agent.unread) return false
+  return (
+    agent.state === TurnState.DONE ||
+    agent.state === TurnState.ERROR ||
+    agent.state === TurnState.TIMEOUT ||
+    agent.state === TurnState.USAGE_LIMITED
+  )
 }
 
 /**

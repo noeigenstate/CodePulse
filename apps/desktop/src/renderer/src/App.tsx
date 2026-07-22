@@ -12,6 +12,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
   type UIEvent as ReactUIEvent,
 } from 'react'
@@ -27,6 +28,7 @@ import {
 } from '@codepulse/shared'
 import { useStore } from './store.js'
 import { Header } from './components/Header.js'
+import { ProjectDeck } from './components/ProjectDeck.js'
 import { SettingsDialog } from './components/SettingsDialog.js'
 import { StatsDashboard } from './components/StatsDashboard.js'
 import {
@@ -43,7 +45,8 @@ import {
   type AgentWorkspaceItem,
   type QuotaMeterSource,
 } from './lib/displayAgents.js'
-import { formatDuration, formatRelative, turnStateStyle } from './lib/format.js'
+import { formatDuration, formatRelative } from './lib/format.js'
+import { hudStateLevel, needsHudAttention, type HudStateSource } from './lib/hudState.js'
 import {
   formatContextWindowStatus,
   formatProjectDirectoryBadge,
@@ -62,12 +65,15 @@ import { buildVirtualListLayout, findVirtualListRange } from './lib/virtualList.
 import {
   applyTheme,
   CLI_TOOL_TYPES,
+  DASHBOARD_SETTINGS_STORAGE_KEY,
   millisecondsUntilScheduledThemeChange,
   readDashboardSettings,
   resolveTheme,
   writeDashboardSettings,
   type CliToolType,
   type DashboardSettings,
+  type HudAttentionEffect,
+  type HudProjectLayout,
   type ThemeMode,
   type ThemePreference,
 } from './lib/dashboardSettings.js'
@@ -108,8 +114,16 @@ export function App(): JSX.Element {
     readCodexTrustAcknowledged(window.localStorage),
   )
   /** 本地开发数据统计后台（设计稿大屏） */
+  const rendererSurface = useMemo(
+    () => new URLSearchParams(window.location.search).get('surface') ?? 'hud',
+    [],
+  )
+  const standaloneSettings = rendererSurface === 'settings'
   const [statsOpen, setStatsOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const legacyView = useMemo(
+    () => new URLSearchParams(window.location.search).get('view') === 'legacy',
+    [],
+  )
   const [dashboardSettings, setDashboardSettings] = useState<DashboardSettings>(() =>
     readDashboardSettings(window.localStorage),
   )
@@ -152,13 +166,23 @@ export function App(): JSX.Element {
   useLayoutEffect(() => {
     // Write before paint so the resolved palette never flashes its opposite color.
     applyTheme(document.documentElement, resolvedTheme)
+    document.body.dataset.surface = standaloneSettings ? 'settings' : 'hud'
     void window.codepulse.setWindowTheme(resolvedTheme)
-  }, [resolvedTheme])
+  }, [resolvedTheme, standaloneSettings])
 
   useEffect(() => {
     // Storage may be unavailable; the writer deliberately preserves the in-memory selection.
     writeDashboardSettings(window.localStorage, dashboardSettings)
   }, [dashboardSettings])
+
+  useEffect(() => {
+    const syncSettingsFromAnotherWindow = (event: StorageEvent): void => {
+      if (event.key !== DASHBOARD_SETTINGS_STORAGE_KEY) return
+      setDashboardSettings(readDashboardSettings(window.localStorage))
+    }
+    window.addEventListener('storage', syncSettingsFromAnotherWindow)
+    return () => window.removeEventListener('storage', syncSettingsFromAnotherWindow)
+  }, [])
 
   useEffect(() => {
     if (!orderedProjects.changed) return
@@ -167,6 +191,14 @@ export function App(): JSX.Element {
   }, [orderedProjects])
 
   useEffect(() => init(), [init])
+
+  useEffect(
+    () =>
+      window.codepulse.onOpenStats(() => {
+        setStatsOpen(true)
+      }),
+    [],
+  )
 
   const toggleLocale = (): void => {
     setLocale((current) => {
@@ -198,6 +230,34 @@ export function App(): JSX.Element {
     [updateDashboardSettings],
   )
 
+  const setHudOpacity = useCallback(
+    (hudOpacity: number): void => {
+      updateDashboardSettings((current) => ({ ...current, hudOpacity }))
+    },
+    [updateDashboardSettings],
+  )
+
+  const setAttentionEffect = useCallback(
+    (attentionEffect: HudAttentionEffect): void => {
+      updateDashboardSettings((current) => ({ ...current, attentionEffect }))
+    },
+    [updateDashboardSettings],
+  )
+
+  const setProjectLayout = useCallback(
+    (projectLayout: HudProjectLayout): void => {
+      updateDashboardSettings((current) => ({ ...current, projectLayout }))
+    },
+    [updateDashboardSettings],
+  )
+
+  const setShowUsageStrip = useCallback(
+    (showUsageStrip: boolean): void => {
+      updateDashboardSettings((current) => ({ ...current, showUsageStrip }))
+    },
+    [updateDashboardSettings],
+  )
+
   const setToolVisibility = useCallback(
     (tool: CliToolType, visible: boolean): void => {
       updateDashboardSettings((current) => ({
@@ -207,8 +267,6 @@ export function App(): JSX.Element {
     },
     [updateDashboardSettings],
   )
-
-  const closeSettings = useCallback((): void => setSettingsOpen(false), [])
 
   const liveConsole = (
     <LiveConsole
@@ -221,13 +279,65 @@ export function App(): JSX.Element {
       onAck={(agentType, workspacePath) => ack(agentType, workspacePath)}
     />
   )
+  const attentionRail = (
+    <HudAttentionRail
+      panels={allPanels}
+      locale={locale}
+      copy={copy}
+      onAck={(agentType, workspacePath) => ack(agentType, workspacePath)}
+    />
+  )
+  const projectDeck = (
+    <ProjectDeck
+      allToolsHidden={allToolsHidden}
+      copy={copy}
+      layout={dashboardSettings.projectLayout}
+      locale={locale}
+      onAck={(agentType, workspacePath) => ack(agentType, workspacePath)}
+      panels={panels}
+      showUsageStrip={dashboardSettings.showUsageStrip}
+      updatedAt={snapshot.updatedAt}
+    />
+  )
+
+  const hudStyle = {
+    '--hud-opacity': String(dashboardSettings.hudOpacity / 100),
+  } as CSSProperties
+  const attentionEffect = muted ? 'steady' : dashboardSettings.attentionEffect
+
+  if (standaloneSettings) {
+    return (
+      <div className="settings-window-shell h-full text-ink">
+        <SettingsDialog
+          standalone
+          attentionEffect={dashboardSettings.attentionEffect}
+          copy={copy.settings}
+          hudOpacity={dashboardSettings.hudOpacity}
+          projectLayout={dashboardSettings.projectLayout}
+          showUsageStrip={dashboardSettings.showUsageStrip}
+          onAttentionEffectChange={setAttentionEffect}
+          onClose={() => window.close()}
+          onHudOpacityChange={setHudOpacity}
+          onProjectLayoutChange={setProjectLayout}
+          onShowUsageStripChange={setShowUsageStrip}
+          onThemeChange={setTheme}
+          onToolVisibilityChange={setToolVisibility}
+          theme={dashboardSettings.theme}
+          visibleTools={dashboardSettings.visibleTools}
+        />
+      </div>
+    )
+  }
 
   return (
-    <div className="app-shell flex h-full flex-col text-ink">
-      {window.codepulse.platform === 'win32' ? <WindowTitleBar /> : null}
+    <div
+      className="app-shell flex h-full flex-col text-ink"
+      data-attention-effect={attentionEffect}
+      style={hudStyle}
+    >
       {statsOpen ? (
         <StatsDashboard locale={locale} copy={copy} onClose={() => setStatsOpen(false)} />
-      ) : (
+      ) : legacyView ? (
         <>
           <Header
             locale={locale}
@@ -235,11 +345,14 @@ export function App(): JSX.Element {
             onToggleLocale={toggleLocale}
             onToggleMute={toggleMute}
             onOpenStats={() => setStatsOpen(true)}
-            onOpenSettings={() => setSettingsOpen(true)}
-            settingsOpen={settingsOpen}
+            onOpenSettings={() => void window.codepulse.openSettingsWindow()}
+            settingsOpen={false}
           />
+          {attentionRail}
           {liveConsole}
         </>
+      ) : (
+        projectDeck
       )}
       {showSetupReminder && (
         <AgentSetupReminderModal
@@ -259,32 +372,94 @@ export function App(): JSX.Element {
           update={updateInfo}
         />
       )}
-      {settingsOpen && (
-        <SettingsDialog
-          copy={copy.settings}
-          onClose={closeSettings}
-          onThemeChange={setTheme}
-          onToolVisibilityChange={setToolVisibility}
-          theme={dashboardSettings.theme}
-          visibleTools={dashboardSettings.visibleTools}
-        />
-      )}
     </div>
   )
 }
 
 /**
- * Renders the draggable brand strip beneath native Windows window controls.
- *
- * @returns A non-interactive title-bar surface matching the active app theme.
+ * Keeps every actionable project visible even when its detailed CLI panel is
+ * horizontally off-screen, hidden by preference, or replaced by Insights.
  */
-function WindowTitleBar(): JSX.Element {
-  return (
-    <div aria-hidden="true" className="window-titlebar">
-      <img alt="" className="window-titlebar-logo" src={codePulseIcon} />
-      <span>CodePulse</span>
-    </div>
+function HudAttentionRail({
+  panels,
+  locale,
+  copy,
+  onAck,
+}: {
+  panels: AgentPanel[]
+  locale: Locale
+  copy: UiCopy
+  onAck: (agentType: AgentType, workspacePath?: string) => void
+}): JSX.Element | null {
+  const entries = panels.flatMap((panel) =>
+    panel.workspaces.flatMap((item) => (needsHudAttention(item.agent) ? [{ panel, item }] : [])),
   )
+  if (entries.length === 0) return null
+
+  return (
+    <aside
+      aria-label={copy.attentionRailTitle}
+      aria-live="polite"
+      className="hud-attention-rail shrink-0 px-5 pb-3 pt-2"
+    >
+      <div className="hud-attention-frame">
+        <div className="hud-attention-heading">
+          <div className="flex items-center gap-2">
+            <span className="hud-attention-heading-dot" aria-hidden="true" />
+            <strong>{copy.attentionRailTitle}</strong>
+            <span className="hud-attention-count">{entries.length}</span>
+          </div>
+          <span className="truncate text-meta text-ink-500">{copy.attentionRailHint}</span>
+        </div>
+        <div className="hud-attention-grid">
+          {entries.map(({ panel, item }) => {
+            const agent = item.agent
+            const level = hudStateLevel(agent)
+            const message = hudAttentionSummary(agent)
+            return (
+              <article
+                className="hud-attention-item"
+                data-hud-level={level}
+                key={`${panel.agentType}:${item.id}`}
+              >
+                <div className="flex min-w-0 items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="hud-attention-agent">{panel.name}</p>
+                    <p className="truncate font-semibold">{item.name || copy.unknownProject}</p>
+                  </div>
+                  <span className={`status-badge hud-status is-${level}`}>
+                    {turnStateLabel(agent.state, locale)}
+                  </span>
+                </div>
+                <div className="mt-2 flex min-w-0 items-center gap-2">
+                  <p className="hud-attention-summary">{message}</p>
+                  {agent.unread ? (
+                    <button
+                      aria-label={`${item.workspacePath ? copy.read : copy.readAll} ${
+                        item.name || copy.unknownProject
+                      }`}
+                      className="hud-ack-button status-badge shrink-0"
+                      onClick={() => onAck(panel.agentType, item.workspacePath)}
+                      type="button"
+                    >
+                      {item.workspacePath ? copy.read : copy.readAll}
+                    </button>
+                  ) : null}
+                </div>
+              </article>
+            )
+          })}
+        </div>
+      </div>
+    </aside>
+  )
+}
+
+function hudAttentionSummary(agent: AgentRuntimeState): string {
+  if (agent.state === TurnState.DONE && agent.lastAssistantMessage) {
+    return agent.lastAssistantMessage
+  }
+  return agent.activity ?? agent.lastUserPrompt ?? agent.lastAssistantMessage ?? agent.state
 }
 
 /**
@@ -724,13 +899,11 @@ function agentName(agent: AgentType): string {
 /** 按已启用 CLI 分屏数量自适应列布局。 */
 function panelGridClass(count: number): string {
   if (count <= 1) return 'min-w-0 grid-cols-1'
-  if (count === 2) {
-    return 'min-w-[56rem] grid-cols-[minmax(27rem,1fr)_minmax(27rem,1fr)]'
-  }
+  if (count === 2) return 'min-w-0 grid-cols-2'
   if (count === 3) {
-    return 'min-w-[84rem] grid-cols-[minmax(26rem,1fr)_minmax(26rem,1fr)_minmax(26rem,1fr)]'
+    return 'hud-panel-grid-three min-w-0 grid-cols-2 grid-rows-2'
   }
-  return 'min-w-[112rem] grid-cols-[repeat(4,minmax(26rem,1fr))]'
+  return 'min-w-0 grid-cols-2 grid-rows-2'
 }
 
 /** Renders the appropriate empty state for either inactive or intentionally hidden tools. */
@@ -765,24 +938,32 @@ const AgentPanelView = memo(function AgentPanelView({
   onAck: (agentType: AgentType, workspacePath?: string) => void
 }): JSX.Element {
   const latest = latestProjectItem(panel.workspaces)?.agent
-  const style = turnStateStyle(latest?.state ?? TurnState.IDLE)
+  const level = hudStateLevel(latest ?? { state: TurnState.IDLE, unread: false })
   const projectCount = panel.workspaces.filter((item) => item.agent.lastEventAt > 0).length
   const brand = brandClass(panel.agentType)
 
   return (
-    <section className="agent-panel flex min-h-0 flex-col p-3.5" data-agent={panel.agentType}>
+    <section
+      className="agent-panel flex min-h-0 flex-col p-3.5"
+      data-agent={panel.agentType}
+      data-hud-level={level}
+    >
       <div className="mb-3 flex flex-col gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <span className="agent-brand-icon relative" data-agent={panel.agentType}>
             <AgentLogo agentType={panel.agentType} />
             <span
-              className={`absolute bottom-1 right-1 h-2.5 w-2.5 rounded-full ring-2 ring-white ${style.dot}`}
+              className={`hud-state-dot is-${level} absolute bottom-1 right-1 h-2.5 w-2.5 rounded-full ring-2 ring-white`}
             />
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <h2 className="truncate text-module text-ink">{panel.name}</h2>
-              <span className={`status-badge ${stateChipClass(latest?.state ?? TurnState.IDLE)}`}>
+              <span
+                className={`status-badge ${stateChipClass(
+                  latest ?? { state: TurnState.IDLE, unread: false },
+                )}`}
+              >
                 {turnStateLabel(latest?.state ?? TurnState.IDLE, locale)}
               </span>
             </div>
@@ -1077,7 +1258,7 @@ function ClaudeLogo(): JSX.Element {
     <svg viewBox="0 0 24 24" role="img" aria-label="Claude Code" className="h-7 w-7">
       <path
         clipRule="evenodd"
-        fill="#D97757"
+        fill="currentColor"
         fillRule="evenodd"
         d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z"
       />
@@ -1090,24 +1271,10 @@ function CodexLogo(): JSX.Element {
     <svg viewBox="0 0 24 24" role="img" aria-label="Codex" className="h-7 w-7">
       <path
         clipRule="evenodd"
-        fill="url(#codexLogoGradient)"
+        fill="currentColor"
         fillRule="evenodd"
         d="M8.086.457a6.105 6.105 0 013.046-.415c1.333.153 2.521.72 3.564 1.7a.117.117 0 00.107.029c1.408-.346 2.762-.224 4.061.366l.063.03.154.076c1.357.703 2.33 1.77 2.918 3.198.278.679.418 1.388.421 2.126a5.655 5.655 0 01-.18 1.631.167.167 0 00.04.155 5.982 5.982 0 011.578 2.891c.385 1.901-.01 3.615-1.183 5.14l-.182.22a6.063 6.063 0 01-2.934 1.851.162.162 0 00-.108.102c-.255.736-.511 1.364-.987 1.992-1.199 1.582-2.962 2.462-4.948 2.451-1.583-.008-2.986-.587-4.21-1.736a.145.145 0 00-.14-.032c-.518.167-1.04.191-1.604.185a5.924 5.924 0 01-2.595-.622 6.058 6.058 0 01-2.146-1.781c-.203-.269-.404-.522-.551-.821a7.74 7.74 0 01-.495-1.283 6.11 6.11 0 01-.017-3.064.166.166 0 00.008-.074.115.115 0 00-.037-.064 5.958 5.958 0 01-1.38-2.202 5.196 5.196 0 01-.333-1.589 6.915 6.915 0 01.188-2.132c.45-1.484 1.309-2.648 2.577-3.493.282-.188.55-.334.802-.438.286-.12.573-.22.861-.304a.129.129 0 00.087-.087A6.016 6.016 0 015.635 2.31C6.315 1.464 7.132.846 8.086.457zm-.804 7.85a.848.848 0 00-1.473.842l1.694 2.965-1.688 2.848a.849.849 0 001.46.864l1.94-3.272a.849.849 0 00.007-.854l-1.94-3.393zm5.446 6.24a.849.849 0 000 1.695h4.848a.849.849 0 000-1.696h-4.848z"
       />
-      <defs>
-        <linearGradient
-          gradientUnits="userSpaceOnUse"
-          id="codexLogoGradient"
-          x1="12"
-          x2="12"
-          y1="0"
-          y2="24"
-        >
-          <stop stopColor="#B1A7FF" />
-          <stop offset=".5" stopColor="#7A9DFF" />
-          <stop offset="1" stopColor="#3941FF" />
-        </linearGradient>
-      </defs>
     </svg>
   )
 }
@@ -1130,7 +1297,7 @@ function KimiLogo(): JSX.Element {
     <svg viewBox="0 0 24 24" role="img" aria-label="Kimi Code" className="h-7 w-7">
       <path
         fill="currentColor"
-        className="text-brand-kimi"
+        className="text-ink"
         d="M5 3.5h3v7.15L14.35 3.5h3.8l-6.8 7.5 7.15 9.5h-3.7l-5.55-7.35L8 14.5v6H5v-17z"
       />
     </svg>
@@ -1151,17 +1318,18 @@ const ProjectTile = memo(function ProjectTile({
   onAck: () => void
 }): JSX.Element {
   const agent = item.agent
-  const style = turnStateStyle(agent.state)
+  const level = hudStateLevel(agent)
+  const attention = needsHudAttention(agent)
   const token = agent.token
   const contextWindow = effectiveContextWindow(agent)
 
   return (
-    <article className="project-tile px-3.5 py-3">
+    <article className="project-tile px-3.5 py-3" data-hud-level={level}>
       <div className="grid gap-2.5">
         <div className="flex min-w-0 items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="project-title-row">
-              <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${style.dot}`} />
+              <span className={`hud-state-dot is-${level} h-2.5 w-2.5 shrink-0 rounded-full`} />
               <h3 className="project-title">{item.name || copy.unknownProject}</h3>
               <span className="project-directory-badge" title={item.workspacePath}>
                 {formatProjectDirectoryBadge(item.workspacePath, item.name, copy.pathStatus)}
@@ -1169,19 +1337,22 @@ const ProjectTile = memo(function ProjectTile({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
-            <span className={`status-badge ${stateChipClass(agent.state)}`}>
+            <span className={`status-badge ${stateChipClass(agent)}`}>
               {turnStateLabel(agent.state, locale)}
             </span>
             {agent.unread && (
-              <button
-                onClick={onAck}
-                className="status-badge border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 active:translate-y-px"
-              >
-                {copy.read}
+              <button onClick={onAck} className="hud-ack-button status-badge">
+                {item.workspacePath ? copy.read : copy.readAll}
               </button>
             )}
           </div>
         </div>
+
+        {attention && agent.activity ? (
+          <p className="hud-attention-message" role="status">
+            {agent.activity}
+          </p>
+        ) : null}
 
         <div className="grid grid-cols-[minmax(7rem,1fr)_minmax(4.75rem,0.7fr)_minmax(5.5rem,0.7fr)] gap-2">
           <InlineMetric label={copy.model} value={agent.model ?? '—'} />
@@ -1467,36 +1638,17 @@ function brandClass(agentType: AgentType): BrandClass {
   return 'brand-claude'
 }
 
-function stateChipClass(state: AgentRuntimeState['state']): string {
-  switch (state) {
-    case TurnState.DONE:
-      return 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
-    case TurnState.ERROR:
-    case TurnState.USAGE_LIMITED:
-      return 'bg-red-50 text-red-700 ring-1 ring-red-200'
-    case TurnState.WAITING_PERMISSION:
-    case TurnState.WAITING_USER_INPUT:
-      return 'bg-amber-50 text-amber-700 ring-1 ring-amber-200'
-    case TurnState.TIMEOUT:
-      return 'bg-orange-50 text-orange-700 ring-1 ring-orange-200'
-    case TurnState.THINKING:
-    case TurnState.TOOL_RUNNING:
-    case TurnState.PROMPT_SUBMITTED:
-      return 'bg-blue-50 text-blue-700 ring-1 ring-blue-200'
-    default:
-      return 'bg-slate-100 text-slate-600 ring-1 ring-slate-200'
-  }
+function stateChipClass(agent: HudStateSource): string {
+  return `hud-status is-${hudStateLevel(agent)}`
 }
 
-/** 设计指引：正常用量用品牌色，≥80% 警告黄，≥95% 危险红。 */
+/** Usage stays neutral; only an imminent hard limit joins the orange attention language. */
 function meterFillClass(pct: number, brand: BrandClass): string {
-  if (pct >= 95) return 'danger'
-  if (pct >= 80) return 'warn'
+  if (pct >= 95) return 'attention'
   return brand
 }
 
 function tokenTextColor(pct: number): string {
-  if (pct >= 95) return 'text-red-600'
-  if (pct >= 80) return 'text-amber-700'
+  if (pct >= 95) return 'hud-attention-text'
   return 'text-ink'
 }

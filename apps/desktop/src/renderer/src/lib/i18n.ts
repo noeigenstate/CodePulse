@@ -24,6 +24,9 @@ export interface UiCopy {
   weeklyQuota: string
   waitingQuota: string
   read: string
+  readAll: string
+  attentionRailTitle: string
+  attentionRailHint: string
   contextWindow: string
   unknownProject: string
   emptyDashboard: EmptyDashboardCopy
@@ -44,6 +47,20 @@ export interface UiCopy {
 export interface SettingsCopy {
   title: string
   close: string
+  hudAppearance: string
+  hudOpacity: string
+  hudOpacityHint: string
+  attentionEffect: string
+  attentionEffectHint: string
+  attentionSteady: string
+  attentionBreathe: string
+  attentionPulse: string
+  projectLayout: string
+  projectLayoutHint: string
+  projectLayoutGrid: string
+  projectLayoutList: string
+  usageStrip: string
+  usageStripHint: string
   theme: string
   themeAuto: string
   themeAutoHint: string
@@ -261,18 +278,18 @@ interface LocaleStorageLike {
 const HEADER_COPY: Record<Locale, HeaderCopy> = {
   zh: {
     brandTag: '',
-    subtitle: '编程助手实时控制台',
-    mute: '静音 30 分钟',
-    muted: '已静音',
+    subtitle: 'AI 编程副驾 HUD',
+    mute: '安静 30 分钟',
+    muted: '安静中',
     languageToggle: '英文',
     stats: '后台',
     settings: '设置',
   },
   en: {
     brandTag: '',
-    subtitle: 'AI coding-agent live console',
-    mute: 'Mute 30 min',
-    muted: 'Muted',
+    subtitle: 'AI coding companion HUD',
+    mute: 'Quiet 30 min',
+    muted: 'Quiet mode',
     languageToggle: 'Chinese',
     stats: 'Insights',
     settings: 'Settings',
@@ -290,6 +307,9 @@ const UI_COPY: Record<Locale, UiCopy> = {
     weeklyQuota: '每周额度',
     waitingQuota: '等待命令行同步额度',
     read: '已读',
+    readAll: '全部已读',
+    attentionRailTitle: '需要查看',
+    attentionRailHint: '橙色项目不会被分栏、后台或隐藏偏好遮住',
     contextWindow: '上下文窗口：',
     unknownProject: '未识别项目',
     emptyDashboard: {
@@ -318,7 +338,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
         'SessionStart：识别 Codex 会话开始和项目目录。',
         'UserPromptSubmit：识别一轮任务已经提交。',
         'PreToolUse / PermissionRequest / PostToolUse：识别工具执行、权限等待和工具完成状态。',
-        'Stop：识别当前项目的一轮 Codex 任务已完成并发送桌面提醒。',
+        'Stop：识别当前项目的一轮 Codex 任务已完成，并在 HUD 中标为橙色待确认。',
       ],
       steps: [
         '打开正在使用的 Codex 项目终端。',
@@ -368,13 +388,27 @@ const UI_COPY: Record<Locale, UiCopy> = {
     settings: {
       title: '设置',
       close: '关闭设置',
+      hudAppearance: 'HUD 外观',
+      hudOpacity: '背景透明度',
+      hudOpacityHint: '只改变面板背景；文字、图标和控件始终保持完整清晰度。',
+      attentionEffect: '橙色提示动效',
+      attentionEffectHint: '橙色只表示需要你介入；系统“减少动态效果”会自动关闭动画。',
+      attentionSteady: '静态',
+      attentionBreathe: '呼吸',
+      attentionPulse: '闪烁',
+      projectLayout: '项目布局',
+      projectLayoutHint: '默认使用单列堆叠，窗口随项目数量收缩；需要并排浏览时可切换矩阵。',
+      projectLayoutGrid: '紧凑矩阵',
+      projectLayoutList: '单列排序',
+      usageStrip: '显示底部用量行',
+      usageStripHint: '保留 CLI 配额摘要，但不重新建立 Claude、Codex 或 Grok 分区。',
       theme: '主题',
       themeAuto: '自动',
       themeAutoHint: '自动：08:00–20:00 白色，20:00–08:00 黑色。',
       themeLight: '白色',
       themeDark: '黑色',
       cliTools: '显示的 CLI 工具',
-      cliToolsHint: '隐藏仅影响主控制台显示，不会停止本机同步或通知。',
+      cliToolsHint: '隐藏仅影响 HUD 显示，不会停止本机同步或状态提示。',
       codex: 'Codex',
       claudeCode: 'Claude Code',
       grok: 'Grok',
@@ -506,6 +540,9 @@ const UI_COPY: Record<Locale, UiCopy> = {
     weeklyQuota: 'Weekly quota',
     waitingQuota: 'Waiting for CLI quota sync',
     read: 'Read',
+    readAll: 'Read all',
+    attentionRailTitle: 'Needs attention',
+    attentionRailHint: 'Orange projects stay visible across panels, insights, and hidden tools',
     contextWindow: 'Context window:',
     unknownProject: 'Unknown project',
     emptyDashboard: {
@@ -534,7 +571,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
         'SessionStart: detect Codex session start and project directory.',
         'UserPromptSubmit: detect that a new turn was submitted.',
         'PreToolUse / PermissionRequest / PostToolUse: detect tool execution, permission waits, and tool completion.',
-        'Stop: detect that one Codex turn completed for the current project and send a desktop notification.',
+        'Stop: detect that one Codex turn completed and mark that project orange in the HUD until acknowledged.',
       ],
       steps: [
         'Open the Codex project terminal you are using.',
@@ -584,14 +621,29 @@ const UI_COPY: Record<Locale, UiCopy> = {
     settings: {
       title: 'Settings',
       close: 'Close settings',
+      hudAppearance: 'HUD appearance',
+      hudOpacity: 'Background opacity',
+      hudOpacityHint: 'Only the panel background fades; text, icons, and controls stay crisp.',
+      attentionEffect: 'Orange attention motion',
+      attentionEffectHint:
+        'Orange is reserved for intervention; reduced-motion preferences always disable animation.',
+      attentionSteady: 'Steady',
+      attentionBreathe: 'Breathe',
+      attentionPulse: 'Flash',
+      projectLayout: 'Project layout',
+      projectLayoutHint:
+        'The default column shrinks with the project stack; switch to the grid for parallel scanning.',
+      projectLayoutGrid: 'Compact grid',
+      projectLayoutList: 'Sorted column',
+      usageStrip: 'Show usage strip',
+      usageStripHint: 'Keep quota summaries without recreating Claude, Codex, or Grok sections.',
       theme: 'Theme',
       themeAuto: 'Auto',
       themeAutoHint: 'Automatic: light from 08:00–20:00 and dark otherwise.',
       themeLight: 'White',
       themeDark: 'Black',
       cliTools: 'Visible CLI tools',
-      cliToolsHint:
-        'Hiding a tool only changes the live console; syncing and notifications continue.',
+      cliToolsHint: 'Hiding a tool only changes the HUD; syncing and status cues continue.',
       codex: 'Codex',
       claudeCode: 'Claude Code',
       grok: 'Grok',

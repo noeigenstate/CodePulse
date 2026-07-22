@@ -8,6 +8,7 @@ import {
   workspaceKey,
 } from '@codepulse/shared'
 import { visibleRateLimitWindows } from './panelFormat.js'
+import { hudStatePriority, needsHudAttention } from './hudState.js'
 
 export const DISPLAY_AGENT_ORDER: readonly AgentType[] = ['claude_code', 'codex', 'grok', 'kimi']
 const QUOTA_RECENCY_WINDOW_MS = 30 * 60_000
@@ -223,8 +224,18 @@ function buildAgentWorkspaceItems(
 
   for (const agent of agents) {
     // Quota-only / pathless shells must not become "未识别项目" cards.
-    // They still feed collectQuotaMeters via the full agent list.
-    if (!agent.workspacePath?.trim()) continue
+    // They still feed collectQuotaMeters via the full agent list. An actionable
+    // pathless event is the exception: without OS toasts, the HUD must expose a
+    // reason for its orange tray cue even when a hook omitted cwd.
+    if (!agent.workspacePath?.trim()) {
+      if (!needsHudAttention(agent)) continue
+      // The existing acknowledgement contract is workspace-scoped. Merge all
+      // unknown-workspace alerts for this CLI into one explicit "read all" card
+      // instead of presenting per-session buttons that would clear each other.
+      const fallbackKey = 'attention:unknown-workspace'
+      grouped.set(fallbackKey, [...(grouped.get(fallbackKey) ?? []), agent])
+      continue
+    }
     const key = workspaceKey(agent.workspacePath)
     if (!key) continue
     grouped.set(key, [...(grouped.get(key) ?? []), agent])
@@ -261,8 +272,8 @@ function buildAgentWorkspaceItems(
  * @returns Sort ordering with the preferred card first.
  */
 function compareWorkspaceDisplayAgents(a: AgentRuntimeState, b: AgentRuntimeState): number {
-  const activeOrder = Number(isActiveState(b.state)) - Number(isActiveState(a.state))
-  if (activeOrder !== 0) return activeOrder
+  const hudOrder = hudStatePriority(b) - hudStatePriority(a)
+  if (hudOrder !== 0) return hudOrder
 
   const modelOrder = (b.modelObservedAt ?? 0) - (a.modelObservedAt ?? 0)
   if (modelOrder !== 0) return modelOrder
@@ -307,7 +318,7 @@ export function coalesceNestedWorkspaceItems(items: AgentWorkspaceItem[]): Agent
     }
 
     const parent = kept[parentIndex]!
-    if (item.updatedAt < parent.updatedAt) continue
+    if (compareWorkspaceDisplayAgents(item.agent, parent.agent) >= 0) continue
 
     kept[parentIndex] = {
       ...parent,

@@ -6,9 +6,13 @@ import {
   TurnState,
 } from '@codepulse/shared'
 import { trayIconFor } from './icon.js'
+import { deriveHudOverall } from './hud-window.js'
+import { trayAgentNameFor } from './tray-icon-png.js'
 
 export interface TrayCallbacks {
   onOpen: () => void
+  onOpenSettings: () => void
+  onOpenStats: () => void
   onToggleMute: (muted: boolean) => void
   onQuit: () => void
 }
@@ -27,8 +31,9 @@ export class TrayController {
 
   update(snapshot: StatusSnapshot): void {
     this.snapshot = snapshot
-    this.tray.setImage(trayIconFor(snapshot.overall))
-    this.tray.setToolTip(`CodePulse - ${overallLabel(snapshot.overall)}`)
+    const hudOverall = deriveHudOverall(snapshot)
+    this.tray.setImage(trayIconFor(hudOverall))
+    this.tray.setToolTip(`CodePulse - ${overallLabel(hudOverall)}`)
     this.tray.setContextMenu(this.buildMenu(snapshot))
   }
 
@@ -53,7 +58,9 @@ export class TrayController {
       { type: 'separator' },
       ...agentItems,
       { type: 'separator' },
-      { label: '打开面板', click: () => this.callbacks.onOpen() },
+      { label: '打开 HUD', click: () => this.callbacks.onOpen() },
+      { label: 'HUD 设置', click: () => this.callbacks.onOpenSettings() },
+      { label: '统计后台', click: () => this.callbacks.onOpenStats() },
       {
         label: this.muted ? '取消静音' : '静音 30 分钟',
         click: () => {
@@ -68,9 +75,7 @@ export class TrayController {
 }
 
 function agentLine(agent: AgentRuntimeState): string {
-  const name =
-    agent.agentType === 'codex' ? 'Codex' : agent.agentType === 'grok' ? 'Grok' : 'Claude Code'
-  return `${name}: ${stateLabel(agent.state)}`
+  return `${trayAgentNameFor(agent.agentType)}: ${stateLabel(agent.state)}`
 }
 
 function stateLabel(state: TurnState): string {

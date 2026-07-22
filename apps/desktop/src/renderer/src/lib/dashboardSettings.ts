@@ -22,9 +22,20 @@ export type ThemeMode = 'light' | 'dark'
 /** Persisted theme selection, including the time-based automatic mode. */
 export type ThemePreference = 'auto' | ThemeMode
 
+/** Optional motion applied only to orange project surfaces that need attention. */
+export type HudAttentionEffect = 'steady' | 'breathe' | 'pulse'
+
+/** Project-first HUD arrangement. List is the focused default; grid remains optional. */
+export type HudProjectLayout = 'grid' | 'list'
+
 /** Persisted display-only preferences for the desktop dashboard. */
 export interface DashboardSettings {
   theme: ThemePreference
+  /** Background alpha only; text and controls always remain fully opaque. */
+  hudOpacity: number
+  attentionEffect: HudAttentionEffect
+  projectLayout: HudProjectLayout
+  showUsageStrip: boolean
   visibleTools: Record<CliToolType, boolean>
 }
 
@@ -37,13 +48,22 @@ interface ThemeRoot {
   dataset: { theme?: string }
 }
 
-const STORAGE_KEY = 'codepulse:dashboard-settings'
+export const DASHBOARD_SETTINGS_STORAGE_KEY = 'codepulse:dashboard-settings'
+/** Version 2 changes the original three-column default into a single project lane. */
+const DASHBOARD_SETTINGS_SCHEMA_VERSION = 2
 const LIGHT_THEME_START_HOUR = 8
 const DARK_THEME_START_HOUR = 20
+export const HUD_OPACITY_MIN = 20
+export const HUD_OPACITY_MAX = 100
 
 /** Default preferences; newly introduced CLI tools are also treated as visible on read. */
 export const DEFAULT_DASHBOARD_SETTINGS: DashboardSettings = {
-  theme: 'auto',
+  // The companion HUD defaults to GroundControl's light, black-text language.
+  theme: 'light',
+  hudOpacity: 92,
+  attentionEffect: 'steady',
+  projectLayout: 'list',
+  showUsageStrip: true,
   visibleTools: {
     codex: true,
     claude_code: true,
@@ -65,7 +85,7 @@ export const DEFAULT_DASHBOARD_SETTINGS: DashboardSettings = {
 export function readDashboardSettings(storage: StorageLike | undefined): DashboardSettings {
   let raw: string | null | undefined
   try {
-    raw = storage?.getItem(STORAGE_KEY)
+    raw = storage?.getItem(DASHBOARD_SETTINGS_STORAGE_KEY)
   } catch {
     return cloneSettings(DEFAULT_DASHBOARD_SETTINGS)
   }
@@ -77,6 +97,19 @@ export function readDashboardSettings(storage: StorageLike | undefined): Dashboa
     const visibleTools = isRecord(parsed.visibleTools) ? parsed.visibleTools : {}
     return {
       theme: isThemePreference(parsed.theme) ? parsed.theme : DEFAULT_DASHBOARD_SETTINGS.theme,
+      hudOpacity: normalizeHudOpacity(parsed.hudOpacity),
+      attentionEffect: isHudAttentionEffect(parsed.attentionEffect)
+        ? parsed.attentionEffect
+        : DEFAULT_DASHBOARD_SETTINGS.attentionEffect,
+      projectLayout:
+        parsed.schemaVersion === DASHBOARD_SETTINGS_SCHEMA_VERSION &&
+        isHudProjectLayout(parsed.projectLayout)
+          ? parsed.projectLayout
+          : DEFAULT_DASHBOARD_SETTINGS.projectLayout,
+      showUsageStrip:
+        typeof parsed.showUsageStrip === 'boolean'
+          ? parsed.showUsageStrip
+          : DEFAULT_DASHBOARD_SETTINGS.showUsageStrip,
       visibleTools: {
         codex: visibleTools.codex !== false,
         claude_code: visibleTools.claude_code !== false,
@@ -137,7 +170,10 @@ export function writeDashboardSettings(
   settings: DashboardSettings,
 ): void {
   try {
-    storage?.setItem(STORAGE_KEY, JSON.stringify(settings))
+    storage?.setItem(
+      DASHBOARD_SETTINGS_STORAGE_KEY,
+      JSON.stringify({ schemaVersion: DASHBOARD_SETTINGS_SCHEMA_VERSION, ...settings }),
+    )
   } catch {
     // Keep the in-memory selection when browser storage is unavailable or full.
   }
@@ -157,6 +193,10 @@ export function applyTheme(root: ThemeRoot, theme: ThemeMode): void {
 function cloneSettings(settings: DashboardSettings): DashboardSettings {
   return {
     theme: settings.theme,
+    hudOpacity: settings.hudOpacity,
+    attentionEffect: settings.attentionEffect,
+    projectLayout: settings.projectLayout,
+    showUsageStrip: settings.showUsageStrip,
     visibleTools: { ...settings.visibleTools },
   }
 }
@@ -169,4 +209,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** Narrows a parsed storage value to a supported persisted theme selection. */
 function isThemePreference(value: unknown): value is ThemePreference {
   return value === 'auto' || value === 'light' || value === 'dark'
+}
+
+function isHudAttentionEffect(value: unknown): value is HudAttentionEffect {
+  return value === 'steady' || value === 'breathe' || value === 'pulse'
+}
+
+function isHudProjectLayout(value: unknown): value is HudProjectLayout {
+  return value === 'grid' || value === 'list'
+}
+
+function normalizeHudOpacity(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_DASHBOARD_SETTINGS.hudOpacity
+  }
+  return Math.min(HUD_OPACITY_MAX, Math.max(HUD_OPACITY_MIN, Math.round(value)))
 }

@@ -2,14 +2,13 @@ import { spawn } from 'node:child_process'
 import { readFileSync, writeFileSync, unlinkSync } from 'node:fs'
 import { networkInterfaces } from 'node:os'
 import { join } from 'node:path'
-import { app, BrowserWindow, ipcMain, Menu, powerMonitor, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, powerMonitor, screen, shell } from 'electron'
 import {
   type Agent,
   type AgentType,
   type DeviceProvisioningErrorCode,
   type DeviceProvisioningRequest,
   type DeviceProvisioningSnapshot,
-  type NotificationRequest,
   type StatusSnapshot,
   type UiLocale,
   type UpdateDownloadProgress,
@@ -37,7 +36,6 @@ import {
   type LocalServer,
 } from '@codepulse/local-server'
 import { TrayController } from './tray.js'
-import { showNotification } from './notifications.js'
 import { FocusSyncScheduler } from './focus-sync.js'
 import { DisplayDeviceBrowser } from './device-browser.js'
 import {
@@ -58,6 +56,18 @@ import {
   windowChromePalette,
   type WindowTheme,
 } from './window-chrome.js'
+import {
+  HUD_WINDOW_MIN_SIZE,
+  HUD_WINDOW_SHELL_OPTIONS,
+  applyHudWindowTheme,
+  deriveHudOverall,
+  hudContentHeightForDisplay,
+  hudWindowBoundsForDisplay,
+  preserveHudWindowSurface,
+  selectHudDisplay,
+  showHudInactive,
+  shouldRevealHud,
+} from './hud-window.js'
 
 const MUTE_DURATION_MS = 30 * 60_000
 const DISABLE_UPDATE_CHECK_ENV = 'CODEPULSE_DISABLE_UPDATE_CHECKS'
@@ -67,6 +77,7 @@ const EVENT_PRUNE_INTERVAL_MS = 24 * 60 * 60_000
 const FOCUS_SYNC_DEBOUNCE_MS = 180
 
 let mainWindow: BrowserWindow | null = null
+let settingsWindow: BrowserWindow | null = null
 let tray: TrayController | null = null
 let server: LocalServer | null = null
 let deviceServer: DeviceServer | null = null
@@ -87,7 +98,7 @@ let checkingUpdate = false
 let shutdownStarted = false
 let installingUpdate = false
 let lastTrayStatusKey: string | undefined
-/** Current native chrome palette, restored by the renderer after it loads. */
+/** Current renderer theme; native HUD transparency stays independent from it. */
 let windowTheme: WindowTheme = scheduledWindowTheme()
 let deviceProvisioning: DeviceProvisioningSnapshot = {
   serverAvailable: false,
@@ -116,7 +127,9 @@ function scheduleFocusSync(): void {
 }
 
 function broadcast(channel: string, payload: unknown): void {
-  mainWindow?.webContents.send(channel, payload)
+  for (const window of [mainWindow, settingsWindow]) {
+    if (window && !window.isDestroyed()) window.webContents.send(channel, payload)
+  }
 }
 
 function updateDeviceProvisioning(
@@ -131,15 +144,79 @@ function showWindow(): void {
   if (!mainWindow) {
     createWindow()
     void refreshLocalAgents()
-    scheduleFocusSync()
     return
   }
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.show()
   mainWindow.focus()
   void refreshLocalAgents()
-  // Tray / second-instance / focus may converge here; collapse them into one scan.
-  scheduleFocusSync()
+}
+
+/** Opens a low-frequency HUD surface from the tray without adding HUD buttons. */
+function showRendererSurface(channel: 'codepulse:open-stats'): void {
+  showWindow()
+  const target = mainWindow
+  if (!target || target.isDestroyed()) return
+
+  const send = (): void => {
+    if (!target.isDestroyed()) target.webContents.send(channel)
+  }
+  if (target.webContents.isLoadingMainFrame()) target.webContents.once('did-finish-load', send)
+  else send()
+}
+
+/** Opens settings in a conventional independent window, never over the transparent HUD. */
+function showSettingsWindow(): void {
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    if (settingsWindow.isMinimized()) settingsWindow.restore()
+    settingsWindow.show()
+    settingsWindow.focus()
+    return
+  }
+
+  const palette = windowChromePalette(windowTheme)
+  const window = new BrowserWindow({
+    width: 720,
+    height: 760,
+    minWidth: 560,
+    minHeight: 560,
+    show: false,
+    title: 'CodePulse 设置',
+    icon: appIconPath(),
+    autoHideMenuBar: true,
+    backgroundColor: palette.backgroundColor,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false,
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  })
+  settingsWindow = window
+
+  window.once('ready-to-show', () => {
+    if (!window.isDestroyed()) {
+      window.show()
+      window.focus()
+    }
+  })
+  window.on('closed', () => {
+    if (settingsWindow === window) settingsWindow = null
+  })
+
+  loadRenderer(window, { surface: 'settings' })
+}
+
+/** Reveals status passively, preserving the user's current keyboard focus. */
+function revealHudWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    mainWindow = null
+    createWindow()
+    void refreshLocalAgents()
+    scheduleFocusSync()
+    return
+  }
+  showHudInactive(mainWindow)
 }
 
 function appIconPath(): string {
@@ -152,26 +229,19 @@ function hookBinDir(): string {
 }
 
 function createWindow(): void {
-  const chrome = windowChromePalette(windowTheme)
-  mainWindow = new BrowserWindow({
-    width: 960,
-    height: 680,
-    minWidth: 720,
-    minHeight: 480,
+  if (mainWindow && !mainWindow.isDestroyed()) return
+
+  const targetDisplay = selectHudDisplay(screen.getAllDisplays(), screen.getPrimaryDisplay().id)
+  const bounds = targetDisplay ? hudWindowBoundsForDisplay(targetDisplay) : undefined
+  const window = new BrowserWindow({
+    ...(bounds ?? { width: 960, height: 680 }),
+    minWidth: Math.min(HUD_WINDOW_MIN_SIZE.width, bounds?.width ?? HUD_WINDOW_MIN_SIZE.width),
+    minHeight: Math.min(HUD_WINDOW_MIN_SIZE.height, bounds?.height ?? HUD_WINDOW_MIN_SIZE.height),
     show: false,
+    ...HUD_WINDOW_SHELL_OPTIONS,
     autoHideMenuBar: true,
     title: 'CodePulse',
-    backgroundColor: chrome.backgroundColor,
     icon: appIconPath(),
-    ...(process.platform === 'win32'
-      ? {
-          titleBarStyle: 'hidden' as const,
-          titleBarOverlay: {
-            color: chrome.backgroundColor,
-            symbolColor: chrome.symbolColor,
-          },
-        }
-      : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -179,21 +249,41 @@ function createWindow(): void {
       nodeIntegration: false,
     },
   })
+  mainWindow = window
+  preserveHudWindowSurface(window)
 
-  mainWindow.on('ready-to-show', () => mainWindow?.show())
-  mainWindow.on('focus', () => {
-    scheduleFocusSync()
+  window.once('ready-to-show', () => {
+    showHudInactive(window)
   })
-  mainWindow.on('closed', () => {
-    mainWindow = null
+  window.on('closed', () => {
+    if (mainWindow === window) mainWindow = null
   })
 
+  loadRenderer(window)
+}
+
+/** Loads the shared renderer entry with a window-specific surface route. */
+function loadRenderer(window: BrowserWindow, query?: Record<string, string>): void {
   const devUrl = process.env['ELECTRON_RENDERER_URL']
   if (devUrl) {
-    void mainWindow.loadURL(devUrl)
-  } else {
-    void mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    const url = new URL(devUrl)
+    for (const [key, value] of Object.entries(query ?? {})) url.searchParams.set(key, value)
+    void window.loadURL(url.toString())
+    return
   }
+  void window.loadFile(join(__dirname, '../renderer/index.html'), { query })
+}
+
+/** Shrinks or grows only the HUD window around the renderer's natural project stack. */
+function resizeHudToContent(requestedHeight: unknown): boolean {
+  const window = mainWindow
+  if (!window || window.isDestroyed() || typeof requestedHeight !== 'number') return false
+  const display = screen.getDisplayMatching(window.getBounds())
+  const height = hudContentHeightForDisplay(requestedHeight, display)
+  const bounds = window.getBounds()
+  if (bounds.height === height) return true
+  window.setBounds({ ...bounds, height }, false)
+  return true
 }
 
 /** Coalesce tool-storm status IPC/tray work (~1 frame) without changing hub semantics. */
@@ -224,12 +314,9 @@ function wireHub(): void {
       if (!next) return
       updateTrayIfChanged(next)
       broadcast('codepulse:status', next)
+      if (shouldRevealHud(deriveHudOverall(next))) revealHudWindow()
     }, STATUS_COALESCE_MS)
     statusFlushTimer.unref?.()
-  })
-
-  hub.on('notification', (note: NotificationRequest) => {
-    showNotification(note, showWindow)
   })
 }
 
@@ -254,7 +341,7 @@ function setLocale(value: unknown): UiLocale {
 }
 
 /**
- * Synchronizes BrowserWindow chrome with the renderer's resolved theme.
+ * Records the renderer's resolved theme without replacing the transparent HUD surface.
  *
  * @param value Untrusted theme value received over IPC.
  * @param targetWindow BrowserWindow that originated the theme request.
@@ -262,16 +349,10 @@ function setLocale(value: unknown): UiLocale {
  */
 function setWindowTheme(value: unknown, targetWindow: BrowserWindow | null): WindowTheme {
   windowTheme = normalizeWindowTheme(value)
-  const chrome = windowChromePalette(windowTheme)
-
-  if (targetWindow && !targetWindow.isDestroyed()) {
-    targetWindow.setBackgroundColor(chrome.backgroundColor)
-    if (process.platform === 'win32') {
-      targetWindow.setTitleBarOverlay({
-        color: chrome.backgroundColor,
-        symbolColor: chrome.symbolColor,
-      })
-    }
+  if (targetWindow === mainWindow) {
+    applyHudWindowTheme(windowTheme, targetWindow)
+  } else if (targetWindow && !targetWindow.isDestroyed()) {
+    targetWindow.setBackgroundColor(windowChromePalette(windowTheme).backgroundColor)
   }
 
   return windowTheme
@@ -291,6 +372,14 @@ function registerIpc(): void {
   ipcMain.handle('codepulse:set-window-theme', (event, theme: unknown) =>
     setWindowTheme(theme, BrowserWindow.fromWebContents(event.sender)),
   )
+  ipcMain.handle('codepulse:set-hud-content-height', (event, height: unknown) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== mainWindow) return false
+    return resizeHudToContent(height)
+  })
+  ipcMain.handle('codepulse:open-settings-window', () => {
+    showSettingsWindow()
+    return true
+  })
   ipcMain.handle('codepulse:detect-agents', () => refreshLocalAgents())
   ipcMain.handle('codepulse:get-update', () => {
     // Respect 24h "later" snooze even if a previous check still has cached info.
@@ -423,10 +512,15 @@ async function bootstrap(): Promise<void> {
   registerIpc()
 
   try {
-    // startLocalServer awaits SessionSyncService first disk scan + writes local-auth token.
-    server = await startLocalServer({ hub })
+    // Hydrate once before opening the HUD. Hooks provide live updates; continuous recursive
+    // history scanning is opt-in because it can interfere with normal Windows file work.
+    const backgroundSessionSync = process.env.CODEPULSE_BACKGROUND_SESSION_SYNC === '1'
+    server = await startLocalServer({ hub, backgroundSessionSync })
     localServerReady = true
     console.log(`[codepulse] local server listening on ${server.url}`)
+    console.log(
+      `[codepulse] session sync mode: ${backgroundSessionSync ? 'background' : 'low-io (boot + hooks + explicit refresh)'}`,
+    )
     console.log(
       `[codepulse] session-sync ready: ${hub.snapshot().agents.length} agent slot(s) from disk`,
     )
@@ -486,6 +580,8 @@ async function bootstrap(): Promise<void> {
 
   tray = new TrayController({
     onOpen: showWindow,
+    onOpenSettings: showSettingsWindow,
+    onOpenStats: () => showRendererSurface('codepulse:open-stats'),
     onToggleMute: setMuted,
     onQuit: () => {
       app.quit()
@@ -493,8 +589,6 @@ async function bootstrap(): Promise<void> {
   })
 
   createWindow()
-  // Safety net: rescan after the window is up (covers late-arriving rollouts).
-  scheduleFocusSync()
   void checkForUpdatesOnce()
 }
 

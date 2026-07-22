@@ -35,6 +35,11 @@ const api = {
   /** Keeps native window controls aligned with the renderer's selected palette. */
   setWindowTheme: (theme: WindowTheme): Promise<WindowTheme> =>
     ipcRenderer.invoke('codepulse:set-window-theme', theme),
+  /** Reports the project stack's natural height so the transparent HUD can fit it. */
+  setHudContentHeight: (height: number): Promise<boolean> =>
+    ipcRenderer.invoke('codepulse:set-hud-content-height', height),
+  /** Opens a normal, non-HUD settings BrowserWindow. */
+  openSettingsWindow: (): Promise<boolean> => ipcRenderer.invoke('codepulse:open-settings-window'),
   detectAgents: (): Promise<Agent[]> => ipcRenderer.invoke('codepulse:detect-agents'),
   getUpdate: (): Promise<UpdateInfo | null> => ipcRenderer.invoke('codepulse:get-update'),
   /** User dismissed the update modal — main process snoozes checks for 24h. */
@@ -58,6 +63,7 @@ const api = {
     subscribe('codepulse:status', cb),
   onAgents: (cb: (agents: Agent[]) => void): Unsubscribe => subscribe('codepulse:agents', cb),
   onMute: (cb: (muted: boolean) => void): Unsubscribe => subscribe('codepulse:mute', cb),
+  onOpenStats: (cb: () => void): Unsubscribe => subscribe<void>('codepulse:open-stats', cb),
   onUpdateAvailable: (cb: (update: UpdateInfo) => void): Unsubscribe =>
     subscribe('codepulse:update-available', cb),
   onUpdateProgress: (cb: (progress: UpdateDownloadProgress) => void): Unsubscribe =>

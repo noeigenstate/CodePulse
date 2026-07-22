@@ -16,8 +16,8 @@ import type { Locale, StatsCopy, UiCopy } from '../lib/i18n.js'
 import { formatRelative } from '../lib/format.js'
 import codePulseIcon from '../assets/codepulse-icon.svg'
 
-const MODEL_COLORS = ['#6366F1', '#3B82F6', '#F59E0B', '#94A3B8', '#A78BFA', '#34D399', '#F472B6']
-const TYPE_COLORS = ['#6366F1', '#34D399', '#3B82F6', '#94A3B8', '#F59E0B']
+const MODEL_COLORS = ['#111214', '#34363A', '#62646A', '#8A8D93', '#A5A7AB', '#C4C6CA', '#E0E1E2']
+const TYPE_COLORS = ['#111214', '#34363A', '#62646A', '#8A8D93', '#C4C6CA']
 
 interface Props {
   locale: Locale
@@ -78,7 +78,7 @@ export function StatsDashboard({ locale, copy, onClose }: Props): JSX.Element {
   return (
     <div className="flex min-h-0 flex-1 flex-col text-ink">
       {/* Top bar */}
-      <header className="shrink-0 border-b border-line bg-white/80 px-5 py-3 backdrop-blur-md">
+      <header className="hud-header shrink-0 border-b border-line bg-white/80 px-5 py-3 backdrop-blur-md">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
             <img
@@ -282,7 +282,7 @@ function StatsBody({
           <AreaTrendChart
             points={stats.tokenTrend}
             valueKey="tokens"
-            color="#6366F1"
+            color="#111214"
             formatValue={(n) => formatTokenCount(n)}
             locale={locale}
           />
@@ -295,7 +295,7 @@ function StatsBody({
           <AreaTrendChart
             points={stats.durationTrend.length ? stats.durationTrend : stats.tokenTrend}
             valueKey="durationMs"
-            color="#34D399"
+            color="#62646A"
             formatValue={(n) => formatStatsDuration(n, locale)}
             locale={locale}
           />
@@ -570,7 +570,7 @@ function AreaTrendChart({
             x2={w - padX}
             y1={padY + t * (h - padY * 2)}
             y2={padY + t * (h - padY * 2)}
-            stroke="#E6EBF5"
+            stroke="#D7D7D4"
             strokeDasharray="4 4"
           />
         ))}
@@ -579,7 +579,7 @@ function AreaTrendChart({
           <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" />
         )}
         {peak && peak.v > 0 && (
-          <circle cx={peak.x} cy={peak.y} r="4" fill={color} stroke="#fff" strokeWidth="2" />
+          <circle cx={peak.x} cy={peak.y} r="4" fill={color} stroke="#FAFAF8" strokeWidth="2" />
         )}
       </svg>
       {peak && peak.v > 0 && (
@@ -672,7 +672,7 @@ function ModelDonut({
     <div className="flex items-center gap-3">
       <div className="relative h-28 w-28 shrink-0">
         <svg viewBox="0 0 112 112" className="h-full w-full -rotate-90">
-          <circle cx={cx} cy={cy} r={r} fill="none" stroke="#EEF2F7" strokeWidth="14" />
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke="#E1E1DD" strokeWidth="14" />
           {arcs.length === 0
             ? null
             : arcs.map((a) => (
@@ -756,14 +756,14 @@ function Heatmap({
                 const t = max > 0 ? v / max : 0
                 const bg =
                   t <= 0
-                    ? '#EEF2F7'
+                    ? '#F0F0ED'
                     : t < 0.25
-                      ? '#C7D2FE'
+                      ? '#D8D8D3'
                       : t < 0.5
-                        ? '#818CF8'
+                        ? '#A8A8A2'
                         : t < 0.75
-                          ? '#6366F1'
-                          : '#4338CA'
+                          ? '#62625E'
+                          : '#191A1C'
                 return (
                   <div
                     key={hour}
@@ -779,7 +779,7 @@ function Heatmap({
       </div>
       <div className="mt-2 flex items-center justify-end gap-1 text-[10px] text-ink-400">
         <span>低</span>
-        {['#EEF2F7', '#C7D2FE', '#818CF8', '#6366F1', '#4338CA'].map((c) => (
+        {['#F0F0ED', '#D8D8D3', '#A8A8A2', '#62625E', '#191A1C'].map((c) => (
           <span key={c} className="h-2.5 w-2.5 rounded-sm" style={{ background: c }} />
         ))}
         <span>高</span>
@@ -927,7 +927,7 @@ function CategoryDonut({
     <div className="flex items-center gap-3">
       <div className="relative h-24 w-24 shrink-0">
         <svg viewBox="0 0 96 96" className="h-full w-full -rotate-90">
-          <circle cx={cx} cy={cy} r={r} fill="none" stroke="#EEF2F7" strokeWidth="12" />
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke="#E1E1DD" strokeWidth="12" />
           {arcs.map((a) => (
             <circle
               key={a.label}
@@ -1058,13 +1058,13 @@ function EfficiencyPanel({
     <div className="flex items-center gap-3">
       <div className="relative h-24 w-24 shrink-0">
         <svg viewBox="0 0 96 96" className="h-full w-full -rotate-90">
-          <circle cx="48" cy="48" r={r} fill="none" stroke="#EEF2F7" strokeWidth="10" />
+          <circle cx="48" cy="48" r={r} fill="none" stroke="#E1E1DD" strokeWidth="10" />
           <circle
             cx="48"
             cy="48"
             r={r}
             fill="none"
-            stroke="#6366F1"
+            stroke="#111214"
             strokeWidth="10"
             strokeDasharray={dash}
             strokeLinecap="round"

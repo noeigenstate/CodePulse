@@ -102,12 +102,23 @@ function choosePrimarySource(sources: readonly ProjectDeckSource[]): ProjectDeck
   )[0]!
 }
 
+/**
+ * Implicit provider order for the HUD: Claude first, then Codex, Kimi, Grok.
+ * Cards within one provider keep their first-seen order (the sort is stable and
+ * the panels arrive pre-ordered by the persisted project order).
+ */
+function agentTypeRank(agentType: AgentType): number {
+  if (agentType === 'claude_code') return 0
+  if (agentType === 'codex') return 1
+  if (agentType === 'kimi') return 2
+  if (agentType === 'grok') return 3
+  return Number.MAX_SAFE_INTEGER - 1
+}
+
 function compareProjectDeckItems(left: ProjectDeckItem, right: ProjectDeckItem): number {
-  return (
-    hudStatePriority(right.primary.agent) - hudStatePriority(left.primary.agent) ||
-    right.updatedAt - left.updatedAt ||
-    left.name.localeCompare(right.name)
-  )
+  // Equal ranks return 0 on purpose: Array.prototype.sort is stable, so the
+  // first-seen panel order breaks ties inside one provider (先到先得).
+  return agentTypeRank(left.primary.agentType) - agentTypeRank(right.primary.agentType)
 }
 
 function clampPercent(value: number): number {

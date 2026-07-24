@@ -29,6 +29,7 @@ test('dashboard settings default to the light HUD with calm attention and every 
   assert.equal(settings.attentionEffect, 'steady')
   assert.equal(settings.projectLayout, 'list')
   assert.equal(settings.showUsageStrip, true)
+  assert.equal(settings.resultRetentionMinutes, 30)
   assert.deepEqual(
     CLI_TOOL_TYPES.filter((tool) => settings.visibleTools[tool]),
     ['codex', 'claude_code', 'grok', 'kimi'],
@@ -70,6 +71,7 @@ test('dashboard settings preserve saved theme and CLI visibility while filling n
   assert.equal(settings.attentionEffect, 'steady')
   assert.equal(settings.projectLayout, 'list')
   assert.equal(settings.showUsageStrip, true)
+  assert.equal(settings.resultRetentionMinutes, 30)
   assert.equal(settings.visibleTools.codex, false)
   assert.equal(settings.visibleTools.claude_code, true)
   assert.equal(settings.visibleTools.grok, true)
@@ -94,6 +96,7 @@ test('dashboard settings persist changes and apply the selected root theme', () 
     attentionEffect: 'breathe' as const,
     projectLayout: 'list' as const,
     showUsageStrip: false,
+    resultRetentionMinutes: 120,
     visibleTools: { codex: true, claude_code: false, grok: true, kimi: false },
   }
   writeDashboardSettings(storage, next)
@@ -112,6 +115,7 @@ test('dashboard settings persist automatic theme selection', () => {
     attentionEffect: 'pulse' as const,
     projectLayout: 'grid' as const,
     showUsageStrip: true,
+    resultRetentionMinutes: 240,
     visibleTools: { codex: true, claude_code: true, grok: true, kimi: true },
   }
 
@@ -138,6 +142,7 @@ test('dashboard settings retain safe in-memory defaults when storage is unavaila
       attentionEffect: 'steady',
       projectLayout: 'grid',
       showUsageStrip: true,
+      resultRetentionMinutes: 30,
       visibleTools: { codex: true, claude_code: true, grok: true, kimi: true },
     }),
   )
@@ -177,4 +182,16 @@ test('dashboard settings validate HUD opacity and attention motion independently
   assert.equal(readDashboardSettings(storage).attentionEffect, 'steady')
   assert.equal(readDashboardSettings(storage).projectLayout, 'list')
   assert.equal(readDashboardSettings(storage).showUsageStrip, true)
+})
+
+test('dashboard settings only accept offered result retention durations', () => {
+  const storage = new MemoryStorage()
+  storage.setItem('codepulse:dashboard-settings', JSON.stringify({ resultRetentionMinutes: 240 }))
+  assert.equal(readDashboardSettings(storage).resultRetentionMinutes, 240)
+
+  storage.setItem('codepulse:dashboard-settings', JSON.stringify({ resultRetentionMinutes: 45 }))
+  assert.equal(readDashboardSettings(storage).resultRetentionMinutes, 30)
+
+  storage.setItem('codepulse:dashboard-settings', JSON.stringify({ resultRetentionMinutes: '30' }))
+  assert.equal(readDashboardSettings(storage).resultRetentionMinutes, 30)
 })

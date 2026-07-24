@@ -28,6 +28,12 @@ export type HudAttentionEffect = 'steady' | 'breathe' | 'pulse'
 /** Project-first HUD arrangement. List is the focused default; grid remains optional. */
 export type HudProjectLayout = 'grid' | 'list'
 
+/** Selectable retention durations for acknowledged result cards, in minutes. */
+export const RESULT_RETENTION_OPTIONS_MINUTES = [10, 30, 60, 120, 240] as const
+
+/** Default minutes an acknowledged result card stays before the hub prunes it. */
+export const DEFAULT_RESULT_RETENTION_MINUTES = 30
+
 /** Persisted display-only preferences for the desktop dashboard. */
 export interface DashboardSettings {
   theme: ThemePreference
@@ -36,6 +42,8 @@ export interface DashboardSettings {
   attentionEffect: HudAttentionEffect
   projectLayout: HudProjectLayout
   showUsageStrip: boolean
+  /** Minutes an acknowledged DONE/ERROR/TIMEOUT/USAGE_LIMITED card stays on the HUD. */
+  resultRetentionMinutes: number
   visibleTools: Record<CliToolType, boolean>
 }
 
@@ -64,6 +72,7 @@ export const DEFAULT_DASHBOARD_SETTINGS: DashboardSettings = {
   attentionEffect: 'steady',
   projectLayout: 'list',
   showUsageStrip: true,
+  resultRetentionMinutes: DEFAULT_RESULT_RETENTION_MINUTES,
   visibleTools: {
     codex: true,
     claude_code: true,
@@ -110,6 +119,7 @@ export function readDashboardSettings(storage: StorageLike | undefined): Dashboa
         typeof parsed.showUsageStrip === 'boolean'
           ? parsed.showUsageStrip
           : DEFAULT_DASHBOARD_SETTINGS.showUsageStrip,
+      resultRetentionMinutes: normalizeResultRetentionMinutes(parsed.resultRetentionMinutes),
       visibleTools: {
         codex: visibleTools.codex !== false,
         claude_code: visibleTools.claude_code !== false,
@@ -197,6 +207,7 @@ function cloneSettings(settings: DashboardSettings): DashboardSettings {
     attentionEffect: settings.attentionEffect,
     projectLayout: settings.projectLayout,
     showUsageStrip: settings.showUsageStrip,
+    resultRetentionMinutes: settings.resultRetentionMinutes,
     visibleTools: { ...settings.visibleTools },
   }
 }
@@ -224,4 +235,12 @@ function normalizeHudOpacity(value: unknown): number {
     return DEFAULT_DASHBOARD_SETTINGS.hudOpacity
   }
   return Math.min(HUD_OPACITY_MAX, Math.max(HUD_OPACITY_MIN, Math.round(value)))
+}
+
+/** Falls back to the default unless the stored value is one of the offered durations. */
+function normalizeResultRetentionMinutes(value: unknown): number {
+  return typeof value === 'number' &&
+    (RESULT_RETENTION_OPTIONS_MINUTES as readonly number[]).includes(value)
+    ? value
+    : DEFAULT_RESULT_RETENTION_MINUTES
 }

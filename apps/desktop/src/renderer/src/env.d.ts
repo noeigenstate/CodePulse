@@ -28,6 +28,8 @@ export interface CodePulseApi {
   /** Synchronizes native title-bar colors with the resolved renderer theme. */
   setWindowTheme: (theme: WindowTheme) => Promise<WindowTheme>
   setHudContentHeight: (height: number) => Promise<boolean>
+  /** Pushes the result-card retention preference to the main-process hub. */
+  setResultRetentionMinutes: (minutes: number) => Promise<boolean>
   openSettingsWindow: () => Promise<boolean>
   detectAgents: () => Promise<Agent[]>
   getUpdate: () => Promise<UpdateInfo | null>

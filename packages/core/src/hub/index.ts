@@ -29,11 +29,11 @@ import {
 
 const WAITING_STALE_MS = 30 * 60_000
 const IDLE_RETENTION_MS = 5 * 60_000
-const DONE_RETENTION_MS = 5 * 60_000
-const TIMEOUT_RETENTION_MS = 10 * 60_000
-const ERROR_RETENTION_MS = 10 * 60_000
 const CANCELLED_RETENTION_MS = 5 * 60_000
-const USAGE_LIMITED_RETENTION_MS = 10 * 60_000
+/** 结果态(DONE / ERROR / TIMEOUT / USAGE_LIMITED)卡片的默认保留时长。 */
+const DEFAULT_RESULT_RETENTION_MS = 30 * 60_000
+/** 结果态保留时长的下限，避免配置值把卡片立刻剪掉。 */
+const MIN_RESULT_RETENTION_MS = 60_000
 
 /**
  * {@link StatusHub} 发出的强类型事件。
@@ -66,6 +66,8 @@ export class StatusHub extends EventEmitter {
   private readonly usageStability = new UsageStabilityRegistry()
   /** 无活动看门狗定时器句柄（运行中时存在）。 */
   private tickTimer?: NodeJS.Timeout
+  /** 已读结果态卡片的保留时长（毫秒），可由桌面端设置调整。 */
+  private resultRetentionMs = DEFAULT_RESULT_RETENTION_MS
 
   /**
    * @param options 规则引擎调优（节流、初始静音状态）。
@@ -159,6 +161,17 @@ export class StatusHub extends EventEmitter {
   }
 
   /**
+   * 调整结果态（DONE / ERROR / TIMEOUT / USAGE_LIMITED）卡片在已读后的保留时长。
+   * IDLE / CANCELLED 等安静终态不受影响，仍按各自的短周期清理。
+   *
+   * @param ms 期望的保留时长（毫秒）；非法值忽略，过小值钳制到下限。
+   */
+  setResultRetentionMs(ms: number): void {
+    if (typeof ms !== 'number' || !Number.isFinite(ms)) return
+    this.resultRetentionMs = Math.max(MIN_RESULT_RETENTION_MS, Math.round(ms))
+  }
+
+  /**
    * 构建当前的聚合状态快照。
    *
    * @param now 当前时间（epoch 毫秒，可注入便于测试）。
@@ -218,7 +231,7 @@ export class StatusHub extends EventEmitter {
   private pruneExpiredAgents(now: number): boolean {
     let changed = false
     for (const [key, agent] of [...this.agents.entries()]) {
-      if (!isExpiredAgent(agent, now)) continue
+      if (!this.isExpiredAgent(agent, now)) continue
       if (hasRetainedQuota(agent.token)) {
         if (!agent.taskHidden || agent.unread) {
           this.agents.set(key, { ...agent, taskHidden: true, unread: false })
@@ -288,6 +301,37 @@ export class StatusHub extends EventEmitter {
     return super.emit(event, ...args)
   }
 
+  /**
+   * 判断一个 agent 槽位是否已超过其状态的保留时长。
+   *
+   * A passive HUD has no out-of-band toast to fall back to. Keep terminal
+   * results that map to an actual HUD alert visible until acknowledgement.
+   * Quiet unread states (notably CANCELLED, or IDLE after session_end) retain
+   * the normal bound so they cannot become invisible-but-permanent cards.
+   */
+  private isExpiredAgent(agent: AgentRuntimeState, now: number): boolean {
+    if (isPersistentUnreadResult(agent)) return false
+    const terminalAt = agent.terminalAt ?? agent.lastEventAt
+    if (terminalAt <= 0) return false
+    const retentionMs = this.stateRetentionMs(agent.state)
+    return retentionMs != null && now - terminalAt >= retentionMs
+  }
+
+  /** 各终态的保留时长；结果态使用可配置的 {@link resultRetentionMs}。 */
+  private stateRetentionMs(state: TurnState): number | undefined {
+    if (state === TurnState.IDLE) return IDLE_RETENTION_MS
+    if (state === TurnState.CANCELLED) return CANCELLED_RETENTION_MS
+    if (
+      state === TurnState.DONE ||
+      state === TurnState.TIMEOUT ||
+      state === TurnState.ERROR ||
+      state === TurnState.USAGE_LIMITED
+    ) {
+      return this.resultRetentionMs
+    }
+    return undefined
+  }
+
   private keyForEvent(event: AgentEvent): string {
     // Prefer session identity so tool hooks that report a subdirectory cwd
     // (common with Claude Code) stay on the same project card.
@@ -334,18 +378,6 @@ function timeoutThreshold(state: TurnState): number {
   return STUCK_VISIBLE_MS
 }
 
-function isExpiredAgent(agent: AgentRuntimeState, now: number): boolean {
-  // A passive HUD has no out-of-band toast to fall back to. Keep terminal
-  // results that map to an actual HUD alert visible until acknowledgement.
-  // Quiet unread states (notably CANCELLED, or IDLE after session_end) retain
-  // the normal bound so they cannot become invisible-but-permanent cards.
-  if (isPersistentUnreadResult(agent)) return false
-  const terminalAt = agent.terminalAt ?? agent.lastEventAt
-  if (terminalAt <= 0) return false
-  const retentionMs = stateRetentionMs(agent.state)
-  return retentionMs != null && now - terminalAt >= retentionMs
-}
-
 function isPersistentUnreadResult(agent: AgentRuntimeState): boolean {
   if (!agent.unread) return false
   return (
@@ -364,16 +396,6 @@ function hasRetainedQuota(token: TokenPayload | undefined): boolean {
       (bucket) => bucket.rateLimits?.fiveHour || bucket.rateLimits?.sevenDay,
     ),
   )
-}
-
-function stateRetentionMs(state: TurnState): number | undefined {
-  if (state === TurnState.IDLE) return IDLE_RETENTION_MS
-  if (state === TurnState.DONE) return DONE_RETENTION_MS
-  if (state === TurnState.TIMEOUT) return TIMEOUT_RETENTION_MS
-  if (state === TurnState.ERROR) return ERROR_RETENTION_MS
-  if (state === TurnState.CANCELLED) return CANCELLED_RETENTION_MS
-  if (state === TurnState.USAGE_LIMITED) return USAGE_LIMITED_RETENTION_MS
-  return undefined
 }
 
 function sessionKey(agentType: AgentType, sessionId: string): string {

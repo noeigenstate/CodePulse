@@ -1191,7 +1191,7 @@ test('StatusHub keeps completed projects until acknowledged, then applies retent
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const startedAt = 1_000_000
   const finishedAt = startedAt + 1_000
-  const doneRetentionMs = 5 * 60_000
+  const doneRetentionMs = 30 * 60_000
 
   hub.ingest({
     id: 'prompt',
@@ -1218,6 +1218,65 @@ test('StatusHub keeps completed projects until acknowledged, then applies retent
   hub.acknowledge('codex', 'E:/project/a')
   ;(hub as unknown as { tick(now?: number): void }).tick(finishedAt + doneRetentionMs + 1)
   assert.equal(hub.snapshot(finishedAt + doneRetentionMs + 1).agents.length, 0)
+})
+
+test('StatusHub applies a custom result retention after acknowledgement', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  hub.setResultRetentionMs(2 * 60_000)
+  const startedAt = 1_000_000
+  const finishedAt = startedAt + 1_000
+
+  hub.ingest({
+    id: 'prompt',
+    source: 'codex',
+    eventType: 'prompt_submit',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    timestamp: startedAt,
+  })
+  hub.ingest({
+    id: 'complete',
+    source: 'codex',
+    eventType: 'turn_stop',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    timestamp: finishedAt,
+  })
+  hub.acknowledge('codex', 'E:/project/a')
+  ;(hub as unknown as { tick(now?: number): void }).tick(finishedAt + 2 * 60_000 - 1)
+  assert.equal(hub.snapshot(finishedAt + 2 * 60_000 - 1).agents.length, 1)
+  ;(hub as unknown as { tick(now?: number): void }).tick(finishedAt + 2 * 60_000)
+  assert.equal(hub.snapshot(finishedAt + 2 * 60_000).agents.length, 0)
+})
+
+test('StatusHub clamps result retention to a one-minute floor and ignores invalid values', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  hub.setResultRetentionMs(Number.NaN)
+  hub.setResultRetentionMs(0)
+  const startedAt = 1_000_000
+  const finishedAt = startedAt + 1_000
+
+  hub.ingest({
+    id: 'prompt',
+    source: 'codex',
+    eventType: 'prompt_submit',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    timestamp: startedAt,
+  })
+  hub.ingest({
+    id: 'complete',
+    source: 'codex',
+    eventType: 'turn_stop',
+    externalSessionId: 'session-a',
+    cwd: 'E:/project/a',
+    timestamp: finishedAt,
+  })
+  hub.acknowledge('codex', 'E:/project/a')
+  ;(hub as unknown as { tick(now?: number): void }).tick(finishedAt + 60_000 - 1)
+  assert.equal(hub.snapshot(finishedAt + 60_000 - 1).agents.length, 1)
+  ;(hub as unknown as { tick(now?: number): void }).tick(finishedAt + 60_000)
+  assert.equal(hub.snapshot(finishedAt + 60_000).agents.length, 0)
 })
 
 test('StatusHub keeps an unread completion visible when SessionEnd follows Stop', () => {
@@ -1250,14 +1309,14 @@ test('StatusHub keeps an unread completion visible when SessionEnd follows Stop'
     timestamp: finishedAt + 1,
   })
 
-  let snapshot = hub.snapshot(finishedAt + 10 * 60_000)
+  let snapshot = hub.snapshot(finishedAt + 30 * 60_000)
   assert.equal(snapshot.overall, 'done_unread')
   assert.equal(snapshot.agents[0]?.state, TurnState.DONE)
   assert.equal(snapshot.agents[0]?.unread, true)
 
   hub.acknowledge('codex', 'E:/project/a')
-  ;(hub as unknown as { tick(now?: number): void }).tick(finishedAt + 10 * 60_000 + 1)
-  snapshot = hub.snapshot(finishedAt + 10 * 60_000 + 1)
+  ;(hub as unknown as { tick(now?: number): void }).tick(finishedAt + 30 * 60_000 + 1)
+  snapshot = hub.snapshot(finishedAt + 30 * 60_000 + 1)
   assert.equal(snapshot.agents.length, 0)
 })
 
@@ -1407,7 +1466,7 @@ test('StatusHub keeps stuck projects until acknowledged, then applies retention'
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const startedAt = 1_000_000
   const timeoutAt = startedAt + STUCK_VISIBLE_MS
-  const timeoutRetentionMs = 10 * 60_000
+  const timeoutRetentionMs = 30 * 60_000
 
   hub.ingest({
     id: 'prompt',
@@ -1462,9 +1521,9 @@ test('StatusHub retains unread HUD alerts, while quiet cancellations still expir
     cwd: 'E:/project/limited',
     timestamp: terminalAt,
   })
-  ;(hub as unknown as { tick(now?: number): void }).tick(terminalAt + 10 * 60_000)
+  ;(hub as unknown as { tick(now?: number): void }).tick(terminalAt + 30 * 60_000)
 
-  let snapshot = hub.snapshot(terminalAt + 10 * 60_000)
+  let snapshot = hub.snapshot(terminalAt + 30 * 60_000)
   assert.equal(snapshot.agents.length, 2)
   assert.deepEqual(
     snapshot.agents.map((agent) => agent.state).sort(),
@@ -1472,9 +1531,9 @@ test('StatusHub retains unread HUD alerts, while quiet cancellations still expir
   )
 
   hub.acknowledge('claude_code')
-  ;(hub as unknown as { tick(now?: number): void }).tick(terminalAt + 10 * 60_000 + 1)
+  ;(hub as unknown as { tick(now?: number): void }).tick(terminalAt + 30 * 60_000 + 1)
 
-  snapshot = hub.snapshot(terminalAt + 10 * 60_000 + 1)
+  snapshot = hub.snapshot(terminalAt + 30 * 60_000 + 1)
   assert.equal(snapshot.overall, 'idle')
   assert.equal(snapshot.agents.length, 0)
 })

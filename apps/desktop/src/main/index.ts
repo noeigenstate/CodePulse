@@ -376,6 +376,11 @@ function registerIpc(): void {
     if (BrowserWindow.fromWebContents(event.sender) !== mainWindow) return false
     return resizeHudToContent(height)
   })
+  ipcMain.handle('codepulse:set-result-retention', (_event, minutes: unknown) => {
+    if (typeof minutes !== 'number' || !Number.isFinite(minutes)) return false
+    hub.setResultRetentionMs(minutes * 60_000)
+    return true
+  })
   ipcMain.handle('codepulse:open-settings-window', () => {
     showSettingsWindow()
     return true

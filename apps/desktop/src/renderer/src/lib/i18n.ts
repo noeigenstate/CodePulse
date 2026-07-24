@@ -61,6 +61,10 @@ export interface SettingsCopy {
   projectLayoutList: string
   usageStrip: string
   usageStripHint: string
+  resultRetention: string
+  resultRetentionHint: string
+  /** Labelled duration choices; minutes values must match the settings schema. */
+  resultRetentionOptions: readonly { minutes: number; label: string }[]
   theme: string
   themeAuto: string
   themeAutoHint: string
@@ -402,6 +406,15 @@ const UI_COPY: Record<Locale, UiCopy> = {
       projectLayoutList: '单列排序',
       usageStrip: '显示底部用量行',
       usageStripHint: '保留 CLI 配额摘要，但不重新建立 Claude、Codex 或 Grok 分区。',
+      resultRetention: '结果卡片停留时长',
+      resultRetentionHint: '已读或状态变更后，完成、卡住等结果卡片继续停留的时长。',
+      resultRetentionOptions: [
+        { minutes: 10, label: '10 分钟' },
+        { minutes: 30, label: '30 分钟' },
+        { minutes: 60, label: '1 小时' },
+        { minutes: 120, label: '2 小时' },
+        { minutes: 240, label: '4 小时' },
+      ],
       theme: '主题',
       themeAuto: '自动',
       themeAutoHint: '自动：08:00–20:00 白色，20:00–08:00 黑色。',
@@ -637,6 +650,16 @@ const UI_COPY: Record<Locale, UiCopy> = {
       projectLayoutList: 'Sorted column',
       usageStrip: 'Show usage strip',
       usageStripHint: 'Keep quota summaries without recreating Claude, Codex, or Grok sections.',
+      resultRetention: 'Result card retention',
+      resultRetentionHint:
+        'How long finished, stuck, or limited result cards stay after you acknowledge them.',
+      resultRetentionOptions: [
+        { minutes: 10, label: '10 min' },
+        { minutes: 30, label: '30 min' },
+        { minutes: 60, label: '1 hour' },
+        { minutes: 120, label: '2 hours' },
+        { minutes: 240, label: '4 hours' },
+      ],
       theme: 'Theme',
       themeAuto: 'Auto',
       themeAutoHint: 'Automatic: light from 08:00–20:00 and dark otherwise.',

@@ -17,11 +17,13 @@ interface Props {
   attentionEffect: HudAttentionEffect
   hudOpacity: number
   projectLayout: HudProjectLayout
+  resultRetentionMinutes: number
   showUsageStrip: boolean
   onAttentionEffectChange: (effect: HudAttentionEffect) => void
   onClose: () => void
   onHudOpacityChange: (opacity: number) => void
   onProjectLayoutChange: (layout: HudProjectLayout) => void
+  onResultRetentionMinutesChange: (minutes: number) => void
   onShowUsageStripChange: (visible: boolean) => void
   onThemeChange: (theme: ThemePreference) => void
   onToolVisibilityChange: (tool: CliToolType, visible: boolean) => void
@@ -49,11 +51,13 @@ export function SettingsDialog({
   attentionEffect,
   hudOpacity,
   projectLayout,
+  resultRetentionMinutes,
   showUsageStrip,
   onAttentionEffectChange,
   onClose,
   onHudOpacityChange,
   onProjectLayoutChange,
+  onResultRetentionMinutesChange,
   onShowUsageStripChange,
   onThemeChange,
   onToolVisibilityChange,
@@ -197,6 +201,21 @@ export function SettingsDialog({
                   label={copy.attentionPulse}
                   onClick={() => onAttentionEffectChange('pulse')}
                 />
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <h4 className="text-sm font-medium text-ink">{copy.resultRetention}</h4>
+              <p className="mt-1.5 text-meta leading-5 text-ink-500">{copy.resultRetentionHint}</p>
+              <div className="mt-3 grid grid-cols-5 gap-2">
+                {copy.resultRetentionOptions.map((option) => (
+                  <HudLayoutOption
+                    active={resultRetentionMinutes === option.minutes}
+                    key={option.minutes}
+                    label={option.label}
+                    onClick={() => onResultRetentionMinutesChange(option.minutes)}
+                  />
+                ))}
               </div>
             </div>
 

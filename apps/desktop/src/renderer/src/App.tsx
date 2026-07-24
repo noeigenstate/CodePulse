@@ -176,6 +176,11 @@ export function App(): JSX.Element {
   }, [dashboardSettings])
 
   useEffect(() => {
+    // The hub enforces expiry in the main process, so the renderer preference is pushed over IPC.
+    void window.codepulse.setResultRetentionMinutes(dashboardSettings.resultRetentionMinutes)
+  }, [dashboardSettings.resultRetentionMinutes])
+
+  useEffect(() => {
     const syncSettingsFromAnotherWindow = (event: StorageEvent): void => {
       if (event.key !== DASHBOARD_SETTINGS_STORAGE_KEY) return
       setDashboardSettings(readDashboardSettings(window.localStorage))
@@ -258,6 +263,13 @@ export function App(): JSX.Element {
     [updateDashboardSettings],
   )
 
+  const setResultRetentionMinutes = useCallback(
+    (resultRetentionMinutes: number): void => {
+      updateDashboardSettings((current) => ({ ...current, resultRetentionMinutes }))
+    },
+    [updateDashboardSettings],
+  )
+
   const setToolVisibility = useCallback(
     (tool: CliToolType, visible: boolean): void => {
       updateDashboardSettings((current) => ({
@@ -314,11 +326,13 @@ export function App(): JSX.Element {
           copy={copy.settings}
           hudOpacity={dashboardSettings.hudOpacity}
           projectLayout={dashboardSettings.projectLayout}
+          resultRetentionMinutes={dashboardSettings.resultRetentionMinutes}
           showUsageStrip={dashboardSettings.showUsageStrip}
           onAttentionEffectChange={setAttentionEffect}
           onClose={() => window.close()}
           onHudOpacityChange={setHudOpacity}
           onProjectLayoutChange={setProjectLayout}
+          onResultRetentionMinutesChange={setResultRetentionMinutes}
           onShowUsageStripChange={setShowUsageStrip}
           onThemeChange={setTheme}
           onToolVisibilityChange={setToolVisibility}

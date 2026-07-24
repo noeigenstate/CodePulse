@@ -59,11 +59,20 @@ export function ProjectDeck({
       const bodyStyle = window.getComputedStyle(document.body)
       const bodyInsets =
         parseFloat(bodyStyle.paddingTop || '0') + parseFloat(bodyStyle.paddingBottom || '0')
+      // The app shell's own border shrinks its content box; without it the
+      // viewport overflows by the border width and shows a phantom scrollbar.
+      const appShell = shell.closest('.app-shell')
+      const appShellStyle = appShell ? window.getComputedStyle(appShell) : undefined
+      const shellBorder = appShellStyle
+        ? parseFloat(appShellStyle.borderTopWidth || '0') +
+          parseFloat(appShellStyle.borderBottomWidth || '0')
+        : 0
       const height = Math.ceil(
         (header?.getBoundingClientRect().height ?? 0) +
           (content?.scrollHeight ?? 0) +
           (footer?.getBoundingClientRect().height ?? 0) +
-          bodyInsets,
+          bodyInsets +
+          shellBorder,
       )
       if (height <= 0 || height === lastReportedHeight.current) return
       lastReportedHeight.current = height

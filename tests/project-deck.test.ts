@@ -78,12 +78,12 @@ test('project deck merges the same workspace across providers and keeps provider
   assert.equal(items[0]?.primary.agent, claude)
 })
 
-test('project deck sorts intervention and unread outcomes ahead of active and quiet work', () => {
-  const waiting = runtime('codex', TurnState.WAITING_PERMISSION, 'F:/waiting', 10)
-  const done = runtime('claude_code', TurnState.DONE, 'F:/done', 40, true)
-  const active = runtime('codex', TurnState.THINKING, 'F:/active', 50)
-  const quiet = runtime('grok', TurnState.IDLE, 'F:/quiet', 60)
-  const agents = [waiting, done, active, quiet]
+test('project deck orders cards by provider rank regardless of attention state', () => {
+  const grokAlarm = runtime('grok', TurnState.WAITING_PERMISSION, 'F:/grok-alarm', 10)
+  const claudeQuiet = runtime('claude_code', TurnState.IDLE, 'F:/claude-quiet', 20)
+  const codexDone = runtime('codex', TurnState.DONE, 'F:/codex-done', 30, true)
+  const kimiActive = runtime('kimi', TurnState.THINKING, 'F:/kimi-active', 40)
+  const agents = [grokAlarm, claudeQuiet, codexDone, kimiActive]
   const items = buildProjectDeckItems(
     agents.map((agent) =>
       panel(agent.agentType, [
@@ -98,9 +98,28 @@ test('project deck sorts intervention and unread outcomes ahead of active and qu
     ),
   )
 
+  // Implicit provider order is absolute: claude → codex → kimi → grok, even
+  // when another provider's card is the one demanding attention.
   assert.deepEqual(
     items.map((item) => item.name),
-    ['waiting', 'done', 'active', 'quiet'],
+    ['claude-quiet', 'codex-done', 'kimi-active', 'grok-alarm'],
+  )
+})
+
+test('project deck keeps first-seen order between cards of the same provider', () => {
+  const older = runtime('codex', TurnState.IDLE, 'F:/older', 10)
+  const newer = runtime('codex', TurnState.DONE, 'F:/newer', 50, true)
+  const items = buildProjectDeckItems([
+    panel('codex', [
+      { id: 'codex:older', name: 'older', workspacePath: 'F:/older', updatedAt: 10, agent: older },
+      { id: 'codex:newer', name: 'newer', workspacePath: 'F:/newer', updatedAt: 50, agent: newer },
+    ]),
+  ])
+
+  // 先到先得:卡片位置不随状态或最近更新时间挪动。
+  assert.deepEqual(
+    items.map((item) => item.name),
+    ['older', 'newer'],
   )
 })
 

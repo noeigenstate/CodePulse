@@ -20,7 +20,10 @@ export interface ProjectDeckItem {
 export interface ProjectUsageSummary {
   agentType: AgentType
   label: string
-  percent: number
+  /** 5-hour window percent, when the provider exposes one. */
+  fiveHourPercent?: number
+  /** Weekly window percent, when the provider exposes one. */
+  sevenDayPercent?: number
 }
 
 interface MutableDeckItem {
@@ -69,17 +72,24 @@ export function buildProjectDeckItems(panels: readonly AgentPanel[]): ProjectDec
 /** Provider quotas remain available without creating provider-sized empty panels. */
 export function buildProjectUsageSummaries(panels: readonly AgentPanel[]): ProjectUsageSummary[] {
   return panels.flatMap((panel) => {
-    const percentages = panel.quotaMeters.flatMap((meter) => {
+    let fiveHour: number | undefined
+    let sevenDay: number | undefined
+    for (const meter of panel.quotaMeters) {
       const windows = visibleRateLimitWindows(meter.token, panel.agentType)
-      const value = windows.sevenDay?.usedPercent ?? windows.fiveHour?.usedPercent
-      return value != null && Number.isFinite(value) ? [clampPercent(value)] : []
-    })
-    if (percentages.length === 0) return []
+      const five = windows.fiveHour?.usedPercent
+      const seven = windows.sevenDay?.usedPercent
+      if (five != null && Number.isFinite(five)) fiveHour = Math.max(fiveHour ?? five, five)
+      if (seven != null && Number.isFinite(seven)) sevenDay = Math.max(sevenDay ?? seven, seven)
+    }
+    if (fiveHour == null && sevenDay == null) return []
+    // Both windows matter to the user (notably Claude's 5-hour + weekly
+    // quotas), so keep them side by side on one label instead of collapsing.
     return [
       {
         agentType: panel.agentType,
         label: projectSourceLabel(panel.agentType),
-        percent: Math.max(...percentages),
+        ...(fiveHour != null ? { fiveHourPercent: clampPercent(fiveHour) } : {}),
+        ...(sevenDay != null ? { sevenDayPercent: clampPercent(sevenDay) } : {}),
       },
     ]
   })

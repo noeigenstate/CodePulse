@@ -1,13 +1,14 @@
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import {
   TurnState,
+  formatTokenCount,
   formatTokenPercent,
   type AgentRuntimeState,
   type AgentType,
 } from '@codepulse/shared'
 import type { AgentPanel } from '../lib/displayAgents.js'
 import { formatDuration, formatRelative } from '../lib/format.js'
-import { hudStateLevel, needsHudAttention } from '../lib/hudState.js'
+import { hudStateLevel } from '../lib/hudState.js'
 import { turnStateLabel, type Locale, type UiCopy } from '../lib/i18n.js'
 import {
   buildProjectDeckItems,
@@ -27,7 +28,6 @@ interface Props {
   onAck: (agentType: AgentType, workspacePath?: string) => void
   panels: AgentPanel[]
   showUsageStrip: boolean
-  updatedAt: number
 }
 
 /** Compact project-first HUD. There are no provider containers or provider-local scroll areas. */
@@ -39,14 +39,12 @@ export function ProjectDeck({
   onAck,
   panels,
   showUsageStrip,
-  updatedAt,
 }: Props): JSX.Element {
   const shellRef = useRef<HTMLDivElement>(null)
   const lastReportedHeight = useRef(0)
   const now = useNow(30_000)
   const items = useMemo(() => buildProjectDeckItems(panels), [panels])
   const usage = useMemo(() => buildProjectUsageSummaries(panels), [panels])
-  const attentionCount = items.filter((item) => needsHudAttention(item.primary.agent)).length
 
   useLayoutEffect(() => {
     const shell = shellRef.current
@@ -94,15 +92,6 @@ export function ProjectDeck({
         <div className="project-deck-brand" aria-label="CodePulse">
           <span className="project-deck-signal" aria-hidden="true" />
           <span>CODEPULSE</span>
-        </div>
-        <div className="project-deck-summary">
-          <span>{locale === 'zh' ? `${items.length} 个项目` : `${items.length} projects`}</span>
-          {attentionCount > 0 ? (
-            <span className="project-deck-attention-count">
-              {locale === 'zh' ? `${attentionCount} 个待处理` : `${attentionCount} waiting`}
-            </span>
-          ) : null}
-          <span>{formatRelative(updatedAt, now, locale)}</span>
         </div>
       </header>
 
@@ -153,25 +142,43 @@ function ProjectDeckCard({
   const agent = item.primary.agent
   const level = hudStateLevel(agent)
   const unreadSources = item.sources.filter((source) => source.agent.unread)
-  const contextUsed = normalizedPercent(agent.token?.contextUsedPercent)
   const elapsed = elapsedMs(agent, now)
   const sourceNames = [
     ...new Set(item.sources.map((source) => projectSourceLabel(source.agentType))),
   ].join(' · ')
-  const summary = projectSummary(agent, locale)
+  const contextLabel = formatContextLabel(agent, locale)
 
   return (
     <article className="project-deck-item" data-hud-level={level}>
-      <div className="project-deck-item-topline">
+      <div className="project-deck-item-main">
         <span className="project-deck-source">{sourceNames}</span>
-        <span className="project-deck-state">
-          <span className={`project-deck-state-dot is-${level}`} aria-hidden="true" />
-          {turnStateLabel(agent.state, locale)}
-        </span>
+        <h2 title={item.workspacePath}>{item.name || copy.unknownProject}</h2>
+        {item.workspacePath ? (
+          <span className="project-deck-path" title={item.workspacePath}>
+            {item.workspacePath}
+          </span>
+        ) : null}
       </div>
 
-      <div className="project-deck-title-row">
-        <h2 title={item.workspacePath}>{item.name || copy.unknownProject}</h2>
+      <span className="project-deck-state">
+        <span className={`project-deck-state-dot is-${level}`} aria-hidden="true" />
+        {turnStateLabel(agent.state, locale)}
+      </span>
+
+      <div className="project-deck-metrics">
+        <span className="project-deck-elapsed">
+          {elapsed != null
+            ? formatDuration(elapsed, locale)
+            : formatRelative(item.updatedAt, now, locale)}
+        </span>
+        {contextLabel ? (
+          <span className="project-deck-context" title={contextLabel}>
+            {contextLabel}
+          </span>
+        ) : null}
+      </div>
+
+      <div className="project-deck-ack-slot">
         {unreadSources.length > 0 ? (
           <button
             className="project-deck-ack"
@@ -184,28 +191,6 @@ function ProjectDeckCard({
           </button>
         ) : null}
       </div>
-
-      <div className="project-deck-detail">
-        <span title={summary}>{summary}</span>
-        <span>
-          {elapsed != null
-            ? formatDuration(elapsed, locale)
-            : formatRelative(item.updatedAt, now, locale)}
-        </span>
-      </div>
-
-      {contextUsed != null ? (
-        <div className="project-deck-context">
-          <span>
-            {locale === 'zh'
-              ? `上下文 ${Math.ceil(100 - contextUsed)}% 剩余`
-              : `Context ${Math.ceil(100 - contextUsed)}% left`}
-          </span>
-          <span className="project-deck-context-track" aria-hidden="true">
-            <span style={{ width: `${contextUsed}%` }} />
-          </span>
-        </div>
-      ) : null}
     </article>
   )
 }
@@ -223,7 +208,7 @@ function UsageStrip({
       {usage.length > 0 ? (
         usage.map((item) => (
           <span key={item.agentType}>
-            {item.label} {formatTokenPercent(item.percent)}
+            {item.label} {formatUsageWindows(item, locale)}
           </span>
         ))
       ) : (
@@ -233,17 +218,33 @@ function UsageStrip({
   )
 }
 
-function projectSummary(agent: AgentRuntimeState, locale: Locale): string {
-  if (agent.state === TurnState.DONE && agent.lastAssistantMessage) {
-    return agent.lastAssistantMessage
+/** Renders `5小时 23% 周 11%` when both quota windows exist, or a bare percent for one. */
+function formatUsageWindows(item: ProjectUsageSummary, locale: Locale): string {
+  const fiveHour =
+    item.fiveHourPercent != null
+      ? `${locale === 'zh' ? '5小时' : '5h'} ${formatTokenPercent(item.fiveHourPercent)}`
+      : undefined
+  const sevenDay =
+    item.sevenDayPercent != null
+      ? `${item.fiveHourPercent != null ? `${locale === 'zh' ? '周' : 'wk'} ` : ''}${formatTokenPercent(item.sevenDayPercent)}`
+      : undefined
+  return [fiveHour, sevenDay].filter(Boolean).join(' ')
+}
+
+/**
+ * Compact context readout like `43% (109k/256k)`: used percent plus absolute
+ * tokens when the agent reports its context window size.
+ */
+function formatContextLabel(agent: AgentRuntimeState, locale: Locale): string | undefined {
+  const contextUsed = normalizedPercent(agent.token?.contextUsedPercent)
+  if (contextUsed == null) return undefined
+  const usedPercent = Math.round(contextUsed)
+  const window = agent.token?.contextWindow
+  if (window == null || !Number.isFinite(window) || window <= 0) {
+    return locale === 'zh' ? `上下文 ${usedPercent}%` : `Context ${usedPercent}%`
   }
-  return (
-    agent.activity ??
-    agent.lastAssistantMessage ??
-    agent.lastUserPrompt ??
-    agent.model ??
-    (locale === 'zh' ? '等待命令' : 'Ready')
-  )
+  const usedTokens = Math.round((contextUsed / 100) * window)
+  return `${usedPercent}% (${formatTokenCount(usedTokens)}/${formatTokenCount(window)})`
 }
 
 function elapsedMs(agent: AgentRuntimeState, now: number): number | undefined {

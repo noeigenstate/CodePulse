@@ -308,7 +308,6 @@ export function App(): JSX.Element {
       onAck={(agentType, workspacePath) => ack(agentType, workspacePath)}
       panels={panels}
       showUsageStrip={dashboardSettings.showUsageStrip}
-      updatedAt={snapshot.updatedAt}
     />
   )
 

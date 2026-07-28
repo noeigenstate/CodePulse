@@ -6,8 +6,8 @@ export const HUD_TRANSPARENT_BACKGROUND = '#00000000'
 export const HUD_WINDOW_OPACITY = 1
 export const HUD_WINDOW_MARGIN = 24
 /** A narrow right-hand lane keeps the HUD project-first instead of dashboard-like. */
-export const HUD_WINDOW_PREFERRED_SIZE = { width: 640, height: 240 } as const
-export const HUD_WINDOW_MIN_SIZE = { width: 560, height: 132 } as const
+export const HUD_WINDOW_PREFERRED_SIZE = { width: 470, height: 240 } as const
+export const HUD_WINDOW_MIN_SIZE = { width: 470, height: 132 } as const
 export const HUD_WINDOW_SHELL_OPTIONS = {
   transparent: true,
   frame: false,

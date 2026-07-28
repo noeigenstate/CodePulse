@@ -128,6 +128,32 @@ test('quota-only providers stay out of the project grid but remain in the usage 
 
   assert.deepEqual(buildProjectDeckItems([grok]), [])
   assert.deepEqual(buildProjectUsageSummaries([grok]), [
-    { agentType: 'grok', label: 'GROK', percent: 18 },
+    { agentType: 'grok', label: 'GROK', sevenDayPercent: 18 },
+  ])
+})
+
+test('usage strip keeps the 5-hour and weekly windows side by side on one label', () => {
+  const claude: AgentPanel = {
+    agentType: 'claude_code',
+    name: 'claude_code',
+    updatedAt: 1,
+    quotaMeters: [
+      {
+        id: 'default',
+        updatedAt: 1,
+        token: {
+          accuracy: 'exact',
+          rateLimits: {
+            fiveHour: { usedPercent: 42, resetsAt: 2_000_000_000 },
+            sevenDay: { usedPercent: 63, resetsAt: 2_000_000_000 },
+          },
+        },
+      },
+    ],
+    workspaces: [],
+  }
+
+  assert.deepEqual(buildProjectUsageSummaries([claude]), [
+    { agentType: 'claude_code', label: 'CLAUDE', fiveHourPercent: 42, sevenDayPercent: 63 },
   ])
 })

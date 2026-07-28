@@ -52,17 +52,17 @@ test('HUD display selection falls back to a secondary and then primary', () => {
 test('HUD bounds use the work-area top-right margin and clamp to small displays', () => {
   const normal = display(2, 1920, -120)
   assert.deepEqual(hudWindowBoundsForDisplay(normal), {
-    x: 3176,
+    x: 3346,
     y: -96,
-    width: 640,
+    width: 470,
     height: 240,
   })
 
   const small = display(3, 100, 50, 640, 400)
   assert.deepEqual(hudWindowBoundsForDisplay(small), {
-    x: 124,
+    x: 246,
     y: 74,
-    width: 592,
+    width: 470,
     height: 240,
   })
 })

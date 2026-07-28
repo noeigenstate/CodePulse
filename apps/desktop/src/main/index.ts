@@ -280,9 +280,11 @@ function resizeHudToContent(requestedHeight: unknown): boolean {
   if (!window || window.isDestroyed() || typeof requestedHeight !== 'number') return false
   const display = screen.getDisplayMatching(window.getBounds())
   const height = hudContentHeightForDisplay(requestedHeight, display)
+  // The width stays pinned to the compact lane even if the user dragged it wider.
+  const { width } = hudWindowBoundsForDisplay(display)
   const bounds = window.getBounds()
-  if (bounds.height === height) return true
-  window.setBounds({ ...bounds, height }, false)
+  if (bounds.height === height && bounds.width === width) return true
+  window.setBounds({ ...bounds, width, height }, false)
   return true
 }
 

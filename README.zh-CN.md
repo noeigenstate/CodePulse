@@ -7,7 +7,7 @@
 一眼看清 Codex、Claude Code、Grok 与 Kimi Code 正在工作、在等你、已完成，还是卡住了——
 无需切回终端反复确认。
 
-[![status](https://img.shields.io/badge/status-v1.3.3-brightgreen)](#功能特性)
+[![status](https://img.shields.io/badge/status-HUD%20v1.4.0--hud.1-orange)](#功能特性)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#下载)
 [![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#开发)
@@ -41,8 +41,8 @@ AI 编程代理很擅长无人值守地干活，却不擅长在需要你时提�
 
 ## 软件截图
 
-> 当前仓库截图仍是上游 v1.3.3 基线。本概念分支的 HUD 视觉仍在迭代，行为和设计契约
-> 见 [HUD 副驾概念说明](docs/CodePulse/HUD-companion-concept.md)。
+> 当前仓库截图仍是上游 v1.3.3 基线；当前实验安装版为 **HUD v1.4.0-hud.1**，
+> 行为和设计契约见 [HUD 副驾概念说明](docs/CodePulse/HUD-companion-concept.md)。
 
 ### 实时控制台
 

@@ -7,7 +7,7 @@
 Know at a glance whether Codex, Claude Code, Grok, and Kimi Code are working, waiting on
 you, finished, or stuck — without alt-tabbing back to a terminal.
 
-[![status](https://img.shields.io/badge/status-v1.3.3-brightgreen)](#features)
+[![status](https://img.shields.io/badge/status-HUD%20v1.4.0--hud.1-orange)](#features)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#download)
 [![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#development)
@@ -47,9 +47,9 @@ CodePulse isn't running — your agents are never blocked or slowed down.
 
 ## Screenshots
 
-> The checked-in screenshots show the upstream v1.3.3 baseline. The HUD concept
-> branch is being visually iterated; its behavior and design contract are recorded
-> in [HUD companion concept](docs/CodePulse/HUD-companion-concept.md).
+> The checked-in screenshots show the upstream v1.3.3 baseline. The current
+> experimental build is **HUD v1.4.0-hud.1**; its behavior and design contract
+> are recorded in [HUD companion concept](docs/CodePulse/HUD-companion-concept.md).
 
 ### Live console
 

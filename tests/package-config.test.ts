@@ -101,4 +101,6 @@ test('desktop package scripts and builder config include Windows, Linux, and mac
   assert.match(workflow, /\.AppImage/)
   assert.match(workflow, /mac-arm64\.dmg/)
   assert.match(workflow, /mac-x64\.dmg/)
+  assert.match(workflow, /--prerelease/)
+  assert.match(workflow, /--latest=false/)
 })

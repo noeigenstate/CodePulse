@@ -23,6 +23,7 @@ jobs:
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
       release_name: ${{ steps.release.outputs.release_name }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -45,11 +46,16 @@ jobs:
           fi
 
           version="${tag#v}"
+          prerelease=false
+          if [[ "${version}" == *-* ]]; then
+            prerelease=true
+          fi
           {
             echo "package_version=${package_version}"
             echo "version=${version}"
             echo "tag=${tag}"
             echo "release_name=CodePulse ${tag}"
+            echo "prerelease=${prerelease}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Apply release version
@@ -358,6 +364,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
           RELEASE_NAME: ${{ needs.prepare.outputs.release_name }}
+          RELEASE_PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
         run: |
           set -euo pipefail
           notes_file="$(find release-assets/notes -type f -name 'codepulse-release-notes.md' | head -n 1)"
@@ -387,18 +394,35 @@ jobs:
           printf ' - %s\n' "${assets[@]}"
 
           if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-            gh release edit "${RELEASE_TAG}" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --title "${RELEASE_NAME}" \
-              --notes-file "${notes_file}" \
-              --latest
+            if [ "${RELEASE_PRERELEASE}" = "true" ]; then
+              gh release edit "${RELEASE_TAG}" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --title "${RELEASE_NAME}" \
+                --notes-file "${notes_file}" \
+                --prerelease
+            else
+              gh release edit "${RELEASE_TAG}" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --title "${RELEASE_NAME}" \
+                --notes-file "${notes_file}" \
+                --latest
+            fi
             gh release upload "${RELEASE_TAG}" "${assets[@]}" \
               --repo "${GITHUB_REPOSITORY}" \
               --clobber
           else
-            gh release create "${RELEASE_TAG}" "${assets[@]}" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --title "${RELEASE_NAME}" \
-              --notes-file "${notes_file}" \
-              --latest
+            if [ "${RELEASE_PRERELEASE}" = "true" ]; then
+              gh release create "${RELEASE_TAG}" "${assets[@]}" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --title "${RELEASE_NAME}" \
+                --notes-file "${notes_file}" \
+                --prerelease \
+                --latest=false
+            else
+              gh release create "${RELEASE_TAG}" "${assets[@]}" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --title "${RELEASE_NAME}" \
+                --notes-file "${notes_file}" \
+                --latest
+            fi
           fi

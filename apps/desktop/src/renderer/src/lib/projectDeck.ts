@@ -1,20 +1,26 @@
 import { workspaceKey, type AgentRuntimeState, type AgentType } from '@codepulse/shared'
 import type { AgentPanel } from './displayAgents.js'
-import { hudStatePriority } from './hudState.js'
 import { visibleRateLimitWindows } from './panelFormat.js'
 
-export interface ProjectDeckSource {
+/** One agent's independent card inside a project group. */
+export interface ProjectDeckCard {
+  id: string
   agentType: AgentType
   agent: AgentRuntimeState
+  updatedAt: number
 }
 
-export interface ProjectDeckItem {
+/**
+ * One project on the HUD. Every agent working in the project gets its own
+ * card (states are independent and cannot be merged), and the group wrapper
+ * keeps same-project cards visually together.
+ */
+export interface ProjectDeckGroup {
   id: string
   name: string
   workspacePath?: string
   updatedAt: number
-  sources: ProjectDeckSource[]
-  primary: ProjectDeckSource
+  cards: ProjectDeckCard[]
 }
 
 export interface ProjectUsageSummary {
@@ -26,26 +32,35 @@ export interface ProjectUsageSummary {
   sevenDayPercent?: number
 }
 
-interface MutableDeckItem {
+interface MutableDeckGroup {
   id: string
   name: string
   workspacePath?: string
   updatedAt: number
-  sources: ProjectDeckSource[]
+  cards: ProjectDeckCard[]
 }
 
-/** Builds one global project collection from provider-specific runtime panels. */
-export function buildProjectDeckItems(panels: readonly AgentPanel[]): ProjectDeckItem[] {
-  const grouped = new Map<string, MutableDeckItem>()
+/**
+ * Builds project groups from provider-specific runtime panels. Agents sharing
+ * one workspace stay in the same group but each keeps its own card, so state
+ * and acknowledgement remain fully independent per agent.
+ */
+export function buildProjectDeckGroups(panels: readonly AgentPanel[]): ProjectDeckGroup[] {
+  const grouped = new Map<string, MutableDeckGroup>()
 
   for (const panel of panels) {
     for (const workspace of panel.workspaces) {
       const normalizedPath = workspaceKey(workspace.workspacePath)
       const key = normalizedPath || `${panel.agentType}:${workspace.id}`
-      const source = { agentType: panel.agentType, agent: workspace.agent }
+      const card: ProjectDeckCard = {
+        id: `${key}:${panel.agentType}`,
+        agentType: panel.agentType,
+        agent: workspace.agent,
+        updatedAt: workspace.updatedAt,
+      }
       const existing = grouped.get(key)
       if (existing) {
-        existing.sources.push(source)
+        existing.cards.push(card)
         existing.updatedAt = Math.max(existing.updatedAt, workspace.updatedAt)
         if (!existing.name && workspace.name) existing.name = workspace.name
         if (!existing.workspacePath && workspace.workspacePath) {
@@ -59,14 +74,18 @@ export function buildProjectDeckItems(panels: readonly AgentPanel[]): ProjectDec
         name: workspace.name,
         workspacePath: workspace.workspacePath,
         updatedAt: workspace.updatedAt,
-        sources: [source],
+        cards: [card],
       })
     }
   }
 
-  return [...grouped.values()]
-    .map((item) => ({ ...item, primary: choosePrimarySource(item.sources) }))
-    .sort(compareProjectDeckItems)
+  for (const group of grouped.values()) {
+    group.cards.sort(
+      (left, right) => agentTypeRank(left.agentType) - agentTypeRank(right.agentType),
+    )
+  }
+
+  return [...grouped.values()].sort((left, right) => groupRank(left) - groupRank(right))
 }
 
 /** Provider quotas remain available without creating provider-sized empty panels. */
@@ -103,15 +122,6 @@ export function projectSourceLabel(agentType: AgentType): string {
   return String(agentType).toUpperCase()
 }
 
-function choosePrimarySource(sources: readonly ProjectDeckSource[]): ProjectDeckSource {
-  return [...sources].sort(
-    (left, right) =>
-      hudStatePriority(right.agent) - hudStatePriority(left.agent) ||
-      right.agent.lastEventAt - left.agent.lastEventAt ||
-      projectSourceLabel(left.agentType).localeCompare(projectSourceLabel(right.agentType)),
-  )[0]!
-}
-
 /**
  * Implicit provider order for the HUD: Claude first, then Codex, Kimi, Grok.
  * Cards within one provider keep their first-seen order (the sort is stable and
@@ -125,10 +135,13 @@ function agentTypeRank(agentType: AgentType): number {
   return Number.MAX_SAFE_INTEGER - 1
 }
 
-function compareProjectDeckItems(left: ProjectDeckItem, right: ProjectDeckItem): number {
-  // Equal ranks return 0 on purpose: Array.prototype.sort is stable, so the
-  // first-seen panel order breaks ties inside one provider (先到先得).
-  return agentTypeRank(left.primary.agentType) - agentTypeRank(right.primary.agentType)
+/**
+ * A group ranks by its front-most provider, so a project with a Claude card
+ * still leads the Codex-only projects. Equal ranks return 0 on purpose: the
+ * sort is stable and first-seen panel order breaks ties (先到先得).
+ */
+function groupRank(group: ProjectDeckGroup): number {
+  return Math.min(...group.cards.map((card) => agentTypeRank(card.agentType)))
 }
 
 function clampPercent(value: number): number {

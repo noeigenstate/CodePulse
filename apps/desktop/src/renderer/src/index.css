@@ -923,6 +923,24 @@ body[data-surface='settings'] {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  /* Each project stays in one grid cell. Its agent cards always form one
+     vertical stack, including when the surrounding deck uses compact grid. */
+  .project-deck-group {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+    gap: 1px;
+    background: var(--line-soft);
+  }
+
+  /* Several agents in one project: a quiet shared frame — present, never loud. */
+  .project-deck-group[data-multi] {
+    margin: 3px;
+    overflow: hidden;
+    border-radius: 9px;
+    box-shadow: 0 0 0 1px var(--line);
+  }
+
   .project-deck-item {
     display: grid;
     min-width: 0;

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { TurnState, type AgentRuntimeState } from '@codepulse/shared'
 import {
-  buildProjectDeckItems,
+  buildProjectDeckGroups,
   buildProjectUsageSummaries,
 } from '../apps/desktop/src/renderer/src/lib/projectDeck.js'
 import type {
@@ -55,12 +55,12 @@ function panel(
   }
 }
 
-test('project deck merges the same workspace across providers and keeps provider metadata', () => {
+test('project deck groups the same workspace across providers with independent cards', () => {
   const path = 'F:/future/codepulse/CodePulse'
   const codex = runtime('codex', TurnState.TOOL_RUNNING, path, 20)
   const claude = runtime('claude_code', TurnState.DONE, path, 30, true)
 
-  const items = buildProjectDeckItems([
+  const groups = buildProjectDeckGroups([
     panel('codex', [
       { id: 'codex:cp', name: 'CodePulse', workspacePath: path, updatedAt: 20, agent: codex },
     ]),
@@ -69,13 +69,17 @@ test('project deck merges the same workspace across providers and keeps provider
     ]),
   ])
 
-  assert.equal(items.length, 1)
-  assert.equal(items[0]?.name, 'CodePulse')
-  assert.deepEqual(items[0]?.sources.map((source) => source.agentType).sort(), [
-    'claude_code',
-    'codex',
-  ])
-  assert.equal(items[0]?.primary.agent, claude)
+  // One project group, but each agent keeps its own card (and its own state).
+  assert.equal(groups.length, 1)
+  assert.equal(groups[0]?.name, 'CodePulse')
+  assert.equal(groups[0]?.cards.length, 2)
+  // Provider order inside the group: Claude leads even though Codex arrived first.
+  assert.deepEqual(
+    groups[0]?.cards.map((card) => card.agentType),
+    ['claude_code', 'codex'],
+  )
+  assert.equal(groups[0]?.cards[0]?.agent, claude)
+  assert.equal(groups[0]?.cards[1]?.agent, codex)
 })
 
 test('project deck orders cards by provider rank regardless of attention state', () => {
@@ -84,7 +88,7 @@ test('project deck orders cards by provider rank regardless of attention state',
   const codexDone = runtime('codex', TurnState.DONE, 'F:/codex-done', 30, true)
   const kimiActive = runtime('kimi', TurnState.THINKING, 'F:/kimi-active', 40)
   const agents = [grokAlarm, claudeQuiet, codexDone, kimiActive]
-  const items = buildProjectDeckItems(
+  const groups = buildProjectDeckGroups(
     agents.map((agent) =>
       panel(agent.agentType, [
         {
@@ -101,7 +105,7 @@ test('project deck orders cards by provider rank regardless of attention state',
   // Implicit provider order is absolute: claude → codex → kimi → grok, even
   // when another provider's card is the one demanding attention.
   assert.deepEqual(
-    items.map((item) => item.name),
+    groups.map((group) => group.name),
     ['claude-quiet', 'codex-done', 'kimi-active', 'grok-alarm'],
   )
 })
@@ -109,7 +113,7 @@ test('project deck orders cards by provider rank regardless of attention state',
 test('project deck keeps first-seen order between cards of the same provider', () => {
   const older = runtime('codex', TurnState.IDLE, 'F:/older', 10)
   const newer = runtime('codex', TurnState.DONE, 'F:/newer', 50, true)
-  const items = buildProjectDeckItems([
+  const groups = buildProjectDeckGroups([
     panel('codex', [
       { id: 'codex:older', name: 'older', workspacePath: 'F:/older', updatedAt: 10, agent: older },
       { id: 'codex:newer', name: 'newer', workspacePath: 'F:/newer', updatedAt: 50, agent: newer },
@@ -118,15 +122,58 @@ test('project deck keeps first-seen order between cards of the same provider', (
 
   // 先到先得:卡片位置不随状态或最近更新时间挪动。
   assert.deepEqual(
-    items.map((item) => item.name),
+    groups.map((group) => group.name),
     ['older', 'newer'],
+  )
+})
+
+test('a multi-agent group ranks by its front-most provider', () => {
+  const shared = 'F:/shared'
+  const groups = buildProjectDeckGroups([
+    panel('codex', [
+      {
+        id: 'codex:only',
+        name: 'codex-only',
+        workspacePath: 'F:/codex-only',
+        updatedAt: 10,
+        agent: runtime('codex', TurnState.IDLE, 'F:/codex-only', 10),
+      },
+    ]),
+    panel('kimi', [
+      {
+        id: 'kimi:shared',
+        name: 'shared',
+        workspacePath: shared,
+        updatedAt: 20,
+        agent: runtime('kimi', TurnState.THINKING, shared, 20),
+      },
+    ]),
+    panel('claude_code', [
+      {
+        id: 'claude:shared',
+        name: 'shared',
+        workspacePath: shared,
+        updatedAt: 30,
+        agent: runtime('claude_code', TurnState.IDLE, shared, 30),
+      },
+    ]),
+  ])
+
+  // The shared project contains Claude, so the whole group leads Codex-only.
+  assert.deepEqual(
+    groups.map((group) => group.name),
+    ['shared', 'codex-only'],
+  )
+  assert.deepEqual(
+    groups[0]?.cards.map((card) => card.agentType),
+    ['claude_code', 'kimi'],
   )
 })
 
 test('quota-only providers stay out of the project grid but remain in the usage strip', () => {
   const grok = panel('grok', [], 18)
 
-  assert.deepEqual(buildProjectDeckItems([grok]), [])
+  assert.deepEqual(buildProjectDeckGroups([grok]), [])
   assert.deepEqual(buildProjectUsageSummaries([grok]), [
     { agentType: 'grok', label: 'GROK', sevenDayPercent: 18 },
   ])

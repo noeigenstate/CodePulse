@@ -11,10 +11,11 @@ import { formatDuration, formatRelative } from '../lib/format.js'
 import { hudStateLevel } from '../lib/hudState.js'
 import { turnStateLabel, type Locale, type UiCopy } from '../lib/i18n.js'
 import {
-  buildProjectDeckItems,
+  buildProjectDeckGroups,
   buildProjectUsageSummaries,
   projectSourceLabel,
-  type ProjectDeckItem,
+  type ProjectDeckCard,
+  type ProjectDeckGroup,
   type ProjectUsageSummary,
 } from '../lib/projectDeck.js'
 import { useNow } from '../lib/useNow.js'
@@ -43,7 +44,7 @@ export function ProjectDeck({
   const shellRef = useRef<HTMLDivElement>(null)
   const lastReportedHeight = useRef(0)
   const now = useNow(30_000)
-  const items = useMemo(() => buildProjectDeckItems(panels), [panels])
+  const groups = useMemo(() => buildProjectDeckGroups(panels), [panels])
   const usage = useMemo(() => buildProjectUsageSummaries(panels), [panels])
 
   useLayoutEffect(() => {
@@ -84,7 +85,7 @@ export function ProjectDeck({
       window.cancelAnimationFrame(frame)
       observer.disconnect()
     }
-  }, [allToolsHidden, items, layout, showUsageStrip])
+  }, [allToolsHidden, groups, layout, showUsageStrip])
 
   return (
     <div className="project-deck-shell min-h-0 flex-1" ref={shellRef}>
@@ -96,7 +97,7 @@ export function ProjectDeck({
       </header>
 
       <main className="project-deck-viewport">
-        {items.length === 0 ? (
+        {groups.length === 0 ? (
           <div className="project-deck-empty" role="status">
             <strong>
               {allToolsHidden ? copy.emptyDashboard.settingsHiddenTitle : copy.emptyDashboard.title}
@@ -107,15 +108,24 @@ export function ProjectDeck({
           </div>
         ) : (
           <div className="project-deck-grid" data-layout={layout}>
-            {items.map((item) => (
-              <ProjectDeckCard
-                copy={copy}
-                item={item}
-                key={item.id}
-                locale={locale}
-                now={now}
-                onAck={onAck}
-              />
+            {groups.map((group) => (
+              <section
+                className="project-deck-group"
+                data-multi={group.cards.length > 1 ? '' : undefined}
+                key={group.id}
+              >
+                {group.cards.map((card) => (
+                  <ProjectDeckCard
+                    card={card}
+                    copy={copy}
+                    group={group}
+                    key={card.id}
+                    locale={locale}
+                    now={now}
+                    onAck={onAck}
+                  />
+                ))}
+              </section>
             ))}
           </div>
         )}
@@ -127,35 +137,35 @@ export function ProjectDeck({
 }
 
 function ProjectDeckCard({
+  card,
   copy,
-  item,
+  group,
   locale,
   now,
   onAck,
 }: {
+  card: ProjectDeckCard
   copy: UiCopy
-  item: ProjectDeckItem
+  group: ProjectDeckGroup
   locale: Locale
   now: number
   onAck: (agentType: AgentType, workspacePath?: string) => void
 }): JSX.Element {
-  const agent = item.primary.agent
+  // Every card owns exactly one agent: state, timer, context, and the
+  // acknowledgement button are fully independent from its project siblings.
+  const agent = card.agent
   const level = hudStateLevel(agent)
-  const unreadSources = item.sources.filter((source) => source.agent.unread)
   const elapsed = elapsedMs(agent, now)
-  const sourceNames = [
-    ...new Set(item.sources.map((source) => projectSourceLabel(source.agentType))),
-  ].join(' · ')
   const contextLabel = formatContextLabel(agent, locale)
 
   return (
     <article className="project-deck-item" data-hud-level={level}>
       <div className="project-deck-item-main">
-        <span className="project-deck-source">{sourceNames}</span>
-        <h2 title={item.workspacePath}>{item.name || copy.unknownProject}</h2>
-        {item.workspacePath ? (
-          <span className="project-deck-path" title={item.workspacePath}>
-            {item.workspacePath}
+        <span className="project-deck-source">{projectSourceLabel(card.agentType)}</span>
+        <h2 title={group.workspacePath}>{group.name || copy.unknownProject}</h2>
+        {group.workspacePath ? (
+          <span className="project-deck-path" title={group.workspacePath}>
+            {group.workspacePath}
           </span>
         ) : null}
       </div>
@@ -169,7 +179,7 @@ function ProjectDeckCard({
         <span className="project-deck-elapsed">
           {elapsed != null
             ? formatDuration(elapsed, locale)
-            : formatRelative(item.updatedAt, now, locale)}
+            : formatRelative(card.updatedAt, now, locale)}
         </span>
         {contextLabel ? (
           <span className="project-deck-context" title={contextLabel}>
@@ -179,15 +189,13 @@ function ProjectDeckCard({
       </div>
 
       <div className="project-deck-ack-slot">
-        {unreadSources.length > 0 ? (
+        {agent.unread ? (
           <button
             className="project-deck-ack"
-            onClick={() => {
-              for (const source of unreadSources) onAck(source.agentType, item.workspacePath)
-            }}
+            onClick={() => onAck(card.agentType, group.workspacePath)}
             type="button"
           >
-            {item.workspacePath ? copy.read : copy.readAll}
+            {group.workspacePath ? copy.read : copy.readAll}
           </button>
         ) : null}
       </div>

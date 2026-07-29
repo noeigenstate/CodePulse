@@ -12,6 +12,7 @@ import { registerAgentRoutes } from './routes/agents.js'
 import { registerEventRoutes } from './routes/events.js'
 import { registerStatusRoutes } from './routes/status.js'
 import { QuotaRefreshWatcher } from './quota-watcher.js'
+import { KimiQuotaRefresher } from './kimi-quota-refresher.js'
 import { SessionSyncService } from './session-sync.js'
 import { registerWebSocket } from './websocket/index.js'
 import {
@@ -99,8 +100,13 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
     // Production: keep re-reading bound rollouts after reset / idle wait.
     // Tests inject their own watcher options via direct construction.
   })
+  // Kimi hooks never carry account quota, so in low-I/O mode this hook-driven
+  // refresher is the only path that recovers the KIMI meter when the CLI
+  // starts after the boot scan.
+  const kimiQuotaRefresher = new KimiQuotaRefresher({ hub: options.hub })
   const onHubEvent = (event: Parameters<typeof quotaWatcher.observe>[0]): void => {
     quotaWatcher.observe(event)
+    kimiQuotaRefresher.observe(event)
   }
   options.hub.on('event', onHubEvent)
 
@@ -124,6 +130,7 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
   } catch (err) {
     sessionSync?.stop()
     quotaWatcher.stop()
+    kimiQuotaRefresher.stop()
     options.hub.off('event', onHubEvent)
     try {
       await app.close()
@@ -143,6 +150,7 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
     close: async () => {
       sessionSync?.stop()
       quotaWatcher.stop()
+      kimiQuotaRefresher.stop()
       options.hub.off('event', onHubEvent)
       await app.close()
     },
@@ -209,6 +217,7 @@ export {
   resolveKimiAccountQuota,
   type KimiQuotaSnapshot,
 } from './kimi-quota.js'
+export { KimiQuotaRefresher, type KimiQuotaRefresherOptions } from './kimi-quota-refresher.js'
 export {
   defaultLocalAuthPath,
   generateLocalAuthToken,

@@ -2,12 +2,13 @@
 
 # CodePulse
 
-**A local companion HUD for your AI coding agents.**
+**A local status hub for your AI coding agents.**
 
 Know at a glance whether Codex, Claude Code, Grok, and Kimi Code are working, waiting on
 you, finished, or stuck — without alt-tabbing back to a terminal.
 
-[![status](https://img.shields.io/badge/status-HUD%20v1.4.0--hud.1-orange)](#features)
+[![Dashboard](https://img.shields.io/badge/Dashboard-v1.3.3-brightgreen)](https://github.com/noeigenstate/CodePulse/releases/tag/v1.3.3)
+[![HUD](https://img.shields.io/badge/HUD-v1.4.0--hud.2-orange)](https://github.com/noeigenstate/CodePulse/releases/tag/v1.4.0-hud.2)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#download)
 [![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#development)
@@ -24,22 +25,23 @@ you, finished, or stuck — without alt-tabbing back to a terminal.
 AI coding agents are great at working unattended — and terrible at telling you
 when they need you. CodePulse listens to the lifecycle hooks that Codex, Claude
 Code, Grok, and Kimi Code expose, runs every event through a single state
-machine, and projects the result into a persistent companion HUD:
+machine, and surfaces the result through a few focused interfaces:
 
-- 🪟 **HUD-first desktop surface** — a transparent, frameless, always-on-top panel
-  that prefers a secondary display and reveals attention states without stealing
-  focus.
-- 🟠 **One attention language** — routine work stays neutral; a whole project tile
-  turns orange when it needs notice or action. A global attention rail keeps those
-  projects visible even while Insights is open or their detailed CLI panel is
-  hidden/off-screen. No native OS notification or toast is generated.
-- 📈 **Usage stays in view** — project cards retain context and quota meters, while
-  **Insights** provides local rollups of tokens, coding time, projects, model mix,
-  and peak hours from SQLite.
-- ⚙️ **HUD controls** — choose panel opacity, light/dark appearance, visible CLI
-  panels, and a steady, breathing, or stronger pulse for orange attention.
-- ◐ **Restrained tray cue** — the aggregate tray icon uses neutral for ordinary
-  activity and the same orange only when something needs attention.
+- 📊 **Live Dashboard** — adaptive panes for Claude Code / Codex / Grok / Kimi Code,
+  with brand colors, project cards, context bars, and quota meters.
+- 🪟 **Companion HUD** — an optional transparent, frameless, always-on-top form for
+  a secondary display. It keeps durable attention visible without stealing focus.
+- 📈 **Local analytics console** — open **Insights** (Chinese UI: **后台**) for
+  full-screen rollups of tokens, coding time, projects, model mix, and peak hours
+  from local SQLite history.
+- ⚙️ **Form-appropriate controls** — the Dashboard keeps its familiar theme and
+  panel controls; the HUD adds opacity and restrained attention-motion settings.
+- 💾 **One local core** — both real-time forms share the same hooks, state machine,
+  usage data, history, and local API.
+
+CodePulse is the product; the Live Dashboard and companion HUD are parallel
+presentation forms of it, not separate projects. **Insights** remains the shared
+historical view.
 
 Everything runs **100% locally**. The server binds to loopback only, prompts
 are stored as short previews (never in full), and the hooks fail silently when
@@ -47,9 +49,8 @@ CodePulse isn't running — your agents are never blocked or slowed down.
 
 ## Screenshots
 
-> The checked-in screenshots show the upstream v1.3.3 baseline. The current
-> experimental build is **HUD v1.4.0-hud.2**; its behavior and design contract
-> are recorded in [HUD companion concept](docs/CodePulse/HUD-companion-concept.md).
+The Live Dashboard and companion HUD provide two ways to watch current work;
+the analytics console provides the shared historical view.
 
 ### Live console
 
@@ -63,6 +64,19 @@ verified model, thinking depth, native elapsed time, context window, and state.
 Use the gear button to change theme or visible CLI panels; open **Insights** for
 local analytics.
 _(Sample data shown.)_
+
+### Companion HUD
+
+<p align="center">
+  <img src="./docs/screenshots/hud.png" alt="CodePulse companion HUD" width="560" />
+</p>
+
+The optional HUD keeps the same project state, context, and quota data in a
+compact secondary-display surface. Agents working in the same project remain
+independent cards inside a subtle shared outline; waiting reminders use
+**Read**, while completed turns use **Done**. See the
+[HUD companion concept](docs/CodePulse/HUD-companion-concept.md) for its design
+contract. _(Sample data shown.)_
 
 ### Local analytics console
 
@@ -80,14 +94,16 @@ nothing is uploaded. _(Sample data shown.)_
 | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | 🚦 **Unified state machine**        | One turn lifecycle for every agent: idle → processing → tool running → waiting for permission/input → done / error / cancelled / stuck. |
 | 🧭 **Multi-agent, multi-workspace** | Concurrent Codex, Claude Code, Grok, and Kimi Code sessions stay separate, while project card order remains fixed across updates.       |
-| 🪟 **Adaptive panes**               | Only CLIs with active tasks or retained quota appear — from one pane up to four panes.                                                  |
-| 🪟 **HUD-first shell**              | A transparent, frameless, always-on-top surface prefers a secondary display and reveals attention without taking focus.                 |
+| 🪟 **Adaptive Dashboard panes**     | Only CLIs with active tasks or retained quota appear — from one pane up to four panes.                                                  |
+| 🎨 **Automatic Dashboard theme**    | Automatic mode uses light from 08:00–20:00 and dark overnight; light and dark can also be selected manually.                            |
+| 🪟 **Companion HUD form**           | The HUD prerelease adds a transparent, frameless, always-on-top surface without replacing the full Dashboard form.                      |
 | 🎨 **HUD appearance**               | Set panel opacity, automatic/light/dark appearance, and a steady, breathing, or pulse attention effect.                                 |
 | ⚙️ **Configurable CLI panels**      | The gear menu lets you show or hide each CLI panel without stopping background sync or HUD state updates.                               |
 | 🧠 **Model, depth, and timing**     | Stable model identity, thinking depth when available, and native CLI elapsed time remain visible across refreshes.                      |
 | 📈 **Context tracking**             | Context usage grows monotonically; small readback drops are ignored while confirmed compression is handled correctly.                   |
 | 🎟️ **Quota awareness**              | Last known quota stays visible; increases update immediately, while repeated lower reads confirm an official reset.                     |
-| 🟠 **Single-color attention**       | Neutral carries routine activity; orange is reserved for unread completion, explicit input/permission, and unread failure states.       |
+| 🔔 **Dashboard notifications**      | The stable Dashboard form keeps completion and likely-stuck desktop notifications with short, privacy-conscious summaries.              |
+| 🟠 **Durable HUD attention**        | The HUD form keeps routine work neutral and reserves orange for unread completion, explicit action, and unread failure states.          |
 | 🕰️ **Stuck detection**              | A watchdog flags turns with no activity so silent failures don't burn your afternoon.                                                   |
 | 💾 **Local history**                | Events, sessions, turns, and token snapshots persisted to SQLite — yours to query or delete.                                            |
 | 📊 **Local analytics console**      | SQLite rollups of tokens, coding time, projects, and dialogs — today / 7d / 30d, with day / week / month trends.                        |
@@ -133,9 +149,10 @@ What you get:
  POST /api/events ──► adapters ──► StatusHub (pure reducer + rule engine)
  (Fastify, loopback)   normalize        │
                                         ├─► SQLite (events / sessions / turns / tokens / workspaces)
-                                        ├─► neutral / orange tray cue
-                                        └─► WebSocket / IPC push ──► Companion HUD (React)
-                                                                  └─► Analytics (SQLite rollups)
+                                        ├─► tray / attention cue
+                                        ├─► desktop notification (Dashboard form)
+                                        └─► WebSocket / IPC push ──► Dashboard or companion HUD (React)
+                                                                  └─► Shared analytics (SQLite rollups)
 ```
 
 The repository is a `pnpm` workspace:
@@ -158,10 +175,17 @@ Fastify · better-sqlite3 · Drizzle ORM.
 
 ## Download
 
-> **HUD prerelease note:** HUD builds come from `hud-companion-concept` and use
-> `v*-hud.*` prerelease tags. They currently share the upstream app identity,
-> user data, hooks, and ports, so install them as an in-place experimental
-> replacement rather than side by side with stable CodePulse.
+Choose the presentation form that fits the screen where CodePulse will live:
+
+| Form           | Current release                                                                                | Best suited to                                                              |
+| -------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Live Dashboard | [v1.3.3 stable](https://github.com/noeigenstate/CodePulse/releases/tag/v1.3.3)                 | A full-size, information-dense console with adaptive agent panes.           |
+| Companion HUD  | [v1.4.0-hud.2 prerelease](https://github.com/noeigenstate/CodePulse/releases/tag/v1.4.0-hud.2) | A persistent secondary-display surface with durable, low-interruption cues. |
+
+> HUD builds come from `hud-companion-concept` and use `v*-hud.*` prerelease
+> tags. Both forms currently share the same app identity, user data, hooks, and
+> ports. Choose one installed form at a time; install the HUD as an in-place
+> experimental switch rather than beside the stable Dashboard.
 
 Download installers from
 [GitHub Releases](https://github.com/noeigenstate/CodePulse/releases):
@@ -257,10 +281,10 @@ launchctl setenv KIMI_CLI_PATH "$(which kimi)"
    - `PermissionRequest`
    - `PostToolUse`
    - `Stop`
-5. Run a Claude Code, Codex, Grok, or Kimi Code task. Only panes for CLIs that report
-   activity appear on the dashboard (adaptive layout).
-6. Use the gear button to set HUD opacity, automatic/light/dark appearance,
-   orange attention motion, and visible CLI panels.
+5. Run a Claude Code, Codex, Grok, or Kimi Code task. The installed real-time form
+   begins showing the matching project and usage data.
+6. In the Dashboard, use the gear button for theme and visible CLI panels. In the
+   HUD, it also controls panel opacity and orange attention motion.
 7. To review spend over time, open **Insights** in the top-right (see
    [Local analytics console](#local-analytics-console)).
 
@@ -277,6 +301,24 @@ up, or check the local API:
 curl http://127.0.0.1:17888/api/health
 curl http://127.0.0.1:17888/api/status
 ```
+
+## Dashboard tray and notifications
+
+The stable Dashboard form retains its familiar color-coded tray and selective
+desktop notifications:
+
+| Color     | Meaning                                     |
+| --------- | ------------------------------------------- |
+| ⚪ Grey   | All idle                                    |
+| 🔵 Blue   | A task is running                           |
+| 🟡 Yellow | Waiting for permission or input — needs you |
+| 🟢 Green  | A turn finished, unread                     |
+| 🔴 Red    | An error                                    |
+| 🟠 Orange | Suspected stuck                             |
+
+Dashboard notifications are throttled and deduplicated. Completion uses the
+project name and a short, cleaned prompt summary; mute silences notification
+sound for 30 minutes.
 
 ## HUD attention language
 

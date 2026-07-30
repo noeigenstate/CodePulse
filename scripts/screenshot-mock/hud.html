@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CodePulse HUD Mock</title>
+    <style>
+      :root {
+        --ink: #17191d;
+        --muted: #626872;
+        --line: rgba(20, 24, 30, 0.18);
+        --panel: rgba(239, 242, 244, 0.83);
+        --card: rgba(247, 248, 249, 0.7);
+        --orange: #f07818;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        min-height: 100%;
+        margin: 0;
+        overflow: hidden;
+        color: var(--ink);
+        font-family:
+          Inter,
+          'Segoe UI',
+          system-ui,
+          -apple-system,
+          'PingFang SC',
+          'Microsoft YaHei',
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      body {
+        min-height: 548px;
+        padding: 9px;
+        background:
+          radial-gradient(circle at 30% -4%, rgba(255, 255, 255, 0.96) 0 12%, transparent 32%),
+          radial-gradient(circle at 82% 9%, rgba(77, 145, 187, 0.72) 0 8%, transparent 29%),
+          linear-gradient(148deg, #e8edf0 0 24%, #9ec0d4 45%, #d6c3a4 72%, #87745f 100%);
+      }
+
+      body::before,
+      body::after {
+        content: '';
+        position: fixed;
+        pointer-events: none;
+        filter: blur(18px);
+        opacity: 0.8;
+      }
+
+      body::before {
+        inset: 18px 42% 54% -12%;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.82);
+      }
+
+      body::after {
+        inset: 66% -10% -16% 56%;
+        background: #6f6154;
+        transform: rotate(-12deg);
+      }
+
+      .hud {
+        position: relative;
+        z-index: 1;
+        width: 100%;
+        min-height: 530px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.72);
+        border-radius: 12px;
+        background: var(--panel);
+        box-shadow:
+          0 20px 50px rgba(18, 25, 31, 0.2),
+          inset 0 0 0 1px rgba(19, 25, 30, 0.12);
+        backdrop-filter: blur(22px) saturate(0.82);
+      }
+
+      .hud-header {
+        height: 58px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 16px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .brand,
+      .edition {
+        display: flex;
+        align-items: center;
+      }
+
+      .brand {
+        gap: 10px;
+        font-family: Georgia, 'Times New Roman', serif;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+      }
+
+      .brand-mark {
+        position: relative;
+        width: 18px;
+        height: 12px;
+      }
+
+      .brand-mark::before,
+      .brand-mark::after {
+        content: '';
+        position: absolute;
+        left: 1px;
+        height: 2px;
+        border-radius: 2px;
+        background: #111;
+        transform-origin: left center;
+      }
+
+      .brand-mark::before {
+        top: 7px;
+        width: 16px;
+        transform: rotate(2deg);
+      }
+
+      .brand-mark::after {
+        top: 4px;
+        width: 9px;
+        transform: rotate(-62deg);
+      }
+
+      .edition {
+        height: 25px;
+        padding: 0 9px;
+        border: 1px solid rgba(20, 24, 30, 0.16);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.42);
+        color: #555b63;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.09em;
+      }
+
+      .deck {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 6px 10px;
+      }
+
+      .group {
+        overflow: hidden;
+        border-radius: 10px;
+        background: var(--card);
+        box-shadow: 0 5px 15px rgba(20, 25, 30, 0.06);
+      }
+
+      .group.multi {
+        border: 1px solid rgba(25, 29, 34, 0.25);
+      }
+
+      .group.single {
+        border: 1px solid rgba(25, 29, 34, 0.14);
+      }
+
+      .card {
+        min-height: 96px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 105px 90px 64px;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 10px 9px 14px;
+      }
+
+      .card + .card {
+        border-top: 1px solid var(--line);
+      }
+
+      .identity {
+        align-self: stretch;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+
+      .agent {
+        margin-bottom: 5px;
+        color: #666c74;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+      }
+
+      .project {
+        overflow: hidden;
+        margin-bottom: 4px;
+        font-size: 18px;
+        font-weight: 740;
+        line-height: 1.12;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .path {
+        overflow: hidden;
+        color: #797f87;
+        font-size: 9px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .state {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        color: #565c65;
+        font-size: 12px;
+        font-weight: 650;
+        white-space: nowrap;
+      }
+
+      .state::before {
+        content: '';
+        width: 7px;
+        height: 7px;
+        flex: 0 0 auto;
+        border-radius: 50%;
+        background: #9aa0a8;
+      }
+
+      .state.active::before {
+        background: #17191d;
+      }
+
+      .state.attention {
+        color: #9b4d0c;
+      }
+
+      .state.attention::before {
+        background: var(--orange);
+        box-shadow: 0 0 0 3px rgba(240, 120, 24, 0.13);
+      }
+
+      .metrics {
+        min-width: 0;
+        color: #59606a;
+        font-size: 9px;
+        line-height: 1.55;
+        text-align: right;
+        white-space: nowrap;
+      }
+
+      .card.no-action {
+        grid-template-columns: minmax(0, 1fr) 105px 112px;
+      }
+
+      .ack {
+        width: 56px;
+        height: 58px;
+        display: grid;
+        place-items: center;
+        justify-self: end;
+        border: 1px solid rgba(0, 0, 0, 0.34);
+        border-radius: 7px;
+        background: #292725;
+        box-shadow: 0 5px 13px rgba(0, 0, 0, 0.18);
+        color: #ff7a00;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .usage {
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        gap: 13px;
+        padding: 0 14px;
+        border-top: 1px solid var(--line);
+        color: #5d636b;
+        font-size: 9px;
+        white-space: nowrap;
+      }
+
+      .usage strong {
+        color: #1f2226;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+      }
+
+      .usage span {
+        min-width: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="hud">
+      <header class="hud-header">
+        <div class="brand"><span class="brand-mark"></span><span>CODEPULSE</span></div>
+        <div class="edition">HUD · v1.4</div>
+      </header>
+
+      <section class="deck">
+        <div class="group multi">
+          <article class="card no-action">
+            <div class="identity">
+              <div class="agent">CLAUDE</div>
+              <div class="project">atlas</div>
+              <div class="path">D:\work\atlas</div>
+            </div>
+            <div class="state" data-i18n="idle">Idle</div>
+            <div class="metrics">
+              <div data-i18n="timeLong">18m 34s</div>
+              <div>52% (524.9k/1M)</div>
+            </div>
+          </article>
+          <article class="card no-action">
+            <div class="identity">
+              <div class="agent">CODEX</div>
+              <div class="project">atlas</div>
+              <div class="path">D:\work\atlas</div>
+            </div>
+            <div class="state active" data-i18n="toolRunning">Running tool</div>
+            <div class="metrics">
+              <div data-i18n="timeShort">19s</div>
+              <div>22% (56.4k/258.4k)</div>
+            </div>
+          </article>
+        </div>
+
+        <div class="group single">
+          <article class="card">
+            <div class="identity">
+              <div class="agent">KIMI</div>
+              <div class="project">notebook</div>
+              <div class="path">D:\work\notebook</div>
+            </div>
+            <div class="state attention" data-i18n="waiting">Awaiting input</div>
+            <div class="metrics">
+              <div data-i18n="justNow">Just now</div>
+              <div>61% (122k/200k)</div>
+            </div>
+            <div class="ack" data-i18n="read">Read</div>
+          </article>
+        </div>
+
+        <div class="group single">
+          <article class="card">
+            <div class="identity">
+              <div class="agent">CODEX</div>
+              <div class="project">CodePulse</div>
+              <div class="path">D:\work\CodePulse</div>
+            </div>
+            <div class="state attention" data-i18n="doneState">Done</div>
+            <div class="metrics">
+              <div data-i18n="timeDone">58m 11s</div>
+              <div>49% (125.7k/258.4k)</div>
+            </div>
+            <div class="ack" data-i18n="doneAction">Done</div>
+          </article>
+        </div>
+      </section>
+
+      <footer class="usage">
+        <strong data-i18n="usage">USAGE</strong>
+        <span>CLAUDE <span data-i18n="fiveHour">5h</span> 0% · 7d 100%</span>
+        <span>CODEX 38%</span>
+        <span>GROK 18%</span>
+        <span>KIMI <span data-i18n="fiveHour">5h</span> 70% · 7d 20%</span>
+      </footer>
+    </main>
+
+    <script>
+      const zh = new URLSearchParams(location.search).get('lang') === 'zh'
+      const copy = {
+        idle: ['Idle', '空闲'],
+        timeLong: ['18m 34s', '18 分 34 秒'],
+        toolRunning: ['Running tool', '执行工具'],
+        timeShort: ['19s', '19 秒'],
+        waiting: ['Awaiting input', '等待输入'],
+        justNow: ['Just now', '刚刚'],
+        read: ['Read', '已读'],
+        doneState: ['Done', '已完成'],
+        timeDone: ['58m 11s', '58 分 11 秒'],
+        doneAction: ['Done', '完成'],
+        usage: ['USAGE', '用量'],
+        fiveHour: ['5h', '5小时'],
+      }
+
+      document.documentElement.lang = zh ? 'zh-CN' : 'en'
+      document.querySelectorAll('[data-i18n]').forEach((node) => {
+        const value = copy[node.dataset.i18n]
+        if (value) node.textContent = value[zh ? 1 : 0]
+      })
+    </script>
+  </body>
+</html>

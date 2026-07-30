@@ -36,6 +36,8 @@ if (!chrome) {
 const shots = [
   { html: 'dashboard.html', query: 'lang=zh', out: 'dashboard-zh.png', w: 1440, h: 900 },
   { html: 'dashboard.html', query: 'lang=en', out: 'dashboard.png', w: 1440, h: 900 },
+  { html: 'hud.html', query: 'lang=zh', out: 'hud-zh.png', w: 560, h: 548 },
+  { html: 'hud.html', query: 'lang=en', out: 'hud.png', w: 560, h: 548 },
   { html: 'stats.html', query: 'lang=zh', out: 'stats-zh.png', w: 1440, h: 1100 },
   { html: 'stats.html', query: 'lang=en', out: 'stats.png', w: 1440, h: 1100 },
 ]

@@ -48,7 +48,7 @@ CodePulse isn't running — your agents are never blocked or slowed down.
 ## Screenshots
 
 > The checked-in screenshots show the upstream v1.3.3 baseline. The current
-> experimental build is **HUD v1.4.0-hud.1**; its behavior and design contract
+> experimental build is **HUD v1.4.0-hud.2**; its behavior and design contract
 > are recorded in [HUD companion concept](docs/CodePulse/HUD-companion-concept.md).
 
 ### Live console
@@ -158,10 +158,10 @@ Fastify · better-sqlite3 · Drizzle ORM.
 
 ## Download
 
-> **HUD concept note:** the installers below are upstream CodePulse releases and
-> do **not** contain this HUD branch. The HUD currently runs only from source on
-> `codex/hud-companion-concept`; do not publish a derived installer until the app
-> identity, updater, user-data, hooks, and ports are isolated as documented.
+> **HUD prerelease note:** HUD builds come from `hud-companion-concept` and use
+> `v*-hud.*` prerelease tags. They currently share the upstream app identity,
+> user data, hooks, and ports, so install them as an in-place experimental
+> replacement rather than side by side with stable CodePulse.
 
 Download installers from
 [GitHub Releases](https://github.com/noeigenstate/CodePulse/releases):

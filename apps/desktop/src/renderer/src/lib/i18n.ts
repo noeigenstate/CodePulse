@@ -25,6 +25,7 @@ export interface UiCopy {
   waitingQuota: string
   read: string
   readAll: string
+  complete: string
   attentionRailTitle: string
   attentionRailHint: string
   contextWindow: string
@@ -312,6 +313,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
     waitingQuota: '等待命令行同步额度',
     read: '已读',
     readAll: '全部已读',
+    complete: '完成',
     attentionRailTitle: '需要查看',
     attentionRailHint: '橙色项目不会被分栏、后台或隐藏偏好遮住',
     contextWindow: '上下文窗口：',
@@ -406,8 +408,8 @@ const UI_COPY: Record<Locale, UiCopy> = {
       projectLayoutList: '单列排序',
       usageStrip: '显示底部用量行',
       usageStripHint: '保留 CLI 配额摘要，但不重新建立 Claude、Codex 或 Grok 分区。',
-      resultRetention: '结果卡片停留时长',
-      resultRetentionHint: '已读或状态变更后，完成、卡住等结果卡片继续停留的时长。',
+      resultRetention: '项目卡片停留时长',
+      resultRetentionHint: '空闲、已取消或已读结果卡片在 HUD 中继续停留的时长。',
       resultRetentionOptions: [
         { minutes: 10, label: '10 分钟' },
         { minutes: 30, label: '30 分钟' },
@@ -554,6 +556,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
     waitingQuota: 'Waiting for CLI quota sync',
     read: 'Read',
     readAll: 'Read all',
+    complete: 'Done',
     attentionRailTitle: 'Needs attention',
     attentionRailHint: 'Orange projects stay visible across panels, insights, and hidden tools',
     contextWindow: 'Context window:',
@@ -650,9 +653,9 @@ const UI_COPY: Record<Locale, UiCopy> = {
       projectLayoutList: 'Sorted column',
       usageStrip: 'Show usage strip',
       usageStripHint: 'Keep quota summaries without recreating Claude, Codex, or Grok sections.',
-      resultRetention: 'Result card retention',
+      resultRetention: 'Project card retention',
       resultRetentionHint:
-        'How long finished, stuck, or limited result cards stay after you acknowledge them.',
+        'How long idle, cancelled, or acknowledged result cards remain in the HUD.',
       resultRetentionOptions: [
         { minutes: 10, label: '10 min' },
         { minutes: 30, label: '30 min' },
@@ -882,6 +885,19 @@ export function overallLabel(overall: OverallState, locale: Locale): string {
 
 export function turnStateLabel(state: TurnState, locale: Locale): string {
   return TURN_STATE_LABELS[locale][state] ?? state
+}
+
+/**
+ * Gives completion a distinct acknowledgement label while live intervention
+ * states keep the familiar read action.
+ */
+export function acknowledgementLabel(
+  state: TurnState,
+  hasWorkspace: boolean,
+  copy: Pick<UiCopy, 'read' | 'readAll' | 'complete'>,
+): string {
+  if (state === TurnState.DONE) return copy.complete
+  return hasWorkspace ? copy.read : copy.readAll
 }
 
 /**

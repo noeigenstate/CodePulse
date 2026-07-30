@@ -28,11 +28,9 @@ import {
 } from '../rule-engine/index.js'
 
 const WAITING_STALE_MS = 30 * 60_000
-const IDLE_RETENTION_MS = 5 * 60_000
-const CANCELLED_RETENTION_MS = 5 * 60_000
-/** 结果态(DONE / ERROR / TIMEOUT / USAGE_LIMITED)卡片的默认保留时长。 */
+/** 非活动项目卡片的默认保留时长。 */
 const DEFAULT_RESULT_RETENTION_MS = 30 * 60_000
-/** 结果态保留时长的下限，避免配置值把卡片立刻剪掉。 */
+/** 卡片保留时长的下限，避免配置值把卡片立刻剪掉。 */
 const MIN_RESULT_RETENTION_MS = 60_000
 
 /**
@@ -66,7 +64,7 @@ export class StatusHub extends EventEmitter {
   private readonly usageStability = new UsageStabilityRegistry()
   /** 无活动看门狗定时器句柄（运行中时存在）。 */
   private tickTimer?: NodeJS.Timeout
-  /** 已读结果态卡片的保留时长（毫秒），可由桌面端设置调整。 */
+  /** 非活动项目卡片的保留时长（毫秒），可由桌面端设置调整。 */
   private resultRetentionMs = DEFAULT_RESULT_RETENTION_MS
 
   /**
@@ -129,8 +127,9 @@ export class StatusHub extends EventEmitter {
   }
 
   /**
-   * 把 agent 最近的终结结果标记为已确认，清除托盘「未读」标记。
-   * 若没有未读内容则为空操作。
+   * 把 agent 当前提醒标记为已确认，清除托盘「未读」标记。
+   * 对等待授权/输入的活动态，这不会伪造状态变化；卡片仍保持 action
+   * 语义，直到 CLI 真正恢复执行。若没有未读内容则为空操作。
    *
    * @param agentType 要确认的 agent。
    */
@@ -161,8 +160,9 @@ export class StatusHub extends EventEmitter {
   }
 
   /**
-   * 调整结果态（DONE / ERROR / TIMEOUT / USAGE_LIMITED）卡片在已读后的保留时长。
-   * IDLE / CANCELLED 等安静终态不受影响，仍按各自的短周期清理。
+   * 调整非活动项目卡片的保留时长。
+   * 该设置同时覆盖 IDLE / CANCELLED 与已读结果态，避免同一个设置
+   * 因终态不同而表现为 5 分钟或用户选择的时长。
    *
    * @param ms 期望的保留时长（毫秒）；非法值忽略，过小值钳制到下限。
    */
@@ -317,11 +317,11 @@ export class StatusHub extends EventEmitter {
     return retentionMs != null && now - terminalAt >= retentionMs
   }
 
-  /** 各终态的保留时长；结果态使用可配置的 {@link resultRetentionMs}。 */
+  /** 所有可清理终态统一使用用户配置的卡片保留时长。 */
   private stateRetentionMs(state: TurnState): number | undefined {
-    if (state === TurnState.IDLE) return IDLE_RETENTION_MS
-    if (state === TurnState.CANCELLED) return CANCELLED_RETENTION_MS
     if (
+      state === TurnState.IDLE ||
+      state === TurnState.CANCELLED ||
       state === TurnState.DONE ||
       state === TurnState.TIMEOUT ||
       state === TurnState.ERROR ||

@@ -5,9 +5,9 @@
  * @module hooks/bin/kimi-hook
  */
 import { readLatestKimiUsage } from '../lib/kimi-usage.js'
-import { postEvent, readStdinJson } from '../lib/post.js'
+import { postEvent, readStdinJson, withAgentSource } from '../lib/post.js'
 
 const raw = await readStdinJson()
 const usage = await readLatestKimiUsage(raw)
-await postEvent({ ...raw, ...usage, source: 'kimi' })
+await postEvent(withAgentSource('kimi', raw, usage))
 process.exit(0)

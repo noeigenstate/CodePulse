@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { postEvent } from '../packages/hooks/lib/post.js'
+import { postEvent, withAgentSource } from '../packages/hooks/lib/post.js'
 
 const originalFetch = globalThis.fetch
 const originalCodePulseUrl = process.env.CODEPULSE_URL
@@ -13,6 +13,28 @@ function restoreGlobals() {
     process.env.CODEPULSE_URL = originalCodePulseUrl
   }
 }
+
+test('withAgentSource keeps the CLI provider when SessionStart carries a native source', () => {
+  assert.deepEqual(
+    withAgentSource(
+      'codex',
+      {
+        source: 'startup',
+        hook_event_name: 'SessionStart',
+        session_id: 'session-before-prompt',
+        cwd: 'E:/project/open-codex',
+      },
+      { context_window_size: 256_000 },
+    ),
+    {
+      source: 'codex',
+      hook_event_name: 'SessionStart',
+      session_id: 'session-before-prompt',
+      cwd: 'E:/project/open-codex',
+      context_window_size: 256_000,
+    },
+  )
+})
 
 test('postEvent retries once after a transient delivery failure', async (t) => {
   t.after(restoreGlobals)

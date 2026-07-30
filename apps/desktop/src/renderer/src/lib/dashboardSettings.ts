@@ -28,10 +28,10 @@ export type HudAttentionEffect = 'steady' | 'breathe' | 'pulse'
 /** Project-first HUD arrangement. List is the focused default; grid remains optional. */
 export type HudProjectLayout = 'grid' | 'list'
 
-/** Selectable retention durations for acknowledged result cards, in minutes. */
+/** Selectable retention durations for inactive project cards, in minutes. */
 export const RESULT_RETENTION_OPTIONS_MINUTES = [10, 30, 60, 120, 240] as const
 
-/** Default minutes an acknowledged result card stays before the hub prunes it. */
+/** Default minutes an inactive project card stays before the hub prunes it. */
 export const DEFAULT_RESULT_RETENTION_MINUTES = 30
 
 /** Persisted display-only preferences for the desktop dashboard. */
@@ -42,7 +42,7 @@ export interface DashboardSettings {
   attentionEffect: HudAttentionEffect
   projectLayout: HudProjectLayout
   showUsageStrip: boolean
-  /** Minutes an acknowledged DONE/ERROR/TIMEOUT/USAGE_LIMITED card stays on the HUD. */
+  /** Minutes an inactive or acknowledged project card stays on the HUD. */
   resultRetentionMinutes: number
   visibleTools: Record<CliToolType, boolean>
 }

@@ -1249,6 +1249,36 @@ test('StatusHub applies a custom result retention after acknowledgement', () => 
   assert.equal(hub.snapshot(finishedAt + 2 * 60_000).agents.length, 0)
 })
 
+test('StatusHub applies the selected card retention to idle and cancelled projects', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const retentionMs = 60 * 60_000
+  const terminalAt = 1_000_000
+  hub.setResultRetentionMs(retentionMs)
+
+  hub.ingest({
+    id: 'idle-session',
+    source: 'claude_code',
+    eventType: 'session_start',
+    externalSessionId: 'idle-session',
+    cwd: 'E:/project/idle',
+    timestamp: terminalAt,
+  })
+  hub.ingest({
+    id: 'cancelled-turn',
+    source: 'codex',
+    eventType: 'turn_cancelled',
+    externalSessionId: 'cancelled-session',
+    cwd: 'E:/project/cancelled',
+    timestamp: terminalAt,
+  })
+  ;(hub as unknown as { tick(now?: number): void }).tick(terminalAt + 5 * 60_000)
+  assert.equal(hub.snapshot(terminalAt + 5 * 60_000).agents.length, 2)
+  ;(hub as unknown as { tick(now?: number): void }).tick(terminalAt + retentionMs - 1)
+  assert.equal(hub.snapshot(terminalAt + retentionMs - 1).agents.length, 2)
+  ;(hub as unknown as { tick(now?: number): void }).tick(terminalAt + retentionMs)
+  assert.equal(hub.snapshot(terminalAt + retentionMs).agents.length, 0)
+})
+
 test('StatusHub clamps result retention to a one-minute floor and ignores invalid values', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   hub.setResultRetentionMs(Number.NaN)
@@ -1320,11 +1350,11 @@ test('StatusHub keeps an unread completion visible when SessionEnd follows Stop'
   assert.equal(snapshot.agents.length, 0)
 })
 
-test('StatusHub removes idle projects after five minutes', () => {
+test('StatusHub applies the default 30-minute retention to idle projects', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const startedAt = 1_000_000
   const idleAt = startedAt + 1_000
-  const idleRetentionMs = 5 * 60_000
+  const idleRetentionMs = 30 * 60_000
 
   hub.ingest({
     id: 'start',
@@ -1350,8 +1380,9 @@ test('StatusHub removes idle projects after five minutes', () => {
 
 test('StatusHub idle retention is not extended by quota-only sessionSync snapshots', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
+  hub.setResultRetentionMs(10 * 60_000)
   const startedAt = 1_000_000
-  const idleRetentionMs = 5 * 60_000
+  const idleRetentionMs = 10 * 60_000
 
   hub.ingest({
     id: 'start',
@@ -1399,14 +1430,14 @@ test('StatusHub idle retention is not extended by quota-only sessionSync snapsho
   assert.equal(
     hub.snapshot(idleAnchor + idleRetentionMs - 1).agents.some((a) => !a.taskHidden),
     true,
-    'still visible just before 5 minutes',
+    'still visible just before the selected retention duration',
   )
   ;(hub as unknown as { tick(now?: number): void }).tick(idleAnchor + idleRetentionMs)
   const agents = hub
     .snapshot(idleAnchor + idleRetentionMs)
     .agents.filter((a) => a.agentType === 'codex')
   const visible = agents.filter((a) => !a.taskHidden)
-  assert.equal(visible.length, 0, 'idle project must be pruned after 5 minutes')
+  assert.equal(visible.length, 0, 'idle project must be pruned after the selected duration')
   // Quota shell may remain as taskHidden when rate limits are retained.
   assert.ok(
     agents.length === 0 || agents.every((a) => a.taskHidden),
@@ -1416,10 +1447,11 @@ test('StatusHub idle retention is not extended by quota-only sessionSync snapsho
 
 test('StatusHub keeps quota visible after removing idle project rows', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
+  hub.setResultRetentionMs(10 * 60_000)
   const startedAt = 1_000_000
   const tokenAt = startedAt + 500
   const idleAt = startedAt + 1_000
-  const idleRetentionMs = 5 * 60_000
+  const idleRetentionMs = 10 * 60_000
 
   hub.ingest({
     id: 'start',
@@ -1598,6 +1630,84 @@ test('StatusHub keeps permission waits from being marked TIMEOUT by the watchdog
     notifications.some((notification) => notification.dedupeKey.startsWith('stuck:')),
     false,
   )
+})
+
+test('StatusHub keeps acknowledged permission waits actionable until work resumes', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0, permissionThrottleMs: 0 })
+  const startedAt = 1_000_000
+
+  hub.ingest({
+    id: 'permission',
+    source: 'codex',
+    eventType: 'permission_request',
+    externalSessionId: 'permission-session',
+    externalTurnId: 'permission-turn',
+    cwd: 'E:/project/permission',
+    message: 'waiting for permission',
+    timestamp: startedAt,
+  })
+
+  let codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.state, TurnState.WAITING_PERMISSION)
+  assert.equal(codex?.unread, true)
+  assert.equal(hub.snapshot().overall, 'attention')
+
+  hub.acknowledge('codex', 'E:/project/permission')
+  codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.unread, false)
+  assert.equal(codex?.state, TurnState.WAITING_PERMISSION)
+  assert.equal(hub.snapshot().overall, 'attention')
+})
+
+test('StatusHub clears a permission reminder when Codex resumes and creates a new completion', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0, permissionThrottleMs: 0 })
+  const startedAt = 1_000_000
+  const base = {
+    source: 'codex' as const,
+    externalSessionId: 'permission-session',
+    externalTurnId: 'permission-turn',
+    cwd: 'E:/project/permission',
+  }
+
+  hub.ingest({
+    ...base,
+    id: 'permission',
+    eventType: 'permission_request',
+    message: 'waiting for permission',
+    timestamp: startedAt,
+  })
+  hub.ingest({
+    ...base,
+    id: 'tool-start',
+    eventType: 'tool_start',
+    toolName: 'shell',
+    timestamp: startedAt + 1_000,
+  })
+
+  let codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.state, TurnState.TOOL_RUNNING)
+  assert.equal(codex?.needPermission, false)
+  assert.equal(codex?.unread, false)
+
+  hub.ingest({
+    ...base,
+    id: 'tool-end',
+    eventType: 'tool_end',
+    timestamp: startedAt + 2_000,
+  })
+  codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.state, TurnState.THINKING)
+  assert.equal(codex?.unread, false)
+
+  hub.ingest({
+    ...base,
+    id: 'stop',
+    eventType: 'turn_stop',
+    timestamp: startedAt + 3_000,
+  })
+  codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.state, TurnState.DONE)
+  assert.equal(codex?.unread, true)
 })
 
 test('StatusHub keeps user-input waits from being marked TIMEOUT by the watchdog', () => {

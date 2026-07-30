@@ -78,6 +78,7 @@ import {
   type ThemePreference,
 } from './lib/dashboardSettings.js'
 import {
+  acknowledgementLabel,
   formatThinkingDepth,
   nextLocale,
   readStoredLocale,
@@ -429,6 +430,11 @@ function HudAttentionRail({
             const agent = item.agent
             const level = hudStateLevel(agent)
             const message = hudAttentionSummary(agent)
+            const acknowledgement = acknowledgementLabel(
+              agent.state,
+              Boolean(item.workspacePath),
+              copy,
+            )
             return (
               <article
                 className="hud-attention-item"
@@ -448,14 +454,12 @@ function HudAttentionRail({
                   <p className="hud-attention-summary">{message}</p>
                   {agent.unread ? (
                     <button
-                      aria-label={`${item.workspacePath ? copy.read : copy.readAll} ${
-                        item.name || copy.unknownProject
-                      }`}
+                      aria-label={`${acknowledgement} ${item.name || copy.unknownProject}`}
                       className="hud-ack-button status-badge shrink-0"
                       onClick={() => onAck(panel.agentType, item.workspacePath)}
                       type="button"
                     >
-                      {item.workspacePath ? copy.read : copy.readAll}
+                      {acknowledgement}
                     </button>
                   ) : null}
                 </div>
@@ -1355,7 +1359,7 @@ const ProjectTile = memo(function ProjectTile({
             </span>
             {agent.unread && (
               <button onClick={onAck} className="hud-ack-button status-badge">
-                {item.workspacePath ? copy.read : copy.readAll}
+                {acknowledgementLabel(agent.state, Boolean(item.workspacePath), copy)}
               </button>
             )}
           </div>

@@ -41,7 +41,7 @@ AI 编程代理很擅长无人值守地干活，却不擅长在需要你时提�
 
 ## 软件截图
 
-> 当前仓库截图仍是上游 v1.3.3 基线；当前实验安装版为 **HUD v1.4.0-hud.1**，
+> 当前仓库截图仍是上游 v1.3.3 基线；当前实验安装版为 **HUD v1.4.0-hud.2**，
 > 行为和设计契约见 [HUD 副驾概念说明](docs/CodePulse/HUD-companion-concept.md)。
 
 ### 实时控制台
@@ -139,9 +139,9 @@ Fastify · better-sqlite3 · Drizzle ORM。
 
 ## 下载
 
-> **HUD 概念说明：** 下方安装包来自上游 CodePulse Release，**不包含**本 HUD 分支。
-> HUD 目前只在 `codex/hud-companion-concept` 源码分支中本地运行；完成应用身份、更新源、
-> userData、hook 和端口隔离前，不应发布派生安装包。
+> **HUD 预发布说明：** HUD 安装版来自 `hud-companion-concept` 分支，并使用
+> `v*-hud.*` 预发布标签。它目前与稳定版共享应用身份、userData、hook 和端口，因此应作为
+> 原位实验升级安装，不要与稳定版并行安装。
 
 从 [GitHub Releases](https://github.com/noeigenstate/CodePulse/releases)
 下载安装包：

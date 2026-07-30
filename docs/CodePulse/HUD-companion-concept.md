@@ -6,7 +6,7 @@
 | ------------ | ---------------------------------------- |
 | 性质         | 实验性派生设计，不替代上游正式产品定位   |
 | 代码基线     | CodePulse `v1.3.3` / `a5d0c00`           |
-| 当前版本     | HUD 预发布版 `v1.4.0-hud.1`              |
+| 当前版本     | HUD 预发布版 `v1.4.0-hud.2`              |
 | 工作分支     | `hud-companion-concept`                  |
 | 设计参照     | GroundControl `e69c07a`                  |
 | 主要目标     | 把桌面端从“被呼出的面板”转为常驻副驾 HUD |
@@ -100,6 +100,12 @@ GroundControl 的项目元数据与 README 也声明 MIT。若以后开始复制
 3. 新一轮任务也可以替换上一轮终结状态；
 4. 明确的授权/输入等待始终属于 `action`，不依赖“未读”标志。
 
+HUD 设置中的“项目卡片停留时长”统一适用于空闲、已取消和已读结果卡片，不再因项目最终
+落入不同状态而暗中切换为固定 5 分钟。
+
+等待授权或输入时，“已读”只确认用户看到了提醒，不会把仍在等待的卡片伪装成普通状态；
+CLI 恢复执行后该按钮自动消失。成功终结的未读卡片使用“完成”按钮，与中间态明确区分。
+
 因此，“橙色还在”具有稳定含义：用户尚未处理，或任务仍在等用户。它不是一次已经错过的
 系统弹窗。托盘只聚合成中性 / 橙色两档，不重新创造另一套颜色语言。
 
@@ -147,7 +153,7 @@ git remote -v
 git remote rename origin upstream
 git remote add origin <your-fork-url>
 git fetch --all --prune
-git push -u origin codex/hud-companion-concept
+git push -u origin hud-companion-concept
 ```
 
 在 fork 建好之前不要提前重命名，也不要把概念分支推向没有写权限或并不属于自己的上游。

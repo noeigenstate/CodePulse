@@ -38,7 +38,7 @@ const api = {
   /** Reports the project stack's natural height so the transparent HUD can fit it. */
   setHudContentHeight: (height: number): Promise<boolean> =>
     ipcRenderer.invoke('codepulse:set-hud-content-height', height),
-  /** Sends the acknowledged-result retention preference to the main-process hub. */
+  /** Sends the inactive-project retention preference to the main-process hub. */
   setResultRetentionMinutes: (minutes: number): Promise<boolean> =>
     ipcRenderer.invoke('codepulse:set-result-retention', minutes),
   /** Opens a normal, non-HUD settings BrowserWindow. */

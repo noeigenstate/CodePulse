@@ -9,8 +9,8 @@
  *
  * @module hooks/bin/claude-hook
  */
-import { readStdinJson, postEvent } from '../lib/post.js'
+import { readStdinJson, postEvent, withAgentSource } from '../lib/post.js'
 
 const data = await readStdinJson()
-await postEvent({ source: 'claude_code', ...data })
+await postEvent(withAgentSource('claude_code', data))
 process.exit(0)

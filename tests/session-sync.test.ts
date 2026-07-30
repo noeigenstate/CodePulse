@@ -2216,6 +2216,46 @@ test('SessionSyncService hydrates Kimi model, effort, context, and native timing
   }
 })
 
+test('SessionSyncService publishes Kimi account quota before the CLI starts', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-kimi-quota-only-')
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  let quotaReads = 0
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: join(home, 'no-codex'),
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    kimiHome: join(home, 'no-kimi'),
+    kimiProcessAlive: () => false,
+    kimiQuotaResolver: async () => {
+      quotaReads += 1
+      return {
+        rateLimits: {
+          fiveHour: { usedPercent: 12, resetsAt: 1_800_000_000, windowMinutes: 300 },
+          sevenDay: { usedPercent: 34, resetsAt: 1_800_604_800, windowMinutes: 10_080 },
+        },
+        updatedAt: Date.now(),
+        source: 'cache',
+      }
+    },
+    disableWatch: true,
+  })
+
+  try {
+    await sync.syncNow(['kimi'])
+    const kimi = hub.snapshot().agents.find((agent) => agent.agentType === 'kimi')
+    assert.equal(quotaReads, 1)
+    assert.ok(kimi)
+    assert.equal(kimi?.workspacePath, undefined)
+    assert.equal(kimi?.token?.rateLimits?.fiveHour?.usedPercent, 12)
+    assert.equal(kimi?.token?.rateLimits?.sevenDay?.usedPercent, 34)
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
 test('SessionSyncService does not treat a Kimi step.end as whole-turn completion', async () => {
   const home = await mkdtempJoin('codepulse-session-sync-kimi-step-')
   const sessionId = 'session_kimi_multi_step'

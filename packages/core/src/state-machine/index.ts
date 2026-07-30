@@ -114,7 +114,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
     if (event.eventType !== 'token_snapshot') next.taskHidden = false
     else if (event.internal?.sessionSync) {
       next.taskHidden = false
-      // Disk activity while still IDLE restarts the 5-minute idle retention clock.
+      // Disk activity while still IDLE restarts the configured retention clock.
       if (next.state === TurnState.IDLE) next.terminalAt = event.timestamp
     }
   }
@@ -125,7 +125,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       if (isActiveState(current.state) || current.state === TurnState.TIMEOUT) break
       next.state = TurnState.IDLE
       next.unread = false
-      // Count idle retention from first sighting so disk-hydrated cards expire in 5 min.
+      // Count configured card retention from first sighting.
       next.terminalAt = event.timestamp
       if (!hasContextSnapshot(event.token)) next.token = markContextStale(next.token)
       reconcileSynchronizedTimingLifecycle(current, next, event, acceptedTurnTiming)
@@ -152,6 +152,11 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       next.state = TurnState.TOOL_RUNNING
       next.toolName = event.toolName
       next.toolCallCount = current.toolCallCount + 1
+      // A tool starting proves the prior permission/input wait was handled.
+      // Do not carry its acknowledgement affordance into active work.
+      next.needPermission = false
+      next.needUserInput = false
+      next.unread = false
       next.terminalAt = undefined
       next.activity = describeTool(event)
       break
@@ -160,6 +165,9 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       // 回到思考状态，直到下一个信号；保持轮次存活。
       next.state = TurnState.THINKING
       next.toolName = undefined
+      next.needPermission = false
+      next.needUserInput = false
+      next.unread = false
       next.terminalAt = undefined
       next.activity = 'AI 正在生成响应'
       break
@@ -167,13 +175,19 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
     case 'permission_request':
       next.state = TurnState.WAITING_PERMISSION
       next.needPermission = true
+      next.needUserInput = false
+      // Waiting is acknowledgeable, but remains an actionable orange state
+      // even after acknowledgement until the CLI actually resumes.
+      next.unread = true
       next.terminalAt = undefined
       next.activity = event.message ?? describeTool(event) ?? '等待用户授权'
       break
 
     case 'user_input_required':
       next.state = TurnState.WAITING_USER_INPUT
+      next.needPermission = false
       next.needUserInput = true
+      next.unread = true
       next.terminalAt = undefined
       next.activity = event.message ?? '等待用户继续输入'
       break
@@ -262,7 +276,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       if (!preserveUnreadResult) {
         next.activity = undefined
         next.unread = false
-        // Start the 5-minute idle retention clock when the session ends.
+        // Start the configured card-retention clock when the session ends.
         next.terminalAt = event.timestamp
       }
       if (!hasContextSnapshot(event.token)) next.token = markContextStale(next.token)

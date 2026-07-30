@@ -42,6 +42,21 @@ export function serverUrl() {
 }
 
 /**
+ * Merges native hook fields while keeping CodePulse's provider discriminator authoritative.
+ *
+ * Some lifecycle payloads reuse `source` for their own purpose. Codex
+ * SessionStart, for example, sends `source: "startup"`. If that value replaces
+ * the provider, `/api/events` cannot choose an adapter and rejects the event.
+ *
+ * @param {'codex' | 'claude_code' | 'grok' | 'kimi'} source CodePulse provider.
+ * @param {...object} fragments Native hook payload and optional usage patches.
+ * @returns {object} Event payload with the provider written last.
+ */
+export function withAgentSource(source, ...fragments) {
+  return Object.assign({}, ...fragments, { source })
+}
+
+/**
  * 向 `/api/events` 发起带硬超时的「发后即忘」POST。
  *
  * 调用方忽略结果并无条件以 0 退出，因此服务器停止或不可达

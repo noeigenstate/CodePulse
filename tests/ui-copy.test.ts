@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { TurnState } from '@codepulse/shared'
 import {
+  acknowledgementLabel,
   formatThinkingDepth,
   headerCopy,
   nextLocale,
@@ -57,6 +58,16 @@ test('locale toggle switches between Chinese and English labels', () => {
   assert.equal(turnStateLabel(TurnState.USAGE_LIMITED, 'zh'), '已达用量上限，任务暂时停止')
   assert.equal(turnStateLabel(TurnState.DONE, 'en'), 'Done')
   assert.equal(turnStateLabel(TurnState.USAGE_LIMITED, 'en'), 'Usage limit reached, paused')
+})
+
+test('project acknowledgement labels distinguish live attention from completion', () => {
+  const zh = uiCopy('zh')
+  const en = uiCopy('en')
+
+  assert.equal(acknowledgementLabel(TurnState.WAITING_PERMISSION, true, zh), '已读')
+  assert.equal(acknowledgementLabel(TurnState.TIMEOUT, true, zh), '已读')
+  assert.equal(acknowledgementLabel(TurnState.DONE, true, zh), '完成')
+  assert.equal(acknowledgementLabel(TurnState.DONE, true, en), 'Done')
 })
 
 test('Chinese locale does not expose English dashboard chrome', () => {

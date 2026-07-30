@@ -9,7 +9,7 @@ import {
 import type { AgentPanel } from '../lib/displayAgents.js'
 import { formatDuration, formatRelative } from '../lib/format.js'
 import { hudStateLevel } from '../lib/hudState.js'
-import { turnStateLabel, type Locale, type UiCopy } from '../lib/i18n.js'
+import { acknowledgementLabel, turnStateLabel, type Locale, type UiCopy } from '../lib/i18n.js'
 import {
   buildProjectDeckGroups,
   buildProjectUsageSummaries,
@@ -195,7 +195,7 @@ function ProjectDeckCard({
             onClick={() => onAck(card.agentType, group.workspacePath)}
             type="button"
           >
-            {group.workspacePath ? copy.read : copy.readAll}
+            {acknowledgementLabel(agent.state, Boolean(group.workspacePath), copy)}
           </button>
         ) : null}
       </div>

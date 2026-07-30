@@ -40,7 +40,7 @@ const CODEX_META_FIRST_LINE_MAX = 4 * 1024 * 1024
 const CODEX_TAIL = 4 * 1024 * 1024
 /**
  * Codex 无 active_sessions：用 rollout mtime 近似「CLI 仍活跃」。
- * 与 StatusHub 空闲 5 分钟剔除对齐——超过该窗口的 rollout 不再拉起项目卡片。
+ * 只把最近 5 分钟仍有写入的 rollout 当作活跃启动线索；更旧记录仅可贡献账户额度。
  * 仍要求本机有 codex 进程，避免把历史沉寂项目拉出来。
  */
 const CODEX_LIVE_MS = 5 * 60_000
@@ -803,11 +803,23 @@ export class SessionSyncService {
 
   /** Hydrates recently active Kimi Code sessions from their local wire logs. */
   private async syncKimi(): Promise<number> {
-    if (!(await this.kimiProcessAlive())) return 0
-
     const now = this.now()
     const usageSampleId = this.nextUsageSampleId('kimi', now)
     const accountQuota = await this.getKimiAccountQuota(now)
+    // Account quota belongs to the signed-in Kimi account, not to a running
+    // project. Publish it during boot even when the CLI has not started yet so
+    // the usage strip is complete from the first HUD frame.
+    if (!(await this.kimiProcessAlive())) {
+      return this.publishAccountQuotaObservation(
+        'kimi',
+        mergeKimiContextWithQuota(undefined, accountQuota),
+        now,
+        usageSampleId,
+      )
+        ? 1
+        : 0
+    }
+
     const indexed = await readKimiSessionIndex(this.kimiHome)
     const byCwd = new Map<string, KimiSessionSnapshot>()
     for (const row of indexed.slice(-100)) {

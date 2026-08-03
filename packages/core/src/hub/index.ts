@@ -146,6 +146,41 @@ export class StatusHub extends EventEmitter {
   }
 
   /**
+   * 暂时从所有实时表面隐藏一张项目卡片。
+   *
+   * 这复用停留时长到期后的 `taskHidden` 语义：不改变任务生命周期，
+   * 但会清除当前提醒，使托盘、HUD 与设备投影都像卡片自然到期一样
+   * 不再显示它。运行时状态仍保留，因此下一条真实活动会由 reducer
+   * 自动解除隐藏；纯额度刷新不会让卡片重新出现。
+   *
+   * @param agentType 卡片所属 agent。
+   * @param workspacePath 卡片工作区；存在时作为首选身份。
+   * @param externalSessionId 无工作区卡片的会话身份兜底。
+   * @returns 是否找到并隐藏了至少一个匹配槽位。
+   */
+  dismissProjectCard(
+    agentType: AgentType,
+    workspacePath?: string,
+    externalSessionId?: string,
+  ): boolean {
+    const targetWorkspace = workspaceKey(workspacePath)
+    if (!targetWorkspace && !externalSessionId) return false
+
+    let changed = false
+    for (const [key, current] of this.agents) {
+      if (current.agentType !== agentType) continue
+      const matches = targetWorkspace
+        ? workspaceKey(current.workspacePath) === targetWorkspace
+        : current.externalSessionId === externalSessionId
+      if (!matches || (current.taskHidden && !current.unread)) continue
+      this.agents.set(key, { ...current, taskHidden: true, unread: false })
+      changed = true
+    }
+    if (changed) this.emit('status', this.snapshot())
+    return changed
+  }
+
+  /**
    * 全局开启或关闭通知声音。
    *
    * @param muted `true` 表示抑制声音。

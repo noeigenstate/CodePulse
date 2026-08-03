@@ -366,6 +366,11 @@ function registerIpc(): void {
     hub.acknowledge(agent, workspacePath)
     return true
   })
+  ipcMain.handle(
+    'codepulse:dismiss-project-card',
+    (_event, agent: AgentType, workspacePath?: string, externalSessionId?: string) =>
+      hub.dismissProjectCard(agent, workspacePath, externalSessionId),
+  )
   ipcMain.handle('codepulse:set-mute', (_event, muted: boolean) => {
     setMuted(muted)
     return muted

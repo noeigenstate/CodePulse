@@ -70,6 +70,11 @@ test('project acknowledgement labels distinguish live attention from completion'
   assert.equal(acknowledgementLabel(TurnState.DONE, true, en), 'Done')
 })
 
+test('project card dismissal has localized temporary-hide copy', () => {
+  assert.equal(uiCopy('zh').dismissProjectCard, '暂时关闭项目卡片')
+  assert.equal(uiCopy('en').dismissProjectCard, 'Temporarily hide project card')
+})
+
 test('Chinese locale does not expose English dashboard chrome', () => {
   const copy = uiCopy('zh')
   const text = [
@@ -79,6 +84,7 @@ test('Chinese locale does not expose English dashboard chrome', () => {
     copy.thinkingDepth,
     copy.waitingQuota,
     copy.unknownProject,
+    copy.dismissProjectCard,
     copy.agentSetupReminder.title,
     copy.agentSetupReminder.body,
     copy.agentSetupReminder.firstRunNotice,
@@ -136,6 +142,7 @@ test('English locale does not expose Chinese dashboard chrome', () => {
     copy.thinkingDepth,
     copy.waitingQuota,
     copy.unknownProject,
+    copy.dismissProjectCard,
     copy.agentSetupReminder.title,
     copy.agentSetupReminder.body,
     copy.agentSetupReminder.firstRunNotice,

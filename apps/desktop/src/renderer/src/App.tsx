@@ -106,6 +106,7 @@ export function App(): JSX.Element {
   const updateError = useStore((s) => s.updateError)
   const init = useStore((s) => s.init)
   const ack = useStore((s) => s.ack)
+  const dismissProjectCard = useStore((s) => s.dismissProjectCard)
   const toggleMute = useStore((s) => s.toggleMute)
   const dismissUpdate = useStore((s) => s.dismissUpdate)
   const installUpdate = useStore((s) => s.installUpdate)
@@ -307,6 +308,9 @@ export function App(): JSX.Element {
       layout={dashboardSettings.projectLayout}
       locale={locale}
       onAck={(agentType, workspacePath) => ack(agentType, workspacePath)}
+      onDismiss={(agentType, workspacePath, externalSessionId) =>
+        dismissProjectCard(agentType, workspacePath, externalSessionId)
+      }
       panels={panels}
       showUsageStrip={dashboardSettings.showUsageStrip}
     />

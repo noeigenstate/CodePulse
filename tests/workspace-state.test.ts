@@ -1249,6 +1249,102 @@ test('StatusHub applies a custom result retention after acknowledgement', () => 
   assert.equal(hub.snapshot(finishedAt + 2 * 60_000).agents.length, 0)
 })
 
+test('StatusHub temporarily dismisses one project card until real activity resumes', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0, permissionThrottleMs: 0 })
+  const workspacePath = 'E:/project/shared'
+  const startedAt = 1_000_000
+
+  hub.ingest({
+    id: 'claude-prompt',
+    source: 'claude_code',
+    eventType: 'prompt_submit',
+    externalSessionId: 'claude-session',
+    externalTurnId: 'claude-turn',
+    cwd: workspacePath,
+    timestamp: startedAt,
+  })
+  hub.ingest({
+    id: 'codex-prompt',
+    source: 'codex',
+    eventType: 'prompt_submit',
+    externalSessionId: 'codex-session',
+    externalTurnId: 'codex-turn',
+    cwd: workspacePath,
+    timestamp: startedAt,
+  })
+  hub.ingest({
+    id: 'codex-permission',
+    source: 'codex',
+    eventType: 'permission_request',
+    externalSessionId: 'codex-session',
+    externalTurnId: 'codex-turn',
+    cwd: workspacePath,
+    timestamp: startedAt + 100,
+  })
+
+  assert.equal(hub.dismissProjectCard('codex', workspacePath, 'codex-session'), true)
+  let snapshot = hub.snapshot(startedAt + 100)
+  let codex = snapshot.agents.find((agent) => agent.agentType === 'codex')
+  const claude = snapshot.agents.find((agent) => agent.agentType === 'claude_code')
+  assert.equal(codex?.state, TurnState.WAITING_PERMISSION)
+  assert.equal(codex?.taskHidden, true)
+  assert.equal(codex?.unread, false)
+  assert.notEqual(claude?.taskHidden, true, 'same-project sibling must remain visible')
+  assert.equal(snapshot.overall, 'running', 'hidden permission card must leave no attention cue')
+  assert.equal(
+    hub.dismissProjectCard('codex', workspacePath, 'codex-session'),
+    false,
+    'closing an already hidden card is a no-op',
+  )
+
+  hub.ingest({
+    id: 'quota-only',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'codex-session',
+    cwd: workspacePath,
+    token: {
+      accuracy: 'exact',
+      rateLimits: { sevenDay: { usedPercent: 12, resetsAt: 2_000_000_000 } },
+    },
+    internal: { quotaRefresh: true },
+    timestamp: startedAt + 200,
+  })
+  codex = hub.snapshot(startedAt + 200).agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.taskHidden, true, 'quota-only refresh must not reveal a dismissed card')
+
+  hub.ingest({
+    id: 'codex-tool',
+    source: 'codex',
+    eventType: 'tool_start',
+    externalSessionId: 'codex-session',
+    externalTurnId: 'codex-turn',
+    cwd: workspacePath,
+    toolName: 'shell',
+    timestamp: startedAt + 300,
+  })
+  snapshot = hub.snapshot(startedAt + 300)
+  codex = snapshot.agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.state, TurnState.TOOL_RUNNING)
+  assert.equal(codex?.taskHidden, false)
+  assert.equal(codex?.unread, false)
+})
+
+test('StatusHub can dismiss a pathless project card by session identity', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  hub.ingest({
+    id: 'pathless-start',
+    source: 'kimi',
+    eventType: 'session_start',
+    externalSessionId: 'pathless-session',
+    timestamp: 1_000,
+  })
+
+  assert.equal(hub.dismissProjectCard('kimi', undefined, 'pathless-session'), true)
+  assert.equal(hub.snapshot(1_000).agents[0]?.taskHidden, true)
+  assert.equal(hub.dismissProjectCard('kimi'), false, 'missing card identity must be a safe no-op')
+})
+
 test('StatusHub applies the selected card retention to idle and cancelled projects', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const retentionMs = 60 * 60_000

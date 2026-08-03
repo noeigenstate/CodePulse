@@ -22,6 +22,7 @@ interface CodePulseStore {
   updateError?: string
   init: () => () => void
   ack: (agent: AgentType, workspacePath?: string) => void
+  dismissProjectCard: (agent: AgentType, workspacePath?: string, externalSessionId?: string) => void
   toggleMute: () => void
   dismissUpdate: () => void
   installUpdate: () => void
@@ -87,6 +88,10 @@ export const useStore = create<CodePulseStore>((set, get) => ({
 
   ack: (agent, workspacePath) => {
     void window.codepulse.ack(agent, workspacePath)
+  },
+
+  dismissProjectCard: (agent, workspacePath, externalSessionId) => {
+    void window.codepulse.dismissProjectCard(agent, workspacePath, externalSessionId)
   },
 
   toggleMute: () => {

@@ -23,6 +23,12 @@ export interface CodePulseApi {
   platform: NodeJS.Platform
   getStatus: () => Promise<StatusSnapshot>
   ack: (agent: AgentType, workspacePath?: string) => Promise<boolean>
+  /** Temporarily hides one HUD card without changing its task lifecycle. */
+  dismissProjectCard: (
+    agent: AgentType,
+    workspacePath?: string,
+    externalSessionId?: string,
+  ) => Promise<boolean>
   setMute: (muted: boolean) => Promise<boolean>
   setLocale: (locale: UiLocale) => Promise<UiLocale>
   /** Synchronizes native title-bar colors with the resolved renderer theme. */

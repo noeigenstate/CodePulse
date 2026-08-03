@@ -8,7 +8,7 @@
 无需切回终端反复确认。
 
 [![Dashboard](https://img.shields.io/badge/Dashboard-v1.3.3-brightgreen)](https://github.com/noeigenstate/CodePulse/releases/tag/v1.3.3)
-[![HUD](https://img.shields.io/badge/HUD-v1.4.0--hud.2-orange)](https://github.com/noeigenstate/CodePulse/releases/tag/v1.4.0-hud.2)
+[![HUD](https://img.shields.io/badge/HUD-v1.4.0--hud.6-orange)](https://github.com/noeigenstate/CodePulse/releases/tag/v1.4.0-hud.6)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#下载)
 [![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#开发)
@@ -64,7 +64,8 @@ CodePulse 是主体；实时 Dashboard 与副驾 HUD 是它的两种并列呈现
 
 可选 HUD 把相同的项目状态、上下文与额度数据收进适合副屏常驻的紧凑表面。同项目的多个
 agent 在细外框内归组，但每张卡片的状态与操作仍然独立；等待阶段使用**「已读」**，
-真正完成后使用**「完成」**。完整设计契约见
+真正完成后使用**「完成」**。右上角的小型 **×** 可暂时关闭单张卡片，出现新的真实活动后
+仍会按原规则重新显示。完整设计契约见
 [HUD 副驾概念说明](docs/CodePulse/HUD-companion-concept.md)。_（图为示意数据。）_
 
 ### 本地统计后台
@@ -160,7 +161,7 @@ Fastify · better-sqlite3 · Drizzle ORM。
 | 形态           | 当前版本                                                                                     | 更适合                                             |
 | -------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------- |
 | 实时 Dashboard | [v1.3.3 稳定版](https://github.com/noeigenstate/CodePulse/releases/tag/v1.3.3)               | 使用完整、自适应多分栏的信息密集型控制台。         |
-| 副驾 HUD       | [v1.4.0-hud.2 预发布版](https://github.com/noeigenstate/CodePulse/releases/tag/v1.4.0-hud.2) | 常驻副屏，以持续、低打扰的方式提示需要注意的项目。 |
+| 副驾 HUD       | [v1.4.0-hud.6 预发布版](https://github.com/noeigenstate/CodePulse/releases/tag/v1.4.0-hud.6) | 常驻副屏，以持续、低打扰的方式提示需要注意的项目。 |
 
 > HUD 安装版来自 `hud-companion-concept` 分支，并使用 `v*-hud.*` 预发布标签。
 > 两种形态目前共享应用身份、userData、hook 和端口，因此同一时间请选择其中一种安装；

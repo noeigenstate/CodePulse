@@ -27,6 +27,7 @@ interface Props {
   layout: HudProjectLayout
   locale: Locale
   onAck: (agentType: AgentType, workspacePath?: string) => void
+  onDismiss: (agentType: AgentType, workspacePath?: string, externalSessionId?: string) => void
   panels: AgentPanel[]
   showUsageStrip: boolean
 }
@@ -38,6 +39,7 @@ export function ProjectDeck({
   layout,
   locale,
   onAck,
+  onDismiss,
   panels,
   showUsageStrip,
 }: Props): JSX.Element {
@@ -123,6 +125,7 @@ export function ProjectDeck({
                     locale={locale}
                     now={now}
                     onAck={onAck}
+                    onDismiss={onDismiss}
                   />
                 ))}
               </section>
@@ -143,6 +146,7 @@ function ProjectDeckCard({
   locale,
   now,
   onAck,
+  onDismiss,
 }: {
   card: ProjectDeckCard
   copy: UiCopy
@@ -150,6 +154,7 @@ function ProjectDeckCard({
   locale: Locale
   now: number
   onAck: (agentType: AgentType, workspacePath?: string) => void
+  onDismiss: (agentType: AgentType, workspacePath?: string, externalSessionId?: string) => void
 }): JSX.Element {
   // Every card owns exactly one agent: state, timer, context, and the
   // acknowledgement button are fully independent from its project siblings.
@@ -199,6 +204,18 @@ function ProjectDeckCard({
           </button>
         ) : null}
       </div>
+
+      <button
+        aria-label={`${copy.dismissProjectCard}: ${group.name || copy.unknownProject} · ${projectSourceLabel(card.agentType)}`}
+        className="project-deck-dismiss"
+        onClick={() => onDismiss(card.agentType, group.workspacePath, card.agent.externalSessionId)}
+        title={copy.dismissProjectCard}
+        type="button"
+      >
+        <svg aria-hidden="true" viewBox="0 0 12 12">
+          <path d="M2.25 2.25 9.75 9.75M9.75 2.25 2.25 9.75" />
+        </svg>
+      </button>
     </article>
   )
 }

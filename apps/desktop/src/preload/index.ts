@@ -29,6 +29,13 @@ const api = {
   getStatus: (): Promise<StatusSnapshot> => ipcRenderer.invoke('codepulse:get-status'),
   ack: (agent: AgentType, workspacePath?: string): Promise<boolean> =>
     ipcRenderer.invoke('codepulse:ack', agent, workspacePath),
+  /** Temporarily hides one HUD project card until new real activity arrives. */
+  dismissProjectCard: (
+    agent: AgentType,
+    workspacePath?: string,
+    externalSessionId?: string,
+  ): Promise<boolean> =>
+    ipcRenderer.invoke('codepulse:dismiss-project-card', agent, workspacePath, externalSessionId),
   setMute: (muted: boolean): Promise<boolean> => ipcRenderer.invoke('codepulse:set-mute', muted),
   setLocale: (locale: UiLocale): Promise<UiLocale> =>
     ipcRenderer.invoke('codepulse:set-locale', locale),

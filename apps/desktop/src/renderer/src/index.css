@@ -871,6 +871,7 @@ body[data-surface='settings'] {
 
   .project-deck-item-main {
     gap: 0.32rem;
+    padding-right: 1.35rem;
   }
 
   .project-deck-metrics {
@@ -942,6 +943,7 @@ body[data-surface='settings'] {
   }
 
   .project-deck-item {
+    position: relative;
     display: grid;
     min-width: 0;
     min-height: 6.25rem;
@@ -963,10 +965,19 @@ body[data-surface='settings'] {
     padding-block: 0.55rem;
   }
 
+  .project-deck-grid[data-layout='list'] .project-deck-item-main {
+    padding-right: 0;
+  }
+
   .project-deck-ack-slot {
     display: flex;
     width: 3rem;
     align-self: stretch;
+  }
+
+  .project-deck-grid[data-layout='list'] .project-deck-ack-slot {
+    width: auto;
+    grid-column: 4;
   }
 
   .project-deck-item[data-hud-level='notice'],
@@ -1080,6 +1091,59 @@ body[data-surface='settings'] {
 
   .project-deck-ack:hover {
     background: var(--attention-ink);
+  }
+
+  .project-deck-dismiss {
+    position: absolute;
+    z-index: 3;
+    top: 0;
+    right: 0;
+    display: grid;
+    width: 0.78rem;
+    height: 0.78rem;
+    place-items: center;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--ink-subtle);
+    cursor: pointer;
+    opacity: 0.52;
+    padding: 0;
+    transition:
+      color 120ms ease,
+      background-color 120ms ease,
+      opacity 120ms ease;
+    -webkit-app-region: no-drag;
+  }
+
+  .project-deck-dismiss svg {
+    width: 0.52rem;
+    height: 0.52rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-width: 1.45;
+  }
+
+  .project-deck-dismiss:hover {
+    background: rgba(20, 23, 27, 0.1);
+    color: var(--ink);
+    opacity: 1;
+  }
+
+  .project-deck-dismiss:focus-visible {
+    outline: 1px solid currentColor;
+    outline-offset: 1px;
+    opacity: 1;
+  }
+
+  .project-deck-item:is(
+      [data-hud-level='notice'],
+      [data-hud-level='action'],
+      [data-hud-level='fault']
+    )
+    .project-deck-dismiss {
+    color: rgba(21, 18, 15, 0.62);
   }
 
   .project-deck-metrics {

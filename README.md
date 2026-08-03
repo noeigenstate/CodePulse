@@ -8,7 +8,7 @@ Know at a glance whether Codex, Claude Code, Grok, and Kimi Code are working, wa
 you, finished, or stuck — without alt-tabbing back to a terminal.
 
 [![Dashboard](https://img.shields.io/badge/Dashboard-v1.3.3-brightgreen)](https://github.com/noeigenstate/CodePulse/releases/tag/v1.3.3)
-[![HUD](https://img.shields.io/badge/HUD-v1.4.0--hud.2-orange)](https://github.com/noeigenstate/CodePulse/releases/tag/v1.4.0-hud.2)
+[![HUD](https://img.shields.io/badge/HUD-v1.4.0--hud.6-orange)](https://github.com/noeigenstate/CodePulse/releases/tag/v1.4.0-hud.6)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#download)
 [![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#development)
@@ -74,7 +74,8 @@ _(Sample data shown.)_
 The optional HUD keeps the same project state, context, and quota data in a
 compact secondary-display surface. Agents working in the same project remain
 independent cards inside a subtle shared outline; waiting reminders use
-**Read**, while completed turns use **Done**. See the
+**Read**, while completed turns use **Done**. A small **×** temporarily hides
+one card until new real activity makes it relevant again. See the
 [HUD companion concept](docs/CodePulse/HUD-companion-concept.md) for its design
 contract. _(Sample data shown.)_
 
@@ -180,7 +181,7 @@ Choose the presentation form that fits the screen where CodePulse will live:
 | Form           | Current release                                                                                | Best suited to                                                              |
 | -------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | Live Dashboard | [v1.3.3 stable](https://github.com/noeigenstate/CodePulse/releases/tag/v1.3.3)                 | A full-size, information-dense console with adaptive agent panes.           |
-| Companion HUD  | [v1.4.0-hud.2 prerelease](https://github.com/noeigenstate/CodePulse/releases/tag/v1.4.0-hud.2) | A persistent secondary-display surface with durable, low-interruption cues. |
+| Companion HUD  | [v1.4.0-hud.6 prerelease](https://github.com/noeigenstate/CodePulse/releases/tag/v1.4.0-hud.6) | A persistent secondary-display surface with durable, low-interruption cues. |
 
 > HUD builds come from `hud-companion-concept` and use `v*-hud.*` prerelease
 > tags. Both forms currently share the same app identity, user data, hooks, and

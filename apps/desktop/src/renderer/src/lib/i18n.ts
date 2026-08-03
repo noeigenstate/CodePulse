@@ -26,6 +26,7 @@ export interface UiCopy {
   read: string
   readAll: string
   complete: string
+  dismissProjectCard: string
   attentionRailTitle: string
   attentionRailHint: string
   contextWindow: string
@@ -314,6 +315,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
     read: '已读',
     readAll: '全部已读',
     complete: '完成',
+    dismissProjectCard: '暂时关闭项目卡片',
     attentionRailTitle: '需要查看',
     attentionRailHint: '橙色项目不会被分栏、后台或隐藏偏好遮住',
     contextWindow: '上下文窗口：',
@@ -557,6 +559,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
     read: 'Read',
     readAll: 'Read all',
     complete: 'Done',
+    dismissProjectCard: 'Temporarily hide project card',
     attentionRailTitle: 'Needs attention',
     attentionRailHint: 'Orange projects stay visible across panels, insights, and hidden tools',
     contextWindow: 'Context window:',

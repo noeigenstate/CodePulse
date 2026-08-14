@@ -6,6 +6,7 @@
  * 同一逻辑也可运行在任何上下文（主进程、服务器、测试）。
  *
  * @module core/state-machine
+
  */
 import {
   type AgentEvent,
@@ -25,6 +26,7 @@ import {
  *
  * @param agentType 要创建状态槽位的 agent。
  * @returns 处于 `IDLE` 状态的全新 {@link AgentRuntimeState}。
+
  */
 export function createInitialRuntimeState(agentType: AgentType): AgentRuntimeState {
   return {
@@ -40,6 +42,7 @@ export function createInitialRuntimeState(agentType: AgentType): AgentRuntimeSta
 
 /**
  * 通过 {@link reduce} 投喂一个事件后的结果。
+
  */
 export interface TransitionResult {
   /** Event-time runtime state before applying the reducer. */
@@ -65,6 +68,7 @@ export interface TransitionResult {
  * @param current agent 现有的运行时状态。
  * @param event 待应用的归一化事件。
  * @returns 下一个状态及迁移元数据。
+
  */
 export function reduce(current: AgentRuntimeState, event: AgentEvent): TransitionResult {
   const previousState = current.state
@@ -80,6 +84,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
   }
 
   // 继承事件经常刷新的上下文字段。
+  let modelSnapshotAccepted = true
   if (!tokenOnlyQuotaRefresh) {
     if (event.externalSessionId) next.externalSessionId = event.externalSessionId
     if (!deferSynchronizedTurnIdentity && shouldAdoptExternalTurnId(current, event)) {
@@ -90,7 +95,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
     if (incomingWorkspace) {
       next.workspacePath = preferWorkspacePath(current.workspacePath, incomingWorkspace)
     }
-    applyModelConfiguration(current, next, event)
+    modelSnapshotAccepted = applyModelConfiguration(current, next, event)
   }
   const acceptedTurnTiming = tokenOnlyQuotaRefresh
     ? undefined
@@ -107,7 +112,12 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
   if (event.token) {
     // Use the accepted runtime model, not the raw event model. A stale rollout
     // snapshot must not affect quota-family selection after it was rejected above.
-    next.token = mergeToken(current.token, event.token, event.timestamp, next.model)
+    next.token = mergeToken(
+      current.token,
+      modelSnapshotAccepted ? event.token : withoutRejectedContext(event.token),
+      event.timestamp,
+      next.model,
+    )
   }
   // Real activity unhides idle-pruned project cards. Pure quota refreshes do not.
   if (!tokenOnlyQuotaRefresh) {
@@ -288,6 +298,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
  * @param current Runtime state before the event.
  * @param event Incoming normalized lifecycle event.
  * @returns Whether `event.externalTurnId` should become the runtime turn ID.
+
  */
 function shouldAdoptExternalTurnId(current: AgentRuntimeState, event: AgentEvent): boolean {
   const incoming = event.externalTurnId
@@ -309,6 +320,7 @@ function shouldAdoptExternalTurnId(current: AgentRuntimeState, event: AgentEvent
  *
  * @param event Incoming normalized event.
  * @returns `true` for lifecycle events that start or continue active work.
+
  */
 function isTurnActivityEvent(event: AgentEvent): boolean {
   return (
@@ -327,6 +339,7 @@ function isTurnActivityEvent(event: AgentEvent): boolean {
  * @param current Runtime state anchored to the latest user prompt turn.
  * @param event Candidate terminal event.
  * @returns `true` when both IDs exist and identify different turns.
+
  */
 function isForeignTurnEvent(current: AgentRuntimeState, event: AgentEvent): boolean {
   if (!current.externalTurnId && !event.externalTurnId) return false
@@ -342,6 +355,7 @@ function isForeignTurnEvent(current: AgentRuntimeState, event: AgentEvent): bool
  * @param next Mutable runtime state being constructed.
  * @param event Normalized event that may carry native timing metadata.
  * @returns The accepted sanitized timing snapshot, if any.
+
  */
 function applyTurnTimingSnapshot(
   current: AgentRuntimeState,
@@ -409,6 +423,7 @@ const SYNCHRONIZED_START_MATCH_TOLERANCE_MS = 5_000
  * @param current Runtime state anchored to the visible turn.
  * @param incoming Sanitized native timing snapshot.
  * @returns Whether the snapshot may drive an active-to-terminal transition.
+
  */
 function canSynchronizedCompletionEndActiveTurn(
   current: AgentRuntimeState,
@@ -439,6 +454,7 @@ function canSynchronizedCompletionEndActiveTurn(
  * @param current Active runtime anchored to a user-visible root turn.
  * @param incoming Candidate native timing snapshot.
  * @returns `true` only for an identified completion of that same root turn.
+
  */
 function isIdentifiedCompletionForActiveRoot(
   current: AgentRuntimeState,
@@ -463,6 +479,7 @@ function isIdentifiedCompletionForActiveRoot(
  * @param event Event carrying local synchronization metadata.
  * @param incoming Candidate native timing snapshot.
  * @returns `true` when the timeout can safely be replaced with active work.
+
  */
 function canRecoverTimedOutTurnFromFreshSync(
   current: AgentRuntimeState,
@@ -496,6 +513,7 @@ function canRecoverTimedOutTurnFromFreshSync(
  * @param current Existing runtime timing snapshot.
  * @param incoming Candidate native CLI timing snapshot.
  * @returns `true` when the candidate is a completion for the same observed turn.
+
  */
 function isNativeCompletionForCurrentTurn(
   current: TurnTiming | undefined,
@@ -526,6 +544,7 @@ function isNativeCompletionForCurrentTurn(
  *
  * @param timing Completed timing value to inspect.
  * @returns `true` when the duration has the reducer's hook-derived shape.
+
  */
 function isHookDerivedCompletion(timing: TurnTiming): boolean {
   return (
@@ -542,6 +561,7 @@ function isHookDerivedCompletion(timing: TurnTiming): boolean {
  * @param next Mutable runtime state being constructed.
  * @param timing Accepted native timing snapshot for this event, if any.
  * @param observedAt Hook event observation time in epoch milliseconds.
+
  */
 function applyPromptTiming(
   next: AgentRuntimeState,
@@ -568,6 +588,7 @@ function applyPromptTiming(
  * @param timing Accepted native timing snapshot for this event, if any.
  * @param endedAt Terminal event observation time in epoch milliseconds.
  * @returns The timing snapshot to retain on the completed runtime card.
+
  */
 function completeTurnTiming(
   current: AgentRuntimeState,
@@ -601,6 +622,7 @@ function completeTurnTiming(
  * @param next Mutable runtime state being built for the synchronized event.
  * @param event Event carrying the local session synchronization marker.
  * @param timing Accepted native timing snapshot, if it passed freshness checks.
+
  */
 function reconcileSynchronizedTimingLifecycle(
   current: AgentRuntimeState,
@@ -643,6 +665,7 @@ function reconcileSynchronizedTimingLifecycle(
  *
  * @param timing Candidate native timing snapshot.
  * @returns A normalized timing snapshot, or `undefined` when it is malformed.
+
  */
 function sanitizeTurnTiming(timing: TurnTiming | undefined): TurnTiming | undefined {
   if (!timing || (timing.state !== 'active' && timing.state !== 'completed')) return undefined
@@ -676,6 +699,7 @@ function sanitizeTurnTiming(timing: TurnTiming | undefined): TurnTiming | undefi
  * @param current Runtime state anchored to the latest user prompt.
  * @param timing Sanitized native CLI timing snapshot.
  * @returns `true` when both identifiers exist and do not match.
+
  */
 function isForeignTurnTiming(current: AgentRuntimeState, timing: TurnTiming): boolean {
   return Boolean(
@@ -690,6 +714,7 @@ function isForeignTurnTiming(current: AgentRuntimeState, timing: TurnTiming): bo
  *
  * @param value Candidate timestamp.
  * @returns `true` when the value is finite and positive.
+
  */
 function isEpochMilliseconds(value: number | undefined): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0
@@ -700,6 +725,7 @@ function isEpochMilliseconds(value: number | undefined): value is number {
  *
  * @param value Candidate duration.
  * @returns `true` when the value is finite and not negative.
+
  */
 function isNonNegativeFinite(value: number | undefined): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
@@ -718,12 +744,14 @@ function isNonNegativeFinite(value: number | undefined): value is number {
  * @param current Runtime state before the event.
  * @param next Mutable copy of the runtime state being built by the reducer.
  * @param event Normalized incoming event.
+ * @returns Whether the event's model configuration was accepted.
+
  */
 function applyModelConfiguration(
   current: AgentRuntimeState,
   next: AgentRuntimeState,
   event: AgentEvent,
-): void {
+): boolean {
   const observedAt = event.modelObservedAt
   let acceptedModelSnapshot = false
   let rejectedModelSnapshot = false
@@ -749,14 +777,14 @@ function applyModelConfiguration(
       event.reasoningEffort,
       event.reasoningEffortObservedAt,
     )
-    return
+    return !rejectedModelSnapshot
   }
 
   if (acceptedModelSnapshot && observedAt !== undefined) {
     // Deliberately assign undefined too: an effort omitted by the newest model
     // snapshot is unknown, rather than evidence that the previous effort remains.
     applyReasoningEffortSnapshot(current, next, event.reasoningEffort, observedAt)
-    return
+    return true
   }
 
   // An unversioned event can populate an unknown depth, but cannot replace a
@@ -768,6 +796,7 @@ function applyModelConfiguration(
   ) {
     next.reasoningEffort = event.reasoningEffort
   }
+  return !rejectedModelSnapshot
 }
 
 /**
@@ -778,6 +807,7 @@ function applyModelConfiguration(
  * @param next Mutable copy of the runtime state being built by the reducer.
  * @param reasoningEffort Native effort value, or `undefined` when known absent.
  * @param observedAt Timestamp of the native configuration observation.
+
  */
 function applyReasoningEffortSnapshot(
   current: AgentRuntimeState,
@@ -795,26 +825,90 @@ function applyReasoningEffortSnapshot(
   next.reasoningEffortObservedAt = observedAt
 }
 
+/**
+ * Removes model-coupled usage from a rejected, older configuration snapshot.
+ *
+ * Account quota is independent of the session model and may still be newer, so
+ * only context occupancy, its totals, and the one-shot clear command are dropped.
+ *
+ * @param token Token payload attached to the rejected model observation.
+ * @returns Quota and cost fields safe to merge into the current runtime model.
+
+ */
+function withoutRejectedContext(token: TokenPayload): TokenPayload {
+  const {
+    input,
+    cachedInput,
+    output,
+    reasoningOutput,
+    total,
+    contextUsedPercent,
+    contextWindow,
+    contextStale,
+    contextCompressed,
+    contextAccuracy,
+    clearContext,
+    accuracy,
+    ...independent
+  } = token
+  void input
+  void cachedInput
+  void output
+  void reasoningOutput
+  void total
+  void contextUsedPercent
+  void contextWindow
+  void contextStale
+  void contextCompressed
+  void contextAccuracy
+  void clearContext
+  void accuracy
+  return { ...independent, accuracy: 'unknown' }
+}
+
+/**
+ * Merges a token patch while preserving stronger usage and context evidence.
+ *
+ * Account quota, cumulative usage, and model-scoped context each have separate
+ * freshness rules, so an estimated patch cannot overwrite an exact snapshot.
+ *
+ * @param current Token state retained from earlier events.
+ * @param patch Normalized token fields supplied by the current event.
+ * @param capturedAt Epoch milliseconds assigned to quota bucket observations.
+ * @param activeModel Model currently associated with the runtime state.
+ * @returns Token payload after applying every accepted field from the patch.
+
+ */
 function mergeToken(
   current: TokenPayload | undefined,
   patch: TokenPayload,
   capturedAt: number,
   activeModel?: string,
 ): TokenPayload {
-  const keepExactContext = current?.accuracy === 'exact' && patch.accuracy !== 'exact'
-  const applyContextSnapshot = !keepExactContext && shouldApplyContextSnapshot(current, patch)
+  const retainedContext = patch.clearContext === true ? undefined : current
+  const retainedContextAccuracy = retainedContext?.contextAccuracy ?? retainedContext?.accuracy
+  const patchContextAccuracy = patch.contextAccuracy ?? patch.accuracy
+  const keepExactContext =
+    hasContextSnapshot(retainedContext) &&
+    retainedContextAccuracy === 'exact' &&
+    patchContextAccuracy !== 'exact'
+  const keepExactUsage = current?.accuracy === 'exact' && patch.accuracy !== 'exact'
+  const applyContextSnapshot =
+    !keepExactContext && shouldApplyContextSnapshot(retainedContext, patch)
   const next: TokenPayload = {
     ...current,
     accuracy: bestTokenAccuracy(current?.accuracy, patch.accuracy),
   }
+  // `clearContext` is a one-shot merge command, never retained runtime state.
+  delete next.clearContext
+  if (patch.clearContext === true) clearRetainedContext(next)
 
   if (patch.quotaBuckets) {
     next.quotaBuckets = mergeQuotaBuckets(current?.quotaBuckets, patch.quotaBuckets, capturedAt)
   }
 
-  // When context is exact, do not let estimated snapshots clobber usage fields either
-  // (avoids totals disagreeing with the exact context bar).
-  if (!keepExactContext && (!hasContextSnapshot(patch) || applyContextSnapshot)) {
+  // Exact cumulative totals remain protected independently from context provenance.
+  if (!keepExactUsage && (!hasContextSnapshot(patch) || applyContextSnapshot)) {
     if (patch.input !== undefined) next.input = patch.input
     if (patch.cachedInput !== undefined) next.cachedInput = patch.cachedInput
     if (patch.output !== undefined) next.output = patch.output
@@ -823,11 +917,14 @@ function mergeToken(
   }
   if (patch.contextUsedPercent !== undefined && applyContextSnapshot) {
     next.contextUsedPercent = patch.contextUsedPercent
-    next.contextCompressed = detectContextCompressed(current, patch)
+    next.contextCompressed = detectContextCompressed(retainedContext, patch)
   }
   if (patch.contextWindow !== undefined && applyContextSnapshot)
     next.contextWindow = patch.contextWindow
-  if (hasContextSnapshot(patch) && applyContextSnapshot) next.contextStale = false
+  if (hasContextSnapshot(patch) && applyContextSnapshot) {
+    next.contextStale = false
+    next.contextAccuracy = patchContextAccuracy
+  }
   if (patch.contextStale !== undefined) next.contextStale = patch.contextStale
   if (patch.contextCompressed !== undefined && patch.contextUsedPercent === undefined) {
     next.contextCompressed = patch.contextCompressed
@@ -846,6 +943,23 @@ function mergeToken(
   return next
 }
 
+/**
+ * Removes every field derived from a previously retained context snapshot.
+ *
+ * Token totals and account quota are independent observations and remain
+ * available. A later patch can repopulate context fields normally.
+ *
+ * @param token Runtime token payload being assembled by the reducer.
+
+ */
+function clearRetainedContext(token: TokenPayload): void {
+  delete token.contextUsedPercent
+  delete token.contextWindow
+  delete token.contextStale
+  delete token.contextCompressed
+  delete token.contextAccuracy
+}
+
 /** Drop of ≥8pp on the same window size ⇒ treat as CLI context compression. */
 const CONTEXT_COMPRESS_DROP_PP = 8
 
@@ -860,6 +974,7 @@ const CONTEXT_COMPRESS_DROP_PP = 8
  * @param current Currently retained token payload.
  * @param patch Incoming token payload.
  * @returns Whether context-coupled usage fields may be applied atomically.
+
  */
 function shouldApplyContextSnapshot(
   current: TokenPayload | undefined,
@@ -884,6 +999,7 @@ function shouldApplyContextSnapshot(
  * @param currentWindow Retained context-window size.
  * @param nextWindow Incoming context-window size.
  * @returns Whether the sizes differ by more than five percent.
+
  */
 function contextWindowChanged(
   currentWindow: number | undefined,
@@ -904,6 +1020,7 @@ function contextWindowChanged(
  * @param current Previously retained token payload.
  * @param patch Accepted incoming token payload.
  * @returns Compression marker for the visible context snapshot.
+
  */
 function detectContextCompressed(
   current: TokenPayload | undefined,
@@ -930,6 +1047,13 @@ function detectContextCompressed(
   return current?.contextCompressed
 }
 
+/**
+ * Checks whether apply rate limit patch.
+ * @param current Previously retained value.
+ * @param patch New value to merge.
+ * @param activeModel Active model.
+ * @returns Whether the condition is satisfied.
+ */
 function shouldApplyRateLimitPatch(
   current: TokenPayload | undefined,
   patch: TokenPayload,
@@ -953,20 +1077,41 @@ function shouldApplyRateLimitPatch(
   return curSpark === nextSpark
 }
 
+/**
+ * Checks whether spark bucket.
+ * @param id Stable identifier.
+ * @param name Model or quota-bucket name to inspect.
+ * @returns Whether the condition is satisfied.
+ */
 function isSparkBucket(id: string | undefined, name: string | undefined): boolean {
   const s = `${id ?? ''} ${name ?? ''}`.toLowerCase()
   return s.includes('spark') || s.includes('bengalfox')
 }
 
+/**
+ * Checks whether spark model name.
+ * @param model Model identifier.
+ * @returns Whether the condition is satisfied.
+ */
 function isSparkModelName(model: string | undefined): boolean {
   const value = String(model ?? '').toLowerCase()
   return value.includes('spark') || value.includes('bengalfox')
 }
 
+/**
+ * Checks whether context snapshot.
+ * @param token Token payload to process.
+ * @returns Whether the condition is satisfied.
+ */
 function hasContextSnapshot(token: TokenPayload | undefined): boolean {
   return token?.contextUsedPercent !== undefined || token?.contextWindow !== undefined
 }
 
+/**
+ * Computes mark context stale.
+ * @param token Token payload to process.
+ * @returns Token payload marked with stale context metadata.
+ */
 function markContextStale(token: TokenPayload | undefined): TokenPayload | undefined {
   if (!token) return token
   if (!hasContextSnapshot(token)) return token
@@ -974,6 +1119,13 @@ function markContextStale(token: TokenPayload | undefined): TokenPayload | undef
   return { ...token, contextStale: true }
 }
 
+/**
+ * Merges quota buckets.
+ * @param current Previously retained value.
+ * @param patch New value to merge.
+ * @param capturedAt Captured at.
+ * @returns Quota buckets after merging the incoming observations.
+ */
 function mergeQuotaBuckets(
   current: TokenPayload['quotaBuckets'],
   patch: TokenPayload['quotaBuckets'],
@@ -995,6 +1147,13 @@ function mergeQuotaBuckets(
   )
 }
 
+/**
+ * Merges quota bucket.
+ * @param current Previously retained value.
+ * @param patch New value to merge.
+ * @param capturedAt Captured at.
+ * @returns Quota bucket after applying accepted incoming fields.
+ */
 function mergeQuotaBucket(
   current: TokenPayload['quotaBuckets'],
   patch: Pick<TokenPayload, 'rateLimitId' | 'rateLimitName' | 'rateLimits'>,
@@ -1030,6 +1189,7 @@ function mergeQuotaBucket(
  * @param current Currently retained quota windows.
  * @param patch Incoming quota windows from one snapshot.
  * @returns `true` when the complete comparable patch is strictly older.
+
  */
 function isStrictlyOlderRateLimitPatch(
   current: TokenPayload['rateLimits'],
@@ -1051,6 +1211,12 @@ function isStrictlyOlderRateLimitPatch(
   return compared
 }
 
+/**
+ * Computes quota bucket key.
+ * @param rateLimitId Rate limit id.
+ * @param rateLimitName Rate limit name.
+ * @returns Stable key for the native quota bucket.
+ */
 function quotaBucketKey(
   rateLimitId: string | undefined,
   rateLimitName: string | undefined,
@@ -1058,6 +1224,12 @@ function quotaBucketKey(
   return rateLimitId?.trim() || rateLimitName?.trim() || 'default'
 }
 
+/**
+ * Computes best token accuracy.
+ * @param current Previously retained value.
+ * @param patch New value to merge.
+ * @returns Stronger accuracy classification.
+ */
 function bestTokenAccuracy(
   current: TokenPayload['accuracy'] | undefined,
   patch: TokenPayload['accuracy'] | undefined,
@@ -1067,6 +1239,12 @@ function bestTokenAccuracy(
   return patch ?? current ?? 'unknown'
 }
 
+/**
+ * Merges rate limits.
+ * @param current Previously retained value.
+ * @param patch New value to merge.
+ * @returns Rate limits after applying accepted window updates.
+ */
 function mergeRateLimits(
   current: TokenPayload['rateLimits'],
   patch: TokenPayload['rateLimits'],
@@ -1085,6 +1263,7 @@ function mergeRateLimits(
  * @param left First rate-limit payload.
  * @param right Second rate-limit payload.
  * @returns Whether both payloads carry equivalent quota data.
+
  */
 function sameRateLimits(
   left: TokenPayload['rateLimits'],
@@ -1102,6 +1281,7 @@ function sameRateLimits(
  * @param left First quota window.
  * @param right Second quota window.
  * @returns Whether usage and reset metadata are equal.
+
  */
 function sameRateLimitWindow(
   left: TokenRateLimitWindow | undefined,
@@ -1114,6 +1294,11 @@ function sameRateLimitWindow(
   )
 }
 
+/**
+ * Checks whether zero only rate limits.
+ * @param rateLimits Rate limits.
+ * @returns Whether the condition is satisfied.
+ */
 function isZeroOnlyRateLimits(rateLimits: TokenPayload['rateLimits']): boolean {
   const windows = [rateLimits?.fiveHour, rateLimits?.sevenDay].filter(Boolean)
   if (windows.length === 0) return false
@@ -1133,6 +1318,12 @@ const MAX_REASONABLE_RESET_AHEAD_MS = 10 * 24 * 60 * 60_000
 /** Maximum server reset-time jitter accepted as one canonical quota period. */
 const RATE_LIMIT_RESET_TOLERANCE_MS = 60_000
 
+/**
+ * Merges rate limit window.
+ * @param current Previously retained value.
+ * @param patch New value to merge.
+ * @returns Rate-limit window after freshness and reset checks.
+ */
 function mergeRateLimitWindow(
   current: TokenRateLimitWindow | undefined,
   patch: TokenRateLimitWindow | undefined,
@@ -1215,6 +1406,12 @@ function mergeRateLimitWindow(
   }
 }
 
+/**
+ * Computes sanitize rate limit window.
+ * @param window Quota window to process.
+ * @param nowMs Now ms.
+ * @returns Validated rate-limit window, or `undefined` when unusable.
+ */
 function sanitizeRateLimitWindow(
   window: TokenRateLimitWindow,
   nowMs: number,
@@ -1231,12 +1428,22 @@ function sanitizeRateLimitWindow(
   return window
 }
 
+/**
+ * Checks whether absurd reset ms.
+ * @param resetMs Reset ms.
+ * @param nowMs Now ms.
+ * @returns Whether the condition is satisfied.
+ */
 function isAbsurdResetMs(resetMs: number | undefined, nowMs: number): boolean {
   if (resetMs == null) return false
   return resetMs - nowMs > MAX_REASONABLE_RESET_AHEAD_MS
 }
 
-/** Normalize resets_at that may be seconds or milliseconds. */
+/** Normalize resets_at that may be seconds or milliseconds.
+
+ * @param resetsAt Resets at.
+ * @returns Reset timestamp normalized to epoch milliseconds.
+*/
 function normalizeResetAtMs(resetsAt: number | undefined): number | undefined {
   if (typeof resetsAt !== 'number' || !Number.isFinite(resetsAt)) return undefined
   return resetsAt < 1_000_000_000_000 ? resetsAt * 1000 : resetsAt
@@ -1251,6 +1458,7 @@ function normalizeResetAtMs(resetsAt: number | undefined): number | undefined {
  * @param incoming Incoming reset in epoch milliseconds.
  * @param current Current reset in epoch milliseconds.
  * @returns Signed ordering, or `undefined` when either reset is unavailable.
+
  */
 function compareRateLimitResetAt(
   incoming: number | undefined,
@@ -1266,6 +1474,7 @@ function compareRateLimitResetAt(
  *
  * @param event 携带工具/命令上下文的事件。
  * @returns 中文活动描述；无可描述内容时为 `undefined`。
+
  */
 function describeTool(event: AgentEvent): string | undefined {
   if (event.command) return `正在执行 ${event.command}`
@@ -1276,7 +1485,12 @@ function describeTool(event: AgentEvent): string | undefined {
 /**
  * Keep the project root for display when later tool hooks report a subdirectory cwd.
  * If paths are unrelated, prefer the newer path.
- */
+
+
+ * @param current Previously retained value.
+ * @param incoming Incoming workspace path.
+ * @returns Workspace path with the stronger project identity.
+*/
 export function preferWorkspacePath(
   current: string | undefined,
   incoming: string | undefined,
@@ -1301,7 +1515,10 @@ export function preferWorkspacePath(
  *
  * @param value 已被类型系统收窄为 `never` 的值。
  * @returns 永不返回。
- */
+
+
+ * @throws If assert never cannot be completed.
+*/
 function assertNever(value: never): never {
   throw new Error(`Unhandled event type: ${String(value)}`)
 }

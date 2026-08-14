@@ -10,6 +10,24 @@ import {
   latestQuotaToken,
 } from '../apps/desktop/src/renderer/src/lib/displayAgents.js'
 
+test('StatusHub applies a retried hook delivery only once', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const event: AgentEvent = {
+    id: 'hook:retry-safe-event',
+    source: 'codex',
+    eventType: 'tool_start',
+    externalSessionId: 'retry-session',
+    cwd: 'E:/project/retry',
+    timestamp: 100,
+  }
+
+  hub.ingest(event)
+  hub.ingest(event)
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.toolCallCount, 1)
+})
+
 test('StatusHub keeps the same agent separated by workspace', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
 
@@ -743,6 +761,94 @@ test('StatusHub keeps the newest Codex model and thinking-depth snapshot atomic'
   assert.equal(codex?.model, 'gpt-5.6-terra')
   assert.equal(codex?.reasoningEffort, undefined)
   assert.equal(codex?.modelObservedAt, 4_000)
+})
+
+test('StatusHub rejects context coupled to an older Codex model snapshot', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const base = {
+    source: 'codex' as const,
+    eventType: 'token_snapshot' as const,
+    externalSessionId: 'model-context-session',
+    cwd: 'E:/project/model-context',
+  }
+  hub.ingest({
+    ...base,
+    id: 'terra-current-context',
+    model: 'gpt-5.6-terra',
+    reasoningEffort: 'ultra',
+    modelObservedAt: 3_000,
+    timestamp: 3_000,
+    token: {
+      contextWindow: 258_400,
+      contextUsedPercent: 20,
+      input: 51_680,
+      accuracy: 'exact',
+    },
+  })
+  hub.ingest({
+    ...base,
+    id: 'late-sol-context',
+    model: 'gpt-5.6-sol',
+    reasoningEffort: 'max',
+    modelObservedAt: 2_000,
+    timestamp: 4_000,
+    token: {
+      contextWindow: 258_400,
+      contextUsedPercent: 80,
+      input: 206_720,
+      clearContext: true,
+      rateLimits: {
+        sevenDay: { usedPercent: 30, resetsAt: 2_000_000_000, windowMinutes: 10_080 },
+      },
+      accuracy: 'exact',
+    },
+  })
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.model, 'gpt-5.6-terra')
+  assert.equal(codex?.reasoningEffort, 'ultra')
+  assert.equal(codex?.token?.contextUsedPercent, 20)
+  assert.equal(codex?.token?.input, 51_680)
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 30)
+})
+
+test('StatusHub accepts estimated context after an explicit exact context clear', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const base = {
+    source: 'codex' as const,
+    eventType: 'token_snapshot' as const,
+    externalSessionId: 'cleared-context-session',
+    cwd: 'E:/project/cleared-context',
+  }
+  hub.ingest({
+    ...base,
+    id: 'exact-context',
+    timestamp: 1_000,
+    token: { contextWindow: 258_400, contextUsedPercent: 40, accuracy: 'exact' },
+  })
+  hub.ingest({
+    ...base,
+    id: 'clear-context',
+    timestamp: 2_000,
+    token: { clearContext: true, accuracy: 'exact' },
+  })
+  hub.ingest({
+    ...base,
+    id: 'estimated-context',
+    timestamp: 3_000,
+    token: { contextWindow: 258_400, contextUsedPercent: 5, accuracy: 'estimated' },
+  })
+  hub.ingest({
+    ...base,
+    id: 'newer-estimated-context',
+    timestamp: 4_000,
+    token: { contextWindow: 258_400, contextUsedPercent: 15, accuracy: 'estimated' },
+  })
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.token?.contextUsedPercent, 15)
+  assert.equal(codex?.token?.contextWindow, 258_400)
+  assert.equal(codex?.token?.contextAccuracy, 'estimated')
 })
 
 test('StatusHub applies and clears Claude thinking-depth settings by observation time', () => {
@@ -1986,6 +2092,93 @@ test('StatusHub merges partial token snapshots instead of dropping previous fiel
   assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 18)
 })
 
+test('StatusHub clears retained Codex context on an explicit unknown model snapshot', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+
+  hub.ingest({
+    id: 'known-model-context',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'model-switch-session',
+    cwd: 'E:/project/model-switch',
+    model: 'gpt-5.6-sol',
+    modelObservedAt: 100,
+    timestamp: 100,
+    token: {
+      total: 10_000,
+      contextUsedPercent: 24,
+      contextWindow: 258_400,
+      contextStale: true,
+      contextCompressed: true,
+      rateLimits: {
+        sevenDay: { usedPercent: 18, resetsAt: 9_000 },
+      },
+      accuracy: 'exact',
+    },
+  })
+  hub.ingest({
+    id: 'unknown-new-model-context',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'model-switch-session',
+    cwd: 'E:/project/model-switch',
+    model: 'gpt-5.6-terra',
+    modelObservedAt: 200,
+    timestamp: 200,
+    token: {
+      total: 12_000,
+      clearContext: true,
+      accuracy: 'exact',
+    },
+  })
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.model, 'gpt-5.6-terra')
+  assert.equal(codex?.token?.total, 12_000)
+  assert.equal(codex?.token?.contextUsedPercent, undefined)
+  assert.equal(codex?.token?.contextWindow, undefined)
+  assert.equal(codex?.token?.contextStale, undefined)
+  assert.equal(codex?.token?.contextCompressed, undefined)
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 18)
+  assert.equal(codex?.token?.clearContext, undefined)
+})
+
+test('StatusHub does not clear exact context for an ordinary missing-field patch', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+
+  hub.ingest({
+    id: 'exact-context',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'partial-exact-session',
+    cwd: 'E:/project/partial-exact',
+    timestamp: 100,
+    token: {
+      total: 10_000,
+      contextUsedPercent: 24,
+      contextWindow: 258_400,
+      accuracy: 'exact',
+    },
+  })
+  hub.ingest({
+    id: 'ordinary-exact-patch',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'partial-exact-session',
+    cwd: 'E:/project/partial-exact',
+    timestamp: 200,
+    token: {
+      total: 12_000,
+      accuracy: 'exact',
+    },
+  })
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.token?.total, 12_000)
+  assert.equal(codex?.token?.contextUsedPercent, 24)
+  assert.equal(codex?.token?.contextWindow, 258_400)
+})
+
 test('StatusHub marks contextCompressed when occupancy drops sharply on same window', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
 
@@ -2251,6 +2444,65 @@ test('StatusHub accepts lower quota only after five confirmed observations', () 
   assert.equal(codex?.token?.rateLimits?.sevenDay?.resetsAt, 10_000)
 })
 
+test('StatusHub isolates Codex quota when the authenticated account changes', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const firstReset = Math.floor(Date.now() / 1000) + 86_400
+  const secondReset = firstReset + 60
+
+  hub.ingest({
+    id: 'old-account-quota',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'live-session',
+    cwd: 'E:/project/live',
+    model: 'gpt-5.6-sol',
+    timestamp: 100,
+    token: {
+      contextUsedPercent: 35,
+      contextWindow: 258_400,
+      rateLimitId: 'codex',
+      rateLimits: {
+        sevenDay: { usedPercent: 82, resetsAt: firstReset, windowMinutes: 10_080 },
+      },
+      accuracy: 'exact',
+    },
+  })
+
+  let statusEvents = 0
+  hub.on('status', () => {
+    statusEvents += 1
+  })
+  assert.equal(hub.invalidateAgentQuota('codex'), true)
+  assert.equal(statusEvents, 1)
+
+  const cleared = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(cleared?.model, 'gpt-5.6-sol')
+  assert.equal(cleared?.token?.contextUsedPercent, 35)
+  assert.equal(cleared?.token?.contextWindow, 258_400)
+  assert.equal(cleared?.token?.rateLimits, undefined)
+  assert.equal(cleared?.token?.quotaBuckets, undefined)
+
+  hub.observeQuota({
+    id: 'new-account-first-read',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'live-session',
+    cwd: 'E:/project/live',
+    timestamp: 200,
+    token: {
+      rateLimitId: 'codex',
+      rateLimits: {
+        sevenDay: { usedPercent: 3, resetsAt: secondReset, windowMinutes: 10_080 },
+      },
+      accuracy: 'exact',
+    },
+    internal: { quotaRefresh: true, usageSampleId: 'new-account-first-read' },
+  })
+
+  const refreshed = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(refreshed?.token?.rateLimits?.sevenDay?.usedPercent, 3)
+})
+
 test('StatusHub deduplicates fan-out reads and projects confirmed resets to every session', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0 })
   const highReset = Math.floor(Date.now() / 1000) + 86_400
@@ -2317,6 +2569,163 @@ test('StatusHub deduplicates fan-out reads and projects confirmed resets to ever
   assert.ok(agents.length > 1)
   assert.ok(agents.every((agent) => agent.token?.rateLimits?.sevenDay?.usedPercent === 3))
   assert.ok(agents.every((agent) => agent.token?.rateLimits?.sevenDay?.resetsAt === lowReset))
+})
+
+test('StatusHub never recounts interleaved lower quota sample identities', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const resetAt = Math.floor(Date.now() / 1000) + 86_400
+  const ingestUsage = (id: string, usedPercent: number): void => {
+    hub.ingest({
+      id: `event-${id}-${usedPercent}`,
+      source: 'codex',
+      eventType: 'token_snapshot',
+      cwd: 'E:/project/a',
+      timestamp: 100,
+      token: {
+        accuracy: 'exact',
+        rateLimitId: 'codex',
+        rateLimits: {
+          sevenDay: { usedPercent, resetsAt: resetAt, windowMinutes: 10_080 },
+        },
+      },
+      internal: { usageSampleId: id },
+    })
+  }
+
+  ingestUsage('seed', 60)
+  for (const id of [
+    'native-row-a',
+    'native-row-b',
+    'native-row-a',
+    'native-row-b',
+    'native-row-a',
+  ]) {
+    ingestUsage(id, 10)
+  }
+  let codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 60)
+
+  for (const id of ['native-row-c', 'native-row-d', 'native-row-e']) ingestUsage(id, 10)
+  codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 10)
+})
+
+test('StatusHub never counts quota notifications toward a lower reset', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const resetAt = Math.floor(Date.now() / 1000) + 86_400
+  /**
+   * Applies one physical or notification quota observation.
+   *
+   * @param id Stable identifier for one native sample.
+   * @param usedPercent Weekly usage, or `undefined` for a sparse physical read.
+   * @param source Whether the value came from a physical read or push notification.
+   * @param fiveHourUsedPercent Optional five-hour usage in the same observation.
+   */
+  const observe = (
+    id: string,
+    usedPercent: number | undefined,
+    source: 'read' | 'notification',
+    fiveHourUsedPercent?: number,
+  ): void => {
+    hub.observeQuota({
+      id,
+      source: 'codex',
+      eventType: 'token_snapshot',
+      timestamp: 100,
+      token: {
+        accuracy: 'exact',
+        rateLimitId: 'codex',
+        rateLimits: {
+          ...(fiveHourUsedPercent === undefined
+            ? {}
+            : {
+                fiveHour: {
+                  usedPercent: fiveHourUsedPercent,
+                  resetsAt: resetAt,
+                  windowMinutes: 300,
+                },
+              }),
+          ...(usedPercent === undefined
+            ? {}
+            : {
+                sevenDay: { usedPercent, resetsAt: resetAt, windowMinutes: 10_080 },
+              }),
+        },
+      },
+      internal: {
+        quotaRefresh: true,
+        usageSampleId: id,
+        quotaObservationSource: source,
+      },
+    })
+  }
+
+  observe('seed', 70, 'read')
+  observe('physical-1', 10, 'read')
+  observe('sparse-physical', undefined, 'read', 20)
+  // The first notification also adds a visible five-hour window. This forces
+  // StatusHub to apply the projected event a second time and verifies that its
+  // clamped weekly value still cannot reset or advance the physical-read streak.
+  observe('notification-1', 10, 'notification', 25)
+  for (let index = 2; index <= 4; index += 1) {
+    observe(`notification-${index}`, 10, 'notification')
+  }
+  let codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 70)
+  assert.equal(codex?.token?.rateLimits?.fiveHour?.usedPercent, 25)
+
+  for (let index = 2; index <= 5; index += 1) observe(`physical-${index}`, 10, 'read')
+  codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 10)
+})
+
+test('StatusHub preserves a physical lower streak while other quota windows grow', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const resetAt = Math.floor(Date.now() / 1000) + 86_400
+  const observe = (
+    id: string,
+    weekly: number,
+    fiveHour: number,
+    source: 'read' | 'notification',
+  ): void => {
+    hub.observeQuota({
+      id,
+      source: 'codex',
+      eventType: 'token_snapshot',
+      timestamp: 100,
+      token: {
+        accuracy: 'exact',
+        rateLimitId: 'codex',
+        rateLimits: {
+          fiveHour: { usedPercent: fiveHour, resetsAt: resetAt, windowMinutes: 300 },
+          sevenDay: { usedPercent: weekly, resetsAt: resetAt, windowMinutes: 10_080 },
+        },
+      },
+      internal: {
+        quotaRefresh: true,
+        usageSampleId: id,
+        quotaObservationSource: source,
+      },
+    })
+  }
+
+  observe('mixed-seed', 70, 20, 'read')
+  observe('mixed-physical-1', 10, 21, 'read')
+  observe('mixed-notification', 10, 22, 'notification')
+  let codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 70)
+  assert.equal(codex?.token?.rateLimits?.fiveHour?.usedPercent, 22)
+
+  for (let index = 2; index <= 4; index += 1) {
+    observe(`mixed-physical-${index}`, 10, 22 + index, 'read')
+  }
+  codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 70)
+
+  observe('mixed-physical-5', 10, 27, 'read')
+  codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 10)
+  assert.equal(codex?.token?.rateLimits?.fiveHour?.usedPercent, 27)
 })
 
 test('StatusHub emits an account observation only when its accepted quota changes', () => {

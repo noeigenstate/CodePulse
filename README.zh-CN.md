@@ -7,7 +7,7 @@
 一眼看清 Codex、Claude Code、Grok 与 Kimi Code 正在工作、在等你、已完成，还是卡住了——
 无需切回终端反复确认。
 
-[![status](https://img.shields.io/badge/status-v1.3.3-brightgreen)](#功能特性)
+[![status](https://img.shields.io/badge/status-v1.4.0-brightgreen)](#功能特性)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#下载)
 [![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#开发)
@@ -68,8 +68,8 @@ AI 编程代理很擅长无人值守地干活，却不擅长在需要你时通�
 | 🎨 **自动黑白主题**       | 自动模式在 08:00–20:00 使用白色，其余时间使用黑色，也可手动固定主题。                                   |
 | ⚙️ **CLI 面板设置**       | 通过右上角齿轮增删要显示的 CLI；隐藏面板不会停止后台同步或通知。                                        |
 | 🧠 **模型、深度与耗时**   | 稳定显示实际模型、可读取的思考深度和 CLI 原生耗时，刷新后仍可恢复。                                     |
-| 📈 **上下文追踪**         | 上下文用量保持线性增长；忽略读取噪声造成的小幅回退，并正确处理上下文压缩。                              |
-| 🎟️ **配额感知**           | 已显示额度保持常驻；更高读数立即更新，更低读数连续确认后才判定为官方重置。                              |
+| 📈 **上下文追踪**         | 直接读取 CLI 原生上下文快照；修复 Windows 长会话漏同步，并正确处理上下文压缩。                          |
+| 🎟️ **配额感知**           | Codex 读取官方 App Server 额度；增长立即更新，降低连续确认后才判定为官方重置。                          |
 | 🔔 **一眼可读的通知**     | 仅任务完成或疑似卡住时提醒；完成标题为项目名，正文为精简后的提问摘要。                                  |
 | 🕰️ **卡住检测**           | 看门狗会标记长时间无活动的轮次，让静默失败不再白白浪费时间。                                            |
 | 💾 **本地历史**           | 事件、会话、轮次与 token 快照持久化到 SQLite——数据归你所有，可查可删。                                  |
@@ -104,7 +104,7 @@ AI 编程代理很擅长无人值守地干活，却不擅长在需要你时通�
 
 ```
  Codex / Claude Code / Grok / Kimi Code
-   │  生命周期 hook 与 status line（零依赖 Node 脚本）
+   │  生命周期 hook、原生日志与 Codex App Server
    ▼
  POST /api/events ──► 适配器 ──► StatusHub（纯 reducer + 规则引擎）
  （Fastify，回环）     归一化         │
@@ -124,8 +124,8 @@ packages/
   core/              状态机、规则引擎、聚合、StatusHub
   adapters/          Codex / Claude / Grok / Kimi 原始 payload → AgentEvent 映射
   storage/           SQLite schema（Drizzle ORM）、仓储与用量统计查询
-  local-server/      Fastify HTTP + WebSocket 路由
-  hooks/             agent 调用的独立 hook 脚本（含 Codex/Grok/Kimi 用量读取）
+  local-server/      Fastify HTTP + WebSocket 路由、会话同步与官方额度读取
+  hooks/             agent 调用的轻量生命周期 hook 脚本
 scripts/             后端冒烟测试
 tests/               单元测试
 ```

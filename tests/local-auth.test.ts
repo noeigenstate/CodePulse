@@ -22,6 +22,7 @@ test('local server rejects unauthenticated event posts when auth is enabled', as
     host: '127.0.0.1',
     port,
     disableSessionSync: true,
+    disableCodexAppServer: true,
     authToken: 'a'.repeat(32),
     authTokenPath: join(home, 'local-auth'),
   })

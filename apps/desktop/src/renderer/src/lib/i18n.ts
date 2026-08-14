@@ -354,7 +354,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
       failed: '更新失败，请稍后重试。',
     },
     contextStatus: {
-      waiting: '等待命令行同步上下文',
+      waiting: '等待首次模型响应',
       lastPrefix: '上次：',
       compressedPrefix: '已压缩：',
       left: '剩余',
@@ -570,7 +570,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
       failed: 'Update failed. Please try again later.',
     },
     contextStatus: {
-      waiting: 'Waiting for CLI context',
+      waiting: 'Waiting for first model response',
       lastPrefix: 'last: ',
       compressedPrefix: 'compressed: ',
       left: 'left',

@@ -3,6 +3,7 @@
  * 以保证后端通知与渲染端 UI 使用一致的措辞和舍入规则。
  *
  * @module shared/token-format
+
  */
 import type { AgentType } from './types/agent.js'
 import type { TokenPayload, TokenRateLimitWindow } from './types/token.js'
@@ -10,6 +11,11 @@ import type { TokenPayload, TokenRateLimitWindow } from './types/token.js'
 /** AI CLI 滚动配额窗口的用户可见标签。 */
 export const TOKEN_QUOTA_WINDOW_LABEL = '5 小时额度'
 
+/**
+ * Parses token count.
+ * @param value Human-readable token count such as `1.2M` or `32k`.
+ * @returns Parsed token count, or `undefined` for invalid input.
+ */
 export function parseTokenCount(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) return value
   if (typeof value !== 'string') return undefined
@@ -31,6 +37,7 @@ export function parseTokenCount(value: unknown): number | undefined {
  *
  * @param n token 数量（可能未知）。
  * @returns 紧凑的数量字符串；未知时返回 `—`。
+
  */
 export function formatTokenCount(n: number | undefined): string {
   if (n == null) return '—'
@@ -40,6 +47,11 @@ export function formatTokenCount(n: number | undefined): string {
   return `${(n / 1_000_000_000).toFixed(2).replace(/\.?0+$/, '')}B`
 }
 
+/**
+ * Formats token count with unit.
+ * @param n Token count to format.
+ * @returns Compact token count and the unit used to display it.
+ */
 export function formatTokenCountWithUnit(n: number | undefined): string {
   const count = formatTokenCount(n)
   return n == null ? count : `${count} token`
@@ -50,6 +62,7 @@ export function formatTokenCountWithUnit(n: number | undefined): string {
  *
  * @param pct 百分比值（可能未知）。
  * @returns 四舍五入后的百分比；未知时返回 `—`。
+
  */
 export function formatTokenPercent(pct: number | undefined): string {
   if (pct == null || !Number.isFinite(pct)) return '—'
@@ -61,6 +74,7 @@ export function formatTokenPercent(pct: number | undefined): string {
  *
  * @param token token 载荷（可能不存在）。
  * @returns 紧凑的用量摘要；无数据时返回 `Token 暂无数据`。
+
  */
 export function formatTokenUsage(token: TokenPayload | undefined): string {
   if (!token) return 'Token 暂无数据'
@@ -75,11 +89,22 @@ export function formatTokenUsage(token: TokenPayload | undefined): string {
   return parts.length > 0 ? parts.join(' / ') : 'Token 暂无数据'
 }
 
-/** Codex / Grok 仅周额度；Claude Code 保留 5 小时 + 周额度。 */
+/** Codex / Grok 仅周额度；Claude Code 保留 5 小时 + 周额度。
+
+ * @param agent CLI agent family.
+ * @returns Whether the agent exposes its five-hour quota window.
+*/
 function showsFiveHourQuota(agent: AgentType | undefined): boolean {
   return agent === 'claude_code'
 }
 
+/**
+ * Formats token quota detail.
+ * @param token Token payload to process.
+ * @param now Current epoch timestamp in milliseconds.
+ * @param agent Agent runtime state.
+ * @returns Human-readable quota detail, or `undefined` when quota is unavailable.
+ */
 export function formatTokenQuotaDetail(
   token: TokenPayload | undefined,
   now = Date.now(),
@@ -94,6 +119,13 @@ export function formatTokenQuotaDetail(
   return parts.join(' / ')
 }
 
+/**
+ * Formats token quota window.
+ * @param label Localized quota-window label.
+ * @param window Quota window to process.
+ * @param now Current epoch timestamp in milliseconds.
+ * @returns Formatted quota-window description.
+ */
 function formatTokenQuotaWindow(
   label: string,
   window: TokenRateLimitWindow | undefined,
@@ -105,6 +137,12 @@ function formatTokenQuotaWindow(
   )}`
 }
 
+/**
+ * Formats token quota reset.
+ * @param resetsAt Quota reset timestamp in seconds or milliseconds.
+ * @param now Current epoch timestamp in milliseconds.
+ * @returns Human-readable reset countdown, or `undefined` for implausible timestamps.
+ */
 export function formatTokenQuotaReset(resetsAt: number | undefined, now = Date.now()): string {
   if (!resetsAt) return '刷新 —'
   const resetAtMs = resetsAt < 1_000_000_000_000 ? resetsAt * 1000 : resetsAt
@@ -113,6 +151,11 @@ export function formatTokenQuotaReset(resetsAt: number | undefined, now = Date.n
   return `刷新 ${formatResetDuration(remaining)}`
 }
 
+/**
+ * Formats reset duration.
+ * @param ms Duration in milliseconds.
+ * @returns Compact localized duration.
+ */
 function formatResetDuration(ms: number): string {
   const totalMinutes = Math.max(0, Math.floor(ms / 60_000))
   const days = Math.floor(totalMinutes / 1440)
@@ -129,7 +172,9 @@ function formatResetDuration(ms: number): string {
  *
  * @param agent 产生该测量值的 agent。
  * @param token 最新的 token 载荷。
+ * @param now 用于计算重置倒计时的当前时间戳。
  * @returns 简短的通知正文。
+
  */
 export function formatTokenQuotaNotice(
   agent: AgentType,
@@ -142,10 +187,10 @@ export function formatTokenQuotaNotice(
     agent === 'codex'
       ? 'Codex token 为估算值'
       : agent === 'grok'
-        ? token.accuracy === 'estimated'
+        ? (token.contextAccuracy ?? token.accuracy) === 'estimated'
           ? 'Grok token 为估算值'
           : 'Grok token 来自 hook'
-        : token.accuracy === 'estimated'
+        : (token.contextAccuracy ?? token.accuracy) === 'estimated'
           ? 'Claude token 为估算值'
           : 'Claude token 来自 status line'
   return `Token/context 已使用 ${pct}。${quotaText}，窗口以对应 CLI 的官方重置时间为准，${sourceNote}。`

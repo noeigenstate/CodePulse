@@ -1,11 +1,20 @@
 import assert from 'node:assert/strict'
-import { mkdir, rm, writeFile, utimes } from 'node:fs/promises'
+import { appendFile, mkdir, rm, writeFile, utimes } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { StatusHub } from '@codepulse/core'
 import { TurnState } from '@codepulse/shared'
-import { SessionSyncService } from '@codepulse/local-server'
+import {
+  isCliProcessAlive,
+  SessionSyncService,
+  type CodexRolloutSnapshot,
+} from '@codepulse/local-server'
+import {
+  CODEX_ROLLOUT_DISCOVERY_LIMITS,
+  listLiveCodexRollouts,
+  type CodexRolloutDiscoveryFs,
+} from '../packages/local-server/src/session-sync.js'
 
 test('SessionSyncService hydrates Codex project from local rollout within one scan', async () => {
   const home = await mkdtempJoin('codepulse-session-sync-')
@@ -741,6 +750,10 @@ test('SessionSyncService start() resolves after first disk hydrate', async () =>
 })
 
 test('SessionSyncService ignores dormant Codex rollouts and closed CLI', async () => {
+  // Advance the injected clock beyond this test's real filesystem ChangeTime.
+  // That models a genuinely dormant NTFS file instead of a newly created file
+  // whose LastWriteTime the fixture then moves backwards.
+  const virtualNow = Date.now() + 10 * 60_000
   const home = await mkdtempJoin('codepulse-session-sync-dormant-')
   const sessions = join(home, 'sessions', '2026', '07', '14')
   const liveId = '019f7100-aaaa-bbbb-cccc-ddddeeeeffff'
@@ -779,9 +792,9 @@ test('SessionSyncService ignores dormant Codex rollouts and closed CLI', async (
 
   await writeFile(liveRollout, body(liveId, liveCwd), 'utf8')
   await writeFile(dormantRollout, body(dormantId, dormantCwd), 'utf8')
-  await utimes(liveRollout, new Date(), new Date())
+  await utimes(liveRollout, new Date(virtualNow), new Date(virtualNow))
   // 20 minutes ago — outside CODEX_LIVE_MS (5m), still inside 48h quota fallback only if alone
-  const old = new Date(Date.now() - 20 * 60_000)
+  const old = new Date(virtualNow - 20 * 60_000)
   await utimes(dormantRollout, old, old)
 
   const hub = new StatusHub({ sessionThrottleMs: 0 })
@@ -791,6 +804,7 @@ test('SessionSyncService ignores dormant Codex rollouts and closed CLI', async (
     codexHome: home,
     grokHome: join(home, 'no-grok'),
     claudeHome: join(home, 'no-claude'),
+    now: () => virtualNow,
     disableWatch: true,
     codexProcessAlive: () => true,
   })
@@ -826,6 +840,322 @@ test('SessionSyncService ignores dormant Codex rollouts and closed CLI', async (
     sync2.stop()
     await rm(home, { recursive: true, force: true })
   }
+})
+
+test('SessionSyncService ignores its App Server descendants without hiding a real Codex CLI', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-codex-pid-exclusion-')
+  const sessions = join(home, 'sessions', '2026', '08', '12')
+  const rollout = join(sessions, 'rollout-recently-closed.jsonl')
+  const appServerWrapperPid = 42_424
+  const appServerNodePid = 42_425
+  const appServerCodexPid = 42_426
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    rollout,
+    JSON.stringify({
+      type: 'session_meta',
+      payload: {
+        id: '019fa004-1111-2222-3333-444455556666',
+        cwd: 'E:/work/recently-closed',
+      },
+    }),
+    'utf8',
+  )
+
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  let exposedAppServerPid: number | undefined
+  let exclusionsBeforeQuery = new Set<number>()
+  let exclusionsAfterQuery = new Set<number>()
+  const initialCommands: string[] = []
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: home,
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    excludedCodexProcessIds: () => (exposedAppServerPid === undefined ? [] : [exposedAppServerPid]),
+    codexProcessAlive: async (readExcludedProcessIds) => {
+      exclusionsBeforeQuery = new Set(readExcludedProcessIds())
+      const alive = await isCliProcessAlive('codex', {
+        platform: 'win32',
+        excludedProcessIds: readExcludedProcessIds,
+        runCommand: async (command, args) => {
+          initialCommands.push(command)
+          if (command === 'tasklist') {
+            assert.deepEqual(args, ['/FI', 'IMAGENAME eq codex.exe', '/FO', 'CSV', '/NH'])
+            exposedAppServerPid = appServerWrapperPid
+            return `"codex.exe","${appServerCodexPid}","Console","1","20,000 K"`
+          }
+          assert.equal(command, 'powershell.exe')
+          assert.equal(
+            args.includes(
+              'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name | ConvertTo-Csv -NoTypeInformation',
+            ),
+            true,
+          )
+          return [
+            '"ProcessId","ParentProcessId","Name"',
+            `"${appServerWrapperPid}","100","cmd.exe"`,
+            `"${appServerNodePid}","${appServerWrapperPid}","node.exe"`,
+            `"${appServerCodexPid}","${appServerNodePid}","codex.exe"`,
+          ].join('\r\n')
+        },
+      })
+      exclusionsAfterQuery = new Set(readExcludedProcessIds())
+      return alive
+    },
+  })
+
+  try {
+    await sync.syncNow(['codex'])
+    assert.deepEqual([...exclusionsBeforeQuery], [])
+    assert.deepEqual([...exclusionsAfterQuery], [appServerWrapperPid])
+    assert.deepEqual(initialCommands, ['tasklist', 'powershell.exe'])
+    assert.equal(
+      hub.snapshot().agents.filter((agent) => agent.agentType === 'codex').length,
+      0,
+      'the background App Server alone must not revive a recently closed rollout',
+    )
+
+    const stableCommands: string[] = []
+    assert.equal(
+      await isCliProcessAlive('codex', {
+        platform: 'win32',
+        excludedProcessIds: [appServerWrapperPid],
+        runCommand: async (command) => {
+          stableCommands.push(command)
+          assert.equal(command, 'tasklist', 'a stable classification must not query CIM again')
+          return `"codex.exe","${appServerCodexPid}","Console","1","20,000 K"`
+        },
+      }),
+      false,
+      'the cached descendant classification must remain excluded',
+    )
+    assert.deepEqual(stableCommands, ['tasklist'])
+
+    const changedTargetCommands: string[] = []
+    assert.equal(
+      await isCliProcessAlive('codex', {
+        platform: 'win32',
+        excludedProcessIds: [appServerWrapperPid],
+        runCommand: async (command) => {
+          changedTargetCommands.push(command)
+          if (command === 'tasklist') {
+            return [
+              `"codex.exe","${appServerCodexPid}","Console","1","20,000 K"`,
+              '"codex.exe","52525","Console","1","40,000 K"',
+            ].join('\r\n')
+          }
+          return [
+            '"ProcessId","ParentProcessId","Name"',
+            `"${appServerWrapperPid}","100","cmd.exe"`,
+            `"${appServerNodePid}","${appServerWrapperPid}","node.exe"`,
+            `"${appServerCodexPid}","${appServerNodePid}","codex.exe"`,
+            '"52525","200","codex.exe"',
+          ].join('\r\n')
+        },
+      }),
+      true,
+      'a second, non-excluded Codex process must still count as interactive',
+    )
+    assert.deepEqual(
+      changedTargetCommands,
+      ['tasklist', 'powershell.exe'],
+      'a changed target PID set must refresh the tree classification',
+    )
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('Windows CLI liveness caches failed CIM classification by exact root and target sets', async () => {
+  let wrapperPid = 62_424
+  let codexPid = 62_426
+  let commands: string[] = []
+
+  /**
+   * Runs one failed Windows tree classification with the current fake PIDs.
+   *
+   * @returns Conservative liveness result after the injected CIM failure.
+   */
+  const detect = async (): Promise<boolean> =>
+    isCliProcessAlive('codex', {
+      platform: 'win32',
+      excludedProcessIds: [wrapperPid],
+      runCommand: async (command) => {
+        commands.push(command)
+        if (command === 'tasklist') {
+          return `"codex.exe","${codexPid}","Console","1","20,000 K"`
+        }
+        throw new Error('CIM unavailable')
+      },
+    })
+
+  assert.equal(await detect(), false)
+  assert.deepEqual(commands, ['tasklist', 'powershell.exe'])
+
+  commands = []
+  assert.equal(await detect(), false)
+  assert.deepEqual(commands, ['tasklist'], 'the exact failed classification must suppress CIM')
+
+  codexPid += 1
+  commands = []
+  assert.equal(await detect(), false)
+  assert.deepEqual(
+    commands,
+    ['tasklist', 'powershell.exe'],
+    'a changed target PID set must retry CIM immediately',
+  )
+
+  wrapperPid += 1
+  commands = []
+  assert.equal(await detect(), false)
+  assert.deepEqual(
+    commands,
+    ['tasklist', 'powershell.exe'],
+    'a changed excluded root set must retry CIM immediately',
+  )
+})
+
+test('Windows CLI liveness skips CIM when no excluded roots exist', async () => {
+  const commands: string[] = []
+  const alive = await isCliProcessAlive('kimi', {
+    platform: 'win32',
+    runCommand: async (command) => {
+      commands.push(command)
+      assert.equal(command, 'tasklist')
+      return '"kimi.exe","72525","Console","1","20,000 K"'
+    },
+  })
+
+  assert.equal(alive, true)
+  assert.deepEqual(commands, ['tasklist'])
+})
+
+test('Unix CLI liveness caches descendant classification and refreshes changed targets', async () => {
+  const wrapperPid = 82_424
+  const nodePid = 82_425
+  const appServerCodexPid = 82_426
+  const independentCodexPid = 82_525
+  let excludedWrapperPid = wrapperPid
+  let targetPids = [appServerCodexPid]
+  let commands: string[] = []
+  const runCommand = async (command: string, args: readonly string[]): Promise<string> => {
+    commands.push(command)
+    if (command === 'pgrep') {
+      assert.deepEqual(args, ['-x', 'codex'])
+      return targetPids.join('\n')
+    }
+    assert.equal(command, 'ps')
+    assert.deepEqual(args, ['-axo', 'pid=,ppid=,comm='])
+    return [
+      `  ${excludedWrapperPid}       100 node`,
+      `  ${nodePid}     ${excludedWrapperPid} /usr/local/bin/node`,
+      `  ${appServerCodexPid}     ${nodePid} /vendor/codex`,
+      ...(targetPids.includes(independentCodexPid)
+        ? [`  ${independentCodexPid}       200 /opt/codex/bin/codex`]
+        : []),
+    ].join('\n')
+  }
+
+  assert.equal(
+    await isCliProcessAlive('codex', {
+      platform: 'linux',
+      excludedProcessIds: [excludedWrapperPid],
+      runCommand,
+    }),
+    false,
+    'a vendor Codex descendant of the npm wrapper must be excluded',
+  )
+  assert.deepEqual(commands, ['pgrep', 'ps'])
+
+  commands = []
+  assert.equal(
+    await isCliProcessAlive('codex', {
+      platform: 'linux',
+      excludedProcessIds: [excludedWrapperPid],
+      runCommand,
+    }),
+    false,
+  )
+  assert.deepEqual(commands, ['pgrep'], 'a stable root and target set must reuse classification')
+
+  commands = []
+  targetPids = [appServerCodexPid, independentCodexPid]
+  assert.equal(
+    await isCliProcessAlive('codex', {
+      platform: 'linux',
+      excludedProcessIds: [excludedWrapperPid],
+      runCommand,
+    }),
+    true,
+    'an independent Codex process must still count as interactive',
+  )
+  assert.deepEqual(commands, ['pgrep', 'ps'], 'a changed target set must refresh classification')
+
+  commands = []
+  excludedWrapperPid = 82_624
+  targetPids = [appServerCodexPid]
+  assert.equal(
+    await isCliProcessAlive('codex', {
+      platform: 'linux',
+      excludedProcessIds: [excludedWrapperPid],
+      runCommand,
+    }),
+    false,
+  )
+  assert.deepEqual(
+    commands,
+    ['pgrep', 'ps'],
+    'a restarted wrapper root must refresh classification',
+  )
+})
+
+test('Unix CLI liveness skips the process tree when no excluded roots exist', async () => {
+  const commands: string[] = []
+  const alive = await isCliProcessAlive('kimi', {
+    platform: 'darwin',
+    runCommand: async (command, args) => {
+      commands.push(command)
+      assert.equal(command, 'pgrep')
+      assert.deepEqual(args, ['-x', 'kimi'])
+      return '92525\n'
+    },
+  })
+
+  assert.equal(alive, true)
+  assert.deepEqual(commands, ['pgrep'])
+})
+
+test('Unix CLI liveness distinguishes pgrep no-match from query failure', async () => {
+  const noMatchError = Object.assign(new Error('no matching process'), {
+    code: 1,
+    stdout: '',
+  })
+  assert.equal(
+    await isCliProcessAlive('codex', {
+      platform: 'linux',
+      runCommand: async () => {
+        throw noMatchError
+      },
+    }),
+    false,
+    'pgrep exit code 1 must mean that no CLI is running',
+  )
+
+  const missingCommandError = Object.assign(new Error('pgrep missing'), { code: 'ENOENT' })
+  assert.equal(
+    await isCliProcessAlive('codex', {
+      platform: 'linux',
+      runCommand: async () => {
+        throw missingCommandError
+      },
+    }),
+    true,
+    'a missing process query must preserve the outer fail-open behavior',
+  )
 })
 
 test('SessionSyncService hydrates Grok only from live active_sessions', async () => {
@@ -1371,7 +1701,70 @@ test('SessionSyncService skips unchanged fingerprint on second scan', async () =
   }
 })
 
-test('SessionSyncService reuses unchanged Codex rollout parses and invalidates changed files', async () => {
+test('SessionSyncService reparses a rollout after its partial session header is completed', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-partial-header-')
+  const sessions = join(home, 'sessions', '2026', '08', '12')
+  const sessionId = '019f7015-aaaa-bbbb-cccc-ddddeeeeffff'
+  const cwd = 'E:/work/late-session-header'
+  const rollout = join(sessions, `rollout-2026-08-12T12-00-00-${sessionId}.jsonl`)
+  await mkdir(sessions, { recursive: true })
+  await writeFile(rollout, '{"type":"session_meta","payload":', 'utf8')
+  await utimes(rollout, new Date(), new Date())
+
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: home,
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    codexProcessAlive: () => true,
+  })
+
+  try {
+    await sync.syncNow(['codex'])
+    assert.equal(
+      hub.snapshot().agents.some((agent) => agent.agentType === 'codex'),
+      false,
+    )
+
+    await appendFile(
+      rollout,
+      [
+        `${JSON.stringify({ id: sessionId, cwd })}}`,
+        JSON.stringify({
+          timestamp: new Date().toISOString(),
+          type: 'turn_context',
+          payload: { model: 'gpt-5.6-terra', reasoning_effort: 'high' },
+        }),
+        JSON.stringify({
+          type: 'event_msg',
+          payload: {
+            type: 'token_count',
+            info: {
+              model_context_window: 258_400,
+              last_token_usage: { input_tokens: 25_840, total_tokens: 25_840 },
+            },
+          },
+        }),
+      ].join('\n') + '\n',
+      'utf8',
+    )
+    await utimes(rollout, new Date(), new Date())
+    await sync.syncNow(['codex'])
+
+    const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.equal(codex?.workspacePath?.replace(/\\/g, '/'), cwd)
+    assert.equal(codex?.model, 'gpt-5.6-terra')
+    assert.equal(codex?.token?.contextUsedPercent, 10)
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService invalidates Codex rollout parses on rollout or model-cache changes', async () => {
   const home = await mkdtempJoin('codepulse-session-sync-rollout-cache-')
   const sessions = join(home, 'sessions', '2026', '07', '20')
   const sessionId = '019fa003-aaaa-bbbb-cccc-ddddeeeeffff'
@@ -1415,10 +1808,448 @@ test('SessionSyncService reuses unchanged Codex rollout parses and invalidates c
     await sync.syncNow(['codex'])
     assert.equal(parseCount, 1, 'unchanged rollout should reuse its parsed snapshot')
 
+    await writeFile(
+      join(home, 'models_cache.json'),
+      JSON.stringify({
+        models: [
+          {
+            slug: 'gpt-5.6-terra',
+            context_window: 272_000,
+            effective_context_window_percent: 95,
+          },
+        ],
+      }),
+      'utf8',
+    )
+    await sync.syncNow(['codex'])
+    assert.equal(
+      parseCount,
+      2,
+      'models_cache revision change should invalidate an unchanged rollout snapshot',
+    )
+
     const changedAt = new Date(Date.now() + 2_000)
     await utimes(rollout, changedAt, changedAt)
     await sync.syncNow(['codex'])
-    assert.equal(parseCount, 2, 'mtime change should invalidate the parsed snapshot')
+    assert.equal(parseCount, 3, 'rollout mtime change should invalidate the parsed snapshot')
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService preserves roots and workspaces beyond eighty newer subagents', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-codex-fair-scan-')
+  const sessions = join(home, 'sessions', '2026', '08', '12')
+  const rootA = '019fa100-1111-4222-8333-444455556666'
+  const rootB = '019fa100-7777-4888-9999-aaaabbbbcccc'
+  const cwdA = 'E:/work/crowded-root'
+  const cwdB = 'E:/work/second-root'
+  const rootTime = new Date(Date.now() - 120_000)
+  const childTime = new Date()
+  await mkdir(sessions, { recursive: true })
+
+  const rootFiles = [
+    {
+      path: join(sessions, `rollout-root-a-${rootA}.jsonl`),
+      payload: { id: rootA, session_id: rootA, cwd: cwdA },
+    },
+    {
+      path: join(sessions, `rollout-root-b-${rootB}.jsonl`),
+      payload: { id: rootB, session_id: rootB, cwd: cwdB },
+    },
+  ]
+  for (const root of rootFiles) {
+    await writeFile(
+      root.path,
+      JSON.stringify({ type: 'session_meta', payload: root.payload }),
+      'utf8',
+    )
+    await utimes(root.path, rootTime, rootTime)
+  }
+
+  for (let index = 0; index < 81; index += 1) {
+    const childId = `10000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`
+    const childPath = join(sessions, `rollout-child-${index.toString().padStart(3, '0')}.jsonl`)
+    await writeFile(
+      childPath,
+      JSON.stringify({
+        type: 'session_meta',
+        payload: {
+          id: childId,
+          session_id: rootA,
+          cwd: cwdA,
+          thread_source: 'subagent',
+          parent_thread_id: rootA,
+        },
+      }),
+      'utf8',
+    )
+    await utimes(childPath, childTime, childTime)
+  }
+
+  let parseCount = 0
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: home,
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    codexProcessAlive: () => true,
+    codexRolloutReader: async () => {
+      parseCount += 1
+      return {
+        model: 'gpt-5.6-terra',
+        modelObservedAt: Date.now(),
+        token: { accuracy: 'exact' },
+      }
+    },
+  })
+
+  try {
+    await sync.syncNow(['codex'])
+    const codex = hub.snapshot().agents.filter((agent) => agent.agentType === 'codex')
+    assert.equal(parseCount, 80, 'deep rollout parsing must remain bounded')
+    assert.deepEqual(
+      new Set(codex.map((agent) => agent.workspacePath)),
+      new Set([cwdA, cwdB]),
+      'newer children must not crowd out another workspace',
+    )
+    assert.equal(
+      codex.find((agent) => agent.workspacePath === cwdA)?.externalSessionId,
+      rootA,
+      'the root rollout must represent a subagent-heavy workspace',
+    )
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('Codex rollout discovery bounds historical filesystem access and keeps newest files', async () => {
+  const now = Date.now()
+  const sessionsRoot = 'E:/synthetic-codex/sessions'
+  const liveName = 'rollout-2026-08-12T23-59-59-live.jsonl'
+  const quotaFallbackName = 'rollout-2026-08-12T23-59-58-quota.jsonl'
+  let readdirCalls = 0
+  let statCalls = 0
+  const normalize = (path: string): string => path.replace(/\\/gu, '/')
+  const directory = (name: string) => ({
+    name,
+    isDirectory: () => true,
+    isFile: () => false,
+  })
+  const file = (name: string) => ({
+    name,
+    isDirectory: () => false,
+    isFile: () => true,
+  })
+  const oldFiles = Array.from({ length: 5_000 }, (_, index) =>
+    file(`rollout-2025-01-01T00-00-${index.toString().padStart(5, '0')}.jsonl`),
+  )
+  const discoveryFs: CodexRolloutDiscoveryFs = {
+    readdir: async (dir) => {
+      readdirCalls += 1
+      const path = normalize(dir)
+      if (path === sessionsRoot) {
+        return Array.from({ length: 40 }, (_, index) => directory(String(2026 - index)))
+      }
+      if (path === `${sessionsRoot}/2026`) {
+        return Array.from({ length: 12 }, (_, index) =>
+          directory(String(12 - index).padStart(2, '0')),
+        )
+      }
+      if (path === `${sessionsRoot}/2026/12`) {
+        return Array.from({ length: 31 }, (_, index) =>
+          directory(String(31 - index).padStart(2, '0')),
+        )
+      }
+      if (path === `${sessionsRoot}/2026/12/31`) {
+        return [file(liveName), file(quotaFallbackName), ...oldFiles]
+      }
+      return oldFiles
+    },
+    stat: async (path) => {
+      statCalls += 1
+      const normalized = normalize(path)
+      if (normalized.endsWith(liveName)) {
+        return {
+          // Windows can retain the creation-era LastWriteTime while an open
+          // rollout is actively appended; ChangeTime remains current.
+          mtimeMs: now - 8 * 24 * 60 * 60_000,
+          ctimeMs: now - 60_000,
+          size: 100,
+        }
+      }
+      if (normalized.endsWith(quotaFallbackName)) {
+        return { mtimeMs: now - 24 * 60 * 60_000, size: 200 }
+      }
+      return { mtimeMs: now - 90 * 24 * 60 * 60_000, size: 300 }
+    },
+  }
+
+  const live = await listLiveCodexRollouts(sessionsRoot, now, 5 * 60_000, 240, discoveryFs, 'win32')
+  assert.deepEqual(
+    live.map((entry) => normalize(entry.path)),
+    [`${sessionsRoot}/2026/12/31/${liveName}`],
+  )
+  assert.ok(readdirCalls <= CODEX_ROLLOUT_DISCOVERY_LIMITS.directoryReads)
+  assert.ok(statCalls <= CODEX_ROLLOUT_DISCOVERY_LIMITS.fileStats)
+  assert.ok(statCalls <= CODEX_ROLLOUT_DISCOVERY_LIMITS.fileStatsPerDirectory)
+
+  readdirCalls = 0
+  statCalls = 0
+  const posixLive = await listLiveCodexRollouts(
+    sessionsRoot,
+    now,
+    5 * 60_000,
+    240,
+    discoveryFs,
+    'linux',
+  )
+  assert.deepEqual(posixLive, [], 'POSIX discovery must not treat change time as content activity')
+
+  readdirCalls = 0
+  statCalls = 0
+  const fallback = await listLiveCodexRollouts(
+    sessionsRoot,
+    now,
+    48 * 60 * 60_000,
+    80,
+    discoveryFs,
+    'win32',
+  )
+  assert.deepEqual(
+    fallback.map((entry) => normalize(entry.path)),
+    [`${sessionsRoot}/2026/12/31/${liveName}`, `${sessionsRoot}/2026/12/31/${quotaFallbackName}`],
+  )
+  assert.ok(readdirCalls <= CODEX_ROLLOUT_DISCOVERY_LIMITS.directoryReads)
+  assert.ok(statCalls <= CODEX_ROLLOUT_DISCOVERY_LIMITS.fileStats)
+  assert.ok(statCalls <= CODEX_ROLLOUT_DISCOVERY_LIMITS.fileStatsPerDirectory)
+
+  readdirCalls = 0
+  const wideDirectoryFs: CodexRolloutDiscoveryFs = {
+    readdir: async (dir) => {
+      readdirCalls += 1
+      return normalize(dir) === sessionsRoot
+        ? Array.from({ length: 1_000 }, (_, index) => directory(`archive-${index}`))
+        : []
+    },
+    stat: async () => {
+      throw new Error('directory-only fixture must not stat files')
+    },
+  }
+  assert.deepEqual(
+    await listLiveCodexRollouts(sessionsRoot, now, 5 * 60_000, 240, wideDirectoryFs),
+    [],
+  )
+  assert.equal(
+    readdirCalls,
+    CODEX_ROLLOUT_DISCOVERY_LIMITS.directoryReads,
+    'a wide historical tree must stop exactly at the directory-read budget',
+  )
+})
+
+test('SessionSyncService keeps Codex context but strips rollout quota under App Server authority', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-app-server-authority-')
+  const sessions = join(home, 'sessions', '2026', '08', '12')
+  const sessionId = '019fa003-1111-2222-3333-444455556666'
+  const rollout = join(sessions, `rollout-2026-08-12-${sessionId}.jsonl`)
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    rollout,
+    JSON.stringify({
+      type: 'session_meta',
+      payload: { id: sessionId, cwd: 'E:/work/app-server-authority' },
+    }),
+    'utf8',
+  )
+
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: home,
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    codexProcessAlive: () => true,
+    isCodexQuotaAuthoritative: () => true,
+    codexRolloutReader: async () => ({
+      model: 'gpt-5.6-terra',
+      reasoningEffort: 'ultra',
+      modelObservedAt: Date.now(),
+      token: {
+        contextWindow: 258_400,
+        contextUsedPercent: 25,
+        rateLimitId: 'codex',
+        rateLimits: {
+          sevenDay: { usedPercent: 99, resetsAt: 1_900_000_000, windowMinutes: 10_080 },
+        },
+        quotaBuckets: {
+          codex: {
+            rateLimitId: 'codex',
+            rateLimits: {
+              sevenDay: {
+                usedPercent: 99,
+                resetsAt: 1_900_000_000,
+                windowMinutes: 10_080,
+              },
+            },
+          },
+        },
+        accuracy: 'exact',
+      },
+    }),
+  })
+
+  try {
+    await sync.syncNow(['codex'])
+    const codex = hub.snapshot().agents.filter((agent) => agent.agentType === 'codex')
+    assert.equal(codex.length, 1)
+    assert.equal(codex[0]?.workspacePath, 'E:/work/app-server-authority')
+    assert.equal(codex[0]?.model, 'gpt-5.6-terra')
+    assert.equal(codex[0]?.reasoningEffort, 'ultra')
+    assert.equal(codex[0]?.token?.contextUsedPercent, 25)
+    assert.equal(codex[0]?.token?.contextWindow, 258_400)
+    assert.equal(codex[0]?.token?.rateLimits, undefined)
+    assert.equal(codex[0]?.token?.quotaBuckets, undefined)
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService clears unknown context only after a verified Codex model change', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-model-context-')
+  const sessions = join(home, 'sessions', '2026', '08', '12')
+  const sessionId = '019fa003-1234-5678-90ab-cdef12345678'
+  const rollout = join(sessions, `rollout-2026-08-12-${sessionId}.jsonl`)
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    rollout,
+    JSON.stringify({
+      type: 'session_meta',
+      payload: { id: sessionId, cwd: 'E:/work/model-context-change' },
+    }),
+    'utf8',
+  )
+
+  let revision = 0
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: home,
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    codexProcessAlive: () => true,
+    codexRolloutReader: async () => {
+      revision += 1
+      return revision === 1
+        ? {
+            model: 'gpt-5.6-terra',
+            modelObservedAt: 1_000,
+            token: { contextWindow: 258_400, contextUsedPercent: 30, accuracy: 'exact' },
+          }
+        : {
+            model: revision === 2 ? 'gpt-5.6-terra' : 'gpt-5.6-unknown',
+            modelObservedAt: revision * 1_000,
+            token: { accuracy: 'exact' },
+          }
+    },
+  })
+
+  try {
+    await sync.syncNow(['codex'])
+    let codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.equal(codex?.token?.contextUsedPercent, 30)
+
+    let changedAt = new Date(Date.now() + 2_000)
+    await utimes(rollout, changedAt, changedAt)
+    await sync.syncNow(['codex'])
+    codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.equal(codex?.model, 'gpt-5.6-terra')
+    assert.equal(codex?.token?.contextUsedPercent, 30, 'same-model window miss must be transient')
+
+    changedAt = new Date(Date.now() + 4_000)
+    await utimes(rollout, changedAt, changedAt)
+    await sync.syncNow(['codex'])
+    codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.equal(codex?.model, 'gpt-5.6-unknown')
+    assert.equal(codex?.token?.contextUsedPercent, undefined)
+    assert.equal(codex?.token?.contextWindow, undefined)
+    assert.equal(codex?.token?.clearContext, undefined)
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService drops rollout quota when App Server wins during an in-flight scan', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-authority-race-')
+  const sessions = join(home, 'sessions', '2026', '08', '12')
+  const sessionId = '019fa003-7777-8888-9999-aaaabbbbcccc'
+  const rollout = join(sessions, `rollout-2026-08-12-${sessionId}.jsonl`)
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    rollout,
+    JSON.stringify({
+      type: 'session_meta',
+      payload: { id: sessionId, cwd: 'E:/work/authority-race' },
+    }),
+    'utf8',
+  )
+
+  let authoritative = false
+  let signalReadStarted!: () => void
+  let finishRead!: (snapshot: CodexRolloutSnapshot) => void
+  const readStarted = new Promise<void>((resolve) => {
+    signalReadStarted = resolve
+  })
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: home,
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    codexProcessAlive: () => true,
+    isCodexQuotaAuthoritative: () => authoritative,
+    codexRolloutReader: async () => {
+      signalReadStarted()
+      return await new Promise<CodexRolloutSnapshot>((resolve) => {
+        finishRead = resolve
+      })
+    },
+  })
+
+  try {
+    const scan = sync.syncNow(['codex'])
+    await readStarted
+    authoritative = true
+    finishRead({
+      model: 'gpt-5.6-sol',
+      modelObservedAt: Date.now(),
+      token: {
+        contextWindow: 258_400,
+        contextUsedPercent: 40,
+        rateLimitId: 'codex',
+        rateLimits: {
+          sevenDay: { usedPercent: 97, resetsAt: 1_900_000_000, windowMinutes: 10_080 },
+        },
+        accuracy: 'exact',
+      },
+    })
+    await scan
+
+    const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.equal(codex?.token?.contextUsedPercent, 40)
+    assert.equal(codex?.token?.rateLimits, undefined)
   } finally {
     sync.stop()
     await rm(home, { recursive: true, force: true })
@@ -1567,6 +2398,51 @@ test('SessionSyncService coalesces refreshes requested during an active scan', a
   } finally {
     releaseFirstScan()
     releaseSecondScan()
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService stop releases active and trailing scan waiters', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-stop-waiters-')
+  let releaseScan!: () => void
+  let markScanStarted!: () => void
+  const scanGate = new Promise<void>((resolve) => {
+    releaseScan = resolve
+  })
+  const scanStarted = new Promise<void>((resolve) => {
+    markScanStarted = resolve
+  })
+  let scanFinished = false
+  const sync = new SessionSyncService({
+    hub: new StatusHub({ sessionThrottleMs: 0 }),
+    userHome: home,
+    codexHome: join(home, 'no-codex'),
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    codexProcessAlive: async () => {
+      markScanStarted()
+      await scanGate
+      scanFinished = true
+      return false
+    },
+  })
+
+  try {
+    const active = sync.syncNow(['codex'])
+    await scanStarted
+    const trailing = sync.syncNow(['codex'])
+    sync.stop()
+
+    const outcome = await Promise.race([
+      Promise.all([active, trailing]).then(() => 'resolved' as const),
+      new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 250)),
+    ])
+    assert.equal(outcome, 'resolved', 'stop must release every caller waiting on scan work')
+    assert.equal(scanFinished, false, 'shutdown must not wait for the blocked scan dependency')
+  } finally {
+    releaseScan()
     sync.stop()
     await rm(home, { recursive: true, force: true })
   }
@@ -1820,7 +2696,18 @@ test('SessionSyncService keeps same-window Codex quota stable as live rollouts r
       await sync.syncNow(['codex'])
     }
     low = hub.snapshot().agents.find((agent) => agent.workspacePath === 'E:/work/quota-low')
-    assert.equal(low?.token?.rateLimits?.sevenDay?.usedPercent, 2)
+    assert.equal(
+      low?.token?.rateLimits?.sevenDay?.usedPercent,
+      35,
+      'cached replays of one lower rollout row must not count as five physical observations',
+    )
+
+    for (const usedPercent of [3, 4, 5, 6]) {
+      await writeQuotaRollout(lowPath, lowId, 'E:/work/quota-low', usedPercent, nextReset)
+      await sync.syncNow(['codex'])
+    }
+    low = hub.snapshot().agents.find((agent) => agent.workspacePath === 'E:/work/quota-low')
+    assert.equal(low?.token?.rateLimits?.sevenDay?.usedPercent, 6)
     assert.equal(low?.token?.rateLimits?.sevenDay?.resetsAt, nextReset)
   } finally {
     sync.stop()

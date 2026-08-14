@@ -3,6 +3,7 @@
  * {@link AgentEventInput} 形态（需求 §6.1）。
  *
  * @module adapters/codex
+
  */
 import type { AgentEventInput, AgentEventType } from '@codepulse/shared'
 import {
@@ -15,17 +16,16 @@ import {
   preview,
 } from '../util.js'
 
-const DEFAULT_CODEX_CONTEXT_WINDOW = 256_000
-
 /**
  * 把 Codex 的 hook 载荷映射为 {@link AgentEventInput}。
  *
- * token 数据按尽力而为处理（`accuracy: 'estimated'`），因为 Codex 的
- * token 统计不是 V0.1 的保证项。字段名采用防御式读取，
- * 以容忍不同 Codex 构建之间的差异。
+ * 本地读取器从 Codex 结构化 `token_count` 事件提取的数值可显式标为
+ * `accuracy: 'exact'`；其他 hook 载荷仍按 `estimated` 处理。字段名采用
+ * 防御式读取，以容忍不同 Codex 构建之间的差异。
  *
  * @param raw 解析后的 hook 载荷（不可信）。
  * @returns 归一化事件输入；无法识别时为 `null`。
+
  */
 export function fromCodexHook(raw: unknown): AgentEventInput | null {
   const r = asRecord(raw)
@@ -90,6 +90,7 @@ export function fromCodexHook(raw: unknown): AgentEventInput | null {
  *
  * @param hookEvent 载荷中的 hook 事件名。
  * @returns 映射后的事件类型；无法识别时为 `null`。
+
  */
 function mapCodexEvent(hookEvent: string): AgentEventType | null {
   switch (hookEvent) {
@@ -126,6 +127,7 @@ function mapCodexEvent(hookEvent: string): AgentEventType | null {
  *
  * @param raw hook 载荷。
  * @returns 估算的 token 载荷；无任何用量数据时为 `undefined`。
+
  */
 function extractCodexToken(raw: Record<string, unknown>): AgentEventInput['token'] | undefined {
   const info = asRecord(raw.info)
@@ -142,10 +144,10 @@ function extractCodexToken(raw: Record<string, unknown>): AgentEventInput['token
     'reasoningOutputTokens',
   )
   const total = pickNumber(usage ?? {}, 'total_tokens', 'totalTokens')
-  const contextWindow =
-    pickNumber(raw, 'context_window_size', 'contextWindowSize') ??
-    pickNumber(info ?? {}, 'model_context_window', 'modelContextWindow') ??
-    DEFAULT_CODEX_CONTEXT_WINDOW
+  const contextWindow = firstPositive(
+    pickNumber(raw, 'context_window_size', 'contextWindowSize'),
+    pickNumber(info ?? {}, 'model_context_window', 'modelContextWindow'),
+  )
   const contextInput = contextUsage
     ? (pickNumber(contextUsage, 'input_tokens', 'inputTokens') ??
       pickNumber(contextUsage, 'cached_input_tokens', 'cachedInputTokens'))
@@ -186,10 +188,29 @@ function extractCodexToken(raw: Record<string, unknown>): AgentEventInput['token
     rateLimitId,
     rateLimitName,
     costUsd,
+    // HTTP hook payloads are untrusted and can be stale. Exact snapshots are
+    // created only by the local rollout/App Server readers after parsing native data.
     accuracy: 'estimated',
   }
 }
 
+/**
+ * Returns the first strictly positive context-window candidate.
+ *
+ * @param values Parsed context-window candidates in source-precedence order.
+ * @returns First positive value, or `undefined`.
+
+ */
+function firstPositive(...values: Array<number | undefined>): number | undefined {
+  return values.find((value): value is number => value !== undefined && value > 0)
+}
+
+/**
+ * Computes percent of.
+ * @param value Used token count.
+ * @param total Total context-window token capacity.
+ * @returns Usage percentage clamped to the inclusive 0–100 range.
+ */
 function percentOf(value: number | undefined, total: number | undefined): number | undefined {
   if (value == null || total == null || total <= 0) return undefined
   return Math.min(100, (value / total) * 100)

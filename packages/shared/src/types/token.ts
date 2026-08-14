@@ -3,6 +3,7 @@
  * 与预算，并标注测量值的可信程度（需求 §5.4）。
  *
  * @module shared/types/token
+
  */
 import type { AgentType } from './agent.js'
 
@@ -12,12 +13,14 @@ import type { AgentType } from './agent.js'
  * - `exact` —— 来自稳定的结构化来源（如 Claude 的 status line）。
  * - `estimated` —— 由 transcript 或其他启发式方法推断。
  * - `unknown` —— 当前不可用。
+
  */
 export type TokenAccuracy = 'exact' | 'estimated' | 'unknown'
 
 /**
  * token / 上下文用量的时间点快照，持久化到数据库，
  * 以便绘制会话生命周期内的用量曲线。
+
  */
 export interface TokenSnapshot {
   /** 稳定的内部标识符。 */
@@ -47,8 +50,16 @@ export interface TokenSnapshot {
 /**
  * 内联在 {@link AgentEvent} 上、并展示在 {@link AgentRuntimeState} 上的
  * 紧凑 token 载荷。是去掉存储标识符后的精简版 {@link TokenSnapshot}。
+
  */
 export interface TokenPayload {
+  /**
+   * Requests that a reducer discard its retained context snapshot before
+   * applying this patch. This is a transient merge command and must not be
+   * persisted or exposed as runtime token state.
+
+   */
+  clearContext?: true
   /** 提示词/输入 token 数。 */
   input?: number
   /** 缓存命中的输入 token 数，如 agent 单独上报。 */
@@ -68,6 +79,7 @@ export interface TokenPayload {
   /**
    * true 表示相对上一快照上下文占用明显下降（CLI 压缩/compact），
    * UI 应提示「已压缩」而不是看起来像用量乱跳。
+
    */
   contextCompressed?: boolean
   /** CLI 自身的滚动额度窗口。 */
@@ -85,6 +97,8 @@ export interface TokenPayload {
   costUsd?: number
   /** 数字的可信度。 */
   accuracy: TokenAccuracy
+  /** Retained context-window snapshot provenance, when it differs from totals. */
+  contextAccuracy?: TokenAccuracy
 }
 
 /** One CLI quota bucket, for example Codex default or Codex Spark. */

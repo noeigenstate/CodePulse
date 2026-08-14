@@ -5,8 +5,10 @@
  * 因此这里的所有函数都吞掉错误并限定自身运行时长。
  *
  * @module hooks/lib/post
+
  */
 import { readFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -19,6 +21,7 @@ const AUTH_HEADER = 'x-codepulse-token'
  *
  * @returns {Promise<object>} 解析后的对象；stdin 为空时为 `{}`；
  *   输入不是合法 JSON 时为 `{ _rawText }`。从不抛出。
+
  */
 export async function readStdinJson() {
   const chunks = []
@@ -36,6 +39,7 @@ export async function readStdinJson() {
  * 解析本地 CodePulse 服务器的基础 URL。
  *
  * @returns {string} `CODEPULSE_URL` 环境变量的值，或默认回环 URL。
+
  */
 export function serverUrl() {
   return process.env.CODEPULSE_URL || DEFAULT_URL
@@ -47,22 +51,65 @@ export function serverUrl() {
  * 调用方忽略结果并无条件以 0 退出，因此服务器停止或不可达
  * 绝不影响宿主 agent。
  *
+ * `timeoutMs` covers all attempts and retry delays together, so hook latency
+ * never multiplies when the local server is unavailable.
+ *
  * @param {unknown} payload 要发送的 JSON 体。
- * @param {{ timeoutMs?: number }} [options] 中止超时（毫秒，默认 1500）。
+ * @param {{ timeoutMs?: number, retries?: number, retryDelayMs?: number }} [options]
+ *   Total deadline, retry count, and retry delay in milliseconds.
  * @returns {Promise<boolean>} 2xx 响应为 `true`，任何失败为 `false`。
+
  */
 export async function postEvent(
   payload,
   { timeoutMs = 1500, retries = 1, retryDelayMs = 200 } = {},
 ) {
+  const deliveryPayload = withDeliveryMetadata(payload)
   const attempts = Math.max(1, retries + 1)
+  const deadline = Date.now() + Math.max(1, timeoutMs)
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    if (await postEventOnce(payload, timeoutMs)) return true
-    if (attempt < attempts - 1 && retryDelayMs > 0) await delay(retryDelayMs)
+    const remainingMs = deadline - Date.now()
+    if (remainingMs <= 0) break
+    if (await postEventOnce(deliveryPayload, remainingMs)) return true
+    if (attempt < attempts - 1 && retryDelayMs > 0) {
+      const remainingAfterAttempt = deadline - Date.now()
+      if (remainingAfterAttempt <= 0) break
+      await delay(Math.min(retryDelayMs, remainingAfterAttempt))
+    }
   }
   return false
 }
 
+/**
+ * Attaches one stable delivery identity before any HTTP retry is attempted.
+ *
+ * @param {unknown} payload Hook payload or payload batch.
+ * @returns {unknown} Payload whose individual events retain one retry-safe ID and timestamp.
+
+ */
+function withDeliveryMetadata(payload) {
+  if (Array.isArray(payload)) return payload.map((item) => withDeliveryMetadata(item))
+  if (typeof payload !== 'object' || payload === null) return payload
+  const record = /** @type {Record<string, unknown>} */ (payload)
+  return {
+    ...record,
+    _codepulse_event_id:
+      typeof record._codepulse_event_id === 'string'
+        ? record._codepulse_event_id
+        : `hook:${randomUUID()}`,
+    _codepulse_timestamp:
+      typeof record._codepulse_timestamp === 'number' ? record._codepulse_timestamp : Date.now(),
+  }
+}
+
+/**
+ * Performs one abortable event delivery attempt.
+ *
+ * @param {unknown} payload Retry-stable event payload.
+ * @param {number} timeoutMs Remaining total deadline in milliseconds.
+ * @returns {Promise<boolean>} Whether the server returned a successful response.
+
+ */
 async function postEventOnce(payload, timeoutMs) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -84,6 +131,9 @@ async function postEventOnce(payload, timeoutMs) {
 /**
  * 认证头：优先 `CODEPULSE_TOKEN` 环境变量，否则读 `~/.codepulse/local-auth`。
  * 与桌面端 local-server 共用同一文件。
+ *
+ * @returns {string | undefined} Local API bearer token, when configured.
+
  */
 export function resolveLocalAuthToken() {
   const fromEnv = process.env.CODEPULSE_TOKEN?.trim()
@@ -97,6 +147,12 @@ export function resolveLocalAuthToken() {
   }
 }
 
+/**
+ * Builds local API headers without exposing the authentication token in payloads.
+ *
+ * @returns {Record<string, string>} JSON and optional local-auth headers.
+
+ */
 function buildHeaders() {
   /** @type {Record<string, string>} */
   const headers = { 'content-type': 'application/json' }
@@ -105,6 +161,13 @@ function buildHeaders() {
   return headers
 }
 
+/**
+ * Waits before an immediate-failure retry.
+ *
+ * @param {number} ms Delay in milliseconds.
+ * @returns {Promise<void>} Promise resolved after the delay.
+
+ */
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }

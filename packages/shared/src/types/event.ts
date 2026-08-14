@@ -4,6 +4,7 @@
  * 这是系统其余部分理解的唯一事件类型（需求 §7.6）。
  *
  * @module shared/types/event
+
  */
 import type { AgentType } from './agent.js'
 import type { TurnTiming } from './timing.js'
@@ -13,6 +14,7 @@ import type { TokenPayload } from './token.js'
  * CodePulse 响应的封闭事件种类集合。
  *
  * 适配器把每个 agent 的原生 hook 事件映射到其中之一。
+
  */
 export type AgentEventType =
   | 'session_start'
@@ -34,6 +36,7 @@ export type AgentEventType =
  *
  * 多数字段是可选的，因为不同事件种类携带不同上下文；
  * 状态机按 `eventType` 读取相关字段。
+
  */
 export interface AgentEvent {
   /** 唯一事件 id（缺失时在归一化阶段分配）。 */
@@ -58,11 +61,13 @@ export interface AgentEvent {
   /**
    * 原生 CLI 最近一次记录思考深度配置的时间（epoch 毫秒）。它可以来自独立
    * 的全局设置，不要求与 `modelObservedAt` 属于同一份模型快照。
+
    */
   reasoningEffortObservedAt?: number
   /**
    * CLI rollout 记录这组模型配置的时间（epoch 毫秒）。存在时，`model` 与
    * `reasoningEffort` 必须作为同一份配置快照一起处理。
+
    */
   modelObservedAt?: number
   /** `tool_start`/`tool_end`/`permission_request` 的工具名。 */
@@ -77,6 +82,7 @@ export interface AgentEvent {
   /**
    * CLI 本地会话文件中读出的当前或最近一轮耗时快照。它与事件接收时间分离，
    * 以便后台间歇同步不会把扫描时刻误认为任务开始时间。
+
    */
   turnTiming?: TurnTiming
   /** token 快照来源的本地文件路径，用于服务端做绑定会话的轻量刷新。 */
@@ -89,15 +95,30 @@ export interface AgentEvent {
     /** Stable identifier shared by quota events fanned out from one source read. */
     usageSampleId?: string
     /**
+     * Optional per-family observation IDs when one payload combines quota rows
+     * produced by different native reads.
+
+     */
+    quotaUsageSampleIds?: {
+      /** Observation ID for the token's top-level `rateLimits`. */
+      topLevel?: string
+      /** Observation IDs keyed exactly like `token.quotaBuckets`. */
+      buckets?: Record<string, string>
+    }
+    /** Whether an account-quota observation came from a physical read or a push hint. */
+    quotaObservationSource?: 'read' | 'notification'
+    /**
      * Disk session scan on app open / interval. Updates project lastEventAt when
      * activity changes so background CLI tasks appear without waiting for a hook.
      * Combined with quotaRefresh when only rate limits changed (no recency bump).
+
      */
     sessionSync?: boolean
     /**
      * The local CLI source changed since the previous synchronization scan.
      * This is stronger than merely seeing a persisted active record again and
      * may safely recover a card that the watchdog marked as timed out.
+
      */
     activityRefresh?: boolean
   }
@@ -111,6 +132,7 @@ export interface AgentEvent {
 /**
  * `POST /api/events` 接受的形态：`id` 与 `timestamp` 可省略的
  * {@link AgentEvent}，由 {@link normalizeEvent | 归一化器} 补全。
+
  */
 export type AgentEventInput = Omit<AgentEvent, 'id' | 'timestamp'> & {
   id?: string

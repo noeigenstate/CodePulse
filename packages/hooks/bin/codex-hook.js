@@ -8,11 +8,13 @@
  * 标记后转发给本地服务器。无条件以 0 退出，绝不阻塞 Codex。
  *
  * @module hooks/bin/codex-hook
+
  */
 import { readStdinJson, postEvent } from '../lib/post.js'
-import { readLatestCodexUsage } from '../lib/codex-usage.js'
 
 const data = await readStdinJson()
-const usagePatch = await readLatestCodexUsage(data)
-await postEvent({ source: 'codex', ...data, ...usagePatch })
+// Keep the host hook on the shortest path. The long-lived local server reads
+// structured rollout state and official App Server quota after accepting this
+// lifecycle event, so a large JSONL file never delays the Codex process.
+await postEvent({ ...data, source: 'codex' })
 process.exit(0)

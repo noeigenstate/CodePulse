@@ -17,7 +17,7 @@ export function formatContextWindowStatus(
   token: TokenPayload | undefined,
   fallbackWindow?: number,
   copy: ContextStatusCopy = {
-    waiting: 'Waiting for CLI context',
+    waiting: 'Waiting for first model response',
     lastPrefix: 'last: ',
     compressedPrefix: 'compressed: ',
     left: 'left',

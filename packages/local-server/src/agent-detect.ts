@@ -3,6 +3,7 @@
  * 配置/CLI 元数据，绝不修改 agent 设置。
  *
  * @module local-server/agent-detect
+
  */
 import { access, readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -24,7 +25,11 @@ export interface AgentDetectOptions {
   runCommand?: (command: string, args: string[]) => Promise<CommandResult>
 }
 
-/** 检测 CodePulse 当前知道如何探测的所有 agent。 */
+/** 检测 CodePulse 当前知道如何探测的所有 agent。
+
+ * @param options Configuration and dependency overrides.
+ * @returns Promise resolving to detection records for every supported CLI.
+*/
 export async function detectAgents(options: AgentDetectOptions = {}): Promise<Agent[]> {
   return [
     await detectClaudeAgent(options),
@@ -37,7 +42,11 @@ export async function detectAgents(options: AgentDetectOptions = {}): Promise<Ag
 /**
  * 检测 Codex CLI 是否存在，以及 Codex 配置文件中是否出现
  * CodePulse 的 hook。
- */
+
+
+ * @param options Configuration and dependency overrides.
+ * @returns Promise resolving to Codex installation and hook status.
+*/
 export async function detectCodexAgent(options: AgentDetectOptions = {}): Promise<Agent> {
   const env = options.env ?? process.env
   const runCommand = options.runCommand ?? createLocalCommandRunner(options)
@@ -63,7 +72,12 @@ export async function detectCodexAgent(options: AgentDetectOptions = {}): Promis
   }
 }
 
-/** 检测 Claude Code CLI 及 CodePulse 的 hook/status-line 配置。 */
+/** 检测 Claude Code CLI 及 CodePulse 的 hook/status-line 配置。
+
+
+ * @param options Configuration and dependency overrides.
+ * @returns Promise resolving to Claude installation and integration status.
+*/
 export async function detectClaudeAgent(options: AgentDetectOptions = {}): Promise<Agent> {
   const env = options.env ?? process.env
   const runCommand = options.runCommand ?? createLocalCommandRunner(options)
@@ -91,7 +105,11 @@ export async function detectClaudeAgent(options: AgentDetectOptions = {}): Promi
   }
 }
 
-/** 检测 Grok Build CLI 及 CodePulse 的全局 hook 配置。 */
+/** 检测 Grok Build CLI 及 CodePulse 的全局 hook 配置。
+
+ * @param options Configuration and dependency overrides.
+ * @returns Promise resolving to Grok installation and hook status.
+*/
 export async function detectGrokAgent(options: AgentDetectOptions = {}): Promise<Agent> {
   const env = options.env ?? process.env
   const runCommand = options.runCommand ?? createLocalCommandRunner(options)
@@ -114,7 +132,11 @@ export async function detectGrokAgent(options: AgentDetectOptions = {}): Promise
   }
 }
 
-/** Detects Kimi Code and the CodePulse-managed hook block in its main config. */
+/** Detects Kimi Code and the CodePulse-managed hook block in its main config.
+
+ * @param options Configuration and dependency overrides.
+ * @returns Promise resolving to Kimi installation and hook status.
+*/
 export async function detectKimiAgent(options: AgentDetectOptions = {}): Promise<Agent> {
   const env = options.env ?? process.env
   const runCommand = options.runCommand ?? createLocalCommandRunner(options)
@@ -144,7 +166,11 @@ export async function detectKimiAgent(options: AgentDetectOptions = {}): Promise
   }
 }
 
-/** 解析 Codex 配置文件路径（环境变量可覆盖，默认 `~/.codex/config.toml`）。 */
+/** 解析 Codex 配置文件路径（环境变量可覆盖，默认 `~/.codex/config.toml`）。
+
+ * @param options Configuration and dependency overrides.
+ * @returns Resolved Codex configuration path.
+*/
 function codexConfigPath(options: AgentDetectOptions): string {
   const env = options.env ?? process.env
   return (
@@ -153,6 +179,11 @@ function codexConfigPath(options: AgentDetectOptions): string {
   )
 }
 
+/**
+ * Computes codex hooks path.
+ * @param options Configuration and dependency overrides.
+ * @returns Resolved Codex hooks path.
+ */
 function codexHooksPath(options: AgentDetectOptions): string {
   const env = options.env ?? process.env
   return (
@@ -160,7 +191,11 @@ function codexHooksPath(options: AgentDetectOptions): string {
   )
 }
 
-/** 解析 Claude 配置文件路径（环境变量可覆盖，默认 `~/.claude/settings.json`）。 */
+/** 解析 Claude 配置文件路径（环境变量可覆盖，默认 `~/.claude/settings.json`）。
+
+ * @param options Configuration and dependency overrides.
+ * @returns Resolved Claude settings path.
+*/
 function claudeConfigPath(options: AgentDetectOptions): string {
   const env = options.env ?? process.env
   return (
@@ -169,7 +204,11 @@ function claudeConfigPath(options: AgentDetectOptions): string {
   )
 }
 
-/** 解析 Grok CodePulse hook 文件路径（默认 `~/.grok/hooks/codepulse.json`）。 */
+/** 解析 Grok CodePulse hook 文件路径（默认 `~/.grok/hooks/codepulse.json`）。
+
+ * @param options Configuration and dependency overrides.
+ * @returns Resolved Grok hook configuration path.
+*/
 function grokHooksPath(options: AgentDetectOptions): string {
   const env = options.env ?? process.env
   return (
@@ -178,7 +217,12 @@ function grokHooksPath(options: AgentDetectOptions): string {
   )
 }
 
-/** 判断文件是否包含任一关键字（不区分大小写）；文件不存在时返回 false。 */
+/** 判断文件是否包含任一关键字（不区分大小写）；文件不存在时返回 false。
+
+ * @param path Filesystem path to inspect.
+ * @param needles Candidate strings matched case-insensitively.
+ * @returns Promise resolving to whether the file contains any candidate string.
+*/
 async function fileContainsAny(path: string, needles: string[]): Promise<boolean> {
   try {
     await access(path)
@@ -190,7 +234,11 @@ async function fileContainsAny(path: string, needles: string[]): Promise<boolean
   }
 }
 
-/** 取版本输出的首行作为版本字符串。 */
+/** 取版本输出的首行作为版本字符串。
+
+ * @param stdout Command output to parse.
+ * @returns First non-empty version output line.
+*/
 function cleanVersion(stdout: string | undefined): string | undefined {
   const text = stdout?.trim()
   return text ? text.split(/\r?\n/)[0] : undefined
@@ -202,7 +250,12 @@ function cleanVersion(stdout: string | undefined): string | undefined {
  * On macOS/Linux, GUI apps (Finder / Dock / DMG) inherit a minimal PATH and
  * miss Homebrew / nvm / npm-global shims. Probe absolute paths under common
  * bin directories in addition to the bare command name.
- */
+
+
+ * @param command Executable or command name.
+ * @param options Configuration and dependency overrides.
+ * @returns Promise resolving to executable candidates in probe order.
+*/
 export async function commandCandidates(
   command: string,
   options: AgentDetectOptions = {},
@@ -220,7 +273,14 @@ export async function commandCandidates(
   return uniqueStrings([command, ...absolute])
 }
 
-/** Exported for tests — directories prepended onto PATH for CLI probes. */
+/** Exported for tests — directories prepended onto PATH for CLI probes.
+
+
+ * @param home User home directory.
+ * @param env Process environment.
+ * @param platform Target operating system.
+ * @returns Promise resolving to user-level CLI directories in probe order.
+*/
 export async function commonBinDirectories(
   home: string,
   env: Record<string, string | undefined> = process.env,
@@ -268,12 +328,25 @@ export async function commonBinDirectories(
   return uniqueStrings(dirs)
 }
 
+/**
+ * Builds the PATH used by local CLI probes and App Server child processes.
+ *
+ * @param home User home directory used to resolve common package-manager bins.
+ * @param env Environment containing the inherited PATH value.
+ * @param platform Target operating system whose path syntax should be used.
+ * @returns PATH with common user-level CLI locations prepended.
+
+ */
 export function buildAugmentedPath(
   home: string,
   env: Record<string, string | undefined> = process.env,
   platform: NodeJS.Platform = process.platform,
 ): string {
-  if (platform === 'win32') return env['PATH'] ?? ''
+  if (platform === 'win32') {
+    return (
+      env['PATH'] ?? Object.entries(env).find(([key]) => key.toLowerCase() === 'path')?.[1] ?? ''
+    )
+  }
   const sep = ':'
   // Synchronous subset for PATH — nvm versions are added via absolute candidates.
   const p = (...parts: string[]) => pathJoin(platform, ...parts)
@@ -299,11 +372,21 @@ export function buildAugmentedPath(
  * Join path segments for the *target* platform.
  * When unit tests on Windows simulate darwin, Node's path.join would otherwise
  * turn `/opt/homebrew` into `\opt\homebrew` and break absolute Unix paths.
- */
+
+
+ * @param platform Target operating system.
+ * @param segments Path segments to join.
+ * @returns Path joined with the target platform syntax.
+*/
 function pathJoin(platform: NodeJS.Platform, ...segments: string[]): string {
   return platform === 'win32' ? join(...segments) : posix.join(...segments)
 }
 
+/**
+ * Computes unique strings.
+ * @param values Values to process.
+ * @returns Non-empty values with duplicates removed.
+ */
 function uniqueStrings(values: string[]): string[] {
   const seen = new Set<string>()
   const out: string[] = []
@@ -315,6 +398,13 @@ function uniqueStrings(values: string[]): string[] {
   return out
 }
 
+/**
+ * Computes run first available command.
+ * @param commands Executable candidates in probe order.
+ * @param args Command arguments.
+ * @param runCommand Run command.
+ * @returns Promise resolving to the first successful command result or the final failure.
+ */
 async function runFirstAvailableCommand(
   commands: string[],
   args: string[],
@@ -327,6 +417,11 @@ async function runFirstAvailableCommand(
   return { ok: false }
 }
 
+/**
+ * Creates local command runner.
+ * @param options Configuration and dependency overrides.
+ * @returns Command runner configured with the augmented child environment.
+ */
 function createLocalCommandRunner(
   options: AgentDetectOptions,
 ): (command: string, args: string[]) => Promise<CommandResult> {
@@ -339,7 +434,14 @@ function createLocalCommandRunner(
   return (command, args) => runLocalCommand(command, args, childEnv, platform)
 }
 
-/** 以 1.5 秒超时执行本地命令；从不抛出，失败时 `ok: false`。 */
+/** 以 1.5 秒超时执行本地命令；从不抛出，失败时 `ok: false`。
+
+ * @param command Executable or command name.
+ * @param args Command arguments.
+ * @param env Process environment.
+ * @param platform Target operating system.
+ * @returns Promise resolving to captured output and success status.
+*/
 function runLocalCommand(
   command: string,
   args: string[],

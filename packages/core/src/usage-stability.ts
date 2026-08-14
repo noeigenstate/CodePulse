@@ -10,8 +10,8 @@ import {
 interface PendingLowerQuota {
   /** Number of distinct, compatible lower observations. */
   count: number
-  /** Most recent physical/API sample counted in this sequence. */
-  lastSampleId: string
+  /** Physical/API samples already counted in this sequence. */
+  seenSampleIds: ReadonlySet<string>
   /** Most recent lower window, used to validate period and linear growth. */
   lastWindow: TokenRateLimitWindow
 }
@@ -45,10 +45,30 @@ const MAX_REASONABLE_RESET_AHEAD_MS = 10 * 24 * 60 * 60_000
  * CLI account quota is copied into multiple project events and can be read from
  * several stale session files. This registry keeps one accepted value per CLI,
  * quota family, and window, then projects that value back onto every session.
+
  */
 export class UsageStabilityRegistry {
   /** Accepted and pending quota state keyed by CLI and native bucket family. */
   private readonly quotaFamilies = new Map<string, StableQuotaFamily>()
+
+  /**
+   * Discards every accepted and pending quota window for one CLI family.
+   *
+   * Account identity is intentionally kept outside {@link TokenPayload}. When
+   * the local account monitor detects a login change, the Hub calls this method
+   * before accepting the first snapshot from the new account. This prevents a
+   * previous account's larger usage value from entering the five-read reset
+   * confirmation path.
+   *
+   * @param agentType CLI family whose account-scoped quota state changed.
+
+   */
+  invalidateAgent(agentType: AgentType): void {
+    const prefix = `${agentType}\0`
+    for (const key of this.quotaFamilies.keys()) {
+      if (key.startsWith(prefix)) this.quotaFamilies.delete(key)
+    }
+  }
 
   /**
    * Replaces raw quota windows with the globally accepted account values.
@@ -59,12 +79,19 @@ export class UsageStabilityRegistry {
    *
    * @param event Incoming normalized agent event.
    * @returns Event whose quota fields contain only accepted stable values.
+
    */
   stabilizeEvent(event: AgentEvent): AgentEvent {
     if (!event.token || !hasQuotaPayload(event.token)) return event
 
     const sampleId = event.internal?.usageSampleId?.trim() || event.id
-    const token = this.observeToken(event.source, event.token, sampleId)
+    const token = this.observeToken(
+      event.source,
+      event.token,
+      sampleId,
+      event.internal?.quotaUsageSampleIds,
+      event.internal?.quotaObservationSource !== 'notification',
+    )
     return token === event.token ? event : { ...event, token }
   }
 
@@ -73,6 +100,7 @@ export class UsageStabilityRegistry {
    *
    * @param agent Runtime state that may contain top-level or named quota buckets.
    * @returns Runtime state with globally consistent quota values.
+
    */
   projectAgent(agent: AgentRuntimeState): AgentRuntimeState {
     if (!agent.token || !hasQuotaPayload(agent.token)) return agent
@@ -85,15 +113,29 @@ export class UsageStabilityRegistry {
    *
    * @param agentType CLI family that produced the payload.
    * @param token Raw token and quota payload.
-   * @param sampleId Stable identifier shared by fan-out events from one read.
+   * @param sampleId Stable default identifier shared by fan-out events from one read.
+   * @param familySampleIds Optional IDs for quota families read from separate native rows.
+   * @param countLowerObservation Whether this sample is a physical read eligible for reset confirmation.
    * @returns Token payload containing accepted quota windows.
+
    */
-  private observeToken(agentType: AgentType, token: TokenPayload, sampleId: string): TokenPayload {
+  private observeToken(
+    agentType: AgentType,
+    token: TokenPayload,
+    sampleId: string,
+    familySampleIds?: NonNullable<AgentEvent['internal']>['quotaUsageSampleIds'],
+    countLowerObservation = true,
+  ): TokenPayload {
     let changed = false
     let rateLimits = token.rateLimits
     if (rateLimits) {
       const familyKey = quotaFamilyKey(agentType, token.rateLimitId, token.rateLimitName)
-      const stable = this.observeRateLimits(familyKey, rateLimits, sampleId)
+      const stable = this.observeRateLimits(
+        familyKey,
+        rateLimits,
+        familySampleIds?.topLevel ?? sampleId,
+        countLowerObservation,
+      )
       if (!sameRateLimits(rateLimits, stable)) {
         rateLimits = stable
         changed = true
@@ -110,7 +152,12 @@ export class UsageStabilityRegistry {
           bucket.rateLimitId ?? bucketKey,
           bucket.rateLimitName,
         )
-        const stable = this.observeRateLimits(familyKey, bucket.rateLimits, sampleId)
+        const stable = this.observeRateLimits(
+          familyKey,
+          bucket.rateLimits,
+          familySampleIds?.buckets?.[bucketKey] ?? sampleId,
+          countLowerObservation,
+        )
         if (sameRateLimits(bucket.rateLimits, stable)) continue
         nextBuckets[bucketKey] = { ...bucket, rateLimits: stable }
         changed = true
@@ -132,6 +179,7 @@ export class UsageStabilityRegistry {
    * @param agentType CLI family that owns the token.
    * @param token Runtime token payload to update.
    * @returns Original token when no projection changed, otherwise a new payload.
+
    */
   private projectToken(agentType: AgentType, token: TokenPayload): TokenPayload {
     let changed = false
@@ -177,18 +225,30 @@ export class UsageStabilityRegistry {
    * @param familyKey Stable CLI and bucket identity.
    * @param incoming Incoming quota windows.
    * @param sampleId Identifier for one physical/API observation.
-   * @returns Currently accepted windows for this family.
+   * @param countLowerObservation Whether lower values may advance reset confirmation.
+   * @returns Accepted projections only for windows present in this observation.
+
    */
   private observeRateLimits(
     familyKey: string,
     incoming: NonNullable<TokenPayload['rateLimits']>,
     sampleId: string,
+    countLowerObservation: boolean,
   ): NonNullable<TokenPayload['rateLimits']> {
     const family = this.getQuotaFamily(familyKey)
     for (const windowKey of ['fiveHour', 'sevenDay'] as const) {
-      this.observeQuotaWindow(family[windowKey], incoming[windowKey], sampleId)
+      this.observeQuotaWindow(
+        family[windowKey],
+        incoming[windowKey],
+        sampleId,
+        countLowerObservation,
+      )
     }
-    return acceptedFamilyRateLimits(family)
+    const accepted = acceptedFamilyRateLimits(family)
+    return {
+      fiveHour: incoming.fiveHour === undefined ? undefined : accepted.fiveHour,
+      sevenDay: incoming.sevenDay === undefined ? undefined : accepted.sevenDay,
+    }
   }
 
   /**
@@ -197,11 +257,14 @@ export class UsageStabilityRegistry {
    * @param state Mutable stability state for one rolling window.
    * @param incoming Newly read quota window, if present.
    * @param sampleId Identifier used to deduplicate project fan-out.
+   * @param countLowerObservation Whether lower values may advance reset confirmation.
+
    */
   private observeQuotaWindow(
     state: StableQuotaWindow,
     incoming: TokenRateLimitWindow | undefined,
     sampleId: string,
+    countLowerObservation: boolean,
   ): void {
     const candidate = sanitizeQuotaWindow(incoming)
     if (!candidate) return
@@ -227,18 +290,29 @@ export class UsageStabilityRegistry {
     }
     if (incomingUsage === acceptedUsage) {
       state.accepted = mergeAcceptedQuota(state.accepted, candidate, incomingUsage, resetOrder)
-      state.pendingLower = undefined
+      // Hub may stabilize one event twice: once before deciding whether it
+      // changes visible quota, then again while applying the projected event.
+      // A physical lower sample is projected back to the accepted value on the
+      // second pass, so only a different physical sample may cancel its streak.
+      const alreadyCounted = state.pendingLower?.seenSampleIds.has(sampleId) === true
+      if (countLowerObservation && !alreadyCounted) state.pendingLower = undefined
       return
     }
 
+    if (!countLowerObservation) return
+
     const pending = state.pendingLower
-    if (pending?.lastSampleId === sampleId) return
+    if (pending?.seenSampleIds.has(sampleId)) return
     const continuesPeriod =
       pending !== undefined && sameCandidateQuotaPeriod(pending.lastWindow, candidate)
     const previousPendingUsage = finitePercent(pending?.lastWindow.usedPercent)
     const continuesGrowth =
       previousPendingUsage === undefined || incomingUsage >= previousPendingUsage
-    const count = continuesPeriod && continuesGrowth ? pending.count + 1 : 1
+    const seenSampleIds =
+      continuesPeriod && continuesGrowth
+        ? new Set([...pending.seenSampleIds, sampleId])
+        : new Set([sampleId])
+    const count = seenSampleIds.size
 
     if (count >= LOWER_QUOTA_CONFIRMATION_READS) {
       state.accepted = mergeAcceptedQuota(state.accepted, candidate, incomingUsage, resetOrder)
@@ -247,7 +321,7 @@ export class UsageStabilityRegistry {
     }
     state.pendingLower = {
       count,
-      lastSampleId: sampleId,
+      seenSampleIds,
       lastWindow: candidate,
     }
   }
@@ -257,6 +331,7 @@ export class UsageStabilityRegistry {
    *
    * @param familyKey Stable CLI and bucket identity.
    * @returns Mutable family state.
+
    */
   private getQuotaFamily(familyKey: string): StableQuotaFamily {
     const current = this.quotaFamilies.get(familyKey)
@@ -271,6 +346,7 @@ export class UsageStabilityRegistry {
    *
    * @param familyKey Stable CLI and bucket identity.
    * @returns Accepted quota windows, or `undefined` before any usable reading.
+
    */
   private acceptedRateLimits(
     familyKey: string,
@@ -286,6 +362,7 @@ export class UsageStabilityRegistry {
  *
  * @param family Stability state for one account quota family.
  * @returns Accepted five-hour and weekly windows.
+
  */
 function acceptedFamilyRateLimits(
   family: StableQuotaFamily,
@@ -301,6 +378,7 @@ function acceptedFamilyRateLimits(
  *
  * @param token Token payload to inspect.
  * @returns Whether top-level or named quota windows are present.
+
  */
 function hasQuotaPayload(token: TokenPayload): boolean {
   return Boolean(
@@ -318,6 +396,7 @@ function hasQuotaPayload(token: TokenPayload): boolean {
  * @param rateLimitId Native quota bucket identifier.
  * @param rateLimitName Native quota bucket display name.
  * @returns Stable in-memory registry key.
+
  */
 function quotaFamilyKey(
   agentType: AgentType,
@@ -339,6 +418,7 @@ function quotaFamilyKey(
  *
  * @param value Native bucket identifier or name.
  * @returns Lowercase trimmed identity with internal whitespace collapsed.
+
  */
 function normalizeQuotaIdentity(value: string | undefined): string {
   return String(value ?? '')
@@ -352,6 +432,7 @@ function normalizeQuotaIdentity(value: string | undefined): string {
  *
  * @param window Raw quota window.
  * @returns Usable copy, or `undefined` when it contains no usable fields.
+
  */
 function sanitizeQuotaWindow(
   window: TokenRateLimitWindow | undefined,
@@ -375,6 +456,7 @@ function sanitizeQuotaWindow(
  *
  * @param value Candidate percentage.
  * @returns Normalized percentage, or `undefined` for invalid input.
+
  */
 function finitePercent(value: number | undefined): number | undefined {
   if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
@@ -386,6 +468,7 @@ function finitePercent(value: number | undefined): number | undefined {
  *
  * @param value Candidate numeric metadata.
  * @returns Original value when finite and positive.
+
  */
 function finitePositive(value: number | undefined): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined
@@ -396,6 +479,7 @@ function finitePositive(value: number | undefined): number | undefined {
  *
  * @param value Reset timestamp in epoch seconds or milliseconds.
  * @returns Original timestamp when plausible.
+
  */
 function plausibleResetAt(value: number | undefined): number | undefined {
   if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
@@ -410,6 +494,7 @@ function plausibleResetAt(value: number | undefined): number | undefined {
  * @param incoming Incoming reset timestamp.
  * @param accepted Accepted reset timestamp.
  * @returns Signed ordering, zero inside tolerance, or `undefined` when unknown.
+
  */
 function compareQuotaReset(
   incoming: number | undefined,
@@ -426,6 +511,7 @@ function compareQuotaReset(
  * @param previous Previous pending lower reading.
  * @param incoming Incoming lower reading.
  * @returns Whether both readings may extend one confirmation streak.
+
  */
 function sameCandidateQuotaPeriod(
   previous: TokenRateLimitWindow,
@@ -451,6 +537,7 @@ function sameCandidateQuotaPeriod(
  * @param usedPercent Newly accepted usage percentage.
  * @param resetOrder Ordering of incoming and accepted reset periods.
  * @returns Updated accepted window.
+
  */
 function mergeAcceptedQuota(
   accepted: TokenRateLimitWindow,
@@ -477,6 +564,7 @@ function mergeAcceptedQuota(
  * @param incoming Metadata-only incoming window.
  * @param resetOrder Ordering of incoming and accepted reset periods.
  * @returns Accepted usage with safe metadata updates.
+
  */
 function mergeQuotaMetadata(
   accepted: TokenRateLimitWindow,
@@ -499,6 +587,7 @@ function mergeQuotaMetadata(
  * @param left First rate-limit payload.
  * @param right Second rate-limit payload.
  * @returns Whether both rolling windows are equivalent.
+
  */
 function sameRateLimits(
   left: TokenPayload['rateLimits'],
@@ -516,6 +605,7 @@ function sameRateLimits(
  * @param left First quota window.
  * @param right Second quota window.
  * @returns Whether both windows are equivalent.
+
  */
 function sameQuotaWindow(
   left: TokenRateLimitWindow | undefined,
@@ -533,6 +623,7 @@ function sameQuotaWindow(
  *
  * @param value Reset timestamp.
  * @returns Epoch milliseconds.
+
  */
 function normalizeResetAtMs(value: number): number {
   return value < 1_000_000_000_000 ? value * 1000 : value

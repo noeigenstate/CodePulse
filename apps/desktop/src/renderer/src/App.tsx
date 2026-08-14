@@ -3,6 +3,7 @@
  * 并驱动高频时钟，使耗时与相对时间保持实时。
  *
  * @module renderer/App
+
  */
 import {
   memo,
@@ -86,6 +87,7 @@ import codePulseIcon from './assets/codepulse-icon.svg'
  * 应用外壳 Dashboard。
  *
  * @returns 渲染后的 Dashboard。
+
  */
 export function App(): JSX.Element {
   // Select slices so update progress / mute ticks do not force unrelated work.
@@ -128,7 +130,13 @@ export function App(): JSX.Element {
     [allPanels, dashboardSettings.visibleTools],
   )
   const visibleSessionCount = useMemo(
-    () => snapshot.agents.filter((agent) => dashboardSettings.visibleTools[agent.agentType]).length,
+    () =>
+      snapshot.agents.filter(
+        (agent) =>
+          !agent.taskHidden &&
+          dashboardSettings.visibleTools[agent.agentType] &&
+          (Boolean(agent.workspacePath) || Boolean(agent.externalSessionId)),
+      ).length,
     [dashboardSettings.visibleTools, snapshot.agents],
   )
   const allToolsHidden = useMemo(
@@ -277,6 +285,7 @@ export function App(): JSX.Element {
  * Renders the draggable brand strip beneath native Windows window controls.
  *
  * @returns A non-interactive title-bar surface matching the active app theme.
+
  */
 function WindowTitleBar(): JSX.Element {
   return (
@@ -295,6 +304,7 @@ function WindowTitleBar(): JSX.Element {
  *
  * @param preference Persisted user theme selection.
  * @returns Concrete palette currently suitable for the document root.
+
  */
 function useScheduledTheme(preference: ThemePreference): ThemeMode {
   const [, setRefreshVersion] = useState(0)
@@ -330,7 +340,11 @@ function useScheduledTheme(preference: ThemePreference): ThemeMode {
   return resolveTheme(preference)
 }
 
-/** 实时三栏控制台主体 + 底栏（与设计稿一致） */
+/** 实时三栏控制台主体 + 底栏（与设计稿一致）
+
+ * @param props Component properties.
+ * @returns Rendered React element.
+*/
 function LiveConsole({
   allToolsHidden,
   panels,
@@ -391,6 +405,11 @@ function LiveConsole({
   )
 }
 
+/**
+ * Computes update available modal.
+ * @param props Component properties.
+ * @returns Rendered React element.
+ */
 function UpdateAvailableModal({
   copy,
   update,
@@ -586,6 +605,12 @@ function UpdateAvailableModal({
   )
 }
 
+/**
+ * Formats download size.
+ * @param received Downloaded byte count.
+ * @param total Total download byte count.
+ * @returns Localized downloaded and total byte counts.
+ */
 function formatDownloadSize(
   received: number | undefined,
   total: number | undefined,
@@ -598,12 +623,22 @@ function formatDownloadSize(
   return undefined
 }
 
+/**
+ * Formats bytes.
+ * @param bytes Byte count to format.
+ * @returns Compact human-readable byte count.
+ */
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+/**
+ * Computes agent setup reminder modal.
+ * @param props Component properties.
+ * @returns Rendered React element.
+ */
 function AgentSetupReminderModal({
   copy,
   reminder,
@@ -714,6 +749,11 @@ function AgentSetupReminderModal({
   )
 }
 
+/**
+ * Computes agent name.
+ * @param agent Agent runtime state.
+ * @returns Localized display name for the agent family.
+ */
 function agentName(agent: AgentType): string {
   if (agent === 'codex') return 'Codex'
   if (agent === 'grok') return 'Grok'
@@ -721,7 +761,11 @@ function agentName(agent: AgentType): string {
   return 'Claude Code'
 }
 
-/** 按已启用 CLI 分屏数量自适应列布局。 */
+/** 按已启用 CLI 分屏数量自适应列布局。
+
+ * @param count Number of visible panels.
+ * @returns Responsive grid class for the panel count.
+*/
 function panelGridClass(count: number): string {
   if (count <= 1) return 'min-w-0 grid-cols-1'
   if (count === 2) {
@@ -733,7 +777,11 @@ function panelGridClass(count: number): string {
   return 'min-w-[112rem] grid-cols-[repeat(4,minmax(26rem,1fr))]'
 }
 
-/** Renders the appropriate empty state for either inactive or intentionally hidden tools. */
+/** Renders the appropriate empty state for either inactive or intentionally hidden tools.
+
+ * @param props Component properties.
+ * @returns Rendered React element.
+*/
 function EmptyDashboard({
   allToolsHidden,
   copy,
@@ -829,6 +877,7 @@ const PROJECT_LIST_OVERSCAN_PX = 280
  *
  * @param props Panel identity, display copy, workspace items, and acknowledgement callback.
  * @returns A normal list for short collections or a virtual list for long collections.
+
  */
 function ProjectList({
   agentType,
@@ -883,6 +932,7 @@ function ProjectList({
  *
  * @param props Agent identity and localized dashboard copy.
  * @returns Centered empty-session content for the remaining panel space.
+
  */
 function AgentProjectEmptyState({
   agentType,
@@ -923,6 +973,7 @@ function AgentProjectEmptyState({
  *
  * @param props Panel identity, display copy, workspace items, and acknowledgement callback.
  * @returns A scroll container that mounts only the viewport and overscan rows.
+
  */
 function VirtualProjectList({
   agentType,
@@ -1030,6 +1081,7 @@ function VirtualProjectList({
  *
  * @param props Row content, stable id, y offset, and measurement callback.
  * @returns An absolutely positioned row wrapper.
+
  */
 function MeasuredProjectRow({
   children,
@@ -1065,6 +1117,11 @@ function MeasuredProjectRow({
   )
 }
 
+/**
+ * Computes agent logo.
+ * @param props Component properties.
+ * @returns Rendered React element.
+ */
 function AgentLogo({ agentType }: { agentType: AgentType }): JSX.Element {
   if (agentType === 'codex') return <CodexLogo />
   if (agentType === 'grok') return <GrokLogo />
@@ -1072,6 +1129,10 @@ function AgentLogo({ agentType }: { agentType: AgentType }): JSX.Element {
   return <ClaudeLogo />
 }
 
+/**
+ * Computes claude logo.
+ * @returns Rendered React element.
+ */
 function ClaudeLogo(): JSX.Element {
   return (
     <svg viewBox="0 0 24 24" role="img" aria-label="Claude Code" className="h-7 w-7">
@@ -1085,6 +1146,10 @@ function ClaudeLogo(): JSX.Element {
   )
 }
 
+/**
+ * Computes codex logo.
+ * @returns Rendered React element.
+ */
 function CodexLogo(): JSX.Element {
   return (
     <svg viewBox="0 0 24 24" role="img" aria-label="Codex" className="h-7 w-7">
@@ -1112,6 +1177,10 @@ function CodexLogo(): JSX.Element {
   )
 }
 
+/**
+ * Computes grok logo.
+ * @returns Rendered React element.
+ */
 function GrokLogo(): JSX.Element {
   return (
     <svg viewBox="0 0 24 24" role="img" aria-label="Grok" className="h-7 w-7">
@@ -1124,7 +1193,10 @@ function GrokLogo(): JSX.Element {
   )
 }
 
-/** Kimi Code wordmark reduced to a clear dashboard monogram. */
+/** Kimi Code wordmark reduced to a clear dashboard monogram.
+
+ * @returns Rendered React element.
+*/
 function KimiLogo(): JSX.Element {
   return (
     <svg viewBox="0 0 24 24" role="img" aria-label="Kimi Code" className="h-7 w-7">
@@ -1207,6 +1279,11 @@ const ProjectTile = memo(function ProjectTile({
   )
 })
 
+/**
+ * Computes panel quota meter.
+ * @param props Component properties.
+ * @returns Rendered React element.
+ */
 function PanelQuotaMeter({
   agentType,
   brand,
@@ -1304,7 +1381,12 @@ function PanelQuotaMeter({
 /**
  * Default Codex weekly → "每周额度"; Spark / named buckets keep the CLI limit name
  * (e.g. GPT-5.3-Codex-Spark) so stacked bars stay distinguishable.
- */
+
+
+ * @param token Token payload to process.
+ * @param weeklyQuota Weekly quota.
+ * @returns Localized weekly quota label.
+*/
 function weeklyMeterLabel(token: TokenPayload | undefined, weeklyQuota: string): string {
   const name = quotaBucketLabel(token)
   if (!name) return weeklyQuota
@@ -1315,12 +1397,22 @@ function weeklyMeterLabel(token: TokenPayload | undefined, weeklyQuota: string):
   return name
 }
 
+/**
+ * Computes quota bucket label.
+ * @param token Token payload to process.
+ * @returns Display label for the active quota bucket.
+ */
 function quotaBucketLabel(token: TokenPayload | undefined): string | undefined {
   const label = token?.rateLimitName?.trim() || token?.rateLimitId?.trim()
   if (!label) return undefined
   return label.replace(/^GPT-/i, 'GPT ')
 }
 
+/**
+ * Computes relative time.
+ * @param props Component properties.
+ * @returns Rendered React element.
+ */
 function RelativeTime({
   timestamp,
   locale,
@@ -1342,6 +1434,7 @@ function RelativeTime({
  * @param props.legacyStartedAt Active start retained for server-version compatibility.
  * @param props.locale Dashboard display locale.
  * @returns The formatted elapsed-time text or an em dash when CLI timing is unknown.
+
  */
 function ElapsedTime({
   timing,
@@ -1363,6 +1456,11 @@ function ElapsedTime({
   return <>—</>
 }
 
+/**
+ * Computes context meter.
+ * @param props Component properties.
+ * @returns Rendered React element.
+ */
 function ContextMeter({
   brand,
   token,
@@ -1395,6 +1493,11 @@ function ContextMeter({
   )
 }
 
+/**
+ * Computes token meter.
+ * @param props Component properties.
+ * @returns Rendered React element.
+ */
 function TokenMeter({
   brand,
   label,
@@ -1428,6 +1531,11 @@ function TokenMeter({
   )
 }
 
+/**
+ * Computes inline metric.
+ * @param props Component properties.
+ * @returns Rendered React element.
+ */
 function InlineMetric({ label, value }: { label: string; value: ReactNode }): JSX.Element {
   return (
     <div className="stat-pill min-w-0">
@@ -1437,6 +1545,12 @@ function InlineMetric({ label, value }: { label: string; value: ReactNode }): JS
   )
 }
 
+/**
+ * Renders a labeled value inside the dashboard's compact metric treatment.
+ *
+ * @param props Metric label, display value, and optional CSS classes.
+ * @returns Rendered metric element.
+ */
 function Metric({
   label,
   value,
@@ -1454,12 +1568,24 @@ function Metric({
   )
 }
 
+/**
+ * Returns the context window reported by the active CLI session.
+ *
+ * @param agent Runtime state whose context meter is being rendered.
+ * @returns Native context-window size, or `undefined` when Codex did not report one.
+
+ */
 function effectiveContextWindow(agent: AgentRuntimeState): number | undefined {
-  return agent.token?.contextWindow ?? (agent.agentType === 'codex' ? 256_000 : undefined)
+  return agent.token?.contextWindow
 }
 
 type BrandClass = 'brand-claude' | 'brand-codex' | 'brand-grok' | 'brand-kimi'
 
+/**
+ * Computes brand class.
+ * @param agentType CLI agent family.
+ * @returns CSS class for the agent brand.
+ */
 function brandClass(agentType: AgentType): BrandClass {
   if (agentType === 'codex') return 'brand-codex'
   if (agentType === 'grok') return 'brand-grok'
@@ -1467,6 +1593,11 @@ function brandClass(agentType: AgentType): BrandClass {
   return 'brand-claude'
 }
 
+/**
+ * Computes state chip class.
+ * @param state Runtime state to inspect.
+ * @returns CSS class for the runtime state chip.
+ */
 function stateChipClass(state: AgentRuntimeState['state']): string {
   switch (state) {
     case TurnState.DONE:
@@ -1488,13 +1619,23 @@ function stateChipClass(state: AgentRuntimeState['state']): string {
   }
 }
 
-/** 设计指引：正常用量用品牌色，≥80% 警告黄，≥95% 危险红。 */
+/** 设计指引：正常用量用品牌色，≥80% 警告黄，≥95% 危险红。
+
+ * @param pct Usage percentage.
+ * @param brand Agent brand controlling meter color.
+ * @returns CSS class for the quota-meter fill.
+*/
 function meterFillClass(pct: number, brand: BrandClass): string {
   if (pct >= 95) return 'danger'
   if (pct >= 80) return 'warn'
   return brand
 }
 
+/**
+ * Computes token text color.
+ * @param pct Usage percentage.
+ * @returns CSS class for the token-usage severity.
+ */
 function tokenTextColor(pct: number): string {
   if (pct >= 95) return 'text-red-600'
   if (pct >= 80) return 'text-amber-700'

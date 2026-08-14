@@ -32,6 +32,7 @@ test('native title-bar colors match the renderer canvas theme tokens', () => {
 
 test('renderer delegates outer corner geometry to the native window frame', () => {
   const css = readFileSync('apps/desktop/src/renderer/src/index.css', 'utf8')
+  const mainSource = readFileSync('apps/desktop/src/main/index.ts', 'utf8')
   const rootShellRule = css.match(/#root > \.app-shell \{([\s\S]*?)\n  \}/)?.[1]
 
   assert.ok(rootShellRule)
@@ -39,4 +40,7 @@ test('renderer delegates outer corner geometry to the native window frame', () =
   assert.doesNotMatch(rootShellRule, /border-radius/)
   assert.doesNotMatch(rootShellRule, /contain:\s*paint/)
   assert.doesNotMatch(css, /--radius-window:/)
+  assert.doesNotMatch(mainSource, /\.setShape\(/)
+  assert.doesNotMatch(mainSource, /frame:\s*false/)
+  assert.doesNotMatch(mainSource, /transparent:\s*true/)
 })

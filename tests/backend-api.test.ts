@@ -3,7 +3,13 @@ import { createServer } from 'node:net'
 import { afterEach, test } from 'node:test'
 import WebSocket from 'ws'
 import { StatusHub } from '@codepulse/core'
-import { startLocalServer, type LocalServer } from '@codepulse/local-server'
+import {
+  startLocalServer,
+  type CodexAppServerQuotaServiceOptions,
+  type CodexAppServerQuotaSnapshot,
+  type CodexQuotaServiceFactory,
+  type LocalServer,
+} from '@codepulse/local-server'
 import type {
   Agent,
   DeviceStatus,
@@ -58,21 +64,35 @@ test('POST /api/events accepts single and batch hook payloads and updates status
   assert.equal(prompt.response.status, 202)
   assert.deepEqual(prompt.body, { accepted: 1, ignored: 0 })
 
-  const tool = await postJson<{ accepted: number; ignored: number }>(base, '/api/events', {
+  const toolPayload = {
     source: 'codex',
     hook_event_name: 'PreToolUse',
     session_id: 'codex-api',
     turn_id: 'codex-turn',
     tool_name: 'shell',
     command: 'pnpm test',
-  })
+    _codepulse_event_id: 'hook:backend-retry',
+    _codepulse_timestamp: 1_784_513_490_123,
+  }
+  const tool = await postJson<{ accepted: number; ignored: number }>(
+    base,
+    '/api/events',
+    toolPayload,
+  )
   assert.equal(tool.response.status, 202)
+  const retriedTool = await postJson<{ accepted: number; ignored: number }>(
+    base,
+    '/api/events',
+    toolPayload,
+  )
+  assert.equal(retriedTool.response.status, 202)
 
   let status = await getJsonBody<StatusSnapshot>(base, '/api/status')
   let codex = status.agents.find((agent) => agent.agentType === 'codex')
   assert.equal(status.overall, 'running')
   assert.equal(codex?.state, 'TOOL_RUNNING')
   assert.equal(codex?.toolName, 'shell')
+  assert.equal(codex?.toolCallCount, 1)
   assert.equal(codex?.workspacePath, 'E:/work/codepulse')
 
   const mixed = await postJson<{ accepted: number; ignored: number }>(base, '/api/events', [
@@ -98,6 +118,219 @@ test('POST /api/events accepts single and batch hook payloads and updates status
 
   codex = status.agents.find((agent) => agent.agentType === 'codex')
   assert.equal(codex?.state, 'TOOL_RUNNING')
+})
+
+test('Codex App Server quota stays authoritative across hooks and account switches', async () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0, permissionThrottleMs: 0 })
+  let callbacks!: CodexAppServerQuotaServiceOptions
+  let refreshCount = 0
+  let stopCount = 0
+  const factory: CodexQuotaServiceFactory = (options) => {
+    callbacks = options
+    return {
+      start: async () => {
+        options.onAccountScope?.('scope-a')
+        options.onSnapshot(codexQuotaSnapshot('scope-a', 60, 1))
+      },
+      refresh: async () => {
+        refreshCount += 1
+        return undefined
+      },
+      stop: () => {
+        stopCount += 1
+      },
+    }
+  }
+  const server = await startLocalServer({
+    hub,
+    host: HOST,
+    port: await freePort(),
+    disableSessionSync: true,
+    codexQuotaServiceFactory: factory,
+    authToken: false,
+  })
+
+  try {
+    const prompt = await postJson(server.url, '/api/events', {
+      source: 'codex',
+      hook_event_name: 'UserPromptSubmit',
+      session_id: 'authoritative-codex',
+      cwd: 'E:/project/authoritative',
+      context_used_percent: 20,
+      context_window_size: 258_400,
+      rate_limits: {
+        primary: {
+          used_percentage: 95,
+          resets_at: 1_900_000_000,
+          window_minutes: 10_080,
+        },
+      },
+    })
+    assert.equal(prompt.response.status, 202)
+    await new Promise((resolve) => setImmediate(resolve))
+
+    let agents = hub.snapshot().agents.filter((agent) => agent.agentType === 'codex')
+    let project = agents.find((agent) => agent.workspacePath === 'E:/project/authoritative')
+    let accountQuota = agents.find((agent) => !agent.workspacePath)
+    assert.equal(project?.token?.contextUsedPercent, 20)
+    assert.equal(project?.token?.rateLimits, undefined)
+    assert.equal(accountQuota?.token?.rateLimits?.sevenDay?.usedPercent, 60)
+    assert.equal(refreshCount, 0)
+
+    for (let index = 1; index <= 4; index += 1) {
+      callbacks.onSnapshot(codexQuotaSnapshot('scope-a', 10, 10 + index, 'notification'))
+    }
+    accountQuota = hub
+      .snapshot()
+      .agents.find((agent) => agent.agentType === 'codex' && !agent.workspacePath)
+    assert.equal(accountQuota?.token?.rateLimits?.sevenDay?.usedPercent, 60)
+
+    for (let index = 1; index <= 4; index += 1) {
+      callbacks.onSnapshot(codexQuotaSnapshot('scope-a', 10, 20 + index))
+    }
+    accountQuota = hub
+      .snapshot()
+      .agents.find((agent) => agent.agentType === 'codex' && !agent.workspacePath)
+    assert.equal(accountQuota?.token?.rateLimits?.sevenDay?.usedPercent, 60)
+    callbacks.onSnapshot(codexQuotaSnapshot('scope-a', 10, 25))
+    accountQuota = hub
+      .snapshot()
+      .agents.find((agent) => agent.agentType === 'codex' && !agent.workspacePath)
+    assert.equal(accountQuota?.token?.rateLimits?.sevenDay?.usedPercent, 10)
+
+    await postJson(server.url, '/api/events', {
+      source: 'codex',
+      hook_event_name: 'PreToolUse',
+      session_id: 'authoritative-codex',
+      cwd: 'E:/project/authoritative',
+      tool_name: 'shell',
+    })
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(refreshCount, 0)
+
+    const terminalHook = {
+      source: 'codex',
+      hook_event_name: 'Stop',
+      session_id: 'authoritative-codex',
+      cwd: 'E:/project/authoritative',
+      _codepulse_event_id: 'hook:authoritative-stop',
+      _codepulse_timestamp: Date.now(),
+    }
+    await postJson(server.url, '/api/events', terminalHook)
+    await postJson(server.url, '/api/events', terminalHook)
+    await postJson(server.url, '/api/events', {
+      source: 'codex',
+      hook_event_name: 'SessionEnd',
+      session_id: 'authoritative-codex',
+      cwd: 'E:/project/authoritative',
+      _codepulse_event_id: 'hook:authoritative-session-end',
+      _codepulse_timestamp: Date.now(),
+    })
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(refreshCount, 1)
+
+    await postJson(server.url, '/api/events', {
+      source: 'codex',
+      hook_event_name: 'SessionEnd',
+      session_id: 'authoritative-codex',
+      turn_id: 'different-terminal-turn',
+      cwd: 'E:/project/authoritative',
+      _codepulse_event_id: 'hook:different-session-end',
+      _codepulse_timestamp: Date.now(),
+    })
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(refreshCount, 2)
+
+    const statusFrames: StatusSnapshot[] = []
+    hub.on('status', (status) => statusFrames.push(status))
+    callbacks.onAccountScope?.('scope-b')
+    callbacks.onSnapshot(codexQuotaSnapshot('scope-b', 3, 2))
+
+    assert.equal(statusFrames.length, 2)
+    assert.equal(
+      statusFrames[0]?.agents.some(
+        (agent) => agent.agentType === 'codex' && Boolean(agent.token?.rateLimits),
+      ),
+      false,
+      'an account boundary must clear the previous account before the new read arrives',
+    )
+    accountQuota = statusFrames[1]?.agents.find(
+      (agent) => agent.agentType === 'codex' && !agent.workspacePath,
+    )
+    assert.equal(accountQuota?.token?.rateLimits?.sevenDay?.usedPercent, 3)
+
+    await server.syncSessions()
+    assert.equal(refreshCount, 3)
+
+    agents = hub.snapshot().agents.filter((agent) => agent.agentType === 'codex')
+    project = agents.find((agent) => agent.workspacePath === 'E:/project/authoritative')
+    assert.equal(project?.token?.rateLimits, undefined)
+  } finally {
+    await server.close()
+  }
+  assert.equal(stopCount, 1)
+})
+
+test('Codex account boundary clears stale quota when official reads are unavailable', async () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0, permissionThrottleMs: 0 })
+  hub.ingest({
+    id: 'stale-rollout-quota',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'unavailable-quota',
+    cwd: 'E:/project/unavailable-quota',
+    timestamp: 1,
+    token: {
+      rateLimitId: 'codex',
+      rateLimits: {
+        sevenDay: { usedPercent: 88, resetsAt: 1_900_000_000, windowMinutes: 10_080 },
+      },
+      accuracy: 'estimated',
+    },
+  })
+
+  const factory: CodexQuotaServiceFactory = (options) => ({
+    start: async () => {
+      options.onAccountScope?.('scope-without-quota')
+    },
+    refresh: async () => undefined,
+    stop: () => undefined,
+  })
+  const server = await startLocalServer({
+    hub,
+    host: HOST,
+    port: await freePort(),
+    disableSessionSync: true,
+    codexQuotaServiceFactory: factory,
+    authToken: false,
+  })
+
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    let codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.equal(codex?.token?.rateLimits, undefined)
+
+    await postJson(server.url, '/api/events', {
+      source: 'codex',
+      hook_event_name: 'UserPromptSubmit',
+      session_id: 'unavailable-quota',
+      cwd: 'E:/project/unavailable-quota',
+      context_used_percent: 24,
+      context_window_size: 258_400,
+      rate_limits: {
+        primary: {
+          used_percentage: 99,
+          resets_at: 1_900_000_000,
+          window_minutes: 10_080,
+        },
+      },
+    })
+    codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+    assert.equal(codex?.token?.contextUsedPercent, 24)
+    assert.equal(codex?.token?.rateLimits, undefined)
+  } finally {
+    await server.close()
+  }
 })
 
 test('POST /api/events rejects completely unrecognized payloads', async () => {
@@ -308,6 +541,7 @@ async function createApi(): Promise<{ base: string; hub: StatusHub }> {
     host: HOST,
     port: await freePort(),
     disableSessionSync: true,
+    disableCodexAppServer: true,
     authToken: false,
   })
   openServers.push(server)
@@ -350,6 +584,36 @@ async function freePort(): Promise<number> {
       server.close((error) => (error ? reject(error) : resolve(address.port)))
     })
   })
+}
+
+/**
+ * Builds an official Codex weekly-quota snapshot for server integration tests.
+ *
+ * @param accountScope Process-local account discriminator.
+ * @param usedPercent Weekly percentage returned by App Server.
+ * @param updatedAt Deterministic observation time.
+ * @param source Protocol path that produced the quota observation.
+ * @returns Sanitized App Server quota snapshot.
+ */
+function codexQuotaSnapshot(
+  accountScope: string,
+  usedPercent: number,
+  updatedAt: number,
+  source: CodexAppServerQuotaSnapshot['source'] = 'read',
+): CodexAppServerQuotaSnapshot {
+  return {
+    accountScope,
+    updatedAt,
+    source,
+    token: {
+      rateLimitId: 'codex',
+      rateLimitName: 'Codex',
+      rateLimits: {
+        sevenDay: { usedPercent, resetsAt: 1_900_000_000, windowMinutes: 10_080 },
+      },
+      accuracy: 'exact',
+    },
+  }
 }
 
 interface TestWebSocket {

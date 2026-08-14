@@ -148,6 +148,34 @@ test('Codex hook parses 1M context window strings as one million tokens', () => 
   assert.equal(event?.token?.contextUsedPercent, 25)
 })
 
+test('Codex hook preserves explicit 0% but cannot self-promote to exact accuracy', () => {
+  const event = fromCodexHook({
+    hook_event_name: 'UserPromptSubmit',
+    context_window_size: 258_400,
+    context_usage: {
+      input_tokens: 0,
+      cached_input_tokens: 20_000,
+    },
+    token_accuracy: 'exact',
+  })
+
+  assert.equal(event?.token?.contextUsedPercent, 0)
+  assert.equal(event?.token?.accuracy, 'estimated')
+})
+
+test('Codex hook does not invent a context window and rejects invalid accuracy', () => {
+  const event = fromCodexHook({
+    hook_event_name: 'UserPromptSubmit',
+    usage: { input_tokens: 5_000 },
+    context_usage: { input_tokens: 5_000 },
+    token_accuracy: 'certain',
+  })
+
+  assert.equal(event?.token?.contextWindow, undefined)
+  assert.equal(event?.token?.contextUsedPercent, undefined)
+  assert.equal(event?.token?.accuracy, 'estimated')
+})
+
 test('Codex hook keeps reasoning effort separate from reasoning output tokens', () => {
   const event = fromCodexHook({
     hook_event_name: 'UserPromptSubmit',

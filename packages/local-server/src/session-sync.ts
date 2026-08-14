@@ -9,12 +9,14 @@
  * 其它：启动 await 首扫、稳态轮询、目录监听、指纹增量 ingest。
  *
  * @module local-server/session-sync
+
  */
 import { watch, type FSWatcher } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { readdir, readFile, stat, open } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, isAbsolute, join } from 'node:path'
-import type { TokenPayload, TurnTiming } from '@codepulse/shared'
+import type { AgentEvent, TokenPayload, TurnTiming } from '@codepulse/shared'
 import type { StatusHub } from '@codepulse/core'
 import {
   asRecord,
@@ -23,7 +25,13 @@ import {
   pickRateLimitName,
   pickRateLimits,
 } from '@codepulse/adapters'
-import { readCodexRolloutSnapshotFromFile, type CodexRolloutSnapshot } from './quota-watcher.js'
+import {
+  readCodexQuotaObservationFromFile,
+  readCodexRolloutSnapshotFromFile,
+  type CodexQuotaObservation,
+  type CodexRolloutSnapshot,
+} from './quota-watcher.js'
+import { codexModelCacheRevision } from './codex-model-cache.js'
 import {
   mergeClaudeContextWithQuota,
   resolveClaudeAccountQuota,
@@ -33,6 +41,17 @@ import { resolveKimiAccountQuota, type KimiQuotaSnapshot } from './kimi-quota.js
 import { WorkspacePathResolver } from './workspace-path.js'
 
 const MAX_CODEX_FILES = 80
+/** Metadata candidates inspected before choosing the bounded deep-scan set. */
+const MAX_CODEX_DISCOVERY_FILES = MAX_CODEX_FILES * 3
+/** Hard limits for one Codex rollout discovery pass. */
+export const CODEX_ROLLOUT_DISCOVERY_LIMITS = {
+  directoryReads: 32,
+  entryVisits: 2_048,
+  fileStats: 512,
+  fileStatsPerDirectory: 128,
+} as const
+/** Avoid opening hundreds of rollout headers at once on slower local disks. */
+const CODEX_META_READ_CONCURRENCY = 8
 const CODEX_META_HEAD = 512 * 1024
 /** Rare oversized session headers are extended through their first JSONL row. */
 const CODEX_META_FIRST_LINE_MAX = 4 * 1024 * 1024
@@ -42,6 +61,7 @@ const CODEX_TAIL = 4 * 1024 * 1024
  * Codex 无 active_sessions：用 rollout mtime 近似「CLI 仍活跃」。
  * 与 StatusHub 空闲 5 分钟剔除对齐——超过该窗口的 rollout 不再拉起项目卡片。
  * 仍要求本机有 codex 进程，避免把历史沉寂项目拉出来。
+
  */
 const CODEX_LIVE_MS = 5 * 60_000
 /** Kimi has no active-session registry; recent wire activity plus a live process is authoritative. */
@@ -62,14 +82,56 @@ const BOOT_OFFSETS_MS = [0, 500, 2_000] as const
 const STEADY_INTERVAL_MS = 3_500
 /** Coalesce bursty multi-file writes without waiting half a second. */
 const WATCH_DEBOUNCE_MS = 200
-/** Cache tasklist/pgrep so steady scans do not re-spawn every cycle. */
+/** Cache process-list results so steady scans do not re-spawn every cycle. */
 const CLI_ALIVE_CACHE_MS = 3_000
 const CLI_ALIVE_TIMEOUT_MS = 1_000
+/** Allows for Windows PowerShell startup plus the CIM process-tree query. */
+const CLI_ALIVE_WINDOWS_TIMEOUT_MS = 3_000
+/** Reuse stable root/target descendant classifications between process scans. */
+const CLI_CLASSIFICATION_CACHE_MS = 45_000
 const GROK_BILLING_MSG = 'billing: fetched credits config'
 const CLAUDE_TRANSCRIPT_TAIL = 512 * 1024
 /** Claude transcript rows lack turn IDs, so start/duration matching stays deliberately tight. */
 const CLAUDE_DURATION_START_MATCH_TOLERANCE_MS = 5_000
 const DEFAULT_CLAUDE_CONTEXT_WINDOW = pickNumberEnv(process.env.CODEPULSE_CONTEXT_WINDOW) ?? 200_000
+
+/** Testable process-list query options for {@link isCliProcessAlive}. */
+export interface CliProcessAliveOptions {
+  /** Process identifiers, or a live reader, for CodePulse background services. */
+  excludedProcessIds?: Iterable<number> | (() => Iterable<number>)
+  /** Target operating system; defaults to the current platform. */
+  platform?: NodeJS.Platform
+  /** Process-list command seam used by unit tests. */
+  runCommand?: (command: string, args: readonly string[]) => Promise<string>
+}
+
+/** One process-table row used to identify CodePulse-owned descendants. */
+interface ProcessInfo {
+  pid: number
+  parentPid: number
+}
+
+/** Minimal directory entry contract used by rollout discovery and its tests. */
+interface RolloutDirectoryEntry {
+  name: string
+  isDirectory(): boolean
+  isFile(): boolean
+}
+
+/** Read-only filesystem seam for bounded rollout discovery tests. */
+export interface CodexRolloutDiscoveryFs {
+  /** Lists one directory with file-type metadata. */
+  readdir(dir: string): Promise<RolloutDirectoryEntry[]>
+  /** Reads the content/change revision fields used by discovery. */
+  stat(path: string): Promise<{ mtimeMs: number; ctimeMs?: number; size: number }>
+}
+
+/** Mutable access counters shared by one bounded rollout walk. */
+interface RolloutDiscoveryBudget {
+  directoryReads: number
+  entryVisits: number
+  fileStats: number
+}
 
 /** Configures filesystem roots, timing, and test seams for {@link SessionSyncService}. */
 export interface SessionSyncOptions {
@@ -81,13 +143,16 @@ export interface SessionSyncOptions {
   /**
    * 用户主目录（OAuth credentials + `~/.codepulse/claude-quota.json`）。
    * 测试传入临时目录以免读到本机真实额度缓存。
+
    */
   userHome?: string
   now?: () => number
   /** 测试时可关闭文件监听 */
   disableWatch?: boolean
-  /** 测试注入：是否视为本机有 Codex CLI 进程 */
-  codexProcessAlive?: () => boolean | Promise<boolean>
+  /** 测试注入：排除 CodePulse 自有 PID 后是否仍有 Codex CLI 进程。 */
+  codexProcessAlive?: (excludedProcessIds: () => Iterable<number>) => boolean | Promise<boolean>
+  /** Returns CodePulse-owned Codex PIDs that liveness detection must ignore. */
+  excludedCodexProcessIds?: () => Iterable<number>
   /** Test seam for Kimi's process-level active-session guard. */
   kimiProcessAlive?: () => boolean | Promise<boolean>
   /** Test seam for Kimi's managed account-usage endpoint. */
@@ -95,7 +160,14 @@ export interface SessionSyncOptions {
   /** Test seam for Claude's OAuth/cache account-usage resolver. */
   claudeQuotaResolver?: () => Promise<ClaudeQuotaSnapshot | undefined>
   /** Test seam for parsing a Codex rollout tail. */
-  codexRolloutReader?: (sourcePath: string) => Promise<CodexRolloutSnapshot>
+  codexRolloutReader?: (
+    sourcePath: string,
+    options?: { expectedTerminalTurnId?: string },
+  ) => Promise<CodexRolloutSnapshot>
+  /** Test seam for the lightweight account-quota fallback reader. */
+  codexQuotaRolloutReader?: (sourcePath: string) => Promise<CodexQuotaObservation>
+  /** Whether Codex App Server owns account quota instead of rollout JSONL. */
+  isCodexQuotaAuthoritative?: () => boolean
   /** 测试注入：Grok/Claude session 的 pid 是否存活 */
   isPidAlive?: (pid: number) => boolean
   /** 测试/嵌入时可替换 realpath 解析器。 */
@@ -118,11 +190,19 @@ export class SessionSyncService {
   private readonly userHome: string
   private readonly now: () => number
   private readonly disableWatch: boolean
-  private readonly codexProcessAlive: () => boolean | Promise<boolean>
+  private readonly codexProcessAlive: (
+    excludedProcessIds: () => Iterable<number>,
+  ) => boolean | Promise<boolean>
+  private readonly excludedCodexProcessIds: () => Iterable<number>
   private readonly kimiProcessAlive: () => boolean | Promise<boolean>
   private readonly kimiQuotaResolver: () => Promise<KimiQuotaSnapshot | undefined>
   private readonly claudeQuotaResolver: () => Promise<ClaudeQuotaSnapshot | undefined>
-  private readonly codexRolloutReader: (sourcePath: string) => Promise<CodexRolloutSnapshot>
+  private readonly codexRolloutReader: (
+    sourcePath: string,
+    options?: { expectedTerminalTurnId?: string },
+  ) => Promise<CodexRolloutSnapshot>
+  private readonly codexQuotaRolloutReader: (sourcePath: string) => Promise<CodexQuotaObservation>
+  private readonly isCodexQuotaAuthoritative: () => boolean
   private readonly pidAlive: (pid: number) => boolean
   /** Canonicalizes aliases before dedupe keys and fingerprints are calculated. */
   private readonly workspacePaths: Pick<WorkspacePathResolver, 'resolve'>
@@ -138,6 +218,8 @@ export class SessionSyncService {
   private pendingSyncReasons = new Set<string>()
   /** Callers waiting for the next coalesced generation rather than the active one. */
   private pendingSyncWaiters: Array<() => void> = []
+  /** Callers waiting for an active generation that stop must also release. */
+  private activeSyncWaiters = new Set<() => void>()
   private pendingSyncQueuedAt?: number
   private activeSync?: Promise<void>
   private stopped = false
@@ -151,16 +233,24 @@ export class SessionSyncService {
   private codexAccountQuotaFamilies: CodexAccountQuotaFamilies = {}
   /** Parsed rollout data keyed by path and invalidated by size, mtime, or quota reset. */
   private codexRolloutCache = new Map<string, CodexRolloutCacheEntry>()
+  /** Lightweight rollout headers retained for metadata-first deep-scan selection. */
+  private codexRolloutMetaCache = new Map<string, CodexRolloutMetaCacheEntry>()
   /** sessionKey → full fingerprint (activity + quota) of last ingested payload */
   private fingerprints = new Map<string, string>()
   /** sessionKey → activity-only fingerprint (mtime/context; excludes rate limits) */
   private activityFingerprints = new Map<string, string>()
-  /** Monotonic suffix that keeps rapid quota scans distinct inside one millisecond. */
+  /** Monotonic suffix used only for fresh resolver observations without native identity. */
   private quotaObservationSequence = 0
   private firstSync: Promise<void>
   private resolveFirstSync!: () => void
   private firstSyncDone = false
 
+  /**
+   * Creates a session synchronizer without starting scans or filesystem watchers.
+   *
+   * @param options Filesystem roots, lifecycle callbacks, and test seams.
+
+   */
   constructor(options: SessionSyncOptions) {
     this.hub = options.hub
     this.userHome = options.userHome ?? homedir()
@@ -172,7 +262,13 @@ export class SessionSyncService {
       options.claudeHome ?? process.env.CLAUDE_HOME ?? join(this.userHome, '.claude')
     this.now = options.now ?? Date.now
     this.disableWatch = options.disableWatch ?? false
-    this.codexProcessAlive = options.codexProcessAlive ?? (() => isCliProcessAlive('codex'))
+    this.excludedCodexProcessIds = options.excludedCodexProcessIds ?? (() => [])
+    this.codexProcessAlive =
+      options.codexProcessAlive ??
+      ((excludedProcessIds) =>
+        isCliProcessAlive('codex', {
+          excludedProcessIds,
+        }))
     this.kimiProcessAlive = options.kimiProcessAlive ?? (() => isCliProcessAlive('kimi'))
     this.kimiQuotaResolver =
       options.kimiQuotaResolver ??
@@ -191,7 +287,18 @@ export class SessionSyncService {
           now: () => this.now(),
           timeoutMs: 1_200,
         }))
-    this.codexRolloutReader = options.codexRolloutReader ?? readCodexRolloutSnapshotFromFile
+    this.isCodexQuotaAuthoritative = options.isCodexQuotaAuthoritative ?? (() => false)
+    this.codexRolloutReader =
+      options.codexRolloutReader ??
+      ((sourcePath, readOptions) =>
+        readCodexRolloutSnapshotFromFile(sourcePath, {
+          codexHome: this.codexHome,
+          includeQuota: !this.isCodexQuotaAuthoritative(),
+          expectedTerminalTurnId: readOptions?.expectedTerminalTurnId,
+        }))
+    this.codexQuotaRolloutReader =
+      options.codexQuotaRolloutReader ??
+      ((sourcePath) => readCodexQuotaObservationFromFile(sourcePath, { codexHome: this.codexHome }))
     this.pidAlive = options.isPidAlive ?? isPidAlive
     this.workspacePaths = options.workspacePathResolver ?? new WorkspacePathResolver()
     this.firstSync = new Promise<void>((resolve) => {
@@ -202,7 +309,10 @@ export class SessionSyncService {
   /**
    * 启动主动同步：立刻首扫 + 启动期补扫 + 稳态轮询 + 目录监听。
    * 返回值在**首扫完成**后 resolve，便于 bootstrap 等 hub 有数据再开窗。
-   */
+
+
+   * @returns Promise resolved after the initial disk hydration completes.
+  */
   start(): Promise<void> {
     this.stopped = false
     void this.syncOnce('boot').finally(() => {
@@ -230,11 +340,16 @@ export class SessionSyncService {
     return this.firstSync
   }
 
-  /** 等待首扫结束（若 start 未调用则立即返回）。 */
+  /** 等待首扫结束（若 start 未调用则立即返回）。
+
+
+   * @returns Promise resolved after the first synchronization attempt.
+  */
   whenReady(): Promise<void> {
     return this.firstSync
   }
 
+  /** Stops scheduling new scans and releases every caller waiting for scan work. */
   stop(): void {
     this.stopped = true
     for (const t of this.timers) clearTimeout(t)
@@ -256,10 +371,26 @@ export class SessionSyncService {
     this.pendingSyncReasons.clear()
     this.pendingSyncQueuedAt = undefined
     for (const resolve of this.pendingSyncWaiters.splice(0)) resolve()
+    for (const resolve of [...this.activeSyncWaiters]) resolve()
     if (!this.firstSyncDone) {
       this.firstSyncDone = true
       this.resolveFirstSync()
     }
+  }
+
+  /**
+   * Drops account-bound Codex caches after App Server reports an identity change.
+   *
+   * Per-project fingerprints remain intact so lifecycle and context hydration do
+   * not churn. The next rollout revision is reparsed, while account quota comes
+   * only from the new App Server generation.
+   *
+   * @returns Nothing.
+
+   */
+  resetCodexAccountState(): void {
+    this.codexAccountQuotaFamilies = {}
+    this.codexRolloutCache.clear()
   }
 
   /**
@@ -271,6 +402,7 @@ export class SessionSyncService {
    *
    * @param sources CLI sources to scan; omit for a full safety-net scan.
    * @returns A promise that resolves after the requested scan attempt finishes.
+
    */
   async syncNow(sources: readonly SessionSyncSource[] = ALL_SYNC_SOURCES): Promise<void> {
     await this.syncOnce('manual', sources)
@@ -281,6 +413,7 @@ export class SessionSyncService {
    *
    * Watchers are only low-latency hints; the steady timer still performs a full
    * scan when a platform cannot watch recursively or drops an event.
+
    */
   private startWatchers(): void {
     const roots: Array<{ root: string; source: SessionSyncSource }> = [
@@ -310,6 +443,7 @@ export class SessionSyncService {
    * Collects source changes inside one debounce window before scanning only them.
    *
    * @param source CLI source associated with the filesystem notification.
+
    */
   private scheduleWatchSync(source: SessionSyncSource): void {
     if (this.stopped) return
@@ -329,7 +463,10 @@ export class SessionSyncService {
    *
    * @param reason Trigger label used for diagnostics.
    * @param requestedSources Sources selected for this attempt.
-   */
+
+
+   * @returns Promise resolved after the requested scan generation settles.
+  */
   private async syncOnce(
     reason: string,
     requestedSources: readonly SessionSyncSource[] = ALL_SYNC_SOURCES,
@@ -358,6 +495,7 @@ export class SessionSyncService {
    * @param sources CLI sources included in this generation.
    * @param queuedAt Epoch milliseconds when the generation was first requested.
    * @returns Promise resolved after this generation completes.
+
    */
   private startSyncGeneration(
     reason: string,
@@ -384,7 +522,35 @@ export class SessionSyncService {
         for (const resolve of waiters) resolve()
       })
     })
-    return task
+    return this.waitForGenerationOrStop(task)
+  }
+
+  /**
+   * Resolves a generation caller when its scan settles or the service stops.
+   *
+   * The underlying scan remains serialized and is allowed to finish naturally;
+   * only the caller-facing wait is released during shutdown. Registering the
+   * waiter before the final stopped check closes the stop/registration race.
+   *
+   * @param task Active scan generation to observe.
+   * @returns Promise resolved by scan completion or service shutdown.
+
+   */
+  private waitForGenerationOrStop(task: Promise<void>): Promise<void> {
+    if (this.stopped) return Promise.resolve()
+    return new Promise<void>((resolve) => {
+      let settled = false
+      /** Resolves this caller once and removes its shutdown registration. */
+      const finish = (): void => {
+        if (settled) return
+        settled = true
+        this.activeSyncWaiters.delete(finish)
+        resolve()
+      }
+      this.activeSyncWaiters.add(finish)
+      void task.then(finish, finish)
+      if (this.stopped) finish()
+    })
   }
 
   /**
@@ -393,7 +559,10 @@ export class SessionSyncService {
    * @param reason Coalesced trigger label used for diagnostics.
    * @param sources CLI sources included in this generation.
    * @param queuedAt Epoch milliseconds when the current drain started.
-   */
+
+
+   * @returns Promise resolved after every selected source finishes scanning.
+  */
   private async runSyncScan(
     reason: string,
     sources: readonly SessionSyncSource[],
@@ -427,25 +596,44 @@ export class SessionSyncService {
     }
   }
 
+  /**
+   * Synchronizes live Codex projects and their account-level quota observation.
+   *
+   * @returns Number of project or quota observations published in this scan.
+
+   */
   private async syncCodex(): Promise<number> {
     // No running Codex CLI → never resurrect historical projects from disk.
-    if (!(await this.codexProcessAlive())) return 0
+    if (!(await this.codexProcessAlive(this.excludedCodexProcessIds))) return 0
 
     const sessionsRoot = join(this.codexHome, 'sessions')
     const now = this.now()
-    const usageSampleId = this.nextUsageSampleId('codex', now)
-    const files = await listLiveCodexRollouts(sessionsRoot, now, CODEX_LIVE_MS)
+    const modelCacheRevision = await codexModelCacheRevision({ codexHome: this.codexHome })
+    const discoveredFiles = await listLiveCodexRollouts(sessionsRoot, now, CODEX_LIVE_MS)
+    const files = await this.selectCodexRolloutsForDeepScan(discoveredFiles)
     // No recently-active projects: still refresh account quota from the freshest
     // rollout, but do not resurrect multi-project cards from hours-old sessions.
     if (files.length === 0) {
-      const fallback = await listLiveCodexRollouts(sessionsRoot, now, CODEX_QUOTA_FALLBACK_MS)
+      // App Server publishes a pathless account observation independently. Once
+      // available, never revive quota from an old rollout owned by another login.
+      if (this.isCodexQuotaAuthoritative()) return 0
+      const fallback = await listLiveCodexRollouts(
+        sessionsRoot,
+        now,
+        CODEX_QUOTA_FALLBACK_MS,
+        MAX_CODEX_FILES,
+      )
       const quotaRows: CodexQuotaRow[] = []
       for (const file of fallback) {
         try {
-          const rollout = await this.readCodexRollout(file)
-          const token = rollout.snapshot.token
+          const observation = await this.codexQuotaRolloutReader(file.path)
+          const token = observation.token
           if (!token?.rateLimits) continue
-          quotaRows.push({ file, token })
+          quotaRows.push({
+            file,
+            token,
+            quotaObservationIdentity: observation.observationIdentity,
+          })
           // Main Codex weekly is the quota-only panel's preferred family. Stop
           // once found; Spark-only rows remain a fallback when no main row exists.
           if (!tokenLooksLikeSpark(token)) break
@@ -453,21 +641,28 @@ export class SessionSyncService {
           console.error('[codepulse] session-sync codex quota fallback failed', file.path, err)
         }
       }
+      if (this.isCodexQuotaAuthoritative()) return 0
       const accountFamilies = this.rememberCodexAccountQuotaFamilies(
         pickSharedCodexAccountQuotaFamilies(quotaRows),
       )
       const accountPrimary = accountFamilies.main ?? accountFamilies.spark
       const token = withSharedCodexAccountQuota(
-        { accuracy: 'estimated' },
+        { accuracy: 'exact' },
         accountFamilies.main,
         accountFamilies.spark,
       )
+      const quotaUsageSampleIds = codexQuotaUsageSampleIds(accountFamilies)
+      const usageSampleId =
+        quotaUsageSampleIds.topLevel ??
+        this.quotaSampleId('codex', token, accountPrimary?.observationIdentity)
       return this.publishAccountQuotaObservation(
         'codex',
         token,
         now,
         usageSampleId,
         accountPrimary?.path,
+        undefined,
+        quotaUsageSampleIds,
       )
         ? 1
         : 0
@@ -482,9 +677,15 @@ export class SessionSyncService {
 
     for (const file of files) {
       try {
-        const rollout = await this.readCodexRollout(file, true)
+        const rollout = await this.readCodexRollout(file, true, modelCacheRevision)
         const token = rollout.snapshot.token
-        if (token?.rateLimits) quotaRows.push({ file, token })
+        if (token?.rateLimits) {
+          quotaRows.push({
+            file,
+            token,
+            quotaObservationIdentity: rollout.snapshot.quotaObservationIdentity,
+          })
+        }
 
         const meta = rollout.meta ?? {}
         let cwd = meta.cwd
@@ -531,21 +732,36 @@ export class SessionSyncService {
     }
 
     // Account weekly/5h quotas are global — pick best main + Spark separately.
-    const accountFamilies = this.rememberCodexAccountQuotaFamilies(
-      pickSharedCodexAccountQuotaFamilies(quotaRows),
-    )
+    // Re-check after asynchronous disk reads. App Server may have established
+    // authority while this scan was in flight; no stale rollout quota may cross
+    // that account boundary after the official snapshot cleared Hub state.
+    const appServerQuota = this.isCodexQuotaAuthoritative()
+    const accountFamilies = appServerQuota
+      ? {}
+      : this.rememberCodexAccountQuotaFamilies(pickSharedCodexAccountQuotaFamilies(quotaRows))
     const accountPrimary = accountFamilies.main ?? accountFamilies.spark
     const accountToken = withSharedCodexAccountQuota(
-      { accuracy: 'estimated' },
+      { accuracy: 'exact' },
       accountFamilies.main,
       accountFamilies.spark,
     )
+    const quotaUsageSampleIds = codexQuotaUsageSampleIds(accountFamilies)
+    const usageSampleId =
+      quotaUsageSampleIds.topLevel ??
+      this.quotaSampleId('codex', accountToken, accountPrimary?.observationIdentity)
 
     for (const { file, meta, token, turnTiming, activityMtimeMs } of byCwd.values()) {
       const sessionId = meta.sessionId ?? sessionIdFromRolloutName(file.path)
       const cwd = meta.cwd!
+      const nativeToken = markUnknownCodexContext(
+        (appServerQuota ? withoutAccountQuota(token) : token) ?? {
+          accuracy: 'unknown' as const,
+        },
+        meta,
+        currentCodexSession(this.hub, sessionId, cwd),
+      )
       const payloadToken = withSharedCodexAccountQuota(
-        token ?? { accuracy: 'unknown' as const, contextWindow: 256_000 },
+        nativeToken,
         accountFamilies.main,
         accountFamilies.spark,
       )
@@ -583,6 +799,7 @@ export class SessionSyncService {
         tokenSourcePath: preferPath,
         now,
         usageSampleId,
+        quotaUsageSampleIds,
         // Quota-only churn must not refresh lastEventAt or unhide idle project cards.
         quotaOnly: skip === 'quota',
         activityRefresh: skip === 'activity',
@@ -602,8 +819,95 @@ export class SessionSyncService {
             cwd: firstCodex.meta.cwd,
           }
         : undefined,
+      quotaUsageSampleIds,
     )
     return count === 0 && publishedQuota ? 1 : count
+  }
+
+  /**
+   * Chooses the bounded deep-scan set after reading lightweight rollout headers.
+   *
+   * Header reads are concurrency-bounded and cached by filesystem revision. The
+   * attached metadata is then reused by {@link readCodexRollout}, so selected
+   * files are not opened a second time merely to recover workspace identity.
+   *
+   * @param files Newest rollout candidates discovered on disk.
+   * @returns Fair root/workspace selection capped by {@link MAX_CODEX_FILES}.
+
+   */
+  private async selectCodexRolloutsForDeepScan(files: RolloutFile[]): Promise<RolloutFile[]> {
+    const annotated: RolloutFile[] = []
+    for (let offset = 0; offset < files.length; offset += CODEX_META_READ_CONCURRENCY) {
+      const batch = await Promise.all(
+        files
+          .slice(offset, offset + CODEX_META_READ_CONCURRENCY)
+          .map((file) => this.attachCodexRolloutMeta(file)),
+      )
+      for (const file of batch) {
+        if (file) annotated.push(file)
+      }
+    }
+    this.trimCodexRolloutMetaCache()
+    return prioritizeCodexRollouts(annotated, MAX_CODEX_FILES)
+  }
+
+  /**
+   * Reads or reuses one rollout header for metadata-first selection.
+   *
+   * @param file Rollout path and filesystem revision.
+   * @returns Rollout with attached metadata, or `undefined` when the header vanished.
+
+   */
+  private async attachCodexRolloutMeta(file: RolloutFile): Promise<RolloutFile | undefined> {
+    if (file.meta) return file
+
+    const parsed = this.codexRolloutCache.get(file.path)
+    const parsedHeaderStillValid =
+      parsed?.meta?.headerComplete === true &&
+      ((parsed.mtimeMs === file.mtimeMs && parsed.size === file.size) || file.size > parsed.size)
+    if (parsedHeaderStillValid) {
+      return { ...file, meta: parsed.meta }
+    }
+
+    const cached = this.codexRolloutMetaCache.get(file.path)
+    const cachedHeaderStillValid =
+      cached &&
+      ((cached.mtimeMs === file.mtimeMs && cached.size === file.size) ||
+        (cached.headerComplete && file.size > cached.size))
+    if (cachedHeaderStillValid) {
+      const refreshed = { ...cached, mtimeMs: file.mtimeMs, size: file.size }
+      this.codexRolloutMetaCache.delete(file.path)
+      this.codexRolloutMetaCache.set(file.path, refreshed)
+      return { ...file, meta: refreshed.meta }
+    }
+
+    try {
+      const meta = await readCodexRolloutMeta(file.path)
+      this.codexRolloutMetaCache.delete(file.path)
+      this.codexRolloutMetaCache.set(file.path, {
+        mtimeMs: file.mtimeMs,
+        size: file.size,
+        meta,
+        headerComplete: meta.headerComplete === true,
+      })
+      return { ...file, meta }
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
+   * Removes least-recently used header entries beyond the discovery bound.
+   *
+   * @returns Nothing.
+
+   */
+  private trimCodexRolloutMetaCache(): void {
+    while (this.codexRolloutMetaCache.size > MAX_CODEX_DISCOVERY_FILES) {
+      const oldest = this.codexRolloutMetaCache.keys().next().value as string | undefined
+      if (!oldest) return
+      this.codexRolloutMetaCache.delete(oldest)
+    }
   }
 
   /**
@@ -615,19 +919,30 @@ export class SessionSyncService {
    *
    * @param file Rollout path and filesystem revision.
    * @param includeMeta Whether the session header is required by the caller.
+   * @param modelCacheRevision Current `models_cache.json` filesystem revision.
    * @returns Cached or freshly parsed rollout data.
+
    */
   private async readCodexRollout(
     file: RolloutFile,
-    includeMeta = false,
+    includeMeta: boolean,
+    modelCacheRevision: string,
   ): Promise<CodexRolloutCacheEntry> {
     const now = this.now()
     let cached = this.codexRolloutCache.get(file.path)
     const revisionMatches =
-      cached?.mtimeMs === file.mtimeMs && cached.size === file.size && now < cached.refreshAt
+      cached?.mtimeMs === file.mtimeMs &&
+      cached.size === file.size &&
+      cached.modelCacheRevision === modelCacheRevision &&
+      now < cached.refreshAt
 
     if (!cached || !revisionMatches) {
-      let snapshot = await this.codexRolloutReader(file.path)
+      const sessionId = file.meta?.sessionId ?? sessionIdFromRolloutName(file.path)
+      const cwd = file.meta?.cwd
+      const current = cwd ? currentCodexSession(this.hub, sessionId, cwd) : undefined
+      let snapshot = await this.codexRolloutReader(file.path, {
+        expectedTerminalTurnId: current?.terminal ? current.externalTurnId : undefined,
+      })
       if (!snapshot.token) {
         const token = await readCodexTokenFallback(file.path)
         if (token) snapshot = { ...snapshot, token }
@@ -635,7 +950,9 @@ export class SessionSyncService {
       cached = {
         mtimeMs: file.mtimeMs,
         size: file.size,
+        modelCacheRevision,
         snapshot,
+        meta: file.meta,
         refreshAt: nextCodexSnapshotRefreshAt(snapshot, now),
       }
       this.codexRolloutCache.delete(file.path)
@@ -644,7 +961,7 @@ export class SessionSyncService {
     }
 
     if (includeMeta && !cached.meta) {
-      cached.meta = await readCodexRolloutMeta(file.path)
+      cached.meta = file.meta ?? (await readCodexRolloutMeta(file.path))
     }
     return cached
   }
@@ -663,6 +980,7 @@ export class SessionSyncService {
    *
    * @param incoming Best main and Spark candidates from the current scan.
    * @returns Latest available account families shared by every live Codex project.
+
    */
   private rememberCodexAccountQuotaFamilies(
     incoming: CodexAccountQuotaFamilies,
@@ -674,10 +992,16 @@ export class SessionSyncService {
     return this.codexAccountQuotaFamilies
   }
 
+  /**
+   * Hydrates Grok sessions whose native active-session processes are still live.
+   *
+   * @returns Number of project or account-quota observations published.
+
+   */
   private async syncGrok(): Promise<number> {
     const now = this.now()
-    const usageSampleId = this.nextUsageSampleId('grok', now)
     const billing = await readGrokBillingQuota(this.grokHome)
+    const usageSampleId = this.quotaSampleId('grok', billing.token, billing.sourcePath)
     // Only sessions the user currently has open (active_sessions + live pid).
     // Do NOT walk historical ~/.grok/sessions — that resurrects idle projects.
     const active = await readGrokActiveSessions(this.grokHome)
@@ -723,6 +1047,16 @@ export class SessionSyncService {
     return count === 0 && publishedQuota ? 1 : count
   }
 
+  /**
+   * Ingests grok session.
+   * @param sessionId Session identifier.
+   * @param cwd Working directory.
+   * @param now Current epoch timestamp in milliseconds.
+   * @param billing Grok billing quota associated with the session.
+   * @param mtimeMs Mtime ms.
+   * @param usageSampleId Usage sample id.
+   * @returns Promise resolving to whether the Grok session was published.
+   */
   private async ingestGrokSession(
     sessionId: string,
     cwd: string,
@@ -783,13 +1117,22 @@ export class SessionSyncService {
     }
   }
 
-  /** Hydrates recently active Kimi Code sessions from their local wire logs. */
+  /**
+   * Hydrates recently active Kimi Code sessions from their local wire logs.
+   *
+   * @returns Number of project or account-quota observations published.
+
+   */
   private async syncKimi(): Promise<number> {
     if (!(await this.kimiProcessAlive())) return 0
 
     const now = this.now()
-    const usageSampleId = this.nextUsageSampleId('kimi', now)
     const accountQuota = await this.getKimiAccountQuota(now)
+    const usageSampleId = this.quotaSampleId(
+      'kimi',
+      mergeKimiContextWithQuota(undefined, accountQuota),
+      accountQuota ? `${accountQuota.source}:${accountQuota.updatedAt}` : undefined,
+    )
     const indexed = await readKimiSessionIndex(this.kimiHome)
     const byCwd = new Map<string, KimiSessionSnapshot>()
     for (const row of indexed.slice(-100)) {
@@ -851,7 +1194,11 @@ export class SessionSyncService {
     return count === 0 && publishedQuota ? 1 : count
   }
 
-  /** Returns the cached Kimi quota and refreshes it at a bounded account-level cadence. */
+  /** Returns the cached Kimi quota and refreshes it at a bounded account-level cadence.
+
+   * @param now Current epoch timestamp in milliseconds.
+   * @returns Promise resolving to the latest cached or refreshed Kimi account quota.
+  */
   private async getKimiAccountQuota(now: number): Promise<KimiQuotaSnapshot | undefined> {
     if (now < this.nextKimiQuotaRefreshAt) return this.kimiQuota
     this.nextKimiQuotaRefreshAt = now + KIMI_QUOTA_REFRESH_MS
@@ -865,12 +1212,19 @@ export class SessionSyncService {
    *
    * Only entries whose process remains alive are accepted; context and timing
    * are recovered from the corresponding project transcript tail.
+   *
+   * @returns Number of project or account-quota observations published.
+
    */
   private async syncClaude(): Promise<number> {
     const now = this.now()
-    const usageSampleId = this.nextUsageSampleId('claude_code', now)
     // Account-wide quota (OAuth usage or statusline cache) — independent of transcripts.
     const quota = await this.getClaudeAccountQuota(now)
+    const usageSampleId = this.quotaSampleId(
+      'claude_code',
+      mergeClaudeContextWithQuota(undefined, quota),
+      quota ? `${quota.source}:${quota.updatedAt}` : undefined,
+    )
     const thinkingConfig = await readClaudeThinkingConfig(this.claudeHome, now)
 
     const active = await readClaudeActiveSessions(this.claudeHome)
@@ -923,6 +1277,7 @@ export class SessionSyncService {
    *
    * @param now Current epoch milliseconds.
    * @returns The latest successful account-quota snapshot.
+
    */
   private async getClaudeAccountQuota(now: number): Promise<ClaudeQuotaSnapshot | undefined> {
     if (now < this.nextClaudeQuotaRefreshAt) return this.claudeQuota
@@ -954,7 +1309,9 @@ export class SessionSyncService {
    * @param usageSampleId Identifier shared by all quota copies from this scan.
    * @param tokenSourcePath Optional native file that supplied the quota.
    * @param target Existing live session that should retain the account quota.
+   * @param quotaUsageSampleIds Optional per-family native observation IDs.
    * @returns Whether a quota observation was published.
+
    */
   private publishAccountQuotaObservation(
     source: SessionSyncSource,
@@ -963,6 +1320,7 @@ export class SessionSyncService {
     usageSampleId: string,
     tokenSourcePath?: string,
     target?: { sessionId: string; cwd?: string },
+    quotaUsageSampleIds?: NonNullable<AgentEvent['internal']>['quotaUsageSampleIds'],
   ): boolean {
     const quotaToken = accountQuotaOnlyToken(token)
     if (!quotaToken) return false
@@ -976,7 +1334,12 @@ export class SessionSyncService {
       token: quotaToken,
       tokenSourcePath,
       timestamp: now,
-      internal: { sessionSync: true, quotaRefresh: true, usageSampleId },
+      internal: {
+        sessionSync: true,
+        quotaRefresh: true,
+        usageSampleId,
+        ...(quotaUsageSampleIds ? { quotaUsageSampleIds } : {}),
+      },
     })
   }
 
@@ -986,12 +1349,49 @@ export class SessionSyncService {
    * @param source CLI family being synchronized.
    * @param now Synchronization timestamp.
    * @returns Process-unique sample identifier for this scan.
+
    */
   private nextUsageSampleId(source: SessionSyncSource, now: number): string {
     this.quotaObservationSequence += 1
     return `session-sync:${source}:${now}:${this.quotaObservationSequence}`
   }
 
+  /**
+   * Reuses one sample ID for identical native quota content.
+   *
+   * Filesystem rescans and cached account resolvers can replay the same quota
+   * many times. Keying by normalized windows prevents those replays from being
+   * miscounted as five independent lower observations; a changed native value,
+   * reset period, bucket, or source identity receives a new sample ID.
+   *
+   * @param source CLI family that owns the quota.
+   * @param token Normalized account quota payload.
+   * @param sourceIdentity Native file or resolver revision, when available.
+   * @returns Stable observation ID for this exact quota snapshot.
+
+   */
+  private quotaSampleId(
+    source: SessionSyncSource,
+    token: TokenPayload | undefined,
+    sourceIdentity: string | undefined,
+  ): string {
+    const key = `${source}\0${sourceIdentity ?? ''}\0${stableQuotaSampleKey(token)}`
+    const digest = createHash('sha256').update(key).digest('hex').slice(0, 24)
+    return `session-sync:${source}:quota:${digest}`
+  }
+
+  /**
+   * Ingests claude session.
+   * @param sessionId Session identifier.
+   * @param cwd Working directory.
+   * @param now Current epoch timestamp in milliseconds.
+   * @param updatedAt Updated at.
+   * @param status Native Claude session status.
+   * @param accountQuota Account quota.
+   * @param thinkingConfig Thinking config.
+   * @param usageSampleId Usage sample id.
+   * @returns Promise resolving to whether the Claude session was published.
+   */
   private async ingestClaudeSession(
     sessionId: string,
     cwd: string,
@@ -1064,7 +1464,21 @@ export class SessionSyncService {
    * A static `active` record alone is not a heartbeat: only a native session,
    * transcript, or rollout update may reset the watchdog. This prevents stale
    * busy markers from being shown as processing forever.
-   */
+
+
+   * @param mapKey Map key.
+   * @param source CLI source family.
+   * @param sessionId Session identifier.
+   * @param cwd Working directory.
+   * @param mtimeMs Mtime ms.
+   * @param token Token payload to process.
+   * @param model Model identifier.
+   * @param reasoningEffort Reasoning effort.
+   * @param modelObservedAt Model observed at.
+   * @param turnTiming Turn timing.
+   * @param tokenSourcePath Token source path.
+   * @returns Fingerprint classification describing which fields changed.
+  */
   private classifyUnchanged(
     mapKey: string,
     source: SessionSyncSource,
@@ -1114,6 +1528,12 @@ export class SessionSyncService {
     return 'skip'
   }
 
+  /**
+   * Computes hub has session.
+   * @param source CLI source family.
+   * @param sessionId Session identifier.
+   * @returns Whether the Hub already contains the session.
+   */
   private hubHasSession(source: SessionSyncSource, sessionId: string): boolean {
     return this.hub
       .snapshot()
@@ -1123,6 +1543,9 @@ export class SessionSyncService {
   /**
    * First sighting: session_start + token_snapshot.
    * Later: token_snapshot only (avoids markContextStale on every poll).
+   *
+   * @param args Canonical session identity, activity, token, and quota metadata.
+
    */
   private ingestHydrate(args: {
     source: SessionSyncSource
@@ -1137,6 +1560,8 @@ export class SessionSyncService {
     tokenSourcePath?: string
     now: number
     usageSampleId: string
+    /** Optional per-family identities when a token combines separate quota rows. */
+    quotaUsageSampleIds?: NonNullable<AgentEvent['internal']>['quotaUsageSampleIds']
     /** True when only account rate limits changed — do not bump project recency. */
     quotaOnly?: boolean
     /** True only when the native local source changed since its previous scan. */
@@ -1200,6 +1625,7 @@ export class SessionSyncService {
       internal: {
         sessionSync: true,
         usageSampleId: args.usageSampleId,
+        ...(args.quotaUsageSampleIds ? { quotaUsageSampleIds: args.quotaUsageSampleIds } : {}),
         ...(args.activityRefresh ? { activityRefresh: true } : {}),
         ...(quotaOnly ? { quotaRefresh: true } : {}),
       },
@@ -1213,12 +1639,25 @@ interface RolloutFile {
   path: string
   mtimeMs: number
   size: number
+  /** Stable header metadata attached before the bounded deep scan. */
+  meta?: CodexMeta
+}
+
+/** Lightweight header cached independently from the expensive rollout tail. */
+interface CodexRolloutMetaCacheEntry {
+  mtimeMs: number
+  size: number
+  meta: CodexMeta
+  /** True only after a complete native `session_meta` JSONL row was parsed. */
+  headerComplete: boolean
 }
 
 /** Parsed data retained while a rollout's filesystem revision is unchanged. */
 interface CodexRolloutCacheEntry {
   mtimeMs: number
   size: number
+  /** Filesystem revision of `models_cache.json` used for context resolution. */
+  modelCacheRevision: string
   snapshot: CodexRolloutSnapshot
   meta?: CodexMeta
   /** Epoch milliseconds when time-sensitive quota parsing must run again. */
@@ -1236,6 +1675,8 @@ interface CodexMeta {
   model?: string
   reasoningEffort?: string
   modelObservedAt?: number
+  /** Internal cache marker; omitted from hub payloads and fingerprints. */
+  headerComplete?: boolean
 }
 
 /** One live Codex rollout candidate for a deduplicated workspace card. */
@@ -1249,6 +1690,78 @@ interface CodexWorkspaceCandidate {
 }
 
 /**
+ * Marks an exact model snapshot whose effective context window is unavailable.
+ *
+ * The command is emitted only with a timestamped native model configuration.
+ * Missing token fields on quota-only or legacy incremental observations must
+ * keep their prior context instead of clearing it accidentally.
+ *
+ * @param token Parsed rollout token fields.
+ * @param meta Native model metadata selected atomically from the rollout.
+ * @param current Previously accepted model and context-presence state.
+ * @returns Token payload with an explicit one-shot context-clear command.
+
+ */
+function markUnknownCodexContext(
+  token: TokenPayload,
+  meta: CodexMeta,
+  current: { model?: string; hasContext: boolean } | undefined,
+): TokenPayload {
+  const hasContext = token.contextWindow !== undefined || token.contextUsedPercent !== undefined
+  const changedModel = Boolean(current?.model && meta.model && current.model !== meta.model)
+  if (
+    hasContext ||
+    !current?.hasContext ||
+    !changedModel ||
+    token.accuracy !== 'exact' ||
+    !meta.modelObservedAt
+  ) {
+    return token
+  }
+  return { ...token, clearContext: true }
+}
+
+/**
+ * Finds the currently accepted Codex model/context for one runtime identity.
+ *
+ * @param hub Live status store containing accepted session observations.
+ * @param sessionId Native Codex root session identifier.
+ * @param cwd Canonical workspace path used as a fallback identity.
+ * @returns Current model and whether context is retained, when a slot exists.
+
+ */
+function currentCodexSession(
+  hub: StatusHub,
+  sessionId: string,
+  cwd: string,
+):
+  | {
+      model?: string
+      externalTurnId?: string
+      hasContext: boolean
+      terminal: boolean
+    }
+  | undefined {
+  const key = normalizePathKey(cwd)
+  const current = hub
+    .snapshot()
+    .agents.find(
+      (agent) =>
+        agent.agentType === 'codex' &&
+        (agent.externalSessionId === sessionId ||
+          normalizePathKey(agent.workspacePath ?? '') === key),
+    )
+  if (!current) return undefined
+  return {
+    model: current.model,
+    externalTurnId: current.externalTurnId,
+    hasContext:
+      current.token?.contextWindow !== undefined || current.token?.contextUsedPercent !== undefined,
+    terminal: current.terminalAt !== undefined,
+  }
+}
+
+/**
  * Chooses which same-workspace Codex rollout represents the current project.
  *
  * Token writes update mtime long after a model change. Prefer the native model
@@ -1258,6 +1771,7 @@ interface CodexWorkspaceCandidate {
  * @param candidate Newly scanned rollout candidate.
  * @param current Candidate already selected for the workspace.
  * @returns True when `candidate` should replace `current`.
+
  */
 function shouldPreferCodexWorkspaceCandidate(
   candidate: CodexWorkspaceCandidate,
@@ -1272,43 +1786,208 @@ function shouldPreferCodexWorkspaceCandidate(
   return candidate.file.mtimeMs >= current.file.mtimeMs
 }
 
-/** Rollouts with mtime within `maxAgeMs` (newest first). */
-async function listLiveCodexRollouts(
+/**
+ * Prioritizes one root-capable representative per workspace before extra rows.
+ *
+ * Remaining root rollouts precede child rollouts, while children are filled in
+ * workspace round-robin order. This prevents one subagent-heavy workspace from
+ * consuming the entire bounded deep-scan set.
+ *
+ * @param files Metadata-annotated rollout candidates ordered newest first.
+ * @param limit Maximum number of rollouts eligible for expensive tail parsing.
+ * @returns Fair, deterministic subset for the deep scan.
+
+ */
+function prioritizeCodexRollouts(files: RolloutFile[], limit: number): RolloutFile[] {
+  if (limit <= 0) return []
+  if (files.length <= limit) return files.slice()
+
+  const workspaces = new Map<string, RolloutFile[]>()
+  for (const file of files) {
+    const workspaceKey = file.meta?.cwd
+      ? `cwd:${normalizePathKey(file.meta.cwd)}`
+      : `unknown:${file.path}`
+    const bucket = workspaces.get(workspaceKey)
+    if (bucket) bucket.push(file)
+    else workspaces.set(workspaceKey, [file])
+  }
+
+  const selected: RolloutFile[] = []
+  const selectedPaths = new Set<string>()
+  /**
+   * Adds one unique rollout without exceeding the caller's bound.
+   *
+   * @param file Rollout candidate to add.
+   * @returns Nothing.
+
+   */
+  const add = (file: RolloutFile): void => {
+    if (selected.length >= limit || selectedPaths.has(file.path)) return
+    selected.push(file)
+    selectedPaths.add(file.path)
+  }
+
+  const representatives = [...workspaces.values()]
+    .map((bucket) => bucket.find((file) => file.meta?.isSubagent !== true) ?? bucket[0])
+    .filter((file): file is RolloutFile => file !== undefined)
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+  for (const file of representatives) add(file)
+
+  for (const file of files) {
+    if (file.meta?.isSubagent !== true) add(file)
+  }
+
+  const remainingByWorkspace = [...workspaces.values()].map((bucket) =>
+    bucket.filter((file) => !selectedPaths.has(file.path)),
+  )
+  let added = true
+  while (selected.length < limit && added) {
+    added = false
+    for (const bucket of remainingByWorkspace) {
+      const file = bucket.shift()
+      if (!file) continue
+      add(file)
+      added = true
+      if (selected.length >= limit) break
+    }
+  }
+  return selected
+}
+
+/**
+ * Lists recent rollouts newest-first for later metadata-aware selection.
+ *
+ * @param sessionsRoot Codex sessions directory.
+ * @param now Current epoch time in milliseconds.
+ * @param maxAgeMs Maximum accepted rollout age.
+ * @param maxResults Discovery bound returned to the caller.
+ * @param discoveryFs Read-only filesystem implementation used by the discovery pass.
+ * @param platform Platform whose file timestamp behavior should be applied.
+ * @returns Recent rollout filesystem revisions ordered newest first.
+ */
+export async function listLiveCodexRollouts(
   sessionsRoot: string,
   now: number,
   maxAgeMs: number,
+  maxResults = MAX_CODEX_DISCOVERY_FILES,
+  discoveryFs: CodexRolloutDiscoveryFs = DEFAULT_CODEX_ROLLOUT_DISCOVERY_FS,
+  platform: NodeJS.Platform = process.platform,
 ): Promise<RolloutFile[]> {
   const out: RolloutFile[] = []
-  await walkRollouts(sessionsRoot, out, 0, now, maxAgeMs)
+  const budget: RolloutDiscoveryBudget = { directoryReads: 0, entryVisits: 0, fileStats: 0 }
+  await walkRollouts(sessionsRoot, out, 0, now, maxAgeMs, maxResults, budget, discoveryFs, platform)
   out.sort((a, b) => b.mtimeMs - a.mtimeMs)
-  return out.slice(0, MAX_CODEX_FILES)
+  return out.slice(0, maxResults)
 }
 
+/** Production filesystem implementation for bounded rollout discovery. */
+const DEFAULT_CODEX_ROLLOUT_DISCOVERY_FS: CodexRolloutDiscoveryFs = {
+  /**
+   * Lists one rollout directory with native entry type information.
+   *
+   * @param dir Directory to list.
+   * @returns Directory entries reported by the operating system.
+   */
+  async readdir(dir) {
+    return readdir(dir, { withFileTypes: true })
+  },
+  /**
+   * Reads the revision fields required to filter one rollout file.
+   *
+   * @param path Rollout path to inspect.
+   * @returns File modification time, change time, and byte size.
+   */
+  async stat(path) {
+    const info = await stat(path)
+    return { mtimeMs: info.mtimeMs, ctimeMs: info.ctimeMs, size: info.size }
+  },
+}
+
+/**
+ * Walks the bounded Codex session tree and records recent rollout revisions.
+ *
+ * @param dir Directory currently being inspected.
+ * @param out Mutable discovery accumulator.
+ * @param depth Current directory depth below the sessions root.
+ * @param now Current epoch time in milliseconds.
+ * @param maxAgeMs Maximum accepted rollout age.
+ * @param maxResults Maximum number of filesystem revisions to collect.
+ * @param budget Access counters enforcing independent directory, entry, and stat limits.
+ * @param discoveryFs Read-only filesystem operations for this walk.
+ * @param platform Platform whose file timestamp behavior should be applied.
+ * @returns Promise resolved after the bounded directory walk completes.
+ */
 async function walkRollouts(
   dir: string,
   out: RolloutFile[],
   depth: number,
   now: number,
   maxAgeMs: number,
+  maxResults: number,
+  budget: RolloutDiscoveryBudget,
+  discoveryFs: CodexRolloutDiscoveryFs,
+  platform: NodeJS.Platform,
 ): Promise<void> {
-  if (out.length >= MAX_CODEX_FILES * 3 || depth > 6) return
-  let entries
+  if (
+    out.length >= maxResults ||
+    depth > 6 ||
+    budget.directoryReads >= CODEX_ROLLOUT_DISCOVERY_LIMITS.directoryReads ||
+    budget.entryVisits >= CODEX_ROLLOUT_DISCOVERY_LIMITS.entryVisits ||
+    budget.fileStats >= CODEX_ROLLOUT_DISCOVERY_LIMITS.fileStats
+  ) {
+    return
+  }
+  let entries: RolloutDirectoryEntry[]
   try {
-    entries = await readdir(dir, { withFileTypes: true })
+    budget.directoryReads += 1
+    entries = await discoveryFs.readdir(dir)
   } catch {
     return
   }
+  // Session directories and rollout filenames both begin with sortable date
+  // components. Newest-first traversal makes the discovery cap retain current
+  // work even when years of older JSONL files exist below the same root.
+  entries.sort((left, right) => right.name.localeCompare(left.name, 'en'))
+  let directoryFileStats = 0
   for (const entry of entries) {
+    if (
+      out.length >= maxResults ||
+      budget.entryVisits >= CODEX_ROLLOUT_DISCOVERY_LIMITS.entryVisits ||
+      budget.fileStats >= CODEX_ROLLOUT_DISCOVERY_LIMITS.fileStats
+    ) {
+      return
+    }
+    budget.entryVisits += 1
     const full = join(dir, entry.name)
     if (entry.isDirectory()) {
-      await walkRollouts(full, out, depth + 1, now, maxAgeMs)
+      await walkRollouts(
+        full,
+        out,
+        depth + 1,
+        now,
+        maxAgeMs,
+        maxResults,
+        budget,
+        discoveryFs,
+        platform,
+      )
       continue
     }
     if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue
+    if (directoryFileStats >= CODEX_ROLLOUT_DISCOVERY_LIMITS.fileStatsPerDirectory) continue
     try {
-      const info = await stat(full)
-      if (now - info.mtimeMs > maxAgeMs) continue
-      out.push({ path: full, mtimeMs: info.mtimeMs, size: info.size })
+      directoryFileStats += 1
+      budget.fileStats += 1
+      const info = await discoveryFs.stat(full)
+      // NTFS can defer LastWriteTime while Codex keeps an append handle open,
+      // even though ChangeTime and file size advance for every token_count row.
+      // Use the newest native revision so an active long-lived session is not
+      // mistaken for a historical rollout until the CLI finally closes it.
+      const activityTimeMs =
+        platform === 'win32' ? Math.max(info.mtimeMs, info.ctimeMs ?? info.mtimeMs) : info.mtimeMs
+      if (now - activityTimeMs > maxAgeMs) continue
+      out.push({ path: full, mtimeMs: activityTimeMs, size: info.size })
+      if (out.length >= maxResults) return
     } catch {
       // ignore locked/missing
     }
@@ -1323,6 +2002,7 @@ async function walkRollouts(
  *
  * @param file Absolute rollout JSONL path.
  * @returns Workspace and session identifiers available near the file head.
+
  */
 async function readCodexRolloutMeta(file: string): Promise<CodexMeta> {
   const text = await readCodexMetaHead(file)
@@ -1343,6 +2023,7 @@ async function readCodexRolloutMeta(file: string): Promise<CodexMeta> {
           sessionId: rootSessionId,
           threadId,
           isSubagent: isCodexSubagentMeta(p) || meta.isSubagent,
+          headerComplete: item.type === 'session_meta' || meta.headerComplete,
         }
       }
     } catch {
@@ -1372,6 +2053,7 @@ async function readCodexRolloutMeta(file: string): Promise<CodexMeta> {
  *
  * @param payload Parsed native session metadata payload.
  * @returns `true` when the rollout is explicitly linked to a parent thread.
+
  */
 function isCodexSubagentMeta(payload: Record<string, unknown>): boolean {
   const threadSource = stringVal(payload.thread_source)?.toLowerCase()
@@ -1402,6 +2084,7 @@ function isCodexSubagentMeta(payload: Record<string, unknown>): boolean {
  *
  * @param text Partial native metadata text.
  * @returns Root session, current thread, workspace, and subagent markers found.
+
  */
 function extractMetaFromPartialLine(text: string): CodexMeta {
   const cwd =
@@ -1455,6 +2138,7 @@ function extractMetaFromPartialLine(text: string): CodexMeta {
  *
  * @param file Absolute rollout JSONL path.
  * @returns Metadata text containing the complete first row whenever bounded.
+
  */
 async function readCodexMetaHead(file: string): Promise<string> {
   const initial = await readHead(file, CODEX_META_HEAD)
@@ -1462,6 +2146,11 @@ async function readCodexMetaHead(file: string): Promise<string> {
   return readHead(file, CODEX_META_FIRST_LINE_MAX)
 }
 
+/**
+ * Computes unescape json string.
+ * @param value Value to inspect.
+ * @returns Decoded JSON string contents.
+ */
 function unescapeJsonString(value: string): string {
   try {
     return JSON.parse(`"${value}"`) as string
@@ -1470,6 +2159,11 @@ function unescapeJsonString(value: string): string {
   }
 }
 
+/**
+ * Finds cwd in tail.
+ * @param file File metadata to process.
+ * @returns Promise resolving to the workspace path found in the rollout tail.
+ */
 async function findCwdInTail(file: string): Promise<string | undefined> {
   try {
     const text = await readTailFile(file, 256 * 1024)
@@ -1501,6 +2195,10 @@ async function findCwdInTail(file: string): Promise<string | undefined> {
  * Fallback when the primary quota reader returns nothing.
  * Context only from last_token_usage — never total_token_usage, never raw expired limits
  * (rate limits always go through readCodexQuotaTokenFromFile's official-snapshot path).
+ *
+ * @param file Absolute Codex rollout JSONL path.
+ * @returns Context-only token data, or `undefined` when no usable row exists.
+
  */
 async function readCodexTokenFallback(file: string): Promise<TokenPayload | undefined> {
   try {
@@ -1519,9 +2217,12 @@ async function readCodexTokenFallback(file: string): Promise<TokenPayload | unde
       const info = asRecord(payload.info) ?? {}
       const last = asRecord(info.last_token_usage)
       if (!last) continue
-      const window = num(info.model_context_window) ?? num(payload.model_context_window) ?? 256_000
+      const window = num(info.model_context_window) ?? num(payload.model_context_window)
       const input = num(last.input_tokens)
-      const pct = input != null && window > 0 ? Math.min(100, (input / window) * 100) : undefined
+      const pct =
+        input != null && window != null && window > 0
+          ? Math.min(100, (input / window) * 100)
+          : undefined
       if (pct == null && input == null) continue
       return {
         input,
@@ -1529,7 +2230,7 @@ async function readCodexTokenFallback(file: string): Promise<TokenPayload | unde
         contextUsedPercent: pct,
         contextWindow: window,
         // Deliberately omit rateLimits — use readCodexQuotaTokenFromFile for those.
-        accuracy: 'estimated',
+        accuracy: 'exact',
       }
     }
   } catch {
@@ -1538,15 +2239,30 @@ async function readCodexTokenFallback(file: string): Promise<TokenPayload | unde
   return undefined
 }
 
+/**
+ * Computes session id from rollout name.
+ * @param file File metadata to process.
+ * @returns Session identifier encoded in the rollout filename.
+ */
 function sessionIdFromRolloutName(file: string): string {
   const name = basename(file)
   const m = name.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i)
   return m?.[1] ?? name.replace(/\.jsonl$/i, '')
 }
 
-type CodexQuotaRow = { file: RolloutFile; token?: TokenPayload }
-type AccountQuotaPick = { token: TokenPayload; mtimeMs: number; path: string }
+type CodexQuotaRow = {
+  file: RolloutFile
+  token?: TokenPayload
+  quotaObservationIdentity?: string
+}
+type AccountQuotaPick = {
+  token: TokenPayload
+  mtimeMs: number
+  path: string
+  observationIdentity?: string
+}
 type CodexAccountQuotaFamilies = { main?: AccountQuotaPick; spark?: AccountQuotaPick }
+type QuotaUsageSampleIds = NonNullable<NonNullable<AgentEvent['internal']>['quotaUsageSampleIds']>
 
 /**
  * Returns the next instant when an unchanged rollout must be reparsed.
@@ -1554,6 +2270,7 @@ type CodexAccountQuotaFamilies = { main?: AccountQuotaPick; spark?: AccountQuota
  * @param snapshot Parsed rollout snapshot.
  * @param now Current epoch milliseconds.
  * @returns Nearest future quota reset, or positive infinity for stable data.
+
  */
 function nextCodexSnapshotRefreshAt(snapshot: CodexRolloutSnapshot, now: number): number {
   const windows = snapshot.token?.rateLimits
@@ -1564,9 +2281,51 @@ function nextCodexSnapshotRefreshAt(snapshot: CodexRolloutSnapshot, now: number)
 }
 
 /**
+ * Maps each Codex quota family to the native rollout row that produced it.
+ *
+ * A combined main/Spark token can contain two independent filesystem reads.
+ * Per-family IDs prevent a new Spark row from advancing a pending main reset,
+ * and use the same canonical form as {@link QuotaRefreshWatcher}.
+ *
+ * @param families Selected main and Spark account quota rows.
+ * @returns Top-level and bucket-specific physical observation IDs.
+
+ */
+function codexQuotaUsageSampleIds(families: CodexAccountQuotaFamilies): QuotaUsageSampleIds {
+  /**
+   * Converts one selected quota row into its canonical physical observation ID.
+   *
+   * @param pick Selected account quota row.
+   * @returns Canonical observation ID, or `undefined` when the row has no identity.
+
+   */
+  const sampleId = (pick: AccountQuotaPick | undefined): string | undefined =>
+    pick?.observationIdentity ? `codex-rollout:${pick.observationIdentity}` : undefined
+  const mainId = sampleId(families.main)
+  const sparkId = sampleId(families.spark)
+  const buckets: Record<string, string> = {}
+  if (mainId && families.main) {
+    buckets[families.main.token.rateLimitId?.trim() || 'codex'] = mainId
+  }
+  if (sparkId && families.spark) {
+    buckets[families.spark.token.rateLimitId?.trim() || 'codex_bengalfox'] = sparkId
+  }
+  return {
+    topLevel: families.main ? mainId : sparkId,
+    ...(Object.keys(buckets).length > 0 ? { buckets } : {}),
+  }
+}
+
+/**
  * Context is per-project; rate limits are account-wide.
  * Overlay main (and optional Spark) account snapshots; keep quotaBuckets so dual meters work.
- */
+
+
+ * @param project Project-local token payload.
+ * @param accountMain Account main.
+ * @param accountSpark Account spark.
+ * @returns Project token payload with shared Codex quota attached.
+*/
 function withSharedCodexAccountQuota(
   project: TokenPayload,
   accountMain: AccountQuotaPick | undefined,
@@ -1614,6 +2373,10 @@ function withSharedCodexAccountQuota(
 /**
  * Pick best main + best Spark account snapshots from live rollouts.
  * Prefer weekly (sevenDay) signal for ranking — matches Codex UI (no 5h bar).
+ *
+ * @param rows Live rollout rows containing possible account quota snapshots.
+ * @returns Best independently selected main and Spark quota families.
+
  */
 function pickSharedCodexAccountQuotaFamilies(rows: CodexQuotaRow[]): {
   main?: AccountQuotaPick
@@ -1630,6 +2393,9 @@ function pickSharedCodexAccountQuotaFamilies(rows: CodexQuotaRow[]): {
       token,
       mtimeMs: row.file.mtimeMs,
       path: row.file.path,
+      ...(row.quotaObservationIdentity
+        ? { observationIdentity: `${row.file.path}:${row.quotaObservationIdentity}` }
+        : {}),
     }
     if (tokenLooksLikeSpark(token)) spark.push(candidate)
     else main.push(candidate)
@@ -1649,6 +2415,7 @@ function pickSharedCodexAccountQuotaFamilies(rows: CodexQuotaRow[]): {
  *
  * @param candidates Same-family account quota snapshots.
  * @returns Best snapshot from the latest quota period.
+
  */
 function pickCodexAccountQuotaSnapshot(
   candidates: AccountQuotaPick[],
@@ -1685,6 +2452,7 @@ function pickCodexAccountQuotaSnapshot(
  *
  * @param token Codex quota token.
  * @returns Reset timestamp in epoch milliseconds, or zero when unavailable.
+
  */
 function primaryCodexQuotaResetAt(token: TokenPayload): number {
   const window = token.rateLimits?.sevenDay ?? token.rateLimits?.fiveHour
@@ -1696,6 +2464,7 @@ function primaryCodexQuotaResetAt(token: TokenPayload): number {
  *
  * @param token Codex quota token.
  * @returns Used percentage, or `-1` when unavailable.
+
  */
 function primaryCodexQuotaUsedPercent(token: TokenPayload): number {
   const window = token.rateLimits?.sevenDay ?? token.rateLimits?.fiveHour
@@ -1704,18 +2473,79 @@ function primaryCodexQuotaUsedPercent(token: TokenPayload): number {
     : -1
 }
 
+/**
+ * Computes token looks like spark.
+ * @param token Token payload to process.
+ * @returns Whether the token belongs to a Spark quota family.
+ */
 function tokenLooksLikeSpark(token: TokenPayload | undefined): boolean {
   if (!token) return false
   const s = `${token.rateLimitId ?? ''} ${token.rateLimitName ?? ''}`.toLowerCase()
   return s.includes('spark') || s.includes('bengalfox')
 }
 
-/** Returns whether a Codex model belongs to the separate Spark quota family. */
+/**
+ * Serializes only account-quota fields into a deterministic sample key.
+ *
+ * @param token Token payload that may contain top-level and named quota families.
+ * @returns Stable JSON representation unaffected by session context or object order.
+
+ */
+function stableQuotaSampleKey(token: TokenPayload | undefined): string {
+  /**
+   * Serializes one pair of rolling quota windows into stable primitive arrays.
+   *
+   * @param value Five-hour and seven-day rate-limit windows.
+   * @returns Deterministic representation of the supplied windows.
+
+   */
+  const window = (value: TokenPayload['rateLimits']): unknown => ({
+    fiveHour: value?.fiveHour
+      ? [
+          value.fiveHour.usedPercent ?? null,
+          value.fiveHour.resetsAt ?? null,
+          value.fiveHour.windowMinutes ?? null,
+        ]
+      : null,
+    sevenDay: value?.sevenDay
+      ? [
+          value.sevenDay.usedPercent ?? null,
+          value.sevenDay.resetsAt ?? null,
+          value.sevenDay.windowMinutes ?? null,
+        ]
+      : null,
+  })
+  const buckets = Object.entries(token?.quotaBuckets ?? {})
+    .sort(([left], [right]) => left.localeCompare(right, 'en'))
+    .map(([key, bucket]) => [
+      key,
+      bucket.rateLimitId ?? null,
+      bucket.rateLimitName ?? null,
+      window(bucket.rateLimits),
+    ])
+  return JSON.stringify([
+    token?.rateLimitId ?? null,
+    token?.rateLimitName ?? null,
+    window(token?.rateLimits),
+    buckets,
+  ])
+}
+
+/** Returns whether a Codex model belongs to the separate Spark quota family.
+
+ * @param model Model identifier.
+ * @returns Whether the model belongs to the Spark family.
+*/
 function modelLooksLikeSpark(model: string | undefined): boolean {
   const normalized = model?.trim().toLowerCase() ?? ''
   return normalized.includes('spark') || normalized.includes('bengalfox')
 }
 
+/**
+ * Normalizes reset at ms.
+ * @param resetsAt Resets at.
+ * @returns Reset timestamp normalized to epoch milliseconds.
+ */
 function normalizeResetAtMs(resetsAt: number | undefined): number {
   if (typeof resetsAt !== 'number' || !Number.isFinite(resetsAt)) return 0
   return resetsAt < 1_000_000_000_000 ? resetsAt * 1000 : resetsAt
@@ -1742,7 +2572,11 @@ interface ClaudeThinkingConfig {
 /**
  * Claude Code writes one `{pid}.json` per interactive process under `~/.claude/sessions`.
  * Fields: pid, sessionId, cwd, status, updatedAt, …
- */
+
+
+ * @param claudeHome Claude data directory.
+ * @returns Promise resolving to the active Claude session registry.
+*/
 async function readClaudeActiveSessions(claudeHome: string): Promise<ClaudeActiveSession[]> {
   const root = join(claudeHome, 'sessions')
   let names: string[]
@@ -1783,6 +2617,7 @@ async function readClaudeActiveSessions(claudeHome: string): Promise<ClaudeActiv
  * @param claudeHome Claude Code home directory.
  * @param missingObservedAt Timestamp to use when the settings file is absent.
  * @returns The known native setting snapshot, or `undefined` on transient failure.
+
  */
 async function readClaudeThinkingConfig(
   claudeHome: string,
@@ -1806,7 +2641,12 @@ async function readClaudeThinkingConfig(
   }
 }
 
-/** Locate session transcript under claudeHome/projects by session id. */
+/** Locate session transcript under claudeHome/projects by session id.
+
+ * @param claudeHome Claude data directory.
+ * @param sessionId Session identifier.
+ * @returns Promise resolving to the matching Claude transcript path, when found.
+*/
 async function findClaudeTranscript(
   claudeHome: string,
   sessionId: string,
@@ -1816,6 +2656,13 @@ async function findClaudeTranscript(
   return walkFindFile(projectsRoot, target, 0)
 }
 
+/**
+ * Computes walk find file.
+ * @param dir Directory currently being searched.
+ * @param fileName File name.
+ * @param depth Remaining recursive search depth.
+ * @returns Promise resolving to the matching descendant path, when found.
+ */
 async function walkFindFile(
   dir: string,
   fileName: string,
@@ -1851,6 +2698,11 @@ interface ClaudeTranscriptUsage {
   turnTiming?: TurnTiming
 }
 
+/**
+ * Reads claude transcript usage.
+ * @param transcriptPath Transcript path.
+ * @returns Promise resolving to the latest Claude usage snapshot.
+ */
 async function readClaudeTranscriptUsage(
   transcriptPath: string,
 ): Promise<ClaudeTranscriptUsage | undefined> {
@@ -1923,6 +2775,7 @@ interface ClaudeTurnCompletion {
  * @param transcriptPath Absolute Claude transcript JSONL path.
  * @param timingContext Native active-session status.
  * @returns The latest display-safe usage and timing data, when available.
+
  */
 async function readClaudeTranscriptSnapshot(
   transcriptPath: string,
@@ -1943,6 +2796,7 @@ async function readClaudeTranscriptSnapshot(
  * @param transcriptPath Absolute Claude transcript JSONL path.
  * @param timingContext Native active-session status.
  * @returns A normalized turn timing snapshot, when local CLI data provides one.
+
  */
 async function readClaudeTurnTiming(
   transcriptPath: string,
@@ -2005,6 +2859,7 @@ async function readClaudeTurnTiming(
  * @param completion Latest native `turn_duration` record from the transcript.
  * @param context Native active-session status.
  * @returns A normalized CLI timing snapshot, when available.
+
  */
 function selectClaudeTurnTiming(
   promptAt: number | undefined,
@@ -2040,6 +2895,7 @@ function selectClaudeTurnTiming(
  * @param promptAt Latest eligible human prompt timestamp.
  * @param completion Native terminal duration record.
  * @returns The verified prompt start, or `undefined` when the rows are ambiguous.
+
  */
 function matchClaudeCompletionStart(
   promptAt: number | undefined,
@@ -2058,6 +2914,7 @@ function matchClaudeCompletionStart(
  *
  * @param item Parsed Claude transcript row.
  * @returns `true` when the row represents an external human prompt.
+
  */
 function isClaudeHumanPrompt(item: {
   type?: string
@@ -2083,12 +2940,18 @@ function isClaudeHumanPrompt(item: {
  *
  * @param status Native status string from `~/.claude/sessions`.
  * @returns `true` for known active statuses.
+
  */
 function isClaudeBusy(status: string | undefined): boolean {
   const normalized = status?.trim().toLowerCase()
   return normalized === 'busy' || normalized === 'working' || normalized === 'running'
 }
 
+/**
+ * Computes claude usage to token.
+ * @param usage Native usage fields to normalize.
+ * @returns Shared token payload derived from Claude usage.
+ */
 function claudeUsageToToken(usage: ClaudeTranscriptUsage | undefined): TokenPayload | undefined {
   if (!usage) return undefined
   if (
@@ -2110,6 +2973,11 @@ function claudeUsageToToken(usage: ClaudeTranscriptUsage | undefined): TokenPayl
   }
 }
 
+/**
+ * Selects number env.
+ * @param value Value to inspect.
+ * @returns Finite numeric environment value, or `undefined`.
+ */
 function pickNumberEnv(value: string | undefined): number | undefined {
   if (!value?.trim()) return undefined
   const n = Number(value.trim())
@@ -2135,7 +3003,11 @@ interface KimiSessionSnapshot extends KimiSessionIndexRow {
   turnTiming?: TurnTiming
 }
 
-/** Reads Kimi's append-only session index and ignores partial rows. */
+/** Reads Kimi's append-only session index and ignores partial rows.
+
+ * @param kimiHome Kimi data directory.
+ * @returns Promise resolving to indexed Kimi sessions ordered by recency.
+*/
 async function readKimiSessionIndex(kimiHome: string): Promise<KimiSessionIndexRow[]> {
   let text: string
   try {
@@ -2164,7 +3036,11 @@ async function readKimiSessionIndex(kimiHome: string): Promise<KimiSessionIndexR
   return rows
 }
 
-/** Parses model, thinking depth, context occupancy, and turn timing from one wire tail. */
+/** Parses model, thinking depth, context occupancy, and turn timing from one wire tail.
+
+ * @param row Indexed Kimi session row.
+ * @returns Promise resolving to the normalized Kimi session snapshot.
+*/
 async function readKimiSessionSnapshot(
   row: KimiSessionIndexRow,
 ): Promise<KimiSessionSnapshot | undefined> {
@@ -2264,7 +3140,12 @@ async function readKimiSessionSnapshot(
   }
 }
 
-/** Overlays Kimi's account-wide plan limits without replacing session context usage. */
+/** Overlays Kimi's account-wide plan limits without replacing session context usage.
+
+ * @param context Session-local context payload.
+ * @param quota Account quota payload.
+ * @returns Kimi context fields combined with account quota.
+*/
 function mergeKimiContextWithQuota(
   context: TokenPayload | undefined,
   quota: KimiQuotaSnapshot | undefined,
@@ -2280,12 +3161,23 @@ function mergeKimiContextWithQuota(
   }
 }
 
+/**
+ * Normalizes kimi effort.
+ * @param value Value to inspect.
+ * @returns Normalized Kimi reasoning effort, or `undefined`.
+ */
 function normalizeKimiEffort(value: string | undefined): string | undefined {
   const normalized = value?.trim().toLowerCase()
   return normalized && /^[a-z][a-z0-9_-]{0,31}$/.test(normalized) ? normalized : undefined
 }
 
 // Grok local-session helpers.
+
+/**
+ * Reads grok active sessions.
+ * @param grokHome Grok data directory.
+ * @returns Promise resolving to active Grok session identities.
+ */
 async function readGrokActiveSessions(
   grokHome: string,
 ): Promise<Array<{ sessionId: string; cwd: string; pid?: number }>> {
@@ -2309,7 +3201,11 @@ async function readGrokActiveSessions(
   }
 }
 
-/** True if a process with this pid is still running. */
+/** True if a process with this pid is still running.
+
+ * @param pid Operating-system process identifier.
+ * @returns Whether the condition is satisfied.
+*/
 function isPidAlive(pid: number): boolean {
   if (!Number.isFinite(pid) || pid <= 0) return false
   try {
@@ -2324,47 +3220,361 @@ function isPidAlive(pid: number): boolean {
 }
 
 const cliAliveCache = new Map<string, { value: boolean; at: number }>()
+const cliClassificationCache = new Map<string, { value: boolean; at: number }>()
 
 /**
- * Best-effort: is any CLI binary of this family currently running?
- * Avoids resurfacing disk history after the user has closed every terminal.
- * Cached briefly so 3.5s steady scans do not re-run tasklist every cycle.
+ * Stores one exact process-tree classification and removes expired alternatives.
+ *
+ * Failed CIM or `ps` queries also use this cache. Remembering their conservative
+ * fallback prevents a broken process-table provider from consuming every steady
+ * synchronization interval, while a changed root or target PID set still forms
+ * a new key and is retried immediately.
+ *
+ * @param key Platform, CLI, excluded-root, and target-PID identity.
+ * @param value Whether the exact target set contains an interactive CLI.
+ * @param observedAt Epoch milliseconds when the classification was produced.
  */
-async function isCliProcessAlive(kind: 'codex' | 'grok' | 'kimi'): Promise<boolean> {
+function rememberCliClassification(key: string, value: boolean, observedAt: number): void {
+  cliClassificationCache.set(key, { value, at: observedAt })
+  for (const [candidateKey, entry] of cliClassificationCache) {
+    if (candidateKey !== key && observedAt - entry.at > CLI_CLASSIFICATION_CACHE_MS * 2) {
+      cliClassificationCache.delete(candidateKey)
+    }
+  }
+}
+
+/**
+ * Best-effort: reports whether an interactive CLI process is currently running.
+ *
+ * CodePulse-owned process IDs and descendants are removed before deciding
+ * liveness. The target image is queried first with `tasklist` or `pgrep`; a full
+ * process tree is read only when a target must be classified against an excluded
+ * root. Stable classifications are cached by platform, root, and target PID sets.
+ *
+ * @param kind CLI process family to inspect.
+ * @param options Platform, exclusion set, and process-list command overrides.
+ * @returns Whether at least one non-excluded CLI process is running.
+
+ */
+export async function isCliProcessAlive(
+  kind: 'codex' | 'grok' | 'kimi',
+  options: CliProcessAliveOptions = {},
+): Promise<boolean> {
+  const platform = options.platform ?? process.platform
+  const configuredExcludedProcessIds = options.excludedProcessIds
+  const readExcludedProcessIds =
+    typeof configuredExcludedProcessIds === 'function'
+      ? configuredExcludedProcessIds
+      : () => configuredExcludedProcessIds ?? []
+  const excludedProcessIds = new Set(
+    [...readExcludedProcessIds()].filter((pid) => Number.isInteger(pid) && pid > 0),
+  )
+  const cacheKey = `${platform}\0${kind}\0${[...excludedProcessIds]
+    .sort((a, b) => a - b)
+    .join(',')}`
   const now = Date.now()
-  const cached = cliAliveCache.get(kind)
+  const cached = options.runCommand ? undefined : cliAliveCache.get(cacheKey)
   if (cached && now - cached.at < CLI_ALIVE_CACHE_MS) return cached.value
 
   let value = true
   try {
-    if (process.platform === 'win32') {
-      const { execFile } = await import('node:child_process')
-      const { promisify } = await import('node:util')
-      const execFileAsync = promisify(execFile)
-      // tasklist is always available; filter by image name.
-      const image = `${kind}.exe`
-      const { stdout } = await execFileAsync('tasklist', ['/FI', `IMAGENAME eq ${image}`, '/NH'], {
-        windowsHide: true,
-        timeout: CLI_ALIVE_TIMEOUT_MS,
-      })
-      value = stdout.toLowerCase().includes(image.toLowerCase())
-    } else {
-      const { execFile } = await import('node:child_process')
-      const { promisify } = await import('node:util')
-      const execFileAsync = promisify(execFile)
-      const { stdout } = await execFileAsync('pgrep', ['-x', kind], {
-        timeout: CLI_ALIVE_TIMEOUT_MS,
-      }).catch(() => ({ stdout: '' }))
-      value = String(stdout).trim().length > 0
-    }
+    value = await isPlatformCliProcessAlive(
+      kind,
+      platform,
+      readExcludedProcessIds,
+      excludedProcessIds,
+      options.runCommand,
+    )
   } catch {
     // If detection fails, fall through to mtime / active_sessions heuristics.
     value = true
   }
-  cliAliveCache.set(kind, { value, at: now })
+  if (!options.runCommand) cliAliveCache.set(cacheKey, { value, at: now })
   return value
 }
 
+/**
+ * Detects a CLI with a lightweight image query before tree classification.
+ *
+ * Dynamic exclusions are read again after `tasklist` or `pgrep`, closing the
+ * race where the App Server wrapper starts during the process query. A tree-query
+ * failure reuses an older exact-key classification when available and otherwise
+ * fails closed so a CodePulse-owned App Server cannot revive a closed rollout.
+ *
+ * @param kind CLI process family to inspect.
+ * @param platform Target operating system.
+ * @param readExcludedProcessIds Live reader for CodePulse-owned root PIDs.
+ * @param excludedProcessIds Roots already observed before the image query.
+ * @param runCommand Optional process-list command seam used by tests.
+ * @returns Whether a target process outside every excluded tree is running.
+
+ */
+async function isPlatformCliProcessAlive(
+  kind: 'codex' | 'grok' | 'kimi',
+  platform: NodeJS.Platform,
+  readExcludedProcessIds: () => Iterable<number>,
+  excludedProcessIds: Set<number>,
+  runCommand?: (command: string, args: readonly string[]) => Promise<string>,
+): Promise<boolean> {
+  const image = `${kind}.exe`
+  const targetCommand = platform === 'win32' ? 'tasklist' : 'pgrep'
+  const targetArgs =
+    platform === 'win32' ? ['/FI', `IMAGENAME eq ${image}`, '/FO', 'CSV', '/NH'] : ['-x', kind]
+  const targetOutput = await queryCliProcessListWithOverride(
+    targetCommand,
+    targetArgs,
+    platform,
+    runCommand,
+  )
+  const targetProcessIds = new Set(
+    platform === 'win32' ? parseTasklistProcessIds(targetOutput) : parseCliProcessIds(targetOutput),
+  )
+  if (targetProcessIds.size === 0) return false
+
+  for (const pid of readExcludedProcessIds()) {
+    if (Number.isInteger(pid) && pid > 0) excludedProcessIds.add(pid)
+  }
+  if (excludedProcessIds.size === 0) return true
+  if ([...targetProcessIds].every((pid) => excludedProcessIds.has(pid))) return false
+
+  const rootsKey = [...excludedProcessIds].sort((a, b) => a - b).join(',')
+  const targetsKey = [...targetProcessIds].sort((a, b) => a - b).join(',')
+  const classificationKey = `${platform}\0${kind}\0${rootsKey}\0${targetsKey}`
+  const now = Date.now()
+  const cached = cliClassificationCache.get(classificationKey)
+  if (cached && now - cached.at < CLI_CLASSIFICATION_CACHE_MS) return cached.value
+
+  try {
+    const command = platform === 'win32' ? 'powershell.exe' : 'ps'
+    const args =
+      platform === 'win32'
+        ? [
+            '-NoLogo',
+            '-NoProfile',
+            '-NonInteractive',
+            '-Command',
+            'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name | ConvertTo-Csv -NoTypeInformation',
+          ]
+        : ['-axo', 'pid=,ppid=,comm=']
+    const treeOutput = await queryCliProcessListWithOverride(command, args, platform, runCommand)
+    const processes =
+      platform === 'win32' ? parseWindowsProcessTree(treeOutput) : parseUnixProcessTree(treeOutput)
+    const processIds = new Set(processes.map((candidate) => candidate.pid))
+    const excludedProcessTree = collectExcludedProcessTree(processes, excludedProcessIds)
+    const classifiedValue = [...targetProcessIds].some(
+      (pid) => processIds.has(pid) && !excludedProcessTree.has(pid),
+    )
+    rememberCliClassification(classificationKey, classifiedValue, now)
+    return classifiedValue
+  } catch {
+    const fallback = cached?.value ?? false
+    rememberCliClassification(classificationKey, fallback, now)
+    return fallback
+  }
+}
+
+/**
+ * Runs a process-list query through the production executor or a test override.
+ *
+ * Overrides share production error normalization so tests can exercise `pgrep`
+ * exit code 1 separately from missing commands, timeouts, and other failures.
+ *
+ * @param command Process-list executable.
+ * @param args Process-list arguments.
+ * @param platform Target operating system.
+ * @param runCommand Optional injected command runner.
+ * @returns Raw process-list output.
+
+ */
+async function queryCliProcessListWithOverride(
+  command: string,
+  args: readonly string[],
+  platform: NodeJS.Platform,
+  runCommand?: (command: string, args: readonly string[]) => Promise<string>,
+): Promise<string> {
+  if (!runCommand) return queryCliProcessList(command, args, platform)
+  try {
+    return await runCommand(command, args)
+  } catch (error) {
+    return normalizeCliProcessListError(error, command, platform)
+  }
+}
+
+/**
+ * Executes the platform process-list command with a short timeout.
+ *
+ * Unix `pgrep` uses exit code 1 for an empty result. Every other failure is
+ * rethrown so the caller's best-effort guard can fail open.
+ *
+ * @param command Process-list executable.
+ * @param args Process-list arguments.
+ * @param platform Target operating system.
+ * @returns Raw process-list output.
+
+ */
+async function queryCliProcessList(
+  command: string,
+  args: readonly string[],
+  platform: NodeJS.Platform,
+): Promise<string> {
+  const { execFile } = await import('node:child_process')
+  const { promisify } = await import('node:util')
+  const execFileAsync = promisify(execFile)
+  try {
+    const { stdout } = await execFileAsync(command, [...args], {
+      windowsHide: true,
+      timeout:
+        platform === 'win32' && command === 'powershell.exe'
+          ? CLI_ALIVE_WINDOWS_TIMEOUT_MS
+          : CLI_ALIVE_TIMEOUT_MS,
+    })
+    return String(stdout)
+  } catch (error) {
+    return normalizeCliProcessListError(error, command, platform)
+  }
+}
+
+/**
+ * Converts only Unix `pgrep` exit code 1 into an empty-match result.
+ *
+ * @param error Command execution failure.
+ * @param command Process-list executable that failed.
+ * @param platform Target operating system.
+ * @returns Captured output when `pgrep` reported no matching process.
+ * @throws The original error for missing commands, timeouts, and all other failures.
+
+ */
+function normalizeCliProcessListError(
+  error: unknown,
+  command: string,
+  platform: NodeJS.Platform,
+): string {
+  const processError = error as { stdout?: string | Buffer; code?: unknown }
+  if (platform !== 'win32' && command === 'pgrep' && Number(processError.code) === 1) {
+    return String(processError.stdout ?? '')
+  }
+  throw error
+}
+
+/**
+ * Extracts process identifiers from `pgrep` output.
+ *
+ * @param stdout Raw process-list output.
+ * @returns Valid positive process identifiers in output order.
+
+ */
+function parseCliProcessIds(stdout: string): number[] {
+  return stdout
+    .split(/\s+/u)
+    .map((value) => Number(value))
+    .filter((pid) => Number.isInteger(pid) && pid > 0)
+}
+
+/**
+ * Extracts target process identifiers from `tasklist /FO CSV` output.
+ *
+ * @param stdout Raw filtered `tasklist` output.
+ * @returns Valid positive process identifiers in output order.
+
+ */
+function parseTasklistProcessIds(stdout: string): number[] {
+  const processIds: number[] = []
+  for (const line of stdout.split(/\r?\n/u)) {
+    const match = /^"[^"]+","(\d+)"/u.exec(line.trim())
+    const pid = match ? Number(match[1]) : undefined
+    if (pid !== undefined && Number.isInteger(pid) && pid > 0) processIds.push(pid)
+  }
+  return processIds
+}
+
+/**
+ * Parses the CSV projection of the Windows process table.
+ *
+ * `ProcessId`, `ParentProcessId`, and `Name` are selected in a fixed order, so
+ * the localized PowerShell table formatting and column labels are irrelevant.
+ *
+ * @param stdout Raw `ConvertTo-Csv` output from the process-table query.
+ * @returns Valid Windows process rows in output order.
+
+ */
+function parseWindowsProcessTree(stdout: string): ProcessInfo[] {
+  const processes: ProcessInfo[] = []
+  for (const line of stdout.split(/\r?\n/u)) {
+    const match = /^"?(\d+)"?,"?(\d+)"?,"?([^",]+)"?$/u.exec(line.trim())
+    if (!match) continue
+    const pid = Number(match[1])
+    const parentPid = Number(match[2])
+    if (!Number.isInteger(pid) || pid <= 0 || !Number.isInteger(parentPid) || parentPid < 0) {
+      continue
+    }
+    processes.push({ pid, parentPid })
+  }
+  return processes
+}
+
+/**
+ * Parses the fixed-column Unix process-tree query without interpreting `comm`.
+ *
+ * Target identity comes from `pgrep`; this parser needs only the leading PID and
+ * parent PID, so executable paths and platform-specific command names are safe.
+ *
+ * @param stdout Raw `ps -axo pid=,ppid=,comm=` output.
+ * @returns Valid Unix process rows in output order.
+
+ */
+function parseUnixProcessTree(stdout: string): ProcessInfo[] {
+  const processes: ProcessInfo[] = []
+  for (const line of stdout.split(/\r?\n/u)) {
+    const match = /^\s*(\d+)\s+(\d+)(?:\s+.*)?$/u.exec(line)
+    if (!match) continue
+    const pid = Number(match[1])
+    const parentPid = Number(match[2])
+    if (!Number.isInteger(pid) || pid <= 0 || !Number.isInteger(parentPid) || parentPid < 0) {
+      continue
+    }
+    processes.push({ pid, parentPid })
+  }
+  return processes
+}
+
+/**
+ * Expands CodePulse-owned process IDs to every transitive descendant.
+ *
+ * @param processes Snapshot of the platform process table.
+ * @param roots CodePulse-owned process IDs that anchor excluded trees.
+ * @returns Root and descendant process IDs that must not count as interactive CLIs.
+
+ */
+function collectExcludedProcessTree(
+  processes: readonly ProcessInfo[],
+  roots: ReadonlySet<number>,
+): Set<number> {
+  const childrenByParent = new Map<number, number[]>()
+  for (const candidate of processes) {
+    const children = childrenByParent.get(candidate.parentPid) ?? []
+    children.push(candidate.pid)
+    childrenByParent.set(candidate.parentPid, children)
+  }
+
+  const excluded = new Set(roots)
+  const pending = [...roots]
+  for (let index = 0; index < pending.length; index += 1) {
+    for (const childPid of childrenByParent.get(pending[index]) ?? []) {
+      if (excluded.has(childPid)) continue
+      excluded.add(childPid)
+      pending.push(childPid)
+    }
+  }
+  return excluded
+}
+
+/**
+ * Reads grok session usage.
+ * @param grokHome Grok data directory.
+ * @param sessionId Session identifier.
+ * @param cwd Working directory.
+ * @returns Promise resolving to normalized Grok session usage.
+ */
 async function readGrokSessionUsage(
   grokHome: string,
   sessionId: string,
@@ -2469,6 +3679,7 @@ async function readGrokSessionUsage(
  * @param sessionId Native Grok session identifier.
  * @param cwd Workspace path used to locate the encoded session directory.
  * @returns The latest active or completed turn timing, when available.
+
  */
 async function readGrokTurnTiming(
   grokHome: string,
@@ -2575,6 +3786,7 @@ async function readGrokTurnTiming(
  * @param cwd Workspace path used to locate the encoded session directory.
  * @param fallbackMtimeMs Existing source mtime when no session file is readable.
  * @returns Epoch milliseconds of the freshest session-scoped file mtime.
+
  */
 async function readGrokSessionActivityMtime(
   grokHome: string,
@@ -2593,12 +3805,18 @@ async function readGrokSessionActivityMtime(
    *
    * @param fileName Session-relative filename.
    * @returns Its mtime, or `undefined` when not readable.
+
    */
   async function readFileNameMtime(fileName: string): Promise<number | undefined> {
     return readFileMtime(join(sessionDir, fileName))
   }
 }
 
+/**
+ * Reads grok billing quota.
+ * @param grokHome Grok data directory.
+ * @returns Promise resolving to the latest Grok billing quota, when available.
+ */
 async function readGrokBillingQuota(
   grokHome: string,
 ): Promise<{ token?: TokenPayload; sourcePath?: string }> {
@@ -2670,6 +3888,11 @@ async function readGrokBillingQuota(
   return {}
 }
 
+/**
+ * Computes grok usage to token.
+ * @param usage Native usage fields to normalize.
+ * @returns Shared token payload derived from Grok usage.
+ */
 function grokUsageToToken(usage: Record<string, unknown>): TokenPayload | undefined {
   const pct = pickNumber(usage, 'context_used_percent', 'contextUsedPercent')
   const window = pickNumber(usage, 'context_window_size', 'contextWindowSize')
@@ -2699,6 +3922,12 @@ function grokUsageToToken(usage: Record<string, unknown>): TokenPayload | undefi
   }
 }
 
+/**
+ * Merges grok token.
+ * @param context Session-local context payload.
+ * @param billing Grok billing quota associated with the session.
+ * @returns Grok context and billing fields combined into one token payload.
+ */
 function mergeGrokToken(
   context: TokenPayload | undefined,
   billing: TokenPayload | undefined,
@@ -2722,6 +3951,7 @@ function mergeGrokToken(
  *
  * @param token Mixed project and account token payload.
  * @returns Quota-only payload, or `undefined` when no quota windows are present.
+
  */
 function accountQuotaOnlyToken(token: TokenPayload | undefined): TokenPayload | undefined {
   if (!token) return undefined
@@ -2740,7 +3970,37 @@ function accountQuotaOnlyToken(token: TokenPayload | undefined): TokenPayload | 
   }
 }
 
-/** Full payload identity including account rate limits. */
+/**
+ * Removes rollout-derived account limits while retaining session context.
+ *
+ * @param token Token payload parsed from one Codex rollout.
+ * @returns Context-only token when available.
+
+ */
+function withoutAccountQuota(token: TokenPayload | undefined): TokenPayload | undefined {
+  if (!token) return undefined
+  const { rateLimits, quotaBuckets, rateLimitId, rateLimitName, ...context } = token
+  void rateLimits
+  void quotaBuckets
+  void rateLimitId
+  void rateLimitName
+  return context
+}
+
+/** Full payload identity including account rate limits.
+
+ * @param source CLI source family.
+ * @param sessionId Session identifier.
+ * @param cwd Working directory.
+ * @param mtimeMs Mtime ms.
+ * @param token Token payload to process.
+ * @param model Model identifier.
+ * @param reasoningEffort Reasoning effort.
+ * @param modelObservedAt Model observed at.
+ * @param turnTiming Turn timing.
+ * @param tokenSourcePath Token source path.
+ * @returns Stable full-session fingerprint.
+*/
 function fingerprint(
   source: SessionSyncSource | string,
   sessionId: string,
@@ -2780,6 +4040,7 @@ function fingerprint(
  *
  * @param token Token payload that may contain multiple quota families.
  * @returns Order-independent bucket fingerprint.
+
  */
 function quotaBucketsFingerprint(token: TokenPayload | undefined): string {
   return Object.entries(token?.quotaBuckets ?? {})
@@ -2803,7 +4064,19 @@ function quotaBucketsFingerprint(token: TokenPayload | undefined): string {
 /**
  * Project activity identity — excludes rate limits so account-wide quota ticks
  * do not refresh lastEventAt or resurrect idle project cards.
- */
+
+
+ * @param source CLI source family.
+ * @param sessionId Session identifier.
+ * @param cwd Working directory.
+ * @param mtimeMs Mtime ms.
+ * @param token Token payload to process.
+ * @param model Model identifier.
+ * @param reasoningEffort Reasoning effort.
+ * @param modelObservedAt Model observed at.
+ * @param turnTiming Turn timing.
+ * @returns Stable activity-only fingerprint.
+*/
 function activityFingerprint(
   source: SessionSyncSource | string,
   sessionId: string,
@@ -2837,6 +4110,12 @@ function activityFingerprint(
   ].join('|')
 }
 
+/**
+ * Reads head.
+ * @param file File metadata to process.
+ * @param maxBytes Max bytes.
+ * @returns Promise resolving to the requested leading bytes.
+ */
 async function readHead(file: string, maxBytes: number): Promise<string> {
   const handle = await open(file, 'r')
   try {
@@ -2850,6 +4129,12 @@ async function readHead(file: string, maxBytes: number): Promise<string> {
   }
 }
 
+/**
+ * Reads tail file.
+ * @param file File metadata to process.
+ * @param maxBytes Max bytes.
+ * @returns Promise resolving to the requested trailing bytes.
+ */
 async function readTailFile(file: string, maxBytes: number): Promise<string> {
   const handle = await open(file, 'r')
   try {
@@ -2871,6 +4156,7 @@ async function readTailFile(file: string, maxBytes: number): Promise<string> {
  *
  * @param file Absolute local CLI data path.
  * @returns Epoch milliseconds of the current file mtime, when readable.
+
  */
 async function readFileMtime(file: string): Promise<number | undefined> {
   try {
@@ -2881,6 +4167,11 @@ async function readFileMtime(file: string): Promise<number | undefined> {
   }
 }
 
+/**
+ * Computes string val.
+ * @param value Value to inspect.
+ * @returns Non-empty string value, or `undefined`.
+ */
 function stringVal(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
@@ -2890,12 +4181,19 @@ function stringVal(value: unknown): string | undefined {
  *
  * @param value Candidate value from `settings.json`.
  * @returns A lowercase effort name, or `undefined` for absent/malformed input.
+
  */
 function normalizeClaudeReasoningEffort(value: unknown): string | undefined {
   const normalized = stringVal(value)?.trim().toLowerCase()
   return normalized && /^[a-z][a-z0-9_-]{0,31}$/.test(normalized) ? normalized : undefined
 }
 
+/**
+ * Converts a finite number or numeric string into a number.
+ *
+ * @param value Candidate numeric value.
+ * @returns Finite number, or `undefined` when conversion is unsafe.
+ */
 function num(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) return value
   if (typeof value === 'string' && value.trim()) {
@@ -2911,6 +4209,7 @@ function num(value: unknown): number | undefined {
  *
  * @param value Candidate CLI timestamp.
  * @returns Epoch milliseconds when the value is finite and positive.
+
  */
 function parseLocalTimestamp(value: unknown): number | undefined {
   const numeric = normalizeEpochMilliseconds(value)
@@ -2925,6 +4224,7 @@ function parseLocalTimestamp(value: unknown): number | undefined {
  *
  * @param value Candidate numeric timestamp.
  * @returns Epoch milliseconds when the value is finite and positive.
+
  */
 function normalizeEpochMilliseconds(value: unknown): number | undefined {
   const numeric = num(value)
@@ -2932,6 +4232,11 @@ function normalizeEpochMilliseconds(value: unknown): number | undefined {
   return numeric < 1_000_000_000_000 ? numeric * 1000 : numeric
 }
 
+/**
+ * Normalizes path key.
+ * @param path Filesystem path to inspect.
+ * @returns Case-normalized path key for comparisons.
+ */
 function normalizePathKey(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
 }

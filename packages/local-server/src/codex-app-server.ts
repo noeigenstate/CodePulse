@@ -35,7 +35,7 @@ const DEFAULT_RESTART_DELAY_MS = 1_000
 const MAX_RESTART_DELAY_MS = 60_000
 const MAX_STDOUT_BUFFER_CHARS = 1_048_576
 const ACCOUNT_SCOPE_SECRET = randomBytes(32)
-const CLIENT_INFO = { name: 'codepulse', title: 'CodePulse', version: '1.3.3' } as const
+const CLIENT_INFO = { name: 'codepulse', title: 'CodePulse', version: '1.4.0' } as const
 
 type JsonRecord = Record<string, unknown>
 

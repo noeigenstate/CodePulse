@@ -638,6 +638,7 @@ test('account/updated creates a fresh opaque boundary for API-key accounts', asy
     burstDelaysMs: [0, 0, 0],
     pollIntervalMs: 0,
     requestTimeoutMs: 100,
+    credentialRevisionReader: async () => 'stable-auth-revision',
     platform: 'linux',
   })
 
@@ -649,7 +650,9 @@ test('account/updated creates a fresh opaque boundary for API-key accounts', asy
   const originalScope = snapshots.at(-1)?.accountScope
   server.notify({ method: 'account/updated', params: { authMode: 'apikey' } })
   await waitUntil(
-    () => server.methods.filter((method) => method === 'account/rateLimits/read').length === 6,
+    () =>
+      server.methods.filter((method) => method === 'account/rateLimits/read').length >= 6 &&
+      snapshots.at(-1)?.accountScope !== originalScope,
     100,
   )
   service.stop()
@@ -673,6 +676,7 @@ test('account/updated advances the boundary even when the replacement account re
     pollIntervalMs: 0,
     requestTimeoutMs: 100,
     restartDelayMs: 1_000,
+    credentialRevisionReader: async () => 'stable-auth-revision',
     platform: 'linux',
   })
 
@@ -697,6 +701,7 @@ test('consecutive account updates each emit one stable provisional scope', async
     burstDelaysMs: [0],
     pollIntervalMs: 0,
     requestTimeoutMs: 100,
+    credentialRevisionReader: async () => 'stable-auth-revision',
     platform: 'linux',
   })
 
@@ -749,6 +754,10 @@ test('API-key replacement while disconnected rotates scope and drops the old sna
     () => replacement.methods.filter((method) => method === 'account/rateLimits/read').length >= 1,
     100,
   )
+  // Joining the serialized refresh worker proves the replacement account's
+  // credential binding completed; merely observing a written request races
+  // the client's post-response revision validation.
+  await service.refresh()
   replacement.notify({
     method: 'account/rateLimits/updated',
     params: {
@@ -759,7 +768,6 @@ test('API-key replacement while disconnected rotates scope and drops the old sna
       },
     },
   })
-  await waitUntil(() => snapshots.some((snapshot) => snapshot.source === 'notification'), 100)
   service.stop()
 
   const replacementSnapshot = snapshots.find((snapshot) => snapshot.source === 'notification')
@@ -882,6 +890,69 @@ test('credential replacement during a quota request discards the stale account r
   )
 })
 
+test('every opaque burst read gates bundled notifications until credential validation', async () => {
+  const server = new FakeCodexAppServer([70, 90, 10, 10])
+  server.account = { type: 'apiKey' }
+  server.deferredQuotaReads.add(1)
+  server.notificationsAfterQuotaRead.set(1, [
+    {
+      method: 'account/rateLimits/updated',
+      params: {
+        rateLimits: {
+          ...RATE_LIMITS,
+          primary: { ...RATE_LIMITS.primary, usedPercent: 95 },
+          secondary: null,
+        },
+      },
+    },
+  ])
+  const snapshots: CodexAppServerQuotaSnapshot[] = []
+  const scopes: string[] = []
+  let credentialRevision = 'auth-a'
+  const service = new CodexAppServerQuotaService({
+    onSnapshot: (snapshot) => snapshots.push(snapshot),
+    onAccountScope: (scope) => scopes.push(scope),
+    spawnProcess: server.spawn,
+    burstDelaysMs: [0, 0],
+    pollIntervalMs: 0,
+    requestTimeoutMs: 100,
+    credentialRevisionReader: async () => credentialRevision,
+    platform: 'linux',
+  })
+
+  const started = service.start()
+  await withTestDeadline(server.waitForQuotaRead(1), 100)
+  await started
+  const originalScope = snapshots.at(-1)?.accountScope
+  credentialRevision = 'auth-b'
+  const drained = service.refresh()
+  server.releaseQuotaRead(1)
+  await withTestDeadline(drained, 100)
+  service.stop()
+
+  const originalAccountSnapshots = snapshots.filter(
+    (snapshot) => snapshot.accountScope === originalScope,
+  )
+  assert.deepEqual(
+    originalAccountSnapshots.map((snapshot) => [
+      snapshot.source,
+      snapshot.token.rateLimits?.fiveHour?.usedPercent,
+    ]),
+    [['read', 70]],
+    'the changed-key response and bundled notification must not escape under the old scope',
+  )
+  assert.equal(new Set(scopes).size, 2)
+  assert.equal(
+    snapshots.some(
+      (snapshot) =>
+        snapshot.accountScope !== originalScope &&
+        snapshot.token.rateLimits?.fiveHour?.usedPercent === 10,
+    ),
+    true,
+    'a clean retry may publish only after adopting the replacement credential scope',
+  )
+})
+
 for (const refreshPath of ['burst', 'refreshOnce'] as const) {
   test(`opaque ${refreshPath} binds a post-response revision to the previously verified account`, async () => {
     const server = new FakeCodexAppServer([70, 90, 10])
@@ -971,6 +1042,62 @@ test('verified opaque account suppresses a response when its post-read revision 
     [70],
   )
   assert.equal(new Set(scopes).size, 1, 'an unavailable revision must not invent a boundary')
+})
+
+test('opaque account boundary suppresses notifications until credential binding is verified', async () => {
+  const server = new FakeCodexAppServer([70])
+  server.account = { type: 'apiKey' }
+  const snapshots: CodexAppServerQuotaSnapshot[] = []
+  const scopes: string[] = []
+  let revisionAvailable = true
+  const service = new CodexAppServerQuotaService({
+    onSnapshot: (snapshot) => snapshots.push(snapshot),
+    onAccountScope: (scope) => scopes.push(scope),
+    spawnProcess: server.spawn,
+    burstDelaysMs: [0],
+    pollIntervalMs: 0,
+    requestTimeoutMs: 100,
+    credentialRevisionReader: async () => (revisionAvailable ? 'auth-a' : undefined),
+    platform: 'linux',
+  })
+
+  await service.start()
+  await service.refresh()
+  const originalScope = snapshots.at(-1)?.accountScope
+  const snapshotCountBeforeBoundary = snapshots.length
+  const nextReadIndex = server.methods.filter(
+    (method) => method === 'account/rateLimits/read',
+  ).length
+  server.notificationsAfterQuotaRead.set(nextReadIndex, [
+    {
+      method: 'account/rateLimits/updated',
+      params: {
+        rateLimits: {
+          ...RATE_LIMITS,
+          primary: { ...RATE_LIMITS.primary, usedPercent: 5 },
+          secondary: null,
+        },
+      },
+    },
+  ])
+  revisionAvailable = false
+  server.notify({ method: 'account/updated' })
+  await service.refresh()
+  service.stop()
+
+  assert.equal(new Set(scopes).size, 2)
+  assert.notEqual(scopes.at(-1), originalScope)
+  assert.equal(
+    snapshots.length,
+    snapshotCountBeforeBoundary,
+    'neither an unbound physical response nor its notification may be published',
+  )
+  assert.equal(
+    snapshots
+      .slice(snapshotCountBeforeBoundary)
+      .some((snapshot) => snapshot.source === 'notification'),
+    false,
+  )
 })
 
 test('service ignores quota notifications after it stops', async () => {
@@ -1132,7 +1259,7 @@ test('service resolves a failed start and reconnects in the background', async (
     platform: 'linux',
   })
 
-  await service.start()
+  await withTestDeadline(service.start(), 100)
   await waitUntil(() => snapshots.length > 0, 100)
   service.stop()
 
@@ -1278,6 +1405,7 @@ class FakeCodexAppServer {
   private readIndex = 0
   private accountReadIndex = 0
   private readonly deferredQuotaResponses = new Map<number, () => void>()
+  private readonly quotaReadWaiters = new Map<number, Set<() => void>>()
 
   /**
    * Creates a fake with a repeating sequence of five-hour percentages.
@@ -1327,6 +1455,21 @@ class FakeCodexAppServer {
    */
   releaseQuotaRead(readIndex: number): void {
     this.deferredQuotaResponses.get(readIndex)?.()
+  }
+
+  /**
+   * Waits until the client issues a specific physical quota read.
+   *
+   * @param readIndex Zero-based physical quota-read index to observe.
+   * @returns A promise resolved synchronously when that request is parsed.
+   */
+  waitForQuotaRead(readIndex: number): Promise<void> {
+    if (this.readIndex > readIndex) return Promise.resolve()
+    return new Promise((resolve) => {
+      const waiters = this.quotaReadWaiters.get(readIndex) ?? new Set<() => void>()
+      waiters.add(resolve)
+      this.quotaReadWaiters.set(readIndex, waiters)
+    })
   }
 
   /** Emits an unexpected child exit. */
@@ -1384,6 +1527,8 @@ class FakeCodexAppServer {
       } else if (method === 'account/rateLimits/read') {
         const readIndex = this.readIndex
         this.readIndex += 1
+        for (const resolve of this.quotaReadWaiters.get(readIndex) ?? []) resolve()
+        this.quotaReadWaiters.delete(readIndex)
         if (this.failedQuotaReads.has(readIndex)) {
           this.respondError(message.id)
           continue
@@ -1469,5 +1614,27 @@ async function waitUntil(condition: () => boolean, timeoutMs: number): Promise<v
   const deadline = Date.now() + timeoutMs
   while (!condition() && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 2))
+  }
+}
+
+/**
+ * Keeps the event loop referenced while an operation awaits unref'ed production timers.
+ *
+ * @param operation Asynchronous test operation that must settle.
+ * @param timeoutMs Maximum time allowed for the operation.
+ * @returns The operation result.
+ * @throws When the operation does not settle before the deadline.
+ */
+async function withTestDeadline<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`Test operation did not settle within ${timeoutMs} ms`))
+    }, timeoutMs)
+  })
+  try {
+    return await Promise.race([operation, deadline])
+  } finally {
+    if (timer) clearTimeout(timer)
   }
 }

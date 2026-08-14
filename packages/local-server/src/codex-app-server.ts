@@ -223,6 +223,9 @@ export class CodexAppServerQuotaService {
   private accountBaseScope?: string
   private pendingBoundaryScope?: string
   private accountBoundary = 0
+  /** Whether the adopted account omits a stable API-key identity. */
+  private accountOpaque = false
+  /** Whether quota notifications may publish under the adopted account scope. */
   private accountVerified = false
   private hadVerifiedAccount = false
   private opaqueCredentialRevision?: string
@@ -413,6 +416,7 @@ export class CodexAppServerQuotaService {
       const hadVerifiedAccountAtReadStart = this.hadVerifiedAccount
       const knownCredentialRevisionAtReadStart = this.opaqueCredentialRevision
       const boundaryAlreadyAdvanced = this.pendingBoundaryScope !== undefined
+      if (this.accountOpaque) this.accountVerified = false
       const accountResponse = asRecord(await this.request('account/read', { refreshToken: false }))
       if (!this.isCurrentLifecycle(lifecycleGeneration)) return undefined
       if (generationAtReadStart !== this.accountGeneration) {
@@ -444,7 +448,11 @@ export class CodexAppServerQuotaService {
         this.advanceAccountBoundary()
       }
       const adopted = this.adoptAccountScope(createCodexAccountScope(account))
-      this.accountVerified = true
+      this.accountOpaque = opaqueAccount
+      // Identified accounts are bound by account/read metadata. Opaque API-key
+      // accounts remain notification-ineligible until the quota response is
+      // bracketed by the credential revision check below.
+      this.accountVerified = !opaqueAccount
       this.hadVerifiedAccount = true
       if (opaqueAccount && credentialRevision !== undefined) {
         this.opaqueCredentialRevision = credentialRevision
@@ -477,6 +485,10 @@ export class CodexAppServerQuotaService {
         break
       }
       try {
+        // Every opaque physical read needs its own credential bracket. Revoke
+        // push eligibility before the request so a bundled notification cannot
+        // escape while the response's post-read revision is still unverified.
+        if (opaqueAccount) this.accountVerified = false
         await this.ensureConnected()
         if (!this.isCurrentLifecycle(lifecycleGeneration)) break
         const response = await this.request('account/rateLimits/read')
@@ -491,6 +503,7 @@ export class CodexAppServerQuotaService {
           if (validation === 'stale') break
           if (validation === 'changed') return latest
           if (validation === 'unverified') continue
+          this.accountVerified = true
         }
         const normalized = normalizeCodexRateLimitsResponse(response, this.now())
         if (!normalized) continue
@@ -969,6 +982,7 @@ export class CodexAppServerQuotaService {
       const hadVerifiedAccountAtReadStart = this.hadVerifiedAccount
       const knownCredentialRevisionAtReadStart = this.opaqueCredentialRevision
       const boundaryAlreadyAdvanced = this.pendingBoundaryScope !== undefined
+      if (this.accountOpaque) this.accountVerified = false
       const accountResponse = asRecord(await this.request('account/read', { refreshToken: false }))
       if (!this.isCurrentLifecycle(lifecycleGeneration)) return undefined
       if (generationAtReadStart !== this.accountGeneration) {
@@ -999,7 +1013,10 @@ export class CodexAppServerQuotaService {
         this.advanceAccountBoundary()
       }
       const adopted = this.adoptAccountScope(createCodexAccountScope(account))
-      this.accountVerified = true
+      this.accountOpaque = opaqueAccount
+      // Keep push notifications gated until an opaque credential is bound to
+      // the physical quota response by the post-read revision check.
+      this.accountVerified = !opaqueAccount
       this.hadVerifiedAccount = true
       if (opaqueAccount && credentialRevision !== undefined) {
         this.opaqueCredentialRevision = credentialRevision
@@ -1016,6 +1033,7 @@ export class CodexAppServerQuotaService {
           hadVerifiedAccountAtReadStart,
         )
         if (validation !== 'accepted') return undefined
+        this.accountVerified = true
       }
       const token = normalizeCodexRateLimitsResponse(quotaResponse, this.now())
       if (

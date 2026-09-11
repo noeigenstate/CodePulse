@@ -6,7 +6,7 @@ import type {
   UpdateDownloadProgress,
   UpdateInfo,
 } from '@codepulse/shared'
-import { sameSnapshotData } from './lib/snapshotKey.js'
+import { snapshotDataKey } from './lib/snapshotKey.js'
 
 const EMPTY_SNAPSHOT: StatusSnapshot = { overall: 'idle', agents: [], updatedAt: Date.now() }
 
@@ -45,40 +45,96 @@ export const useStore = create<CodePulseStore>((set, get) => ({
       return () => undefined
     }
 
+    let disposed = false
+    let statusReceived = false
+    let agentsReceived = false
+    let updateReceived = false
+    let keyedSnapshot = get().snapshot
+    let currentSnapshotKey = snapshotDataKey(keyedSnapshot)
+
+    /**
+     * Applies semantic snapshot changes while caching the retained snapshot's key.
+     *
+     * @param snapshot New snapshot received from the preload bridge.
+     * @param ready Whether this observation completes renderer initialization.
+     */
     const applySnapshot = (snapshot: StatusSnapshot, ready = false): void => {
+      if (disposed) return
       set((state) => {
+        if (state.snapshot !== keyedSnapshot) {
+          keyedSnapshot = state.snapshot
+          currentSnapshotKey = snapshotDataKey(keyedSnapshot)
+        }
+        const incomingKey =
+          snapshot === keyedSnapshot ? currentSnapshotKey : snapshotDataKey(snapshot)
         const nextReady = ready || state.ready
-        if (sameSnapshotData(state.snapshot, snapshot)) {
+        if (currentSnapshotKey === incomingKey) {
           return state.ready === nextReady ? state : { ready: nextReady }
         }
+        keyedSnapshot = snapshot
+        currentSnapshotKey = incomingKey
         return { snapshot, ready: nextReady }
       })
     }
 
+    /**
+     * Applies CLI detection results only while the renderer subscription is active.
+     *
+     * @param agents Supported CLI records from the main process.
+     */
     const applyAgents = (agents: Agent[]): void => {
+      if (disposed) return
       set((state) => ({ agents, agentCheckId: state.agentCheckId + 1 }))
     }
+
+    // Register push listeners first so updates during bootstrap cannot be missed
+    // or replaced by a slower response from an older renderer lifetime.
+    const offStatus = api.onStatus((snapshot) => {
+      statusReceived = true
+      applySnapshot(snapshot, true)
+    })
+    const offMute = api.onMute((muted) => {
+      if (!disposed) set({ muted })
+    })
+    const offAgents = api.onAgents((agents) => {
+      agentsReceived = true
+      applyAgents(agents)
+    })
+    const offUpdate = api.onUpdateAvailable((updateInfo) => {
+      updateReceived = true
+      if (!disposed) set({ updateInfo, updateError: undefined, updateProgress: undefined })
+    })
+    const offUpdateProgress = api.onUpdateProgress((updateProgress) => {
+      if (!disposed) set({ updateProgress })
+    })
 
     // Prefer an active disk rescan so cards fill even when hooks never fired.
     // Fall back to getStatus if preload is older than this build.
     const bootstrapStatus = api.syncSessions
       ? api.syncSessions().catch(() => api.getStatus())
       : api.getStatus()
-    void bootstrapStatus.then((snapshot) => applySnapshot(snapshot, true))
-    void api.detectAgents().then(applyAgents)
-    void api.getUpdate().then((updateInfo) => {
-      if (updateInfo) set({ updateInfo, updateError: undefined })
-    })
-
-    const offStatus = api.onStatus((snapshot) => applySnapshot(snapshot))
-    const offMute = api.onMute((muted) => set({ muted }))
-    const offAgents = api.onAgents(applyAgents)
-    const offUpdate = api.onUpdateAvailable((updateInfo) =>
-      set({ updateInfo, updateError: undefined, updateProgress: undefined }),
-    )
-    const offUpdateProgress = api.onUpdateProgress((updateProgress) => set({ updateProgress }))
+    void bootstrapStatus
+      .then((snapshot) => {
+        if (!statusReceived) applySnapshot(snapshot, true)
+      })
+      .catch(() => {
+        if (!disposed) set({ ready: true })
+      })
+    void api
+      .detectAgents()
+      .then((agents) => {
+        if (!agentsReceived) applyAgents(agents)
+      })
+      .catch(() => undefined)
+    void api
+      .getUpdate()
+      .then((updateInfo) => {
+        if (!disposed && !updateReceived && updateInfo) set({ updateInfo, updateError: undefined })
+      })
+      .catch(() => undefined)
 
     return () => {
+      disposed = true
       offStatus()
       offMute()
       offAgents()

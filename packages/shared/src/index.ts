@@ -19,6 +19,7 @@ export * from './types/device.js'
 export * from './types/update.js'
 export * from './types/stats.js'
 export * from './token-format.js'
+export * from './codex-quota.js'
 export * from './path.js'
 
 /** 本地 HTTP/WebSocket 服务器绑定的默认主机（仅回环地址）。 */

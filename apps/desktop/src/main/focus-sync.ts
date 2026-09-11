@@ -56,9 +56,9 @@ export class FocusSyncScheduler {
     for (const waiter of waiters) waiter.resolve()
   }
 
-  /** Restarts the debounce timer for the current queued batch. */
+  /** Arms one bounded debounce window; in-flight scans drain their own successor. */
   private arm(): void {
-    if (this.timer) clearTimeout(this.timer)
+    if (this.running || this.timer) return
     this.timer = setTimeout(() => {
       this.timer = undefined
       void this.flush()
@@ -71,7 +71,6 @@ export class FocusSyncScheduler {
   private async flush(): Promise<void> {
     // A focus event received during an active scan becomes one trailing scan.
     if (this.running) {
-      this.arm()
       return
     }
 

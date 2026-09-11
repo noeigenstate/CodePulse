@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { EventEmitter } from 'node:events'
+import type { FSWatcher } from 'node:fs'
 import { appendFile, mkdir, rm, writeFile, utimes } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -1636,7 +1638,7 @@ test('SessionSyncService skips Claude sessions with dead pid', async () => {
   }
 })
 
-test('SessionSyncService skips unchanged fingerprint on second scan', async () => {
+test('SessionSyncService skips unchanged fingerprint on second scan', async (t) => {
   const home = await mkdtempJoin('codepulse-session-sync-fp-')
   const sessions = join(home, 'sessions', '2026', '07', '14')
   const sessionId = '019f7003-aaaa-bbbb-cccc-ddddeeeeffff'
@@ -1693,8 +1695,79 @@ test('SessionSyncService skips unchanged fingerprint on second scan', async () =
     await sync.syncNow()
     const afterFirst = eventCount
     assert.ok(afterFirst >= 2, 'first scan should emit session_start + token_snapshot')
+    const snapshotCalls = t.mock.method(hub, 'snapshot')
     await sync.syncNow()
     assert.equal(eventCount, afterFirst, 'second scan with same mtime/token must not re-ingest')
+    assert.equal(
+      snapshotCalls.mock.callCount(),
+      0,
+      'unchanged scans must use indexed session lookups',
+    )
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('rollout fallback keeps Reserve usage independent from ordinary account quota', async () => {
+  const home = await mkdtempJoin('codepulse-reserve-fallback-')
+  const dir = join(home, 'sessions')
+  const reset = Math.floor(Date.now() / 1000) + 5 * 86_400
+  await mkdir(dir, { recursive: true })
+  for (const reserve of [false, true]) {
+    const session = reserve ? 'reserve' : 'ordinary'
+    await writeFile(
+      join(dir, `rollout-${session}.jsonl`),
+      [
+        JSON.stringify({
+          type: 'session_meta',
+          payload: { id: session, cwd: `E:/project/${session}` },
+        }),
+        JSON.stringify({
+          type: 'turn_context',
+          timestamp: new Date().toISOString(),
+          payload: { model: reserve ? 'gpt-reserve' : 'gpt-5.6-sol' },
+        }),
+        JSON.stringify({
+          type: 'event_msg',
+          payload: {
+            type: 'token_count',
+            info: { model_context_window: 258400, last_token_usage: { input_tokens: 100 } },
+            rate_limits: {
+              limit_id: reserve ? 'base_model_inference' : 'codex',
+              limit_name: reserve ? 'gpt-reserve' : null,
+              primary: {
+                used_percent: reserve ? 0 : 24,
+                window_minutes: 10080,
+                resets_at: reserve ? reset + 86400 : reset,
+              },
+            },
+          },
+        }),
+      ].join('\n') + '\n',
+      'utf8',
+    )
+  }
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: home,
+    disableWatch: true,
+    codexProcessAlive: () => true,
+  })
+  try {
+    await sync.syncNow(['codex'])
+    const ordinary = hub.findSession('codex', 'ordinary')
+    const reserve = hub.findSession('codex', 'reserve')
+    assert.equal(ordinary?.token?.rateLimitId, 'codex')
+    assert.equal(ordinary?.token?.rateLimitName, undefined)
+    assert.equal(ordinary?.token?.rateLimits?.sevenDay?.usedPercent, 24)
+    assert.equal(
+      reserve?.token?.quotaBuckets?.base_model_inference?.rateLimits?.sevenDay?.usedPercent,
+      0,
+    )
+    assert.equal(reserve?.token?.quotaBuckets?.codex?.rateLimits?.sevenDay?.usedPercent, 24)
   } finally {
     sync.stop()
     await rm(home, { recursive: true, force: true })
@@ -2334,6 +2407,110 @@ test('SessionSyncService retains Claude quota when a later refresh is unavailabl
     claude = hub.snapshot(now).agents.find((agent) => agent.agentType === 'claude_code')
     assert.equal(claude?.token?.rateLimits?.sevenDay?.usedPercent, 18)
   } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService flushes continuous filesystem writes within one bounded window', async (t) => {
+  const home = await mkdtempJoin('codepulse-bounded-watch-')
+  const changes = new Map<string, () => void>()
+  let processChecks = 0
+  let closedWatchers = 0
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const sync = new SessionSyncService({
+    hub: new StatusHub(),
+    userHome: home,
+    codexHome: home,
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    kimiHome: join(home, 'no-kimi'),
+    codexProcessAlive: () => {
+      processChecks += 1
+      return false
+    },
+    kimiProcessAlive: () => false,
+    watchFactory: (root, onChange) => {
+      changes.set(root, onChange)
+      return Object.assign(new EventEmitter(), {
+        close: () => {
+          closedWatchers += 1
+        },
+      }) as FSWatcher
+    },
+  })
+  try {
+    await sync.start()
+    const change = changes.get(join(home, 'sessions'))!
+    assert.ok(change)
+    assert.equal(processChecks, 1)
+    change()
+    t.mock.timers.tick(100)
+    change()
+    t.mock.timers.tick(99)
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(processChecks, 1)
+    t.mock.timers.tick(1)
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(
+      processChecks,
+      2,
+      'second write must not push the first deadline from 200 to 300 ms',
+    )
+    sync.stop()
+    change()
+    t.mock.timers.tick(300)
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(processChecks, 2)
+    assert.equal(closedWatchers, changes.size)
+  } finally {
+    sync.stop()
+    t.mock.timers.reset()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('SessionSyncService keeps scans serialized when one CLI fails before another finishes', async (t) => {
+  const home = await mkdtempJoin('codepulse-scan-failure-')
+  let release!: () => void
+  let started!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const firstStarted = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  let kimiChecks = 0
+  const errors = t.mock.method(console, 'error', () => undefined)
+  const sync = new SessionSyncService({
+    hub: new StatusHub(),
+    userHome: home,
+    disableWatch: true,
+    codexProcessAlive: async () => {
+      throw new Error('simulated process-list failure')
+    },
+    kimiProcessAlive: async () => {
+      kimiChecks += 1
+      if (kimiChecks === 1) {
+        started()
+        await gate
+      }
+      return false
+    },
+  })
+  try {
+    const first = sync.syncNow(['codex', 'kimi'])
+    await firstStarted
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    const second = sync.syncNow(['kimi'])
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(kimiChecks, 1, 'the failed source must not release a still-running scan')
+    release()
+    await Promise.all([first, second])
+    assert.equal(kimiChecks, 2)
+    assert.equal(errors.mock.callCount(), 1)
+  } finally {
+    release()
     sync.stop()
     await rm(home, { recursive: true, force: true })
   }

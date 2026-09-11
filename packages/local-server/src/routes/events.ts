@@ -128,10 +128,20 @@ function withHookDeliveryMetadata(
  */
 function withoutAccountQuota(token: TokenPayload | undefined): TokenPayload | undefined {
   if (!token) return undefined
-  const { rateLimits, quotaBuckets, rateLimitId, rateLimitName, ...sessionToken } = token
+  const {
+    rateLimits,
+    quotaBuckets,
+    rateLimitId,
+    rateLimitName,
+    normalModelSlug,
+    ordinaryUsageAllowed,
+    ...sessionToken
+  } = token
   void rateLimits
   void quotaBuckets
   void rateLimitId
   void rateLimitName
+  void normalModelSlug
+  void ordinaryUsageAllowed
   return sessionToken
 }

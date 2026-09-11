@@ -7,7 +7,7 @@
 Know at a glance whether Codex, Claude Code, Grok, and Kimi Code are working, waiting on
 you, finished, or stuck — without alt-tabbing back to a terminal.
 
-[![status](https://img.shields.io/badge/status-v1.4.0-brightgreen)](#features)
+[![status](https://img.shields.io/badge/status-v1.4.1-brightgreen)](#features)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#download)
 [![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#development)
@@ -79,7 +79,7 @@ nothing is uploaded. _(Sample data shown.)_
 | ⚙️ **Configurable CLI panels**      | The gear menu lets you show or hide each CLI panel without stopping background sync or notifications.                                   |
 | 🧠 **Model, depth, and timing**     | Stable model identity, thinking depth when available, and native CLI elapsed time remain visible across refreshes.                      |
 | 📈 **Context tracking**             | Reads native CLI context snapshots, fixes missed Windows long-session updates, and handles confirmed compression correctly.             |
-| 🎟️ **Quota awareness**              | Codex uses official App Server limits; increases apply immediately while repeated lower reads confirm a reset.                          |
+| 🎟️ **Quota awareness**              | Codex ordinary, Reserve, and Spark quotas stay separate; increases appear immediately and five distinct lower readings confirm a reset. |
 | 🔔 **Glanceable toasts**            | Only completed or likely stuck turns notify; completion uses the project name and a cleaned prompt summary.                             |
 | 🕰️ **Stuck detection**              | A watchdog flags turns with no activity so silent failures don't burn your afternoon.                                                   |
 | 💾 **Local history**                | Events, sessions, turns, and token snapshots persisted to SQLite — yours to query or delete.                                            |

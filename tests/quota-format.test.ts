@@ -10,7 +10,47 @@ import {
 import {
   formatQuotaDetail,
   formatQuotaReset,
+  weeklyMeterLabel,
 } from '../apps/desktop/src/renderer/src/lib/quotaFormat.js'
+
+test('Codex quota labels honor native IDs over conflicting display names', () => {
+  assert.equal(
+    weeklyMeterLabel(
+      { accuracy: 'exact', rateLimitId: 'codex', rateLimitName: 'gpt-reserve' },
+      '每周额度',
+      'Luna Reserve',
+      'codex',
+    ),
+    '每周额度',
+  )
+  assert.equal(
+    weeklyMeterLabel(
+      { accuracy: 'exact', rateLimitId: 'base_model_inference', rateLimitName: 'Codex Spark' },
+      '每周额度',
+      'Luna Reserve',
+      'codex',
+    ),
+    'Luna Reserve',
+  )
+  assert.equal(
+    weeklyMeterLabel(
+      { accuracy: 'exact', rateLimitId: 'codex_bengalfox', rateLimitName: 'gpt-reserve' },
+      '每周额度',
+      'Luna Reserve',
+      'codex',
+    ),
+    'Codex Spark',
+  )
+  assert.equal(
+    weeklyMeterLabel(
+      { accuracy: 'exact', rateLimitId: 'grok', rateLimitName: 'SuperGrok' },
+      'Weekly quota',
+      'Luna Reserve',
+      'grok',
+    ),
+    'SuperGrok',
+  )
+})
 
 test('token counts use decimal M as one million tokens', () => {
   assert.equal(formatTokenCount(1_000_000), '1M')

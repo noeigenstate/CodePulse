@@ -9,6 +9,8 @@
 
  */
 import {
+  codexQuotaFamily as codexRateLimitFamily,
+  type CodexQuotaFamily as CodexRateLimitFamily,
   type AgentEvent,
   type AgentRuntimeState,
   type AgentType,
@@ -116,6 +118,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       current.token,
       modelSnapshotAccepted ? event.token : withoutRejectedContext(event.token),
       event.timestamp,
+      current.agentType,
       next.model,
     )
   }
@@ -875,6 +878,7 @@ function withoutRejectedContext(token: TokenPayload): TokenPayload {
  * @param current Token state retained from earlier events.
  * @param patch Normalized token fields supplied by the current event.
  * @param capturedAt Epoch milliseconds assigned to quota bucket observations.
+ * @param agentType CLI family that owns the runtime state.
  * @param activeModel Model currently associated with the runtime state.
  * @returns Token payload after applying every accepted field from the patch.
 
@@ -883,6 +887,7 @@ function mergeToken(
   current: TokenPayload | undefined,
   patch: TokenPayload,
   capturedAt: number,
+  agentType: AgentType,
   activeModel?: string,
 ): TokenPayload {
   const retainedContext = patch.clearContext === true ? undefined : current
@@ -930,13 +935,17 @@ function mergeToken(
     next.contextCompressed = patch.contextCompressed
   }
   if (patch.costUsd !== undefined) next.costUsd = patch.costUsd
+  if (patch.ordinaryUsageAllowed !== undefined) {
+    next.ordinaryUsageAllowed = patch.ordinaryUsageAllowed
+  }
   if (patch.rateLimits) {
     // Always accumulate named buckets; top-level display is sticky by family/model.
     next.quotaBuckets = mergeQuotaBucket(next.quotaBuckets, patch, capturedAt)
-    if (shouldApplyRateLimitPatch(current, patch, activeModel)) {
-      next.rateLimits = mergeRateLimits(current?.rateLimits, patch.rateLimits)
-      if (patch.rateLimitId) next.rateLimitId = patch.rateLimitId
-      if (patch.rateLimitName) next.rateLimitName = patch.rateLimitName
+    if (shouldApplyRateLimitPatch(current, patch, agentType, activeModel)) {
+      const keepMergeBase = shouldKeepRateLimitMergeBase(current, patch, agentType)
+      const mergeBase = keepMergeBase ? current?.rateLimits : undefined
+      next.rateLimits = mergeRateLimits(mergeBase, patch.rateLimits)
+      applyRateLimitIdentity(next, patch, !keepMergeBase)
     }
   }
 
@@ -1051,16 +1060,30 @@ function detectContextCompressed(
  * Checks whether apply rate limit patch.
  * @param current Previously retained value.
  * @param patch New value to merge.
+ * @param agentType CLI family that owns the quota payload.
  * @param activeModel Active model.
  * @returns Whether the condition is satisfied.
  */
 function shouldApplyRateLimitPatch(
   current: TokenPayload | undefined,
   patch: TokenPayload,
+  agentType: AgentType,
   activeModel?: string,
 ): boolean {
   if (!patch.rateLimits) return false
   if (isZeroOnlyRateLimits(patch.rateLimits)) return false
+
+  if (agentType === 'codex') {
+    const nextFamily = codexRateLimitFamily(patch.rateLimitId, patch.rateLimitName)
+    const currentFamily = current?.rateLimits
+      ? codexRateLimitFamily(current.rateLimitId, current.rateLimitName)
+      : undefined
+    if (!activeModel) {
+      return currentFamily === undefined ? nextFamily === 'main' : currentFamily === nextFamily
+    }
+    return codexRateLimitFamilyMatchesModel(nextFamily, patch, activeModel)
+  }
+
   if (!current?.rateLimits) return true
 
   const curId = (current.rateLimitId ?? '').toLowerCase()
@@ -1075,6 +1098,93 @@ function shouldApplyRateLimitPatch(
   // Different buckets without a matching model switch: keep sticky top-level.
   const curSpark = isSparkBucket(curId, current.rateLimitName)
   return curSpark === nextSpark
+}
+
+/**
+ * Checks whether a Codex quota family belongs to the active model.
+ *
+ * Ordinary models use the `codex` bucket. Spark and Reserve require explicit
+ * model evidence, so a Reserve refresh cannot replace an ordinary Sol/Terra
+ * top-level quota merely because both buckets are non-Spark.
+ *
+ * @param family Quota family resolved from the incoming payload.
+ * @param patch Incoming payload containing optional native model metadata.
+ * @param activeModel Model currently accepted by the runtime state.
+ * @returns Whether the incoming family may become the top-level quota.
+ */
+function codexRateLimitFamilyMatchesModel(
+  family: CodexRateLimitFamily,
+  patch: TokenPayload,
+  activeModel: string,
+): boolean {
+  const model = normalizeRateLimitIdentity(activeModel)
+  if (family === 'main') return !isSparkModelName(model) && !isReserveModelName(model)
+  if (family === 'spark') return isSparkModelName(model)
+  if (family === 'reserve') return isReserveModelName(model)
+
+  const nativeIdentity = family.slice('named:'.length)
+  return (
+    model === nativeIdentity ||
+    model === normalizeRateLimitIdentity(patch.normalModelSlug) ||
+    model === normalizeRateLimitIdentity(patch.rateLimitName)
+  )
+}
+
+/**
+ * Decides whether rate-limit windows may inherit fields from the prior top-level bucket.
+ *
+ * Different Codex buckets are independent account products. Starting their
+ * merge from an empty value prevents a newly selected Reserve or Spark identity
+ * from retaining an ordinary bucket percentage that its own payload omitted.
+ * Other CLIs preserve their existing merge behavior.
+ *
+ * @param current Previously retained top-level quota payload.
+ * @param patch Incoming quota payload.
+ * @param agentType CLI family that owns the payload.
+ * @returns Whether current rolling windows belong to the same merge family.
+ */
+function shouldKeepRateLimitMergeBase(
+  current: TokenPayload | undefined,
+  patch: TokenPayload,
+  agentType: AgentType,
+): boolean {
+  if (agentType !== 'codex' || !current?.rateLimits) return true
+  return (
+    codexRateLimitFamily(current.rateLimitId, current.rateLimitName) ===
+    codexRateLimitFamily(patch.rateLimitId, patch.rateLimitName)
+  )
+}
+
+/**
+ * Applies native identity metadata for the selected top-level quota bucket.
+ *
+ * A family switch replaces the identity atomically, including clearing fields
+ * omitted by the new bucket. Same-family partial observations retain existing
+ * metadata while applying any newly reported values.
+ *
+ * @param target Mutable token copy being assembled by the reducer.
+ * @param patch Incoming quota payload carrying native identity metadata.
+ * @param replace Whether this patch switches to a different quota family.
+ */
+function applyRateLimitIdentity(target: TokenPayload, patch: TokenPayload, replace: boolean): void {
+  for (const key of ['rateLimitId', 'rateLimitName', 'normalModelSlug'] as const) {
+    const value = patch[key]?.trim()
+    if (value) target[key] = value
+    else if (replace) delete target[key]
+  }
+}
+
+/**
+ * Normalizes a native quota or model identifier for exact comparisons.
+ *
+ * @param value Native identifier, display name, or model slug.
+ * @returns Lowercase trimmed value with internal whitespace collapsed.
+ */
+function normalizeRateLimitIdentity(value: string | undefined): string {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
 }
 
 /**
@@ -1094,8 +1204,23 @@ function isSparkBucket(id: string | undefined, name: string | undefined): boolea
  * @returns Whether the condition is satisfied.
  */
 function isSparkModelName(model: string | undefined): boolean {
-  const value = String(model ?? '').toLowerCase()
+  const value = normalizeRateLimitIdentity(model)
   return value.includes('spark') || value.includes('bengalfox')
+}
+
+/**
+ * Checks whether a model explicitly identifies the Codex Reserve alias.
+ *
+ * @param model Model identifier to inspect.
+ * @returns Whether the model is the Reserve alias rather than an ordinary model.
+ */
+function isReserveModelName(model: string | undefined): boolean {
+  const value = normalizeRateLimitIdentity(model)
+  return (
+    value.includes('gpt-reserve') ||
+    value.includes('gpt reserve') ||
+    value === 'base_model_inference'
+  )
 }
 
 /**
@@ -1139,6 +1264,7 @@ function mergeQuotaBuckets(
         {
           rateLimitId: bucket.rateLimitId,
           rateLimitName: bucket.rateLimitName,
+          normalModelSlug: bucket.normalModelSlug,
           rateLimits: bucket.rateLimits,
         },
         bucket.updatedAt ?? capturedAt,
@@ -1156,7 +1282,7 @@ function mergeQuotaBuckets(
  */
 function mergeQuotaBucket(
   current: TokenPayload['quotaBuckets'],
-  patch: Pick<TokenPayload, 'rateLimitId' | 'rateLimitName' | 'rateLimits'>,
+  patch: Pick<TokenPayload, 'rateLimitId' | 'rateLimitName' | 'normalModelSlug' | 'rateLimits'>,
   capturedAt: number,
 ): TokenPayload['quotaBuckets'] {
   if (!patch.rateLimits || isZeroOnlyRateLimits(patch.rateLimits)) return current
@@ -1169,8 +1295,9 @@ function mergeQuotaBucket(
   return {
     ...current,
     [key]: {
-      rateLimitId: patch.rateLimitId,
-      rateLimitName: patch.rateLimitName,
+      rateLimitId: patch.rateLimitId ?? existing?.rateLimitId,
+      rateLimitName: patch.rateLimitName ?? existing?.rateLimitName,
+      normalModelSlug: patch.normalModelSlug ?? existing?.normalModelSlug,
       rateLimits: mergedRateLimits,
       updatedAt: rejectedAsOlder || !quotaChanged ? existing?.updatedAt : capturedAt,
     },

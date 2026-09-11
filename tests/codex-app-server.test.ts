@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import test from 'node:test'
 import { StatusHub } from '@codepulse/core'
+import { collectQuotaMeters } from '../apps/desktop/src/renderer/src/lib/displayAgents.js'
 import {
   CodexAppServerQuotaService,
   createCodexAccountScope,
@@ -22,6 +23,33 @@ const RATE_LIMITS = {
   spendControlReached: null,
   planType: 'pro',
   rateLimitReachedType: null,
+}
+
+/** Official Codex default-bucket fixture with 24% weekly usage. */
+const CODEX_WEEKLY_24 = {
+  ...RATE_LIMITS,
+  normalModelSlug: 'gpt-5.6-sol',
+  secondary: { ...RATE_LIMITS.secondary, usedPercent: 24 },
+}
+
+/** GPT reserve fixture matching the App Server's base-model-inference alias. */
+const GPT_RESERVE_ZERO = {
+  ...RATE_LIMITS,
+  limitId: 'base_model_inference',
+  limitName: 'gpt-reserve',
+  normalModelSlug: 'gpt-5.6-luna',
+  primary: null,
+  secondary: { ...RATE_LIMITS.secondary, usedPercent: 0 },
+}
+
+/** Codex Spark fixture with an independent weekly usage value. */
+const CODEX_SPARK_NINE = {
+  ...RATE_LIMITS,
+  limitId: 'codex_bengalfox',
+  limitName: 'Codex Spark',
+  normalModelSlug: 'gpt-5.3-codex-spark',
+  primary: null,
+  secondary: { ...RATE_LIMITS.secondary, usedPercent: 9 },
 }
 
 interface FakeQuotaUsage {
@@ -139,6 +167,107 @@ test('normalizeCodexRateLimitsResponse maps the main and named quota buckets', (
   assert.equal(token?.rateLimits?.sevenDay?.usedPercent, 41)
   assert.equal(token?.quotaBuckets?.codex?.updatedAt, 123_000)
   assert.equal(token?.quotaBuckets?.codex_bengalfox?.rateLimits?.fiveHour?.usedPercent, 7)
+})
+
+test('normalizeCodexRateLimitsResponse keeps Codex, GPT reserve, and Spark isolated', () => {
+  const token = normalizeCodexRateLimitsResponse(
+    {
+      ordinaryUsageAllowed: false,
+      rateLimits: CODEX_WEEKLY_24,
+      rateLimitsByLimitId: {
+        base_model_inference: GPT_RESERVE_ZERO,
+        codex_bengalfox: CODEX_SPARK_NINE,
+        codex: CODEX_WEEKLY_24,
+      },
+    },
+    124_000,
+  )
+
+  assert.equal(token?.ordinaryUsageAllowed, false)
+  assert.equal(token?.rateLimitId, 'codex')
+  assert.equal(token?.normalModelSlug, 'gpt-5.6-sol')
+  assert.equal(token?.rateLimits?.sevenDay?.usedPercent, 24)
+  assert.equal(token?.quotaBuckets?.codex?.rateLimits?.sevenDay?.usedPercent, 24)
+  assert.equal(token?.quotaBuckets?.codex?.normalModelSlug, 'gpt-5.6-sol')
+  assert.equal(token?.quotaBuckets?.base_model_inference?.rateLimits?.sevenDay?.usedPercent, 0)
+  assert.equal(token?.quotaBuckets?.base_model_inference?.rateLimitName, 'gpt-reserve')
+  assert.equal(token?.quotaBuckets?.base_model_inference?.normalModelSlug, 'gpt-5.6-luna')
+  assert.equal(token?.quotaBuckets?.codex_bengalfox?.rateLimits?.sevenDay?.usedPercent, 9)
+  assert.equal(token?.quotaBuckets?.codex_bengalfox?.normalModelSlug, 'gpt-5.3-codex-spark')
+})
+
+test('normalizeCodexRateLimitsResponse fallback ignores quota bucket key order', () => {
+  const reserveFirst = normalizeCodexRateLimitsResponse({
+    rateLimits: null,
+    rateLimitsByLimitId: {
+      base_model_inference: GPT_RESERVE_ZERO,
+      codex_bengalfox: CODEX_SPARK_NINE,
+      codex: CODEX_WEEKLY_24,
+    },
+  })
+  const reserveLast = normalizeCodexRateLimitsResponse({
+    rateLimits: null,
+    rateLimitsByLimitId: {
+      codex: CODEX_WEEKLY_24,
+      codex_bengalfox: CODEX_SPARK_NINE,
+      base_model_inference: GPT_RESERVE_ZERO,
+    },
+  })
+
+  for (const token of [reserveFirst, reserveLast]) {
+    assert.equal(token?.rateLimitId, 'codex')
+    assert.equal(token?.normalModelSlug, 'gpt-5.6-sol')
+    assert.equal(token?.rateLimits?.sevenDay?.usedPercent, 24)
+  }
+})
+
+test('App Server quota stays correctly bound through Hub and renderer selection', () => {
+  const weeklyReset = Math.floor(Date.now() / 1000) + 5 * 86_400
+  const reserveReset = weeklyReset + 86_400
+  const codex = {
+    ...CODEX_WEEKLY_24,
+    secondary: { ...CODEX_WEEKLY_24.secondary, resetsAt: weeklyReset },
+  }
+  const reserve = {
+    ...GPT_RESERVE_ZERO,
+    secondary: { ...GPT_RESERVE_ZERO.secondary, resetsAt: reserveReset },
+  }
+  const token = normalizeCodexRateLimitsResponse({
+    ordinaryUsageAllowed: true,
+    rateLimits: codex,
+    rateLimitsByLimitId: {
+      base_model_inference: reserve,
+      codex_bengalfox: CODEX_SPARK_NINE,
+      codex,
+    },
+  })
+  assert.ok(token)
+
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  hub.ingest({
+    id: 'app-server-reserve-integration',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'app-server-reserve-integration',
+    cwd: 'E:/project/app-server-reserve-integration',
+    model: 'gpt-5.6-sol',
+    timestamp: Date.now(),
+    token,
+  })
+
+  const agents = hub.snapshot().agents
+  const runtime = agents.find((agent) => agent.agentType === 'codex')
+  const meters = collectQuotaMeters(agents, 'codex')
+  assert.equal(runtime?.token?.quotaBuckets?.codex?.rateLimits?.sevenDay?.usedPercent, 24)
+  assert.equal(
+    runtime?.token?.quotaBuckets?.base_model_inference?.rateLimits?.sevenDay?.usedPercent,
+    0,
+  )
+  assert.deepEqual(
+    meters.map((meter) => meter.id),
+    ['codex'],
+  )
+  assert.equal(meters[0]?.token.rateLimits?.sevenDay?.usedPercent, 24)
 })
 
 test('createCodexAccountScope is stable in-process and never contains account metadata', () => {
@@ -1126,6 +1255,12 @@ test('service ignores quota notifications after it stops', async () => {
 
 test('service merges account/rateLimits/updated without clearing the weekly window', async () => {
   const server = new FakeCodexAppServer([20, 20, 20, 29])
+  for (let index = 0; index < 3; index += 1) {
+    server.quotaResponseOverrides.set(index, {
+      ...fakeQuotaResponse({ fiveHour: 20, sevenDay: 41 }),
+      ordinaryUsageAllowed: false,
+    })
+  }
   const snapshots: CodexAppServerQuotaSnapshot[] = []
   const service = new CodexAppServerQuotaService({
     onSnapshot: (snapshot) => snapshots.push(snapshot),
@@ -1146,6 +1281,7 @@ test('service merges account/rateLimits/updated without clearing the weekly wind
     params: {
       rateLimits: {
         ...RATE_LIMITS,
+        normalModelSlug: 'gpt-5.6-sol',
         primary: { usedPercent: 29, windowDurationMins: 300, resetsAt: 1_800_000_000 },
         secondary: null,
       },
@@ -1158,6 +1294,9 @@ test('service merges account/rateLimits/updated without clearing the weekly wind
   assert.equal(notification?.source, 'notification')
   assert.equal(notification?.token.rateLimits?.fiveHour?.usedPercent, 29)
   assert.equal(notification?.token.rateLimits?.sevenDay?.usedPercent, 41)
+  assert.equal(notification?.token.normalModelSlug, 'gpt-5.6-sol')
+  assert.equal(notification?.token.ordinaryUsageAllowed, false)
+  assert.equal(notification?.token.quotaBuckets?.codex?.normalModelSlug, 'gpt-5.6-sol')
   assert.equal(server.methods.filter((method) => method === 'account/rateLimits/read').length, 4)
   assert.equal(server.methods.filter((method) => method === 'account/read').length, 2)
 })

@@ -51,7 +51,7 @@ import {
   showsFiveHourQuota,
   visibleRateLimitWindows,
 } from './lib/panelFormat.js'
-import { formatQuotaReset } from './lib/quotaFormat.js'
+import { formatQuotaReset, weeklyMeterLabel } from './lib/quotaFormat.js'
 import {
   latestProjectItem,
   readProjectOrder,
@@ -1366,7 +1366,12 @@ function PanelQuotaMeter({
           <TokenMeter
             key={meter.id}
             brand={brand}
-            label={weeklyMeterLabel(meter.token, copy.weeklyQuota)}
+            label={weeklyMeterLabel(
+              meter.token,
+              copy.weeklyQuota,
+              copy.lunaReserveQuota,
+              agentType,
+            )}
             percent={sevenDay?.usedPercent}
             detail={
               hasQuota ? formatQuotaReset(sevenDay?.resetsAt, now, locale) : copy.waitingQuota
@@ -1376,36 +1381,6 @@ function PanelQuotaMeter({
       })}
     </div>
   )
-}
-
-/**
- * Default Codex weekly → "每周额度"; Spark / named buckets keep the CLI limit name
- * (e.g. GPT-5.3-Codex-Spark) so stacked bars stay distinguishable.
-
-
- * @param token Token payload to process.
- * @param weeklyQuota Weekly quota.
- * @returns Localized weekly quota label.
-*/
-function weeklyMeterLabel(token: TokenPayload | undefined, weeklyQuota: string): string {
-  const name = quotaBucketLabel(token)
-  if (!name) return weeklyQuota
-  const normalized = name.toLowerCase()
-  if (normalized === 'codex' || normalized === 'weekly' || normalized.includes('weekly')) {
-    return weeklyQuota
-  }
-  return name
-}
-
-/**
- * Computes quota bucket label.
- * @param token Token payload to process.
- * @returns Display label for the active quota bucket.
- */
-function quotaBucketLabel(token: TokenPayload | undefined): string | undefined {
-  const label = token?.rateLimitName?.trim() || token?.rateLimitId?.trim()
-  if (!label) return undefined
-  return label.replace(/^GPT-/i, 'GPT ')
 }
 
 /**

@@ -258,6 +258,36 @@ export class StatusHub extends EventEmitter {
   }
 
   /**
+   * Finds one live session without building and sorting a complete status snapshot.
+   *
+   * Native session identity is authoritative. If no exact session exists, an
+   * optional workspace fallback returns its newest runtime using the same
+   * ordering as {@link snapshot}. Callers must treat returned state as read-only.
+   *
+   * @param agentType CLI family that owns the session.
+   * @param externalSessionId Native session identifier to look up first.
+   * @param workspacePath Optional canonical path used when the identity is new.
+   * @returns Matching runtime with accepted quota, or `undefined` when absent.
+   */
+  findSession(
+    agentType: AgentType,
+    externalSessionId: string,
+    workspacePath?: string,
+  ): Readonly<AgentRuntimeState> | undefined {
+    const key = this.sessionKeys.get(sessionKey(agentType, externalSessionId))
+    const exact = key ? this.agents.get(key) : undefined
+    if (exact) return this.usageStability.projectAgent(exact)
+    const workspace = workspacePath ? workspaceKey(workspacePath) : ''
+    if (!workspace) return undefined
+    let latest: AgentRuntimeState | undefined
+    for (const agent of this.agents.values()) {
+      if (agent.agentType !== agentType || workspaceKey(agent.workspacePath) !== workspace) continue
+      if (!latest || compareRuntimeState(agent, latest) < 0) latest = agent
+    }
+    return latest ? this.usageStability.projectAgent(latest) : undefined
+  }
+
+  /**
    * 启动无活动（「疑似卡住」）看门狗。可重复调用；已有定时器会被替换。
    * 定时器已 `unref`，不会单独维持进程存活。
    *
@@ -510,11 +540,21 @@ function hasRetainedQuota(token: TokenPayload | undefined): boolean {
  */
 function withoutQuota(token: TokenPayload | undefined): TokenPayload | undefined {
   if (!token) return undefined
-  const { rateLimits, quotaBuckets, rateLimitId, rateLimitName, ...context } = token
+  const {
+    rateLimits,
+    quotaBuckets,
+    rateLimitId,
+    rateLimitName,
+    normalModelSlug,
+    ordinaryUsageAllowed,
+    ...context
+  } = token
   void rateLimits
   void quotaBuckets
   void rateLimitId
   void rateLimitName
+  void normalModelSlug
+  void ordinaryUsageAllowed
   return context
 }
 
@@ -574,6 +614,15 @@ function quotaPatchChangesToken(
   patch: TokenPayload | undefined,
 ): boolean {
   if (!patch) return false
+  if (
+    patch.ordinaryUsageAllowed !== undefined &&
+    current?.ordinaryUsageAllowed !== patch.ordinaryUsageAllowed
+  ) {
+    return true
+  }
+  if (patch.normalModelSlug !== undefined && current?.normalModelSlug !== patch.normalModelSlug) {
+    return true
+  }
   if (patch.rateLimits) {
     if (!sameRateLimits(current?.rateLimits, patch.rateLimits)) return true
     if (patch.rateLimitId !== undefined && current?.rateLimitId !== patch.rateLimitId) return true
@@ -586,6 +635,12 @@ function quotaPatchChangesToken(
     if (!sameRateLimits(currentBucket?.rateLimits, bucket.rateLimits)) return true
     if (currentBucket?.rateLimitId !== bucket.rateLimitId) return true
     if (currentBucket?.rateLimitName !== bucket.rateLimitName) return true
+    if (
+      bucket.normalModelSlug !== undefined &&
+      currentBucket?.normalModelSlug !== bucket.normalModelSlug
+    ) {
+      return true
+    }
   }
   return false
 }

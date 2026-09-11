@@ -1,7 +1,33 @@
 import type { AgentType, TokenPayload, TokenRateLimitWindow } from '@codepulse/shared'
-import { formatTokenPercent } from '@codepulse/shared'
+import { codexQuotaFamily, formatTokenPercent } from '@codepulse/shared'
 import type { Locale } from './i18n.js'
 import { showsFiveHourQuota } from './panelFormat.js'
+
+/**
+ * Labels a weekly meter using the same native bucket identity as quota selection.
+ *
+ * @param token Token belonging to the selected quota bucket.
+ * @param weeklyQuota Localized ordinary weekly quota label.
+ * @param lunaReserveQuota Display label for the independent Reserve allowance.
+ * @param agentType CLI family whose meter is displayed.
+ * @returns Label consistent with the selected bucket's percentage and reset time.
+ */
+export function weeklyMeterLabel(
+  token: TokenPayload | undefined,
+  weeklyQuota: string,
+  lunaReserveQuota: string,
+  agentType: AgentType,
+): string {
+  const name = token?.rateLimitName?.trim() || token?.rateLimitId?.trim()
+  if (agentType === 'codex') {
+    const family = codexQuotaFamily(token?.rateLimitId, token?.rateLimitName)
+    if (family === 'main') return weeklyQuota
+    if (family === 'reserve') return lunaReserveQuota
+    if (family === 'spark' && !/spark|bengalfox/i.test(name ?? '')) return 'Codex Spark'
+  }
+  if (!name || /^(codex|weekly)$|weekly/i.test(name)) return weeklyQuota
+  return name.replace(/^GPT-/i, 'GPT ')
+}
 
 export function formatQuotaDetail(
   token: TokenPayload | undefined,

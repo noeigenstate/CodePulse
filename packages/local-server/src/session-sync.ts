@@ -16,7 +16,12 @@ import { createHash } from 'node:crypto'
 import { readdir, readFile, stat, open } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, isAbsolute, join } from 'node:path'
-import type { AgentEvent, TokenPayload, TurnTiming } from '@codepulse/shared'
+import {
+  codexQuotaFamily,
+  type AgentEvent,
+  type TokenPayload,
+  type TurnTiming,
+} from '@codepulse/shared'
 import type { StatusHub } from '@codepulse/core'
 import {
   asRecord,
@@ -149,6 +154,8 @@ export interface SessionSyncOptions {
   now?: () => number
   /** 测试时可关闭文件监听 */
   disableWatch?: boolean
+  /** Creates a recursive filesystem watcher; tests may provide deterministic change events. */
+  watchFactory?: (root: string, onChange: () => void) => Pick<FSWatcher, 'on' | 'close'>
   /** 测试注入：排除 CodePulse 自有 PID 后是否仍有 Codex CLI 进程。 */
   codexProcessAlive?: (excludedProcessIds: () => Iterable<number>) => boolean | Promise<boolean>
   /** Returns CodePulse-owned Codex PIDs that liveness detection must ignore. */
@@ -190,6 +197,7 @@ export class SessionSyncService {
   private readonly userHome: string
   private readonly now: () => number
   private readonly disableWatch: boolean
+  private readonly watchFactory: NonNullable<SessionSyncOptions['watchFactory']>
   private readonly codexProcessAlive: (
     excludedProcessIds: () => Iterable<number>,
   ) => boolean | Promise<boolean>
@@ -209,7 +217,7 @@ export class SessionSyncService {
   private timers: NodeJS.Timeout[] = []
   private steady?: NodeJS.Timeout
   private watchDebounce?: NodeJS.Timeout
-  private watchers: FSWatcher[] = []
+  private watchers: Array<Pick<FSWatcher, 'on' | 'close'>> = []
   /** Sources touched by fs.watch since the last debounced, source-scoped watch scan. */
   private dirtySources = new Set<SessionSyncSource>()
   /** Sources requested while a scan is active; drained as a coalesced trailing generation. */
@@ -262,6 +270,8 @@ export class SessionSyncService {
       options.claudeHome ?? process.env.CLAUDE_HOME ?? join(this.userHome, '.claude')
     this.now = options.now ?? Date.now
     this.disableWatch = options.disableWatch ?? false
+    this.watchFactory =
+      options.watchFactory ?? ((root, onChange) => watch(root, { recursive: true }, onChange))
     this.excludedCodexProcessIds = options.excludedCodexProcessIds ?? (() => [])
     this.codexProcessAlive =
       options.codexProcessAlive ??
@@ -428,7 +438,7 @@ export class SessionSyncService {
     ]
     for (const { root, source } of roots) {
       try {
-        const w = watch(root, { recursive: true }, () => this.scheduleWatchSync(source))
+        const w = this.watchFactory(root, () => this.scheduleWatchSync(source))
         w.on('error', () => {
           // Directory may not exist yet; ignore.
         })
@@ -440,7 +450,10 @@ export class SessionSyncService {
   }
 
   /**
-   * Collects source changes inside one debounce window before scanning only them.
+   * Collects source changes inside a bounded window before scanning only them.
+   *
+   * Later writes join the batch without postponing its deadline, so a continuous
+   * stream of tool output cannot starve low-latency context synchronization.
    *
    * @param source CLI source associated with the filesystem notification.
 
@@ -448,7 +461,7 @@ export class SessionSyncService {
   private scheduleWatchSync(source: SessionSyncSource): void {
     if (this.stopped) return
     this.dirtySources.add(source)
-    if (this.watchDebounce) clearTimeout(this.watchDebounce)
+    if (this.watchDebounce) return
     this.watchDebounce = setTimeout(() => {
       this.watchDebounce = undefined
       const sources = [...this.dirtySources]
@@ -576,7 +589,7 @@ export class SessionSyncService {
         claude_code: 0,
         kimi: 0,
       }
-      await Promise.all(
+      const results = await Promise.allSettled(
         sources.map(async (source) => {
           if (source === 'codex') counts.codex = await this.syncCodex()
           else if (source === 'grok') counts.grok = await this.syncGrok()
@@ -584,6 +597,12 @@ export class SessionSyncService {
           else counts.claude_code = await this.syncClaude()
         }),
       )
+      for (let index = 0; index < results.length; index += 1) {
+        const result = results[index]!
+        if (result.status === 'rejected') {
+          console.error(`[codepulse] session sync (${sources[index]}) failed`, result.reason)
+        }
+      }
       const elapsed = this.now() - t0
       if (reason !== 'steady' || this.now() - this.lastLogAt > 60_000) {
         console.log(
@@ -636,7 +655,7 @@ export class SessionSyncService {
           })
           // Main Codex weekly is the quota-only panel's preferred family. Stop
           // once found; Spark-only rows remain a fallback when no main row exists.
-          if (!tokenLooksLikeSpark(token)) break
+          if (codexQuotaFamily(token.rateLimitId, token.rateLimitName) === 'main') break
         } catch (err) {
           console.error('[codepulse] session-sync codex quota fallback failed', file.path, err)
         }
@@ -710,6 +729,7 @@ export class SessionSyncService {
           file,
           meta: { ...meta, cwd, ...modelConfig },
           token,
+          quotaObservationIdentity: rollout.snapshot.quotaObservationIdentity,
           // A subagent rollout is a child task inside the visible user turn.
           // Its completion may refresh liveness, but must never close the card.
           turnTiming: meta.isSubagent ? undefined : rollout.snapshot.turnTiming,
@@ -750,7 +770,14 @@ export class SessionSyncService {
       quotaUsageSampleIds.topLevel ??
       this.quotaSampleId('codex', accountToken, accountPrimary?.observationIdentity)
 
-    for (const { file, meta, token, turnTiming, activityMtimeMs } of byCwd.values()) {
+    for (const {
+      file,
+      meta,
+      token,
+      turnTiming,
+      activityMtimeMs,
+      quotaObservationIdentity,
+    } of byCwd.values()) {
       const sessionId = meta.sessionId ?? sessionIdFromRolloutName(file.path)
       const cwd = meta.cwd!
       const nativeToken = markUnknownCodexContext(
@@ -765,12 +792,31 @@ export class SessionSyncService {
         accountFamilies.main,
         accountFamilies.spark,
       )
-      const preferPath =
-        (modelLooksLikeSpark(meta.model)
-          ? accountFamilies.spark?.path
-          : accountFamilies.main?.path) ??
-        accountPrimary?.path ??
-        file.path
+      const nativeFamily = codexQuotaFamily(nativeToken.rateLimitId, nativeToken.rateLimitName)
+      const dedicatedQuota =
+        Boolean(nativeToken.rateLimits) && nativeFamily !== 'main' && nativeFamily !== 'spark'
+      const nativeSampleId = dedicatedQuota
+        ? quotaObservationIdentity
+          ? `codex-rollout:${file.path}:${quotaObservationIdentity}`
+          : this.quotaSampleId('codex', nativeToken, file.path)
+        : usageSampleId
+      const projectSampleIds = dedicatedQuota
+        ? {
+            topLevel: nativeSampleId,
+            buckets: {
+              ...quotaUsageSampleIds.buckets,
+              [nativeToken.rateLimitId?.trim() || nativeToken.rateLimitName?.trim() || 'default']:
+                nativeSampleId,
+            },
+          }
+        : quotaUsageSampleIds
+      const preferPath = dedicatedQuota
+        ? file.path
+        : ((modelLooksLikeSpark(meta.model)
+            ? accountFamilies.spark?.path
+            : accountFamilies.main?.path) ??
+          accountPrimary?.path ??
+          file.path)
       const mapKey = `codex:${sessionId}`
       const skip = this.classifyUnchanged(
         mapKey,
@@ -798,8 +844,8 @@ export class SessionSyncService {
         token: payloadToken,
         tokenSourcePath: preferPath,
         now,
-        usageSampleId,
-        quotaUsageSampleIds,
+        usageSampleId: nativeSampleId,
+        quotaUsageSampleIds: projectSampleIds,
         // Quota-only churn must not refresh lastEventAt or unhide idle project cards.
         quotaOnly: skip === 'quota',
         activityRefresh: skip === 'activity',
@@ -1322,6 +1368,7 @@ export class SessionSyncService {
     target?: { sessionId: string; cwd?: string },
     quotaUsageSampleIds?: NonNullable<AgentEvent['internal']>['quotaUsageSampleIds'],
   ): boolean {
+    if (this.stopped) return false
     const quotaToken = accountQuotaOnlyToken(token)
     if (!quotaToken) return false
     return this.hub.observeQuota({
@@ -1535,9 +1582,7 @@ export class SessionSyncService {
    * @returns Whether the Hub already contains the session.
    */
   private hubHasSession(source: SessionSyncSource, sessionId: string): boolean {
-    return this.hub
-      .snapshot()
-      .agents.some((a) => a.agentType === source && a.externalSessionId === sessionId)
+    return this.hub.findSession(source, sessionId) !== undefined
   }
 
   /**
@@ -1567,6 +1612,7 @@ export class SessionSyncService {
     /** True only when the native local source changed since its previous scan. */
     activityRefresh?: boolean
   }): void {
+    if (this.stopped) return
     const startKey = `started:${args.source}:${args.sessionId}`
     const alreadyStarted =
       this.fingerprints.has(startKey) || this.hubHasSession(args.source, args.sessionId)
@@ -1684,6 +1730,8 @@ interface CodexWorkspaceCandidate {
   file: RolloutFile
   meta: CodexMeta
   token?: TokenPayload
+  /** Native quota-row identity retained for independently metered aliases. */
+  quotaObservationIdentity?: string
   turnTiming?: TurnTiming
   /** Freshest write in this workspace, including safe child-task heartbeats. */
   activityMtimeMs: number
@@ -1742,15 +1790,7 @@ function currentCodexSession(
       terminal: boolean
     }
   | undefined {
-  const key = normalizePathKey(cwd)
-  const current = hub
-    .snapshot()
-    .agents.find(
-      (agent) =>
-        agent.agentType === 'codex' &&
-        (agent.externalSessionId === sessionId ||
-          normalizePathKey(agent.workspacePath ?? '') === key),
-    )
+  const current = hub.findSession('codex', sessionId, cwd)
   if (!current) return undefined
   return {
     model: current.model,
@@ -2342,6 +2382,16 @@ function withSharedCodexAccountQuota(
   const buckets: NonNullable<TokenPayload['quotaBuckets']> = {
     ...(project.quotaBuckets ?? {}),
   }
+  const projectFamily = codexQuotaFamily(project.rateLimitId, project.rateLimitName)
+  if (project.rateLimits && projectFamily !== 'main' && projectFamily !== 'spark') {
+    const id = project.rateLimitId?.trim() || project.rateLimitName?.trim() || 'default'
+    buckets[id] = {
+      rateLimitId: project.rateLimitId,
+      rateLimitName: project.rateLimitName,
+      normalModelSlug: project.normalModelSlug,
+      rateLimits: project.rateLimits,
+    }
+  }
   if (accountMain?.token.rateLimits) {
     const id = accountMain.token.rateLimitId?.trim() || 'codex'
     buckets[id] = {
@@ -2363,9 +2413,14 @@ function withSharedCodexAccountQuota(
 
   return {
     ...project,
-    rateLimits: top.token.rateLimits,
-    rateLimitId: top.token.rateLimitId ?? project.rateLimitId,
-    rateLimitName: top.token.rateLimitName ?? project.rateLimitName,
+    ...(project.rateLimits && projectFamily !== 'main' && projectFamily !== 'spark'
+      ? {}
+      : {
+          rateLimits: top.token.rateLimits,
+          rateLimitId: top.token.rateLimitId,
+          rateLimitName: top.token.rateLimitName,
+          normalModelSlug: top.token.normalModelSlug,
+        }),
     quotaBuckets: Object.keys(buckets).length > 0 ? buckets : undefined,
   }
 }
@@ -2397,8 +2452,9 @@ function pickSharedCodexAccountQuotaFamilies(rows: CodexQuotaRow[]): {
         ? { observationIdentity: `${row.file.path}:${row.quotaObservationIdentity}` }
         : {}),
     }
-    if (tokenLooksLikeSpark(token)) spark.push(candidate)
-    else main.push(candidate)
+    const family = codexQuotaFamily(token.rateLimitId, token.rateLimitName)
+    if (family === 'spark') spark.push(candidate)
+    else if (family === 'main') main.push(candidate)
   }
   return {
     main: pickCodexAccountQuotaSnapshot(main),
@@ -2471,17 +2527,6 @@ function primaryCodexQuotaUsedPercent(token: TokenPayload): number {
   return typeof window?.usedPercent === 'number' && Number.isFinite(window.usedPercent)
     ? window.usedPercent
     : -1
-}
-
-/**
- * Computes token looks like spark.
- * @param token Token payload to process.
- * @returns Whether the token belongs to a Spark quota family.
- */
-function tokenLooksLikeSpark(token: TokenPayload | undefined): boolean {
-  if (!token) return false
-  const s = `${token.rateLimitId ?? ''} ${token.rateLimitName ?? ''}`.toLowerCase()
-  return s.includes('spark') || s.includes('bengalfox')
 }
 
 /**
@@ -3967,6 +4012,8 @@ function accountQuotaOnlyToken(token: TokenPayload | undefined): TokenPayload | 
     quotaBuckets: token.quotaBuckets,
     rateLimitId: token.rateLimitId,
     rateLimitName: token.rateLimitName,
+    normalModelSlug: token.normalModelSlug,
+    ordinaryUsageAllowed: token.ordinaryUsageAllowed,
   }
 }
 
@@ -3979,11 +4026,21 @@ function accountQuotaOnlyToken(token: TokenPayload | undefined): TokenPayload | 
  */
 function withoutAccountQuota(token: TokenPayload | undefined): TokenPayload | undefined {
   if (!token) return undefined
-  const { rateLimits, quotaBuckets, rateLimitId, rateLimitName, ...context } = token
+  const {
+    rateLimits,
+    quotaBuckets,
+    rateLimitId,
+    rateLimitName,
+    normalModelSlug,
+    ordinaryUsageAllowed,
+    ...context
+  } = token
   void rateLimits
   void quotaBuckets
   void rateLimitId
   void rateLimitName
+  void normalModelSlug
+  void ordinaryUsageAllowed
   return context
 }
 
@@ -4030,6 +4087,9 @@ function fingerprint(
     token?.rateLimits?.sevenDay?.usedPercent ?? '',
     token?.rateLimits?.sevenDay?.resetsAt ?? '',
     token?.rateLimitId ?? '',
+    token?.rateLimitName ?? '',
+    token?.normalModelSlug ?? '',
+    token?.ordinaryUsageAllowed ?? '',
     quotaBucketsFingerprint(token),
     tokenSourcePath ? normalizePathKey(tokenSourcePath) : '',
   ].join('|')
@@ -4050,6 +4110,7 @@ function quotaBucketsFingerprint(token: TokenPayload | undefined): string {
         key,
         bucket.rateLimitId ?? '',
         bucket.rateLimitName ?? '',
+        bucket.normalModelSlug ?? '',
         bucket.rateLimits?.fiveHour?.usedPercent ?? '',
         bucket.rateLimits?.fiveHour?.resetsAt ?? '',
         bucket.rateLimits?.fiveHour?.windowMinutes ?? '',

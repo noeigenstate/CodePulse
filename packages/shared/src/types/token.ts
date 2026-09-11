@@ -93,6 +93,10 @@ export interface TokenPayload {
   rateLimitId?: string
   /** CLI quota bucket display name, when the source exposes one. */
   rateLimitName?: string
+  /** Normal model represented by the active CLI quota alias. */
+  normalModelSlug?: string
+  /** Backend authorization for ordinary included usage, when explicitly reported. */
+  ordinaryUsageAllowed?: boolean
   /** 花费（美元）。 */
   costUsd?: number
   /** 数字的可信度。 */
@@ -107,6 +111,8 @@ export interface TokenQuotaBucket {
   rateLimitId?: string
   /** CLI quota bucket display name, when the source exposes one. */
   rateLimitName?: string
+  /** Normal model represented by this CLI quota alias. */
+  normalModelSlug?: string
   /** CLI rate-limit windows for this bucket. */
   rateLimits?: TokenPayload['rateLimits']
   /** Last event timestamp that refreshed this bucket. */

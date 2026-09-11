@@ -72,3 +72,24 @@ test('FocusSyncScheduler cancels a queued scan without running it during shutdow
 
   assert.equal(scans, 0)
 })
+
+test('FocusSyncScheduler preserves its first deadline during continuous focus requests', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  let scans = 0
+  const scheduler = new FocusSyncScheduler(() => {
+    scans += 1
+  }, 180)
+  try {
+    const first = scheduler.schedule()
+    t.mock.timers.tick(100)
+    const second = scheduler.schedule()
+    t.mock.timers.tick(79)
+    assert.equal(scans, 0)
+    t.mock.timers.tick(1)
+    await Promise.all([first, second])
+    assert.equal(scans, 1)
+  } finally {
+    scheduler.cancel()
+    t.mock.timers.reset()
+  }
+})

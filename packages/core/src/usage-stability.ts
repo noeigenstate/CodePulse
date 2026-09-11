@@ -1,4 +1,5 @@
 import {
+  codexQuotaFamily,
   type AgentEvent,
   type AgentRuntimeState,
   type AgentType,
@@ -403,13 +404,10 @@ function quotaFamilyKey(
   rateLimitId: string | undefined,
   rateLimitName: string | undefined,
 ): string {
-  const identity = normalizeQuotaIdentity(rateLimitId || rateLimitName)
   if (agentType === 'codex') {
-    const descriptor = `${rateLimitId ?? ''} ${rateLimitName ?? ''}`.toLowerCase()
-    const family =
-      descriptor.includes('spark') || descriptor.includes('bengalfox') ? 'spark' : 'main'
-    return `${agentType}\0${family}`
+    return `${agentType}\0${codexQuotaFamily(rateLimitId, rateLimitName)}`
   }
+  const identity = normalizeQuotaIdentity(rateLimitId || rateLimitName)
   return `${agentType}\0${identity || 'default'}`
 }
 

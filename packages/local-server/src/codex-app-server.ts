@@ -1290,6 +1290,7 @@ export function normalizeCodexRateLimitsResponse(
   const response = asRecord(payload)
   const main = normalizeCodexRateLimitSnapshot(response?.rateLimits, updatedAt)
   const rawBuckets = asRecord(response?.rateLimitsByLimitId)
+  const ordinaryUsageAllowed = booleanValue(response?.ordinaryUsageAllowed)
   const quotaBuckets: Record<string, TokenQuotaBucket> = {}
 
   if (rawBuckets) {
@@ -1300,21 +1301,53 @@ export function normalizeCodexRateLimitsResponse(
       quotaBuckets[id] = {
         rateLimitId: id,
         ...(normalized.rateLimitName ? { rateLimitName: normalized.rateLimitName } : {}),
+        ...(normalized.normalModelSlug ? { normalModelSlug: normalized.normalModelSlug } : {}),
         rateLimits: normalized.rateLimits,
         updatedAt,
       }
     }
   }
 
-  const fallback = main ?? Object.values(quotaBuckets)[0]
-  if (!fallback?.rateLimits && Object.keys(quotaBuckets).length === 0) return undefined
+  const fallback = selectCodexFallbackQuotaBucket(main, quotaBuckets)
+  if (!fallback && Object.keys(quotaBuckets).length === 0) return undefined
   return {
     ...(fallback?.rateLimits ? { rateLimits: fallback.rateLimits } : {}),
     ...(Object.keys(quotaBuckets).length > 0 ? { quotaBuckets } : {}),
     ...(fallback?.rateLimitId ? { rateLimitId: fallback.rateLimitId } : {}),
     ...(fallback?.rateLimitName ? { rateLimitName: fallback.rateLimitName } : {}),
+    ...(fallback?.normalModelSlug ? { normalModelSlug: fallback.normalModelSlug } : {}),
+    ...(ordinaryUsageAllowed !== undefined ? { ordinaryUsageAllowed } : {}),
     accuracy: 'exact',
   }
+}
+
+/**
+ * Selects the backward-compatible single-bucket Codex quota view.
+ *
+ * The official top-level snapshot is authoritative. When an older or sparse
+ * response omits it, the native `codex` bucket wins over auxiliary aliases such
+ * as GPT reserve or Spark. A present but temporarily sparse top-level snapshot
+ * never promotes an auxiliary bucket. The final lexical fallback is reserved
+ * for legacy responses with no top-level metadata and avoids JSON key-order
+ * dependent behavior for unknown future bucket families.
+ *
+ * @param main Official top-level rate-limit snapshot.
+ * @param quotaBuckets Normalized multi-bucket response keyed by limit id.
+ * @returns The deterministic primary bucket, or `undefined` when none has windows.
+ */
+function selectCodexFallbackQuotaBucket(
+  main: TokenQuotaBucket | undefined,
+  quotaBuckets: Readonly<Record<string, TokenQuotaBucket>>,
+): TokenQuotaBucket | undefined {
+  if (main?.rateLimits) return main
+  const entries = Object.entries(quotaBuckets).filter(([, bucket]) => bucket.rateLimits)
+  entries.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+  const codex =
+    entries.find(([key]) => key.trim().toLowerCase() === 'codex') ??
+    entries.find(([, bucket]) => bucket.rateLimitId?.trim().toLowerCase() === 'codex')
+  if (codex) return codex[1]
+  if (main) return undefined
+  return entries[0]?.[1]
 }
 
 /**
@@ -1462,10 +1495,12 @@ function normalizeCodexRateLimitSnapshot(
   const rateLimits = classifyWindows(primary, secondary)
   const rateLimitId = stringValue(snapshot.limitId)
   const rateLimitName = stringValue(snapshot.limitName)
-  if (!rateLimits && !rateLimitId && !rateLimitName) return undefined
+  const normalModelSlug = stringValue(snapshot.normalModelSlug)
+  if (!rateLimits && !rateLimitId && !rateLimitName && !normalModelSlug) return undefined
   return {
     ...(rateLimitId ? { rateLimitId } : {}),
     ...(rateLimitName ? { rateLimitName } : {}),
+    ...(normalModelSlug ? { normalModelSlug } : {}),
     ...(rateLimits ? { rateLimits } : {}),
     updatedAt,
   }
@@ -1964,6 +1999,9 @@ function mergeQuotaUpdate(
     rateLimitName: updatesActiveBucket
       ? (incoming.rateLimitName ?? previous?.rateLimitName)
       : previous.rateLimitName,
+    normalModelSlug: updatesActiveBucket
+      ? (incoming.normalModelSlug ?? previous?.normalModelSlug)
+      : previous?.normalModelSlug,
     accuracy: 'exact',
   }
 }

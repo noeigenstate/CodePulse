@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { STUCK_STRONG_MS, STUCK_VISIBLE_MS, StatusHub } from '@codepulse/core'
-import { type AgentEvent, type NotificationRequest, TurnState } from '@codepulse/shared'
+import {
+  type AgentEvent,
+  type AgentRuntimeState,
+  type NotificationRequest,
+  TurnState,
+} from '@codepulse/shared'
 import { fromClaudeHook } from '@codepulse/adapters'
 import {
   buildAgentPanels,
@@ -26,6 +31,41 @@ test('StatusHub applies a retried hook delivery only once', () => {
 
   const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
   assert.equal(codex?.toolCallCount, 1)
+})
+
+test('StatusHub finds exact sessions without rebuilding snapshots or mixing concurrent models', (t) => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  for (let index = 0; index < 80; index += 1) {
+    hub.ingest({
+      id: `lookup:${index}`,
+      source: 'codex',
+      externalSessionId: `session:${index}`,
+      eventType: 'session_start',
+      cwd: 'E:/project/session-lookups',
+      model: index === 0 ? 'gpt-5.6-terra' : 'gpt-5.6-sol',
+      timestamp: 100 + index,
+    })
+  }
+  const snapshot = t.mock.method(hub, 'snapshot', () => {
+    throw new Error('A session lookup must not sort the full dashboard')
+  })
+  for (let index = 0; index < 80; index += 1) {
+    assert.equal(
+      hub.findSession('codex', `session:${index}`)?.externalSessionId,
+      `session:${index}`,
+    )
+  }
+  assert.equal(
+    hub.findSession('codex', 'session:0', 'E:/project/session-lookups')?.model,
+    'gpt-5.6-terra',
+  )
+  assert.equal(
+    hub.findSession('codex', 'missing', 'E:/project/session-lookups')?.externalSessionId,
+    'session:79',
+  )
+  assert.equal(hub.findSession('claude_code', 'session:0'), undefined)
+  assert.equal(hub.findSession('codex', 'missing'), undefined)
+  assert.equal(snapshot.mock.callCount(), 0)
 })
 
 test('StatusHub keeps the same agent separated by workspace', () => {
@@ -2461,6 +2501,31 @@ test('StatusHub isolates Codex quota when the authenticated account changes', ()
       contextUsedPercent: 35,
       contextWindow: 258_400,
       rateLimitId: 'codex',
+      normalModelSlug: 'gpt-5.6-sol',
+      ordinaryUsageAllowed: true,
+      quotaBuckets: {
+        codex: {
+          rateLimitId: 'codex',
+          rateLimits: {
+            sevenDay: { usedPercent: 82, resetsAt: firstReset, windowMinutes: 10_080 },
+          },
+        },
+        base_model_inference: {
+          rateLimitId: 'base_model_inference',
+          rateLimitName: 'gpt-reserve',
+          normalModelSlug: 'gpt-5.6-luna',
+          rateLimits: {
+            sevenDay: { usedPercent: 0, resetsAt: secondReset, windowMinutes: 10_080 },
+          },
+        },
+        codex_bengalfox: {
+          rateLimitId: 'codex_bengalfox',
+          rateLimitName: 'Codex Spark',
+          rateLimits: {
+            sevenDay: { usedPercent: 4, resetsAt: secondReset, windowMinutes: 10_080 },
+          },
+        },
+      },
       rateLimits: {
         sevenDay: { usedPercent: 82, resetsAt: firstReset, windowMinutes: 10_080 },
       },
@@ -2481,6 +2546,8 @@ test('StatusHub isolates Codex quota when the authenticated account changes', ()
   assert.equal(cleared?.token?.contextWindow, 258_400)
   assert.equal(cleared?.token?.rateLimits, undefined)
   assert.equal(cleared?.token?.quotaBuckets, undefined)
+  assert.equal(cleared?.token?.normalModelSlug, undefined)
+  assert.equal(cleared?.token?.ordinaryUsageAllowed, undefined)
 
   hub.observeQuota({
     id: 'new-account-first-read',
@@ -2491,6 +2558,7 @@ test('StatusHub isolates Codex quota when the authenticated account changes', ()
     timestamp: 200,
     token: {
       rateLimitId: 'codex',
+      ordinaryUsageAllowed: false,
       rateLimits: {
         sevenDay: { usedPercent: 3, resetsAt: secondReset, windowMinutes: 10_080 },
       },
@@ -2501,6 +2569,30 @@ test('StatusHub isolates Codex quota when the authenticated account changes', ()
 
   const refreshed = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
   assert.equal(refreshed?.token?.rateLimits?.sevenDay?.usedPercent, 3)
+  assert.equal(refreshed?.token?.ordinaryUsageAllowed, false)
+
+  const permissionChanged = hub.observeQuota({
+    id: 'new-account-permission-change',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'live-session',
+    cwd: 'E:/project/live',
+    timestamp: 201,
+    token: {
+      rateLimitId: 'codex',
+      ordinaryUsageAllowed: true,
+      rateLimits: {
+        sevenDay: { usedPercent: 3, resetsAt: secondReset, windowMinutes: 10_080 },
+      },
+      accuracy: 'exact',
+    },
+    internal: { quotaRefresh: true, usageSampleId: 'new-account-permission-change' },
+  })
+  assert.equal(permissionChanged, true)
+  assert.equal(
+    hub.snapshot().agents.find((agent) => agent.agentType === 'codex')?.token?.ordinaryUsageAllowed,
+    true,
+  )
 })
 
 test('StatusHub deduplicates fan-out reads and projects confirmed resets to every session', () => {
@@ -2855,6 +2947,226 @@ test('StatusHub keeps Codex quota buckets separated by limit id', () => {
   assert.equal(codex?.token?.rateLimits?.fiveHour?.usedPercent, 2)
   assert.equal(codex?.token?.quotaBuckets?.codex?.rateLimits?.fiveHour?.usedPercent, 78)
   assert.equal(codex?.token?.quotaBuckets?.codex_bengalfox?.rateLimits?.fiveHour?.usedPercent, 2)
+})
+
+test('StatusHub keeps Codex ordinary and Reserve quota values independent', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const ordinaryReset = Math.floor(Date.now() / 1000) + 5 * 86_400
+  const reserveReset = ordinaryReset + 86_400
+
+  hub.ingest({
+    id: 'ordinary-24',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'reserve-isolation',
+    cwd: 'E:/project/reserve-isolation',
+    model: 'gpt-5.6-sol',
+    timestamp: 100,
+    token: {
+      rateLimitId: 'codex',
+      rateLimits: {
+        sevenDay: { usedPercent: 24, resetsAt: ordinaryReset, windowMinutes: 10_080 },
+      },
+      accuracy: 'exact',
+    },
+  })
+  hub.ingest({
+    id: 'reserve-zero',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'reserve-isolation',
+    cwd: 'E:/project/reserve-isolation',
+    model: 'gpt-5.6-sol',
+    timestamp: 200,
+    token: {
+      rateLimitId: 'base_model_inference',
+      rateLimitName: 'gpt-reserve',
+      normalModelSlug: 'gpt-5.6-luna',
+      rateLimits: {
+        sevenDay: { usedPercent: 0, resetsAt: reserveReset, windowMinutes: 10_080 },
+      },
+      accuracy: 'exact',
+    },
+  })
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.token?.rateLimitId, 'codex')
+  assert.equal(codex?.token?.rateLimitName, undefined)
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 24)
+  assert.equal(codex?.token?.quotaBuckets?.codex?.rateLimits?.sevenDay?.usedPercent, 24)
+  assert.equal(
+    codex?.token?.quotaBuckets?.base_model_inference?.rateLimits?.sevenDay?.usedPercent,
+    0,
+  )
+  assert.equal(codex?.token?.quotaBuckets?.base_model_inference?.normalModelSlug, 'gpt-5.6-luna')
+})
+
+test('StatusHub confirms lower Codex ordinary and Reserve readings independently', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const seedReset = Math.floor(Date.now() / 1000) + 86_400
+  const refreshedReset = seedReset + 7 * 86_400
+
+  /**
+   * Records one physical weekly quota observation for a native Codex bucket.
+   *
+   * @param id Distinct physical sample identifier.
+   * @param rateLimitId Native quota bucket identifier.
+   * @param usedPercent Weekly percentage reported by the backend.
+   * @param resetsAt Weekly reset boundary in epoch seconds.
+   */
+  const observe = (
+    id: string,
+    rateLimitId: 'codex' | 'base_model_inference',
+    usedPercent: number,
+    resetsAt: number,
+  ): void => {
+    const reserve = rateLimitId === 'base_model_inference'
+    hub.ingest({
+      id,
+      source: 'codex',
+      eventType: 'token_snapshot',
+      externalSessionId: 'independent-reset-streaks',
+      cwd: 'E:/project/independent-reset-streaks',
+      model: 'gpt-5.6-sol',
+      timestamp: 100,
+      token: {
+        rateLimitId,
+        ...(reserve ? { rateLimitName: 'gpt-reserve', normalModelSlug: 'gpt-5.6-luna' } : {}),
+        rateLimits: {
+          sevenDay: { usedPercent, resetsAt, windowMinutes: 10_080 },
+        },
+        accuracy: 'exact',
+      },
+      internal: { usageSampleId: id },
+    })
+  }
+
+  observe('ordinary-seed', 'codex', 80, seedReset)
+  observe('reserve-seed', 'base_model_inference', 70, seedReset)
+  for (let read = 1; read <= 5; read += 1) {
+    observe(`reserve-reset-${read}`, 'base_model_inference', 0, refreshedReset)
+  }
+
+  let codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.token?.quotaBuckets?.codex?.rateLimits?.sevenDay?.usedPercent, 80)
+  assert.equal(
+    codex?.token?.quotaBuckets?.base_model_inference?.rateLimits?.sevenDay?.usedPercent,
+    0,
+  )
+
+  for (let read = 1; read <= 4; read += 1) {
+    observe(`ordinary-reset-${read}`, 'codex', 5, refreshedReset)
+  }
+  codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.token?.quotaBuckets?.codex?.rateLimits?.sevenDay?.usedPercent, 80)
+  assert.equal(
+    codex?.token?.quotaBuckets?.base_model_inference?.rateLimits?.sevenDay?.usedPercent,
+    0,
+  )
+
+  observe('ordinary-reset-5', 'codex', 5, refreshedReset)
+  codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.token?.rateLimitId, 'codex')
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 5)
+  assert.equal(codex?.token?.quotaBuckets?.codex?.rateLimits?.sevenDay?.usedPercent, 5)
+  assert.equal(
+    codex?.token?.quotaBuckets?.base_model_inference?.rateLimits?.sevenDay?.usedPercent,
+    0,
+  )
+})
+
+test('StatusHub isolates unknown Codex quota buckets from the ordinary top level', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const ordinaryReset = Math.floor(Date.now() / 1000) + 5 * 86_400
+
+  hub.ingest({
+    id: 'unknown-bucket-ordinary',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'unknown-bucket',
+    cwd: 'E:/project/unknown-bucket',
+    model: 'gpt-5.6-sol',
+    timestamp: 100,
+    token: {
+      rateLimitId: 'codex',
+      rateLimits: {
+        sevenDay: { usedPercent: 24, resetsAt: ordinaryReset, windowMinutes: 10_080 },
+      },
+      accuracy: 'exact',
+    },
+  })
+  hub.ingest({
+    id: 'unknown-bucket-third-family',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'unknown-bucket',
+    cwd: 'E:/project/unknown-bucket',
+    model: 'gpt-5.6-sol',
+    timestamp: 200,
+    token: {
+      rateLimitId: 'experimental_pool',
+      rateLimitName: 'Experimental pool',
+      rateLimits: {
+        sevenDay: { usedPercent: 7, resetsAt: ordinaryReset + 86_400, windowMinutes: 10_080 },
+      },
+      accuracy: 'exact',
+    },
+  })
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.token?.rateLimitId, 'codex')
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 24)
+  assert.equal(codex?.token?.quotaBuckets?.codex?.rateLimits?.sevenDay?.usedPercent, 24)
+  assert.equal(codex?.token?.quotaBuckets?.experimental_pool?.rateLimits?.sevenDay?.usedPercent, 7)
+})
+
+test('StatusHub selects Reserve top-level quota only for an explicit Reserve model', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const ordinaryReset = Math.floor(Date.now() / 1000) + 5 * 86_400
+
+  hub.ingest({
+    id: 'reserve-switch-ordinary',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'reserve-switch',
+    cwd: 'E:/project/reserve-switch',
+    model: 'gpt-5.6-sol',
+    timestamp: 100,
+    token: {
+      rateLimitId: 'codex',
+      rateLimits: {
+        fiveHour: { usedPercent: 55, resetsAt: ordinaryReset - 4 * 86_400, windowMinutes: 300 },
+        sevenDay: { usedPercent: 24, resetsAt: ordinaryReset, windowMinutes: 10_080 },
+      },
+      accuracy: 'exact',
+    },
+  })
+  hub.ingest({
+    id: 'reserve-switch-explicit',
+    source: 'codex',
+    eventType: 'token_snapshot',
+    externalSessionId: 'reserve-switch',
+    cwd: 'E:/project/reserve-switch',
+    model: 'gpt-reserve',
+    timestamp: 200,
+    token: {
+      rateLimitId: 'base_model_inference',
+      rateLimitName: 'gpt-reserve',
+      normalModelSlug: 'gpt-5.6-luna',
+      rateLimits: {
+        sevenDay: { usedPercent: 0, resetsAt: ordinaryReset + 86_400, windowMinutes: 10_080 },
+      },
+      accuracy: 'exact',
+    },
+  })
+
+  const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
+  assert.equal(codex?.model, 'gpt-reserve')
+  assert.equal(codex?.token?.rateLimitId, 'base_model_inference')
+  assert.equal(codex?.token?.rateLimitName, 'gpt-reserve')
+  assert.equal(codex?.token?.normalModelSlug, 'gpt-5.6-luna')
+  assert.equal(codex?.token?.rateLimits?.fiveHour, undefined)
+  assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 0)
 })
 
 test('StatusHub does not refresh a quota bucket timestamp from an older window', () => {
@@ -3607,6 +3919,245 @@ test('collectQuotaMeters ignores hidden five-hour resets when choosing Codex wee
   )
 
   assert.equal(meters[0]?.token.rateLimits?.sevenDay?.usedPercent, 35)
+})
+
+/**
+ * Creates a Codex runtime carrying ordinary and Reserve weekly buckets.
+ *
+ * @param model Active session model used for quota selection.
+ * @param ordinaryUsageAllowed Whether the backend permits ordinary included usage.
+ * @param reserveFirst Whether insertion order should place Reserve before ordinary usage.
+ * @returns Runtime fixture with independently identified quota buckets.
+ */
+function codexReserveQuotaAgent(
+  model: string,
+  ordinaryUsageAllowed: boolean | undefined,
+  reserveFirst = false,
+): AgentRuntimeState {
+  const mainReset = Math.floor(Date.now() / 1000) + 5 * 86_400
+  const reserveReset = mainReset + 86_400
+  const ordinary = {
+    rateLimitId: 'codex',
+    rateLimitName: 'Codex',
+    rateLimits: {
+      sevenDay: { usedPercent: 24, resetsAt: mainReset, windowMinutes: 10_080 },
+    },
+    updatedAt: 200,
+  }
+  const reserve = {
+    rateLimitId: 'base_model_inference',
+    rateLimitName: 'gpt-reserve',
+    normalModelSlug: 'gpt-5.6-luna',
+    rateLimits: {
+      sevenDay: { usedPercent: 0, resetsAt: reserveReset, windowMinutes: 10_080 },
+    },
+    updatedAt: 300,
+  }
+  const quotaBuckets = reserveFirst
+    ? { base_model_inference: reserve, codex: ordinary }
+    : { codex: ordinary, base_model_inference: reserve }
+
+  return {
+    agentType: 'codex',
+    state: TurnState.PROMPT_SUBMITTED,
+    toolCallCount: 0,
+    needPermission: false,
+    needUserInput: false,
+    activity: 'running',
+    lastEventAt: 300,
+    unread: false,
+    workspacePath: 'E:/project/reserve-model-selection',
+    model,
+    token: {
+      rateLimitId: 'codex',
+      rateLimitName: 'Codex',
+      rateLimits: ordinary.rateLimits,
+      quotaBuckets,
+      ...(ordinaryUsageAllowed === undefined ? {} : { ordinaryUsageAllowed }),
+      accuracy: 'exact',
+    },
+  }
+}
+
+test('latest quota token keeps Sol on ordinary Codex when Reserve resets later', () => {
+  const quota = latestQuotaToken(
+    [codexReserveQuotaAgent('gpt-5.6-sol', undefined, true)],
+    'gpt-5.6-sol',
+  )
+
+  assert.equal(quota?.rateLimitId, 'codex')
+  assert.equal(quota?.rateLimits?.sevenDay?.usedPercent, 24)
+})
+
+test('Reserve selection requires its alias rather than an unavailable ordinary Luna model', () => {
+  const explicitReserve = latestQuotaToken(
+    [codexReserveQuotaAgent('gpt-reserve', undefined)],
+    'gpt-reserve',
+  )
+  const ineligibleLuna = latestQuotaToken(
+    [codexReserveQuotaAgent('gpt-5.6-luna', false)],
+    'gpt-5.6-luna',
+  )
+  const ordinaryLuna = latestQuotaToken(
+    [codexReserveQuotaAgent('gpt-5.6-luna', true)],
+    'gpt-5.6-luna',
+  )
+
+  assert.equal(explicitReserve?.rateLimitId, 'base_model_inference')
+  assert.equal(explicitReserve?.rateLimits?.sevenDay?.usedPercent, 0)
+  assert.equal(ineligibleLuna?.rateLimitId, 'codex')
+  assert.equal(ineligibleLuna?.rateLimits?.sevenDay?.usedPercent, 24)
+  assert.equal(ordinaryLuna?.rateLimitId, 'codex')
+  assert.equal(ordinaryLuna?.rateLimits?.sevenDay?.usedPercent, 24)
+})
+
+test('Codex quota selection is independent of named bucket insertion order', () => {
+  for (const reserveFirst of [false, true]) {
+    const solMeters = collectQuotaMeters(
+      [codexReserveQuotaAgent('gpt-5.6-sol', undefined, reserveFirst)],
+      'codex',
+    )
+    const lunaMeters = collectQuotaMeters(
+      [codexReserveQuotaAgent('gpt-reserve', false, reserveFirst)],
+      'codex',
+    )
+
+    assert.deepEqual(
+      solMeters.map((meter) => meter.id),
+      ['codex'],
+    )
+    assert.equal(solMeters[0]?.token.rateLimits?.sevenDay?.usedPercent, 24)
+    assert.deepEqual(
+      lunaMeters.map((meter) => meter.id),
+      ['base_model_inference'],
+    )
+    assert.equal(lunaMeters[0]?.token.rateLimits?.sevenDay?.usedPercent, 0)
+  }
+})
+
+test('Codex quota selection does not treat an unknown named bucket as ordinary usage', () => {
+  const agent = codexReserveQuotaAgent('gpt-5.6-sol', true)
+  agent.token!.quotaBuckets = {
+    experimental_pool: {
+      rateLimitId: 'experimental_pool',
+      rateLimitName: 'Experimental pool',
+      rateLimits: {
+        sevenDay: {
+          usedPercent: 91,
+          resetsAt: Math.floor(Date.now() / 1000) + 7 * 86_400,
+          windowMinutes: 10_080,
+        },
+      },
+      updatedAt: 999,
+    },
+    ...agent.token!.quotaBuckets,
+  }
+
+  const meters = collectQuotaMeters([agent], 'codex')
+
+  assert.deepEqual(
+    meters.map((meter) => meter.id),
+    ['codex'],
+  )
+  assert.equal(meters[0]?.token.rateLimits?.sevenDay?.usedPercent, 24)
+})
+
+test('Codex keeps the ordinary top-level quota when named buckets only contain Reserve', () => {
+  const agent = codexReserveQuotaAgent('gpt-5.6-sol', true)
+  delete agent.token!.quotaBuckets!.codex
+  const meters = collectQuotaMeters([agent], 'codex')
+  assert.deepEqual(
+    meters.map((meter) => meter.id),
+    ['codex'],
+  )
+  assert.equal(meters[0]?.token.rateLimits?.sevenDay?.usedPercent, 24)
+
+  const quotaOnly = { ...agent, model: undefined }
+  assert.equal(latestQuotaToken([quotaOnly], 'gpt-5.6-sol')?.rateLimitId, 'codex')
+  delete quotaOnly.token!.rateLimits
+  assert.equal(latestQuotaToken([quotaOnly], 'gpt-5.6-sol'), undefined)
+})
+
+test('Codex quota selection treats limit id as authoritative over a conflicting name', () => {
+  const agent = codexReserveQuotaAgent('gpt-5.6-sol', true)
+  agent.token!.quotaBuckets = {
+    codex: {
+      rateLimitId: 'codex',
+      rateLimitName: 'gpt-reserve',
+      rateLimits: {
+        sevenDay: { usedPercent: 24, resetsAt: 10_000, windowMinutes: 10_080 },
+      },
+      updatedAt: 200,
+    },
+    base_model_inference: {
+      rateLimitId: 'base_model_inference',
+      rateLimitName: 'Codex Spark',
+      normalModelSlug: 'gpt-5.6-luna',
+      rateLimits: {
+        sevenDay: { usedPercent: 0, resetsAt: 20_000, windowMinutes: 10_080 },
+      },
+      updatedAt: 300,
+    },
+  }
+
+  const meters = collectQuotaMeters([agent], 'codex')
+
+  assert.deepEqual(
+    meters.map((meter) => meter.id),
+    ['codex'],
+  )
+  assert.equal(meters[0]?.token.rateLimits?.sevenDay?.usedPercent, 24)
+})
+
+test('Reserve-style names do not change non-Codex multi-bucket selection', () => {
+  const now = Math.floor(Date.now() / 1000)
+  const meters = collectQuotaMeters(
+    [
+      {
+        agentType: 'claude_code',
+        state: TurnState.PROMPT_SUBMITTED,
+        toolCallCount: 0,
+        needPermission: false,
+        needUserInput: false,
+        activity: 'running',
+        lastEventAt: 300,
+        unread: false,
+        workspacePath: 'E:/project/claude-reserve-name',
+        model: 'claude-opus-4-8',
+        token: {
+          rateLimitId: 'claude-main',
+          rateLimits: {
+            sevenDay: { usedPercent: 40, resetsAt: now + 7_200, windowMinutes: 10_080 },
+          },
+          quotaBuckets: {
+            'claude-main': {
+              rateLimitId: 'claude-main',
+              rateLimits: {
+                sevenDay: { usedPercent: 40, resetsAt: now + 7_200, windowMinutes: 10_080 },
+              },
+              updatedAt: 300,
+            },
+            base_model_inference: {
+              rateLimitId: 'base_model_inference',
+              rateLimitName: 'gpt-reserve',
+              rateLimits: {
+                sevenDay: { usedPercent: 5, resetsAt: now + 3_600, windowMinutes: 10_080 },
+              },
+              updatedAt: 400,
+            },
+          },
+          accuracy: 'exact',
+        },
+      },
+    ],
+    'claude_code',
+  )
+
+  assert.deepEqual(
+    meters.map((meter) => meter.id),
+    ['claude-main'],
+  )
+  assert.equal(meters[0]?.token.rateLimits?.sevenDay?.usedPercent, 40)
 })
 
 test('latest quota token selects the matching bucket when one token carries multiple Codex buckets', () => {

@@ -1,4 +1,6 @@
 import {
+  codexQuotaFamily,
+  type CodexQuotaFamily,
   TurnState,
   type AgentRuntimeState,
   type AgentType,
@@ -142,13 +144,20 @@ export function collectQuotaMeters(
 
   const models = relevantQuotaModels(agents.filter((agent) => agent.agentType === agentType))
   if (models.length > 0) {
-    meters = filterMetersByModelFamily(meters, models)
+    meters = filterMetersByModelFamily(meters, models, agentType)
+  } else if (agentType === 'codex') {
+    // Without a session model there is no evidence that the Reserve alias is
+    // active. Keep the ordinary account allowance as the safe default.
+    meters = meters.filter((meter) => {
+      const family = quotaDisplayFamily(meter.token)
+      return family === 'main' || family === 'spark'
+    })
   }
 
   // One bar per family is enough (multiple non-Spark bucket ids all labeled 每周额度).
   meters = collapseMetersPerFamily(meters, agentType)
 
-  return meters.sort(compareQuotaMeters)
+  return meters.sort((a, b) => compareQuotaMeters(a, b, agentType))
 }
 
 export function latestQuotaToken(
@@ -159,9 +168,12 @@ export function latestQuotaToken(
   if (candidates.length === 0) return undefined
 
   const compatiblePool = preferredModel
-    ? candidates.filter((candidate) => quotaMatchesPreferredModel(candidate.token, preferredModel))
+    ? candidates.filter((candidate) =>
+        quotaMatchesPreferredModel(candidate.token, preferredModel, candidate.agent.agentType),
+      )
     : candidates
-  const selectionBase = compatiblePool.length > 0 ? compatiblePool : candidates
+  if (compatiblePool.length === 0) return undefined
+  const selectionBase = compatiblePool
 
   const modelPool = preferredModel
     ? selectionBase.filter((candidate) => sameModel(candidate.agent.model, preferredModel))
@@ -394,37 +406,45 @@ function hasVisibleRateLimits(token: TokenPayload | undefined, agentType: AgentT
   return Boolean(windows.fiveHour ?? windows.sevenDay)
 }
 
+/**
+ * Expands one runtime session into model-compatible quota candidates.
+ *
+ * @param agent Runtime session that may carry top-level and named quota buckets.
+ * @returns Quota candidates eligible for this session's active model.
+ */
 function quotaCandidatesForAgent(agent: AgentRuntimeState): QuotaCandidate[] {
   const token = agent.token
   if (!token) return []
 
   const bucketCandidates = Object.entries(token.quotaBuckets ?? {})
-    .map(([, bucket]) => quotaCandidateFromBucket(agent, token, bucket))
+    .map(([key, bucket]) =>
+      quotaCandidateFromBucket(agent, token, { ...bucket, rateLimitId: bucket.rateLimitId || key }),
+    )
     .filter((candidate): candidate is QuotaCandidate => Boolean(candidate))
 
+  const topLevelVisible = hasVisibleRateLimits(token, agent.agentType)
+  if (
+    topLevelVisible &&
+    !bucketCandidates.some((candidate) => quotaMeterId(candidate.token) === quotaMeterId(token))
+  ) {
+    bucketCandidates.push({ agent, token, updatedAt: agent.lastEventAt })
+  }
   const model = agent.model
-  if (bucketCandidates.length > 0) {
-    if (!model) return bucketCandidates
-
-    // gpt-5.6-sol → non-Spark buckets only (never show idle Spark 0% as a second weekly bar).
-    const family = bucketCandidates.filter((candidate) =>
-      meterMatchesModelFamily(candidate.token, model),
-    )
-    if (family.length > 0) return family
-
-    // Only Spark buckets stored while model is non-Spark: hide them (do not rebrand).
-    return []
-  }
-
-  if (!hasVisibleRateLimits(token, agent.agentType)) return []
-
-  // Single payload: hide Spark-tagged limits when the session model is not Spark.
-  if (model && !meterMatchesModelFamily(token, model)) {
-    return []
-  }
-  return [{ agent, token, updatedAt: agent.lastEventAt }]
+  return model
+    ? bucketCandidates.filter((candidate) =>
+        meterMatchesModelFamily(candidate.token, model, agent.agentType),
+      )
+    : bucketCandidates
 }
 
+/**
+ * Projects one named bucket onto a standalone token used by quota selection.
+ *
+ * @param agent Runtime session that owns the account snapshot.
+ * @param baseToken Token containing shared account metadata.
+ * @param bucket Native named quota bucket.
+ * @returns Candidate with isolated identity and windows, when visible.
+ */
 function quotaCandidateFromBucket(
   agent: AgentRuntimeState,
   baseToken: TokenPayload,
@@ -435,6 +455,7 @@ function quotaCandidateFromBucket(
   const {
     rateLimitId: _ignoreId,
     rateLimitName: _ignoreName,
+    normalModelSlug: _ignoreNormalModelSlug,
     rateLimits: _ignoreLimits,
     quotaBuckets: _ignoreBuckets,
     ...rest
@@ -444,6 +465,7 @@ function quotaCandidateFromBucket(
     rateLimits: bucket.rateLimits,
     ...(bucket.rateLimitId ? { rateLimitId: bucket.rateLimitId } : {}),
     ...(bucket.rateLimitName ? { rateLimitName: bucket.rateLimitName } : {}),
+    ...(bucket.normalModelSlug ? { normalModelSlug: bucket.normalModelSlug } : {}),
   }
 
   if (!hasVisibleRateLimits(token, agent.agentType)) return undefined
@@ -594,34 +616,60 @@ function relevantQuotaModels(agents: AgentRuntimeState[]): string[] {
   return latest?.model ? [latest.model] : []
 }
 
-/** Drop Spark bars for non-Spark models (and the reverse). */
+/**
+ * Keeps only quota meters compatible with the active model set.
+ *
+ * @param meters Candidate quota meters from all live sessions.
+ * @param models Active or most recently used model slugs.
+ * @param agentType CLI family that owns the meters.
+ * @returns Meters whose native quota family can serve at least one model.
+ */
 function filterMetersByModelFamily(
   meters: QuotaMeterSource[],
   models: string[],
+  agentType: AgentType,
 ): QuotaMeterSource[] {
-  const wantSpark = models.some((model) => isSparkModel(normalizeModel(model)))
-  const wantNonSpark = models.some((model) => !isSparkModel(normalizeModel(model)))
-  return meters.filter((meter) => {
-    const spark = tokenLooksLikeSpark(meter.token)
-    if (spark && wantSpark) return true
-    if (!spark && wantNonSpark) return true
-    return false
-  })
+  const normalizedModels = [...new Set(models.map(normalizeModel).filter(Boolean))]
+  if (agentType !== 'codex') {
+    const wantSpark = normalizedModels.some(isSparkModel)
+    const wantNonSpark = normalizedModels.some((model) => !isSparkModel(model))
+    return meters.filter((meter) => {
+      const spark = isSparkQuota(quotaIdentity(meter.token))
+      return spark ? wantSpark : wantNonSpark
+    })
+  }
+
+  return meters.filter((meter) =>
+    normalizedModels.some((model) => meterMatchesModelFamily(meter.token, model, agentType)),
+  )
 }
 
 /**
- * Collapse multiple non-Spark (or multiple Spark) rows into one each.
- * Otherwise codex + default + stripped rows all render as duplicate 每周额度.
+ * Collapses duplicate rows inside each model-bound quota family.
+ *
+ * Main, Spark, and Luna Reserve are independent allowances. Keeping three
+ * groups prevents a later Reserve reset timestamp from displacing the ordinary
+ * weekly meter.
+ *
+ * @param meters Candidate quota meters after model filtering.
+ * @param agentType CLI family used to select visible windows.
+ * @returns At most one authoritative meter for each display family.
  */
 function collapseMetersPerFamily(
   meters: QuotaMeterSource[],
   agentType: AgentType,
 ): QuotaMeterSource[] {
-  const spark: QuotaMeterSource[] = []
-  const weekly: QuotaMeterSource[] = []
+  const groups = new Map<QuotaDisplayFamily, QuotaMeterSource[]>()
   for (const meter of meters) {
-    if (tokenLooksLikeSpark(meter.token)) spark.push(meter)
-    else weekly.push(meter)
+    const family =
+      agentType === 'codex'
+        ? quotaDisplayFamily(meter.token)
+        : isSparkQuota(quotaIdentity(meter.token))
+          ? 'spark'
+          : 'main'
+    const group = groups.get(family)
+    if (group) group.push(meter)
+    else groups.set(family, [meter])
   }
   const pickBest = (group: QuotaMeterSource[]): QuotaMeterSource | undefined => {
     if (group.length === 0) return undefined
@@ -638,9 +686,9 @@ function collapseMetersPerFamily(
       )
     })[0]
   }
-  return [pickBest(weekly), pickBest(spark)].filter((meter): meter is QuotaMeterSource =>
-    Boolean(meter),
-  )
+  return [...groups.values()]
+    .map((group) => pickBest(group))
+    .filter((meter): meter is QuotaMeterSource => Boolean(meter))
 }
 
 /**
@@ -699,17 +747,71 @@ function sameModel(a: string | undefined, b: string): boolean {
 function quotaMatchesPreferredModel(
   token: TokenPayload | undefined,
   preferredModel: string,
+  agentType: AgentType,
 ): boolean {
-  return meterMatchesModelFamily(token ?? { accuracy: 'unknown' }, preferredModel)
+  return meterMatchesModelFamily(token ?? { accuracy: 'unknown' }, preferredModel, agentType)
 }
 
-function meterMatchesModelFamily(token: TokenPayload, model: string): boolean {
-  return tokenLooksLikeSpark(token) === isSparkModel(normalizeModel(model))
+/**
+ * Checks whether a quota token belongs to the displayed model's allowance.
+ *
+ * @param token Quota token to classify.
+ * @param model Active model slug.
+ * @param agentType CLI family that owns the quota token.
+ * @returns Whether the token can serve the model.
+ */
+function meterMatchesModelFamily(
+  token: TokenPayload,
+  model: string,
+  agentType: AgentType,
+): boolean {
+  const normalizedModel = normalizeModel(model)
+  if (agentType !== 'codex') {
+    return isSparkQuota(quotaIdentity(token)) === isSparkModel(normalizedModel)
+  }
+  const family = quotaDisplayFamily(token)
+  if (family === 'reserve') return isReserveModel(normalizedModel)
+  if (family === 'spark') return isSparkModel(normalizedModel)
+  if (family === 'main') {
+    return !isSparkModel(normalizedModel) && !isReserveModel(normalizedModel)
+  }
+  return namedMeterMatchesModel(token, normalizedModel)
 }
 
-function tokenLooksLikeSpark(token: TokenPayload | undefined): boolean {
-  if (!token) return false
-  return isSparkQuota(normalizeModel(`${token.rateLimitId ?? ''} ${token.rateLimitName ?? ''}`))
+type QuotaDisplayFamily = CodexQuotaFamily
+
+/**
+ * Classifies a quota meter without merging distinct non-Spark allowances.
+ *
+ * @param token Quota token carrying the native limit identity.
+ * @returns Stable display family for ordinary, Reserve, or Spark usage.
+ */
+function quotaDisplayFamily(token: TokenPayload | undefined): QuotaDisplayFamily {
+  return codexQuotaFamily(token?.rateLimitId, token?.rateLimitName)
+}
+
+/**
+ * Checks whether an unknown future quota bucket explicitly names a model.
+ *
+ * @param token Named quota token carrying native model metadata.
+ * @param model Normalized active model slug.
+ * @returns Whether the bucket has direct evidence that it serves the model.
+ */
+function namedMeterMatchesModel(token: TokenPayload, model: string): boolean {
+  return [token.normalModelSlug, token.rateLimitId, token.rateLimitName]
+    .map(normalizeModel)
+    .filter(Boolean)
+    .includes(model)
+}
+
+/**
+ * Joins a quota token's native identifier and display name for classification.
+ *
+ * @param token Quota token with optional native identity fields.
+ * @returns Normalized identity descriptor.
+ */
+function quotaIdentity(token: TokenPayload): string {
+  return normalizeModel(`${token.rateLimitId ?? ''} ${token.rateLimitName ?? ''}`)
 }
 
 function isSparkQuota(value: string): boolean {
@@ -721,19 +823,43 @@ function isSparkModel(value: string): boolean {
   return value.includes('spark') || value.includes('bengalfox')
 }
 
+/**
+ * Reports whether a runtime model is the explicit Reserve alias.
+ *
+ * @param value Normalized model slug.
+ * @returns Whether the model consumes the Luna Reserve allowance.
+ */
+function isReserveModel(value: string): boolean {
+  return value === 'gpt-reserve' || value === 'gpt reserve' || value === 'base_model_inference'
+}
+
 function quotaMeterId(token: TokenPayload): string {
   return token.rateLimitId?.trim() || token.rateLimitName?.trim() || 'default'
 }
 
-function compareQuotaMeters(a: QuotaMeterSource, b: QuotaMeterSource): number {
-  const aSpark = isSparkQuota(
-    normalizeModel(`${a.token.rateLimitId ?? ''} ${a.token.rateLimitName ?? ''}`),
-  )
-  const bSpark = isSparkQuota(
-    normalizeModel(`${b.token.rateLimitId ?? ''} ${b.token.rateLimitName ?? ''}`),
-  )
-  // Default weekly first, Spark (and other named buckets) below — matches Codex status line order.
-  if (aSpark !== bSpark) return aSpark ? 1 : -1
+/**
+ * Orders ordinary, Reserve, and Spark meters consistently.
+ *
+ * @param a First quota meter.
+ * @param b Second quota meter.
+ * @param agentType CLI family that owns the meters.
+ * @returns Sort order with ordinary quota first and freshest peers first.
+ */
+function compareQuotaMeters(
+  a: QuotaMeterSource,
+  b: QuotaMeterSource,
+  agentType: AgentType,
+): number {
+  const rank = (meter: QuotaMeterSource): number => {
+    if (agentType !== 'codex') return isSparkQuota(quotaIdentity(meter.token)) ? 2 : 0
+    const family = quotaDisplayFamily(meter.token)
+    if (family === 'main') return 0
+    if (family === 'reserve') return 1
+    if (family === 'spark') return 2
+    return 3
+  }
+  const familyOrder = rank(a) - rank(b)
+  if (familyOrder !== 0) return familyOrder
   return b.updatedAt - a.updatedAt || a.id.localeCompare(b.id)
 }
 

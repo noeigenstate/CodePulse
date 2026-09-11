@@ -22,6 +22,7 @@ export interface UiCopy {
   elapsed: string
   fiveHourQuota: string
   weeklyQuota: string
+  lunaReserveQuota: string
   waitingQuota: string
   read: string
   contextWindow: string
@@ -288,6 +289,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
     elapsed: '耗时',
     fiveHourQuota: '5 小时额度',
     weeklyQuota: '每周额度',
+    lunaReserveQuota: 'Luna Reserve',
     waitingQuota: '等待命令行同步额度',
     read: '已读',
     contextWindow: '上下文窗口：',
@@ -504,6 +506,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
     elapsed: 'Elapsed',
     fiveHourQuota: '5h quota',
     weeklyQuota: 'Weekly quota',
+    lunaReserveQuota: 'Luna Reserve',
     waitingQuota: 'Waiting for CLI quota sync',
     read: 'Read',
     contextWindow: 'Context window:',

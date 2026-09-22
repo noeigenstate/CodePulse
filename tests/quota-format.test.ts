@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { formatTokenCount, formatTokenQuotaNotice, formatTokenUsage, formatTokenUsageLine } from '@codepulse/shared'
+import {
+  formatTokenCount,
+  formatTokenQuotaNotice,
+  formatTokenUsage,
+  formatTokenUsageLine,
+} from '@codepulse/shared'
 import {
   formatContextWindowStatus,
   formatProjectDirectoryBadge,
@@ -38,10 +43,7 @@ test('Codex-style usage line omits missing segments and zero cached', () => {
     'usage: input=5,000 output=1,200',
   )
   assert.equal(formatTokenUsageLine(undefined), 'usage: —')
-  assert.equal(
-    formatTokenUsageLine({ accuracy: 'unknown' }),
-    'usage: —',
-  )
+  assert.equal(formatTokenUsageLine({ accuracy: 'unknown' }), 'usage: —')
 })
 
 test('Codex quota labels honor native IDs over conflicting display names', () => {

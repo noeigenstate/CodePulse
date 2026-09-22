@@ -1,4 +1,4 @@
-import { useEffect, useRef, type MouseEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
 import type { SettingsCopy } from '../lib/i18n.js'
 import { CLI_TOOL_TYPES, type CliToolType, type ThemePreference } from '../lib/dashboardSettings.js'
 import { DeviceProvisioningPanel } from './DeviceProvisioningPanel.js'
@@ -36,6 +36,29 @@ export function SettingsDialog({
 }: Props): JSX.Element {
   const dialogRef = useRef<HTMLElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
+  const [appVersion, setAppVersion] = useState<string>()
+  const [updateChecking, setUpdateChecking] = useState(false)
+  const [updateResult, setUpdateResult] = useState<
+    { kind: 'none' } | { kind: 'found'; version: string } | { kind: 'error' } | undefined
+  >()
+
+  useEffect(() => {
+    void window.codepulse.getVersion().then(setAppVersion)
+  }, [])
+
+  /** Runs a manual update check; the update modal drives download/install afterwards. */
+  const runUpdateCheck = useCallback(async (): Promise<void> => {
+    setUpdateChecking(true)
+    setUpdateResult(undefined)
+    try {
+      const update = await window.codepulse.checkUpdate()
+      setUpdateResult(update ? { kind: 'found', version: update.version } : { kind: 'none' })
+    } catch {
+      setUpdateResult({ kind: 'error' })
+    } finally {
+      setUpdateChecking(false)
+    }
+  }, [])
 
   useEffect(() => {
     const previouslyFocused =
@@ -157,6 +180,35 @@ export function SettingsDialog({
           </section>
 
           <DeviceProvisioningPanel copy={copy.deviceProvisioning} />
+
+          <section>
+            <h3 className="text-sm font-semibold text-ink">{copy.updates}</h3>
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-medium text-ink">{copy.currentVersion}</p>
+                <p className="mt-0.5 truncate text-meta text-ink-500">
+                  {appVersion ? `v${appVersion}` : '—'}
+                </p>
+              </div>
+              <button
+                className="rounded-badge border border-line bg-[#F8FAFC] px-3 py-2 text-[13px] font-semibold text-ink transition hover:bg-[#EEF2F7] active:translate-y-px disabled:opacity-60"
+                disabled={updateChecking}
+                onClick={() => void runUpdateCheck()}
+                type="button"
+              >
+                {updateChecking ? copy.checkingUpdate : copy.checkUpdate}
+              </button>
+            </div>
+            {updateResult && (
+              <p className="mt-1.5 text-meta leading-5 text-ink-500">
+                {updateResult.kind === 'found'
+                  ? copy.updateFound.replace('{version}', updateResult.version)
+                  : updateResult.kind === 'error'
+                    ? copy.updateError
+                    : copy.updateNone}
+              </p>
+            )}
+          </section>
         </div>
       </section>
     </div>
@@ -215,6 +267,7 @@ function toolLabel(tool: CliToolType, copy: SettingsCopy): string {
   if (tool === 'codex') return copy.codex
   if (tool === 'claude_code') return copy.claudeCode
   if (tool === 'grok') return copy.grok
+  if (tool === 'opencode') return copy.opencode
   return copy.kimi
 }
 

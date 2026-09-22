@@ -29,6 +29,10 @@ export interface CodePulseApi {
   setWindowTheme: (theme: WindowTheme) => Promise<WindowTheme>
   detectAgents: () => Promise<Agent[]>
   getUpdate: () => Promise<UpdateInfo | null>
+  /** Current app version from the main process (package metadata). */
+  getVersion: () => Promise<string>
+  /** Manual update check initiated from Settings. Resolves null when up to date. */
+  checkUpdate: () => Promise<UpdateInfo | null>
   dismissUpdate: () => Promise<boolean>
   installUpdate: () => Promise<UpdateInstallResult>
   getStats: (query?: UsageStatsQuery) => Promise<UsageStatsSnapshot>

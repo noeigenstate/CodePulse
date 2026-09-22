@@ -305,6 +305,23 @@ function registerIpc(): void {
     return true
   })
   ipcMain.handle('codepulse:install-update', () => installLatestUpdate())
+  ipcMain.handle('codepulse:get-version', () => app.getVersion())
+  /** Manual update check from Settings — bypasses the 24h dismiss snooze. */
+  ipcMain.handle('codepulse:check-update', async () => {
+    if (checkingUpdate) return latestUpdate
+    checkingUpdate = true
+    try {
+      const update = await checkForUpdate(app.getVersion())
+      latestUpdate = update
+      if (update) broadcast('codepulse:update-available', update)
+      return update
+    } catch (err) {
+      console.error('[codepulse] manual update check failed', err)
+      throw err
+    } finally {
+      checkingUpdate = false
+    }
+  })
   ipcMain.handle('codepulse:get-stats', (_event, query?: UsageStatsQuery) =>
     queryUsageStats(db, query ?? {}, Date.now(), {
       dbPath: dbPath ?? undefined,

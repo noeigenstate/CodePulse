@@ -57,6 +57,14 @@ export interface SettingsCopy {
   claudeCode: string
   grok: string
   kimi: string
+  opencode: string
+  updates: string
+  currentVersion: string
+  checkUpdate: string
+  checkingUpdate: string
+  updateNone: string
+  updateFound: string
+  updateError: string
   deviceProvisioning: DeviceProvisioningCopy
 }
 
@@ -298,7 +306,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
     unknownProject: '未识别项目',
     emptyDashboard: {
       title: '等待 CLI 任务',
-      body: '开始 Claude Code、Codex、Grok 或 Kimi 任务后，对应分屏会自动出现；只用一个 CLI 时只显示一栏。',
+      body: '开始 Claude Code、Codex、Grok、Kimi 或 OpenCode 任务后，对应分屏会自动出现；只用一个 CLI 时只显示一栏。',
       agentTitle: '当前没有运行中的会话',
       agentBody: '{agent} 暂无活动，随时准备为你服务',
       settingsHiddenTitle: '所有 CLI 工具已隐藏',
@@ -383,6 +391,14 @@ const UI_COPY: Record<Locale, UiCopy> = {
       claudeCode: 'Claude Code',
       grok: 'Grok',
       kimi: 'Kimi Code',
+      opencode: 'OpenCode',
+      updates: '版本与更新',
+      currentVersion: '当前版本',
+      checkUpdate: '检查更新',
+      checkingUpdate: '检查中…',
+      updateNone: '已是最新版本',
+      updateFound: '发现新版本 {version}，可直接安装',
+      updateError: '检查失败，请稍后重试',
       deviceProvisioning: {
         title: 'CodePulse 水墨屏',
         description: '通过 USB 自动识别设备并写入 Wi-Fi。请正常长按功能键 3 秒开机，不要按 BOOT。',
@@ -516,7 +532,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
     unknownProject: 'Unknown project',
     emptyDashboard: {
       title: 'Waiting for CLI tasks',
-      body: 'Panels appear when you start Claude Code, Codex, Grok, or Kimi tasks. If you only use one CLI, only that panel is shown.',
+      body: 'Panels appear when you start Claude Code, Codex, Grok, Kimi, or OpenCode tasks. If you only use one CLI, only that panel is shown.',
       agentTitle: 'No active sessions',
       agentBody: '{agent} is idle and ready when you are.',
       settingsHiddenTitle: 'All CLI tools are hidden',
@@ -602,6 +618,14 @@ const UI_COPY: Record<Locale, UiCopy> = {
       claudeCode: 'Claude Code',
       grok: 'Grok',
       kimi: 'Kimi Code',
+      opencode: 'OpenCode',
+      updates: 'Version & updates',
+      currentVersion: 'Current version',
+      checkUpdate: 'Check for updates',
+      checkingUpdate: 'Checking…',
+      updateNone: 'You are up to date',
+      updateFound: 'New version {version} is available and ready to install',
+      updateError: 'Update check failed, try again later',
       deviceProvisioning: {
         title: 'CodePulse display',
         description:

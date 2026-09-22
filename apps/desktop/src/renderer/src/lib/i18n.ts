@@ -20,6 +20,7 @@ export interface UiCopy {
   model: string
   thinkingDepth: string
   elapsed: string
+  usage: string
   fiveHourQuota: string
   weeklyQuota: string
   lunaReserveQuota: string
@@ -287,6 +288,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
     model: '模型',
     thinkingDepth: '思考深度',
     elapsed: '耗时',
+    usage: '用量',
     fiveHourQuota: '5 小时额度',
     weeklyQuota: '每周额度',
     lunaReserveQuota: 'Luna Reserve',
@@ -504,6 +506,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
     model: 'Model',
     thinkingDepth: 'Thinking depth',
     elapsed: 'Elapsed',
+    usage: 'Usage',
     fiveHourQuota: '5h quota',
     weeklyQuota: 'Weekly quota',
     lunaReserveQuota: 'Luna Reserve',

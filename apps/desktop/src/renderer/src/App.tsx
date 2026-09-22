@@ -18,6 +18,7 @@ import {
 } from 'react'
 import {
   formatTokenPercent,
+  formatTokenUsageLine,
   type AgentRuntimeState,
   type AgentType,
   type TokenPayload,
@@ -1271,6 +1272,13 @@ const ProjectTile = memo(function ProjectTile({
               />
             }
           />
+        </div>
+
+        <div className="flex min-w-0 items-center justify-between gap-2 text-xs">
+          <span className="shrink-0 font-medium text-ink-500">{copy.usage}</span>
+          <span className="truncate font-mono tabular-nums text-[11px] font-semibold text-ink">
+            {formatTokenUsageLine(token)}
+          </span>
         </div>
 
         <ContextMeter brand={brand} token={token} contextWindow={contextWindow} copy={copy} />

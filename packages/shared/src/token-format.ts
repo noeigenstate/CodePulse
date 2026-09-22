@@ -89,6 +89,42 @@ export function formatTokenUsage(token: TokenPayload | undefined): string {
   return parts.length > 0 ? parts.join(' / ') : 'Token 暂无数据'
 }
 
+/**
+ * 把 token 用量渲染成 Codex 官方 usage 行的格式：
+ * `usage: total=3,666,704 input=3,268,650 (+ 66,327,168 cached) output=190,000 (reasoning 207,774)`
+ *
+ * 数字使用精确千分位（与 Codex 一致），缺失的分段直接省略，
+ * 不展示任何周/时段额度信息。
+ *
+ * @param token token 载荷（可能不存在）。
+ * @returns Codex 风格 usage 行；无数据时各分段省略，仅保留 `usage:` 前缀。
+ */
+export function formatTokenUsageLine(token: TokenPayload | undefined): string {
+  const parts: string[] = []
+  if (token?.total != null) parts.push(`total=${formatTokenExact(token.total)}`)
+  if (token?.input != null) parts.push(`input=${formatTokenExact(token.input)}`)
+  if (token?.cachedInput != null && token.cachedInput > 0) {
+    parts.push(`(+ ${formatTokenExact(token.cachedInput)} cached)`)
+  }
+  if (token?.output != null) {
+    const reasoning =
+      token.reasoningOutput != null && token.reasoningOutput > 0
+        ? ` (reasoning ${formatTokenExact(token.reasoningOutput)})`
+        : ''
+    parts.push(`output=${formatTokenExact(token.output)}${reasoning}`)
+  }
+  return parts.length > 0 ? `usage: ${parts.join(' ')}` : 'usage: —'
+}
+
+/**
+ * 精确 token 计数的千分位格式化（Codex 官方 usage 行风格）。
+ * @param n token 数量。
+ * @returns 带千分位分隔符的数字字符串。
+ */
+function formatTokenExact(n: number): string {
+  return Math.round(n).toLocaleString('en-US')
+}
+
 /** Codex / Grok 仅周额度；Claude Code 保留 5 小时 + 周额度。
 
  * @param agent CLI agent family.

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { formatTokenCount, formatTokenQuotaNotice, formatTokenUsage } from '@codepulse/shared'
+import { formatTokenCount, formatTokenQuotaNotice, formatTokenUsage, formatTokenUsageLine } from '@codepulse/shared'
 import {
   formatContextWindowStatus,
   formatProjectDirectoryBadge,
@@ -12,6 +12,37 @@ import {
   formatQuotaReset,
   weeklyMeterLabel,
 } from '../apps/desktop/src/renderer/src/lib/quotaFormat.js'
+
+test('Codex-style usage line shows exact grouped totals with cached and reasoning', () => {
+  assert.equal(
+    formatTokenUsageLine({
+      accuracy: 'exact',
+      total: 3_666_704,
+      input: 3_268_650,
+      cachedInput: 66_327_168,
+      output: 198_054,
+      reasoningOutput: 207_774,
+    }),
+    'usage: total=3,666,704 input=3,268,650 (+ 66,327,168 cached) output=198,054 (reasoning 207,774)',
+  )
+})
+
+test('Codex-style usage line omits missing segments and zero cached', () => {
+  assert.equal(
+    formatTokenUsageLine({
+      accuracy: 'estimated',
+      input: 5000,
+      cachedInput: 0,
+      output: 1200,
+    }),
+    'usage: input=5,000 output=1,200',
+  )
+  assert.equal(formatTokenUsageLine(undefined), 'usage: —')
+  assert.equal(
+    formatTokenUsageLine({ accuracy: 'unknown' }),
+    'usage: —',
+  )
+})
 
 test('Codex quota labels honor native IDs over conflicting display names', () => {
   assert.equal(

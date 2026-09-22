@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@codepulse/shared": "workspace:*",
-    "better-sqlite3": "^11.8.1",
+    "better-sqlite3": "^12.11.1",
     "drizzle-orm": "^0.38.3"
   },
   "devDependencies": {

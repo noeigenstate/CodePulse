@@ -18,7 +18,6 @@ import {
 } from 'react'
 import {
   formatTokenPercent,
-  formatTokenUsageLine,
   type AgentRuntimeState,
   type AgentType,
   type TokenPayload,
@@ -759,6 +758,7 @@ function agentName(agent: AgentType): string {
   if (agent === 'codex') return 'Codex'
   if (agent === 'grok') return 'Grok'
   if (agent === 'kimi') return 'Kimi Code'
+  if (agent === 'opencode') return 'OpenCode'
   return 'Claude Code'
 }
 
@@ -1127,6 +1127,7 @@ function AgentLogo({ agentType }: { agentType: AgentType }): JSX.Element {
   if (agentType === 'codex') return <CodexLogo />
   if (agentType === 'grok') return <GrokLogo />
   if (agentType === 'kimi') return <KimiLogo />
+  if (agentType === 'opencode') return <OpenCodeLogo />
   return <ClaudeLogo />
 }
 
@@ -1189,6 +1190,23 @@ function GrokLogo(): JSX.Element {
         fill="currentColor"
         className="text-ink"
         d="M6.227 3.5h3.12l4.38 7.12L18.13 3.5H21.3l-6.02 9.05L21.5 20.5h-3.13l-4.62-7.42-4.63 7.42H6.01l6.24-8.01L6.227 3.5zm-.85 0L12 12.35 5.12 20.5H2.5l6.9-8.19L2.5 3.5h2.877z"
+      />
+    </svg>
+  )
+}
+
+/**
+ * OpenCode monogram: a prompt chevron with its cursor bar.
+ *
+ * @returns Rendered React element.
+ */
+function OpenCodeLogo(): JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" role="img" aria-label="OpenCode" className="h-7 w-7">
+      <path
+        fill="currentColor"
+        className="text-ink"
+        d="M4.7 4.4 12.6 12l-7.9 7.6-2.2-2.3L8.2 12 2.5 6.7l2.2-2.3zm8.1 10.9v2.4h6.5v2.2H10.5V4.1h2.3v11.2z"
       />
     </svg>
   )
@@ -1274,13 +1292,6 @@ const ProjectTile = memo(function ProjectTile({
           />
         </div>
 
-        <div className="flex min-w-0 items-center justify-between gap-2 text-xs">
-          <span className="shrink-0 font-medium text-ink-500">{copy.usage}</span>
-          <span className="truncate font-mono tabular-nums text-[11px] font-semibold text-ink">
-            {formatTokenUsageLine(token)}
-          </span>
-        </div>
-
         <ContextMeter brand={brand} token={token} contextWindow={contextWindow} copy={copy} />
       </div>
     </article>
@@ -1305,6 +1316,8 @@ function PanelQuotaMeter({
   locale: Locale
   copy: UiCopy
 }): JSX.Element {
+  // OpenCode (Token Plan) reports no quota windows; hide meters entirely.
+  if (agentType === 'opencode') return <></>
   const now = useNow()
   const showFiveHour = showsFiveHourQuota(agentType)
 
@@ -1562,7 +1575,7 @@ function effectiveContextWindow(agent: AgentRuntimeState): number | undefined {
   return agent.token?.contextWindow
 }
 
-type BrandClass = 'brand-claude' | 'brand-codex' | 'brand-grok' | 'brand-kimi'
+type BrandClass = 'brand-claude' | 'brand-codex' | 'brand-grok' | 'brand-kimi' | 'brand-opencode'
 
 /**
  * Computes brand class.
@@ -1573,6 +1586,7 @@ function brandClass(agentType: AgentType): BrandClass {
   if (agentType === 'codex') return 'brand-codex'
   if (agentType === 'grok') return 'brand-grok'
   if (agentType === 'kimi') return 'brand-kimi'
+  if (agentType === 'opencode') return 'brand-opencode'
   return 'brand-claude'
 }
 

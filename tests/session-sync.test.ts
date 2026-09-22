@@ -3401,6 +3401,52 @@ test('StatusHub accepts a higher official reading immediately after a zero sampl
   assert.equal(codex?.token?.rateLimits?.sevenDay?.usedPercent, 88)
 })
 
+test('SessionSyncService hydrates OpenCode sessions from the local session database', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-opencode-')
+  const cwd = 'E:/work/codepulse'
+  const updatedAt = Date.now()
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: join(home, 'no-codex'),
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    kimiHome: join(home, 'no-kimi'),
+    opencodeHome: home,
+    disableWatch: true,
+    opencodeSessionReader: async () => [
+      {
+        sessionId: 'ses_opencode_test',
+        cwd,
+        mtimeMs: updatedAt,
+        sourcePath: join(home, 'opencode.db'),
+        model: 'xiaomi/mimo-v2.6-pro',
+        modelObservedAt: updatedAt,
+        token: {
+          input: 12_000,
+          cachedInput: 48_000,
+          output: 3_200,
+          reasoningOutput: 800,
+          total: 63_200,
+          accuracy: 'exact',
+        },
+      },
+    ],
+  })
+
+  await sync.syncNow(['opencode'])
+
+  const agent = hub.snapshot().agents.find((a) => a.agentType === 'opencode')
+  assert.ok(agent, 'opencode agent should be present')
+  assert.equal(agent.model, 'xiaomi/mimo-v2.6-pro')
+  assert.equal(agent.token?.input, 12_000)
+  assert.equal(agent.token?.cachedInput, 48_000)
+  assert.equal(agent.token?.output, 3_200)
+  assert.equal(agent.token?.reasoningOutput, 800)
+  assert.equal(agent.token?.total, 63_200)
+})
+
 async function mkdtempJoin(prefix: string): Promise<string> {
   const { mkdtemp } = await import('node:fs/promises')
   return mkdtemp(join(tmpdir(), prefix))

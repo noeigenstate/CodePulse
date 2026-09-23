@@ -64,6 +64,7 @@ import {
   applyTheme,
   CLI_TOOL_TYPES,
   millisecondsUntilScheduledThemeChange,
+  movePanel,
   readDashboardSettings,
   resolveTheme,
   writeDashboardSettings,
@@ -125,9 +126,16 @@ export function App(): JSX.Element {
   )
   const allPanels = orderedProjects.panels
   const panels = useMemo(
-    // Display preferences only filter renderer panels; hook delivery and disk sync keep running.
-    () => allPanels.filter((panel) => dashboardSettings.visibleTools[panel.agentType]),
-    [allPanels, dashboardSettings.visibleTools],
+    // Display preferences only filter and order renderer panels; hook delivery and disk sync keep running.
+    () =>
+      allPanels
+        .filter((panel) => dashboardSettings.visibleTools[panel.agentType])
+        .sort(
+          (a, b) =>
+            dashboardSettings.panelOrder.indexOf(a.agentType) -
+            dashboardSettings.panelOrder.indexOf(b.agentType),
+        ),
+    [allPanels, dashboardSettings.panelOrder, dashboardSettings.visibleTools],
   )
   const visibleSessionCount = useMemo(
     () =>
@@ -216,6 +224,16 @@ export function App(): JSX.Element {
     [updateDashboardSettings],
   )
 
+  const reorderPanel = useCallback(
+    (source: AgentType, target: AgentType): void => {
+      updateDashboardSettings((current) => {
+        const panelOrder = movePanel(current.panelOrder, source, target)
+        return panelOrder === current.panelOrder ? current : { ...current, panelOrder }
+      })
+    },
+    [updateDashboardSettings],
+  )
+
   const closeSettings = useCallback((): void => setSettingsOpen(false), [])
 
   const liveConsole = (
@@ -227,6 +245,7 @@ export function App(): JSX.Element {
       locale={locale}
       copy={copy}
       onAck={(agentType, workspacePath) => ack(agentType, workspacePath)}
+      onReorder={reorderPanel}
     />
   )
 
@@ -353,6 +372,7 @@ function LiveConsole({
   locale,
   copy,
   onAck,
+  onReorder,
 }: {
   allToolsHidden: boolean
   panels: AgentPanel[]
@@ -361,8 +381,29 @@ function LiveConsole({
   locale: Locale
   copy: UiCopy
   onAck: (agentType: AgentType, workspacePath?: string) => void
+  onReorder: (source: AgentType, target: AgentType) => void
 }): JSX.Element {
   const now = useNow(30_000)
+  const [dragging, setDragging] = useState<AgentType>()
+  const [dropTarget, setDropTarget] = useState<AgentType>()
+  const endDrag = useCallback((): void => {
+    setDragging(undefined)
+    setDropTarget(undefined)
+  }, [])
+  // Stable per drag so memoized panels only re-render when drag state changes.
+  const enterPanel = useCallback(
+    (agentType: AgentType): void => {
+      if (dragging && dragging !== agentType) setDropTarget(agentType)
+    },
+    [dragging],
+  )
+  const dropOnPanel = useCallback(
+    (agentType: AgentType): void => {
+      if (dragging) onReorder(dragging, agentType)
+      endDrag()
+    },
+    [dragging, endDrag, onReorder],
+  )
 
   return (
     <>
@@ -379,6 +420,12 @@ function LiveConsole({
                   locale={locale}
                   copy={copy}
                   onAck={onAck}
+                  dragging={dragging === panel.agentType}
+                  dropTarget={dragging !== undefined && dropTarget === panel.agentType}
+                  onDragStart={setDragging}
+                  onDragEnter={enterPanel}
+                  onDrop={dropOnPanel}
+                  onDragEnd={endDrag}
                 />
               ))}
             </div>
@@ -802,16 +849,33 @@ function EmptyDashboard({
   )
 }
 
+/** Private drag payload type so only CodePulse panels can be dropped onto panels. */
+const PANEL_DRAG_TYPE = 'application/x-codepulse-panel'
+
 const AgentPanelView = memo(function AgentPanelView({
   panel,
   locale,
   copy,
   onAck,
+  dragging,
+  dropTarget,
+  onDragStart,
+  onDragEnter,
+  onDrop,
+  onDragEnd,
 }: {
   panel: AgentPanel
   locale: Locale
   copy: UiCopy
   onAck: (agentType: AgentType, workspacePath?: string) => void
+  /** This panel is the one being dragged. */
+  dragging: boolean
+  /** A dragged panel currently hovers this one. */
+  dropTarget: boolean
+  onDragStart: (agentType: AgentType) => void
+  onDragEnter: (agentType: AgentType) => void
+  onDrop: (agentType: AgentType) => void
+  onDragEnd: () => void
 }): JSX.Element {
   const latest = latestProjectItem(panel.workspaces)?.agent
   const style = turnStateStyle(latest?.state ?? TurnState.IDLE)
@@ -819,9 +883,37 @@ const AgentPanelView = memo(function AgentPanelView({
   const brand = brandClass(panel.agentType)
 
   return (
-    <section className="agent-panel flex min-h-0 flex-col p-3.5" data-agent={panel.agentType}>
+    <section
+      className={`agent-panel flex min-h-0 flex-col p-3.5 ${dragging ? 'is-dragging' : ''} ${
+        dropTarget ? 'is-drop-target' : ''
+      }`}
+      data-agent={panel.agentType}
+      onDragOver={(event) => {
+        // Only panel drags are droppable here; text or file drags keep their default.
+        if (!event.dataTransfer.types.includes(PANEL_DRAG_TYPE)) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+        onDragEnter(panel.agentType)
+      }}
+      onDrop={(event) => {
+        if (!event.dataTransfer.types.includes(PANEL_DRAG_TYPE)) return
+        event.preventDefault()
+        onDrop(panel.agentType)
+      }}
+    >
       <div className="mb-3 flex flex-col gap-3">
-        <div className="flex min-w-0 items-center gap-3">
+        {/* The header row is the drag handle so project cards stay scrollable and clickable. */}
+        <div
+          className="agent-panel-handle flex min-w-0 items-center gap-3"
+          draggable
+          title={copy.dragToReorder}
+          onDragStart={(event) => {
+            event.dataTransfer.effectAllowed = 'move'
+            event.dataTransfer.setData(PANEL_DRAG_TYPE, panel.agentType)
+            onDragStart(panel.agentType)
+          }}
+          onDragEnd={onDragEnd}
+        >
           <span className="agent-brand-icon relative" data-agent={panel.agentType}>
             <AgentLogo agentType={panel.agentType} />
             <span

@@ -3,7 +3,10 @@ import { test } from 'node:test'
 import {
   applyTheme,
   CLI_TOOL_TYPES,
+  DEFAULT_PANEL_ORDER,
   millisecondsUntilScheduledThemeChange,
+  movePanel,
+  normalizePanelOrder,
   readDashboardSettings,
   resolveTheme,
   writeDashboardSettings,
@@ -89,6 +92,9 @@ test('dashboard settings persist changes and apply the selected root theme', () 
       kimi: false,
       opencode: true,
     },
+    panelOrder: ['opencode', 'claude_code', 'codex', 'grok', 'kimi'] as Array<
+      'codex' | 'claude_code' | 'grok' | 'kimi' | 'opencode'
+    >,
   }
   writeDashboardSettings(storage, next)
 
@@ -103,6 +109,7 @@ test('dashboard settings persist automatic theme selection', () => {
   const next = {
     theme: 'auto' as const,
     visibleTools: { codex: true, claude_code: true, grok: true, kimi: true, opencode: true },
+    panelOrder: [...DEFAULT_PANEL_ORDER],
   }
 
   writeDashboardSettings(storage, next)
@@ -125,6 +132,52 @@ test('dashboard settings retain safe in-memory defaults when storage is unavaila
     writeDashboardSettings(unavailableStorage, {
       theme: 'dark',
       visibleTools: { codex: true, claude_code: true, grok: true, kimi: true, opencode: true },
+      panelOrder: [...DEFAULT_PANEL_ORDER],
     }),
   )
+})
+
+test('panel order defaults to the historical layout and repairs stored orders', () => {
+  assert.deepEqual(readDashboardSettings(new MemoryStorage()).panelOrder, [
+    'claude_code',
+    'codex',
+    'grok',
+    'kimi',
+    'opencode',
+  ])
+  // Unknown and duplicate entries drop; missing tools append in default order.
+  assert.deepEqual(normalizePanelOrder(['opencode', 'bogus', 'opencode', 'codex']), [
+    'opencode',
+    'codex',
+    'claude_code',
+    'grok',
+    'kimi',
+  ])
+  assert.deepEqual(normalizePanelOrder('not-an-array'), [...DEFAULT_PANEL_ORDER])
+})
+
+test('movePanel swaps neighbours and lands on the target slot from either side', () => {
+  const order = [...DEFAULT_PANEL_ORDER]
+  assert.deepEqual(movePanel(order, 'claude_code', 'codex'), [
+    'codex',
+    'claude_code',
+    'grok',
+    'kimi',
+    'opencode',
+  ])
+  assert.deepEqual(movePanel(order, 'opencode', 'claude_code'), [
+    'opencode',
+    'claude_code',
+    'codex',
+    'grok',
+    'kimi',
+  ])
+  assert.deepEqual(movePanel(order, 'claude_code', 'opencode'), [
+    'codex',
+    'grok',
+    'kimi',
+    'opencode',
+    'claude_code',
+  ])
+  assert.equal(movePanel(order, 'codex', 'codex'), order)
 })

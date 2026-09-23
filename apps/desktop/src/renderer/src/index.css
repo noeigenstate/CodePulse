@@ -187,6 +187,30 @@ body {
     border-radius: var(--radius-card);
     background: var(--surface-panel);
     box-shadow: var(--shadow-card);
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+    transition:
+      opacity 150ms ease,
+      outline-color 150ms ease;
+  }
+
+  /* Panel header doubles as the drag handle for reordering CLI panels. */
+  .agent-panel-handle {
+    cursor: grab;
+    user-select: none;
+  }
+
+  .agent-panel-handle:active {
+    cursor: grabbing;
+  }
+
+  .agent-panel.is-dragging {
+    opacity: 0.45;
+  }
+
+  /* Outline avoids fighting the per-brand inset box-shadow below. */
+  .agent-panel.is-drop-target {
+    outline-color: var(--agent-accent, var(--line));
   }
 
   .agent-panel[data-agent='claude_code'] {

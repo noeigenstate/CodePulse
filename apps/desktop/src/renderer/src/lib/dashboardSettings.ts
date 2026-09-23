@@ -27,7 +27,18 @@ export type ThemePreference = 'auto' | ThemeMode
 export interface DashboardSettings {
   theme: ThemePreference
   visibleTools: Record<CliToolType, boolean>
+  /** Left-to-right panel order chosen by dragging; always lists every CLI tool once. */
+  panelOrder: CliToolType[]
 }
+
+/** Default left-to-right panel order, matching the historical fixed layout. */
+export const DEFAULT_PANEL_ORDER: readonly CliToolType[] = [
+  'claude_code',
+  'codex',
+  'grok',
+  'kimi',
+  'opencode',
+]
 
 interface StorageLike {
   getItem(key: string): string | null
@@ -52,6 +63,7 @@ export const DEFAULT_DASHBOARD_SETTINGS: DashboardSettings = {
     kimi: true,
     opencode: true,
   },
+  panelOrder: [...DEFAULT_PANEL_ORDER],
 }
 
 /**
@@ -86,10 +98,56 @@ export function readDashboardSettings(storage: StorageLike | undefined): Dashboa
         kimi: visibleTools.kimi !== false,
         opencode: visibleTools.opencode !== false,
       },
+      panelOrder: normalizePanelOrder(parsed.panelOrder),
     }
   } catch {
     return cloneSettings(DEFAULT_DASHBOARD_SETTINGS)
   }
+}
+
+/**
+ * Normalizes a stored panel order: unknown and duplicate entries are dropped,
+ * and tools missing from it (including newly supported ones) are appended in
+ * their default position order.
+ *
+ * @param value Parsed storage value.
+ * @returns A complete order listing every CLI tool exactly once.
+ */
+export function normalizePanelOrder(value: unknown): CliToolType[] {
+  const order: CliToolType[] = []
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      if (isCliToolType(entry) && !order.includes(entry)) order.push(entry)
+    }
+  }
+  for (const tool of DEFAULT_PANEL_ORDER) {
+    if (!order.includes(tool)) order.push(tool)
+  }
+  return order
+}
+
+/**
+ * Moves one panel onto another panel's slot.
+ *
+ * Dragging rightwards lands after the target and leftwards before it, so a
+ * drop on a neighbour always swaps the two.
+ *
+ * @param order Current complete panel order.
+ * @param source Dragged tool.
+ * @param target Tool whose panel received the drop.
+ * @returns New order, or the same array when nothing moves.
+ */
+export function movePanel(
+  order: readonly CliToolType[],
+  source: CliToolType,
+  target: CliToolType,
+): CliToolType[] {
+  const from = order.indexOf(source)
+  const to = order.indexOf(target)
+  if (from < 0 || to < 0 || from === to) return order as CliToolType[]
+  const next = order.filter((tool) => tool !== source)
+  next.splice(next.indexOf(target) + (from < to ? 1 : 0), 0, source)
+  return next
 }
 
 /**
@@ -161,7 +219,13 @@ function cloneSettings(settings: DashboardSettings): DashboardSettings {
   return {
     theme: settings.theme,
     visibleTools: { ...settings.visibleTools },
+    panelOrder: [...settings.panelOrder],
   }
+}
+
+/** Narrows a parsed storage value to a supported CLI tool key. */
+function isCliToolType(value: unknown): value is CliToolType {
+  return typeof value === 'string' && (CLI_TOOL_TYPES as readonly string[]).includes(value)
 }
 
 /** Narrows parsed JSON to a non-null object before reading optional properties. */

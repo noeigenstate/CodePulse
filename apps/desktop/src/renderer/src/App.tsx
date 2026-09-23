@@ -1196,18 +1196,15 @@ function GrokLogo(): JSX.Element {
 }
 
 /**
- * OpenCode monogram: a prompt chevron with its cursor bar.
+ * OpenCode mark (opencode.ai favicon): a tall frame whose opening is half filled.
  *
  * @returns Rendered React element.
  */
 function OpenCodeLogo(): JSX.Element {
   return (
-    <svg viewBox="0 0 24 24" role="img" aria-label="OpenCode" className="h-7 w-7">
-      <path
-        fill="currentColor"
-        className="text-ink"
-        d="M4.7 4.4 12.6 12l-7.9 7.6-2.2-2.3L8.2 12 2.5 6.7l2.2-2.3zm8.1 10.9v2.4h6.5v2.2H10.5V4.1h2.3v11.2z"
-      />
+    <svg viewBox="0 0 24 24" role="img" aria-label="OpenCode" className="h-7 w-7 text-ink">
+      <path fill="currentColor" fillOpacity={0.4} d="M9 10.5h6v6H9z" />
+      <path fill="currentColor" fillRule="evenodd" d="M18 19.5H6v-15h12v15zM15 7.5H9v9h6v-9z" />
     </svg>
   )
 }
@@ -1316,10 +1313,10 @@ function PanelQuotaMeter({
   locale: Locale
   copy: UiCopy
 }): JSX.Element {
-  // OpenCode (Token Plan) reports no quota windows; hide meters entirely.
-  if (agentType === 'opencode') return <></>
   const now = useNow()
   const showFiveHour = showsFiveHourQuota(agentType)
+  // OpenCode's single bar is the MiMo Token Plan billing period, fed by the console login.
+  const isPlanQuota = agentType === 'opencode'
 
   // No quota yet — keep waiting bars so pane layout stays stable.
   // Claude and Kimi use 5h + weekly; Codex/Grok only weekly.
@@ -1346,9 +1343,9 @@ function PanelQuotaMeter({
       <div className="grid grid-cols-1 gap-2">
         <TokenMeter
           brand={brand}
-          label={copy.weeklyQuota}
+          label={isPlanQuota ? copy.monthlyPlanQuota : copy.weeklyQuota}
           percent={undefined}
-          detail={copy.waitingQuota}
+          detail={isPlanQuota ? copy.waitingMimoLogin : copy.waitingQuota}
         />
       </div>
     )
@@ -1387,15 +1384,16 @@ function PanelQuotaMeter({
           <TokenMeter
             key={meter.id}
             brand={brand}
-            label={weeklyMeterLabel(
-              meter.token,
-              copy.weeklyQuota,
-              copy.lunaReserveQuota,
-              agentType,
-            )}
+            label={
+              isPlanQuota
+                ? copy.monthlyPlanQuota
+                : weeklyMeterLabel(meter.token, copy.weeklyQuota, copy.lunaReserveQuota, agentType)
+            }
             percent={sevenDay?.usedPercent}
             detail={
-              hasQuota ? formatQuotaReset(sevenDay?.resetsAt, now, locale) : copy.waitingQuota
+              hasQuota
+                ? formatQuotaReset(sevenDay?.resetsAt, now, locale, sevenDay?.windowMinutes)
+                : copy.waitingQuota
             }
           />
         )

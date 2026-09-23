@@ -23,8 +23,12 @@ export interface UiCopy {
   usage: string
   fiveHourQuota: string
   weeklyQuota: string
+  /** MiMo Token Plan credits for the current billing period (OpenCode pane). */
+  monthlyPlanQuota: string
   lunaReserveQuota: string
   waitingQuota: string
+  /** OpenCode pane hint before a MiMo console login exists. */
+  waitingMimoLogin: string
   read: string
   contextWindow: string
   unknownProject: string
@@ -65,6 +69,13 @@ export interface SettingsCopy {
   updateNone: string
   updateFound: string
   updateError: string
+  mimoQuota: string
+  mimoQuotaHint: string
+  mimoLoggedIn: string
+  mimoLoggedOut: string
+  mimoLogin: string
+  mimoLogout: string
+  mimoWorking: string
   deviceProvisioning: DeviceProvisioningCopy
 }
 
@@ -299,8 +310,10 @@ const UI_COPY: Record<Locale, UiCopy> = {
     usage: '用量',
     fiveHourQuota: '5 小时额度',
     weeklyQuota: '每周额度',
+    monthlyPlanQuota: '套餐额度',
     lunaReserveQuota: 'Luna Reserve',
     waitingQuota: '等待命令行同步额度',
+    waitingMimoLogin: '在设置中登录 MiMo 后显示',
     read: '已读',
     contextWindow: '上下文窗口：',
     unknownProject: '未识别项目',
@@ -399,6 +412,14 @@ const UI_COPY: Record<Locale, UiCopy> = {
       updateNone: '已是最新版本',
       updateFound: '发现新版本 {version}，可直接安装',
       updateError: '检查失败，请稍后重试',
+      mimoQuota: 'MiMo Token Plan 额度',
+      mimoQuotaHint:
+        'OpenCode 接入小米 MiMo 时，额度只能通过 MiMo 控制台登录态查询（API Key 无法查询）。登录信息仅保存在 CodePulse 的独立会话中。',
+      mimoLoggedIn: '已登录',
+      mimoLoggedOut: '未登录',
+      mimoLogin: '登录 MiMo',
+      mimoLogout: '退出登录',
+      mimoWorking: '处理中…',
       deviceProvisioning: {
         title: 'CodePulse 水墨屏',
         description: '通过 USB 自动识别设备并写入 Wi-Fi。请正常长按功能键 3 秒开机，不要按 BOOT。',
@@ -525,8 +546,10 @@ const UI_COPY: Record<Locale, UiCopy> = {
     usage: 'Usage',
     fiveHourQuota: '5h quota',
     weeklyQuota: 'Weekly quota',
+    monthlyPlanQuota: 'Plan quota',
     lunaReserveQuota: 'Luna Reserve',
     waitingQuota: 'Waiting for CLI quota sync',
+    waitingMimoLogin: 'Log in to MiMo in Settings',
     read: 'Read',
     contextWindow: 'Context window:',
     unknownProject: 'Unknown project',
@@ -626,6 +649,14 @@ const UI_COPY: Record<Locale, UiCopy> = {
       updateNone: 'You are up to date',
       updateFound: 'New version {version} is available and ready to install',
       updateError: 'Update check failed, try again later',
+      mimoQuota: 'MiMo Token Plan quota',
+      mimoQuotaHint:
+        'When OpenCode uses Xiaomi MiMo, plan quota is only available through the MiMo console login (API keys cannot query it). The login stays in an isolated CodePulse session.',
+      mimoLoggedIn: 'Logged in',
+      mimoLoggedOut: 'Not logged in',
+      mimoLogin: 'Log in to MiMo',
+      mimoLogout: 'Log out',
+      mimoWorking: 'Working…',
       deviceProvisioning: {
         title: 'CodePulse display',
         description:

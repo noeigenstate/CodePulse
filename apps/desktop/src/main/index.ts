@@ -40,6 +40,7 @@ import { TrayController } from './tray.js'
 import { showNotification } from './notifications.js'
 import { FocusSyncScheduler } from './focus-sync.js'
 import { DisplayDeviceBrowser } from './device-browser.js'
+import { logoutMimo, openMimoLogin, provideMimoCookie, readMimoCookie } from './mimo-auth.js'
 import {
   DeviceProvisioningFailure,
   DeviceUsbManager,
@@ -333,6 +334,17 @@ function registerIpc(): void {
     await focusSync.schedule()
     return hub.snapshot()
   })
+  ipcMain.handle('codepulse:mimo-login-status', async () => Boolean(await readMimoCookie()))
+  ipcMain.handle('codepulse:mimo-login', async () => {
+    const loggedIn = await openMimoLogin(mainWindow)
+    if (loggedIn) await server?.refreshMimoQuota()
+    return loggedIn
+  })
+  ipcMain.handle('codepulse:mimo-logout', async () => {
+    await logoutMimo()
+    await server?.refreshMimoQuota({ clear: true })
+    return false
+  })
   ipcMain.handle('codepulse:get-device-provisioning', () => deviceProvisioning)
   ipcMain.handle('codepulse:start-device-scan', () => {
     if (!deviceUsb) return deviceProvisioning
@@ -441,7 +453,7 @@ async function bootstrap(): Promise<void> {
 
   try {
     // startLocalServer awaits SessionSyncService first disk scan + writes local-auth token.
-    server = await startLocalServer({ hub })
+    server = await startLocalServer({ hub, mimoCookieProvider: provideMimoCookie })
     localServerReady = true
     console.log(`[codepulse] local server listening on ${server.url}`)
     console.log(

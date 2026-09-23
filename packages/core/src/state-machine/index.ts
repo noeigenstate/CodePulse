@@ -21,6 +21,7 @@ import {
   isActiveState,
   isTerminalState,
   normalizeWorkspacePath,
+  maxResetAheadMs,
 } from '@codepulse/shared'
 
 /**
@@ -1440,8 +1441,6 @@ function isZeroOnlyRateLimits(rateLimits: TokenPayload['rateLimits']): boolean {
   )
 }
 
-/** Weekly plan windows are ≤7d; farther timestamps are almost always bad data. */
-const MAX_REASONABLE_RESET_AHEAD_MS = 10 * 24 * 60 * 60_000
 /** Maximum server reset-time jitter accepted as one canonical quota period. */
 const RATE_LIMIT_RESET_TOLERANCE_MS = 60_000
 
@@ -1467,8 +1466,8 @@ function mergeRateLimitWindow(
   const resetOrder = compareRateLimitResetAt(patchResetMs, curResetMs)
 
   // Prefer a reasonable reset over an absurd far-future placeholder (e.g. 2000000000).
-  const curAbsurd = isAbsurdResetMs(curResetMs, nowMs)
-  const patchAbsurd = isAbsurdResetMs(patchResetMs, nowMs)
+  const curAbsurd = isAbsurdResetMs(curResetMs, nowMs, saneCurrent.windowMinutes)
+  const patchAbsurd = isAbsurdResetMs(patchResetMs, nowMs, sanePatch.windowMinutes)
   if (curAbsurd && !patchAbsurd) {
     return {
       ...saneCurrent,
@@ -1544,7 +1543,7 @@ function sanitizeRateLimitWindow(
   nowMs: number,
 ): TokenRateLimitWindow | undefined {
   const resetMs = normalizeResetAtMs(window.resetsAt)
-  if (isAbsurdResetMs(resetMs, nowMs)) {
+  if (isAbsurdResetMs(resetMs, nowMs, window.windowMinutes)) {
     // Keep usedPercent / windowMinutes; drop bogus resetsAt.
     if (window.usedPercent === undefined && window.windowMinutes === undefined) return undefined
     return {
@@ -1559,11 +1558,16 @@ function sanitizeRateLimitWindow(
  * Checks whether absurd reset ms.
  * @param resetMs Reset ms.
  * @param nowMs Now ms.
+ * @param windowMinutes Declared window length; longer plans (monthly) widen the cap.
  * @returns Whether the condition is satisfied.
  */
-function isAbsurdResetMs(resetMs: number | undefined, nowMs: number): boolean {
+function isAbsurdResetMs(
+  resetMs: number | undefined,
+  nowMs: number,
+  windowMinutes?: number,
+): boolean {
   if (resetMs == null) return false
-  return resetMs - nowMs > MAX_REASONABLE_RESET_AHEAD_MS
+  return resetMs - nowMs > maxResetAheadMs(windowMinutes)
 }
 
 /** Normalize resets_at that may be seconds or milliseconds.

@@ -3447,6 +3447,44 @@ test('SessionSyncService hydrates OpenCode sessions from the local session datab
   assert.equal(agent.token?.total, 63_200)
 })
 
+test('SessionSyncService publishes MiMo Token Plan quota for OpenCode without a live session', async () => {
+  const home = await mkdtempJoin('codepulse-session-sync-mimo-')
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const resetsAt = Math.round(Date.now() / 1000) + 20 * 24 * 3600
+  let resolves = 0
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    codexHome: join(home, 'no-codex'),
+    grokHome: join(home, 'no-grok'),
+    claudeHome: join(home, 'no-claude'),
+    kimiHome: join(home, 'no-kimi'),
+    opencodeHome: home,
+    disableWatch: true,
+    opencodeSessionReader: async () => [],
+    mimoQuotaResolver: async () => {
+      resolves += 1
+      return {
+        rateLimits: { sevenDay: { usedPercent: 25, resetsAt, windowMinutes: 31 * 24 * 60 } },
+        planCode: 'standard',
+        updatedAt: Date.now(),
+      }
+    },
+  })
+
+  await sync.syncNow(['opencode'])
+  await sync.syncNow(['opencode'])
+
+  const agent = hub.snapshot().agents.find((a) => a.agentType === 'opencode')
+  assert.ok(agent, 'opencode quota row should be present')
+  assert.equal(agent.token?.rateLimits?.sevenDay?.usedPercent, 25)
+  // A 20-day monthly reset must survive the weekly far-future guard.
+  assert.equal(agent.token?.rateLimits?.sevenDay?.resetsAt, resetsAt)
+  assert.equal(agent.token?.rateLimitName, 'MiMo Token Plan standard')
+  // The console is polled at a bounded cadence, not on every scan.
+  assert.equal(resolves, 1)
+})
+
 async function mkdtempJoin(prefix: string): Promise<string> {
   const { mkdtemp } = await import('node:fs/promises')
   return mkdtemp(join(tmpdir(), prefix))

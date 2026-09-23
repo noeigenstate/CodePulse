@@ -45,6 +45,11 @@ import {
 import { resolveKimiAccountQuota, type KimiQuotaSnapshot } from './kimi-quota.js'
 import { WorkspacePathResolver } from './workspace-path.js'
 import { readOpencodeSessions, type OpencodeSessionSnapshot } from './opencode-db.js'
+import {
+  resolveMimoTokenPlanQuota,
+  type MimoCookieProvider,
+  type MimoQuotaSnapshot,
+} from './mimo-quota.js'
 
 const MAX_CODEX_FILES = 80
 /** Metadata candidates inspected before choosing the bounded deep-scan set. */
@@ -74,6 +79,10 @@ const CODEX_LIVE_MS = 5 * 60_000
 const KIMI_LIVE_MS = 5 * 60_000
 /** OpenCode rows count as live while their session keeps updating; matches hub idle expiry. */
 const OPENCODE_LIVE_MS = 5 * 60_000
+/** MiMo plan credits move per request; a minute keeps the bar current without hammering the console. */
+const MIMO_QUOTA_REFRESH_MS = 60_000
+/** Retry sooner while logged out or offline so a fresh login shows up promptly. */
+const MIMO_QUOTA_RETRY_MS = 15_000
 /** Kimi's account endpoint is independent of wire activity; avoid polling it every steady scan. */
 const KIMI_QUOTA_REFRESH_MS = 30_000
 /** Claude's OAuth endpoint is account-wide and must not run on every filesystem scan. */
@@ -169,6 +178,10 @@ export interface SessionSyncOptions {
   kimiProcessAlive?: () => boolean | Promise<boolean>
   /** Test seam for Kimi's managed account-usage endpoint. */
   kimiQuotaResolver?: () => Promise<KimiQuotaSnapshot | undefined>
+  /** Supplies the MiMo console cookie (desktop login window); omitted means no MiMo quota. */
+  mimoCookieProvider?: MimoCookieProvider
+  /** Test seam for the MiMo Token Plan quota resolver. */
+  mimoQuotaResolver?: () => Promise<MimoQuotaSnapshot | undefined>
   /** Test seam for Claude's OAuth/cache account-usage resolver. */
   claudeQuotaResolver?: () => Promise<ClaudeQuotaSnapshot | undefined>
   /** Test seam for parsing a Codex rollout tail. */
@@ -220,6 +233,7 @@ export class SessionSyncService {
   private readonly excludedCodexProcessIds: () => Iterable<number>
   private readonly kimiProcessAlive: () => boolean | Promise<boolean>
   private readonly kimiQuotaResolver: () => Promise<KimiQuotaSnapshot | undefined>
+  private readonly mimoQuotaResolver: () => Promise<MimoQuotaSnapshot | undefined>
   private readonly opencodeSessionReader: (
     opencodeHome: string,
   ) => Promise<OpencodeSessionSnapshot[]> | OpencodeSessionSnapshot[]
@@ -253,6 +267,8 @@ export class SessionSyncService {
   private lastLogAt = 0
   private kimiQuota?: KimiQuotaSnapshot
   private nextKimiQuotaRefreshAt = 0
+  private mimoQuota?: MimoQuotaSnapshot
+  private nextMimoQuotaRefreshAt = 0
   private claudeQuota?: ClaudeQuotaSnapshot
   private claudeQuotaRefresh?: Promise<ClaudeQuotaSnapshot | undefined>
   private nextClaudeQuotaRefreshAt = 0
@@ -322,6 +338,16 @@ export class SessionSyncService {
         }))
     this.opencodeSessionReader =
       options.opencodeSessionReader ?? ((opencodeHome) => readOpencodeSessions(opencodeHome))
+    const mimoCookieProvider = options.mimoCookieProvider
+    this.mimoQuotaResolver =
+      options.mimoQuotaResolver ??
+      (mimoCookieProvider
+        ? () =>
+            resolveMimoTokenPlanQuota({
+              cookieProvider: mimoCookieProvider,
+              now: () => this.now(),
+            })
+        : async () => undefined)
     this.isCodexQuotaAuthoritative = options.isCodexQuotaAuthoritative ?? (() => false)
     this.codexRolloutReader =
       options.codexRolloutReader ??
@@ -1285,19 +1311,25 @@ export class SessionSyncService {
    *
    * OpenCode persists cumulative token totals per session and does not stream
    * JSONL while running, so row recency replaces the live-process gate used by
-   * the streaming CLIs.
+   * the streaming CLIs. MiMo Token Plan quota is account-wide and is published
+   * even when no session is live, like the Codex/Kimi quota panes.
    *
-   * @returns Number of project observations published in this scan.
+   * @returns Number of project or account-quota observations published in this scan.
    */
   private async syncOpencode(): Promise<number> {
     const now = this.now()
-    let snapshots: OpencodeSessionSnapshot[]
+    const accountQuota = await this.getMimoAccountQuota(now)
+    const usageSampleId = this.quotaSampleId(
+      'opencode',
+      mergeOpencodeContextWithQuota(undefined, accountQuota),
+      accountQuota ? `mimo:${accountQuota.updatedAt}` : undefined,
+    )
+    let snapshots: OpencodeSessionSnapshot[] = []
     try {
       snapshots = await this.opencodeSessionReader(this.opencodeHome)
     } catch (err) {
       // Missing or unreadable database simply means nothing to hydrate yet.
       console.warn('[codepulse] opencode session read failed', err)
-      return 0
     }
 
     const byCwd = new Map<string, OpencodeSessionSnapshot>()
@@ -1311,8 +1343,7 @@ export class SessionSyncService {
 
     let count = 0
     for (const snapshot of byCwd.values()) {
-      const token = snapshot.token ?? { accuracy: 'unknown' as const }
-      const usageSampleId = this.quotaSampleId('opencode', token, snapshot.sessionId)
+      const token = mergeOpencodeContextWithQuota(snapshot.token, accountQuota)
       const mapKey = `opencode:${snapshot.sessionId}`
       const skip = this.classifyUnchanged(
         mapKey,
@@ -1344,7 +1375,43 @@ export class SessionSyncService {
       })
       count += 1
     }
-    return count
+    const firstOpencode = byCwd.values().next().value
+    const publishedQuota = this.publishAccountQuotaObservation(
+      'opencode',
+      mergeOpencodeContextWithQuota(undefined, accountQuota),
+      now,
+      usageSampleId,
+      undefined,
+      firstOpencode ? { sessionId: firstOpencode.sessionId, cwd: firstOpencode.cwd } : undefined,
+    )
+    return count === 0 && publishedQuota ? 1 : count
+  }
+
+  /**
+   * Returns the cached MiMo Token Plan quota, refreshing it at a bounded cadence.
+   *
+   * @param now Current epoch timestamp in milliseconds.
+   * @returns Latest cached or refreshed quota snapshot.
+   */
+  private async getMimoAccountQuota(now: number): Promise<MimoQuotaSnapshot | undefined> {
+    if (now < this.nextMimoQuotaRefreshAt) return this.mimoQuota
+    this.nextMimoQuotaRefreshAt = now + MIMO_QUOTA_RETRY_MS
+    const refreshed = await this.mimoQuotaResolver().catch(() => undefined)
+    if (refreshed) {
+      this.mimoQuota = refreshed
+      this.nextMimoQuotaRefreshAt = now + MIMO_QUOTA_REFRESH_MS
+    }
+    return this.mimoQuota
+  }
+
+  /**
+   * Forces the next OpenCode scan to re-query MiMo quota (after login/logout).
+   *
+   * @param options `clear` drops the cached snapshot so a logout stops publishing it.
+   */
+  refreshMimoQuota(options: { clear?: boolean } = {}): void {
+    if (options.clear) this.mimoQuota = undefined
+    this.nextMimoQuotaRefreshAt = 0
   }
 
   /**
@@ -3276,6 +3343,32 @@ async function readKimiSessionSnapshot(
     reasoningEffort,
     token,
     turnTiming,
+  }
+}
+
+/**
+ * Attaches MiMo Token Plan credits to an OpenCode context payload.
+ *
+ * The plan's billing-period window rides in the `sevenDay` slot, the long
+ * window every quota consumer already understands; the renderer labels it as
+ * a monthly plan for OpenCode.
+ *
+ * @param context Session context payload, when a session is live.
+ * @param quota Latest MiMo quota snapshot.
+ * @returns Payload carrying the quota window when one is known.
+ */
+function mergeOpencodeContextWithQuota(
+  context: TokenPayload | undefined,
+  quota: MimoQuotaSnapshot | undefined,
+): TokenPayload {
+  const base = context ?? { accuracy: 'unknown' as const }
+  if (!quota) return base
+  return {
+    ...base,
+    rateLimits: quota.rateLimits,
+    rateLimitId: 'mimo-token-plan',
+    rateLimitName: quota.planCode ? `MiMo Token Plan ${quota.planCode}` : 'MiMo Token Plan',
+    accuracy: base.accuracy === 'exact' ? 'exact' : 'estimated',
   }
 }
 

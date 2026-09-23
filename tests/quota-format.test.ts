@@ -261,3 +261,17 @@ test('project directory badge omits the duplicated project title segment', () =>
     '... / projects / CodePulse',
   )
 })
+
+test('formatQuotaReset accepts monthly resets when the window declares its length', () => {
+  const now = Date.UTC(2026, 8, 22)
+  const inTwentyDays = now / 1000 + 20 * 24 * 3600
+  assert.equal(formatQuotaReset(inTwentyDays, now, 'en'), 'Refresh —')
+  assert.match(formatQuotaReset(inTwentyDays, now, 'en', 31 * 24 * 60), /^Refresh 20d/)
+  assert.equal(formatQuotaReset(2_000_000_000, now, 'en', 31 * 24 * 60), 'Refresh —')
+})
+
+test('formatQuotaDetail labels the OpenCode window as the plan period', () => {
+  const token = { accuracy: 'exact' as const, rateLimits: { sevenDay: { usedPercent: 25 } } }
+  assert.match(formatQuotaDetail(token, Date.now(), 'zh', 'opencode'), /^套餐 25%/)
+  assert.match(formatQuotaDetail(token, Date.now(), 'en', 'codex'), /^Weekly 25%/)
+})

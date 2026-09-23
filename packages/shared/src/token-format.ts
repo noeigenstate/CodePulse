@@ -11,6 +11,27 @@ import type { TokenPayload, TokenRateLimitWindow } from './types/token.js'
 /** AI CLI 滚动配额窗口的用户可见标签。 */
 export const TOKEN_QUOTA_WINDOW_LABEL = '5 小时额度'
 
+/** Rolling CLI windows are ≤7 days; resets farther out are usually placeholder data. */
+const DEFAULT_MAX_RESET_AHEAD_MS = 10 * 24 * 60 * 60_000
+
+/**
+ * Farthest plausible reset for a quota window.
+ *
+ * Weekly/5h windows keep the 10-day guard against bogus far-future resets; a
+ * window that declares a longer length (MiMo's monthly plan) may reset up to
+ * one day beyond its own length.
+ *
+ * @param windowMinutes Declared window length in minutes, when reported.
+ * @returns Maximum accepted distance between now and the reset, in milliseconds.
+ */
+export function maxResetAheadMs(windowMinutes?: number): number {
+  const declared =
+    typeof windowMinutes === 'number' && Number.isFinite(windowMinutes) && windowMinutes > 0
+      ? (windowMinutes + 24 * 60) * 60_000
+      : 0
+  return Math.max(DEFAULT_MAX_RESET_AHEAD_MS, declared)
+}
+
 /**
  * Parses token count.
  * @param value Human-readable token count such as `1.2M` or `32k`.

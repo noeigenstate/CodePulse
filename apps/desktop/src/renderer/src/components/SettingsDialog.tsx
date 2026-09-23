@@ -42,9 +42,25 @@ export function SettingsDialog({
     { kind: 'none' } | { kind: 'found'; version: string } | { kind: 'error' } | undefined
   >()
 
+  const [mimoLoggedIn, setMimoLoggedIn] = useState<boolean>()
+  const [mimoBusy, setMimoBusy] = useState(false)
+
   useEffect(() => {
     void window.codepulse.getVersion().then(setAppVersion)
+    void window.codepulse.getMimoLogin().then(setMimoLoggedIn)
   }, [])
+
+  /** Opens the Xiaomi login window, or clears the login when already signed in. */
+  const toggleMimoLogin = useCallback(async (): Promise<void> => {
+    setMimoBusy(true)
+    try {
+      setMimoLoggedIn(
+        await (mimoLoggedIn ? window.codepulse.logoutMimo() : window.codepulse.loginMimo()),
+      )
+    } finally {
+      setMimoBusy(false)
+    }
+  }, [mimoLoggedIn])
 
   /** Runs a manual update check; the update modal drives download/install afterwards. */
   const runUpdateCheck = useCallback(async (): Promise<void> => {
@@ -176,6 +192,28 @@ export function SettingsDialog({
                   onChange={(visible) => onToolVisibilityChange(tool, visible)}
                 />
               ))}
+            </div>
+          </section>
+
+          <section>
+            <h3 className="text-sm font-semibold text-ink">{copy.mimoQuota}</h3>
+            <p className="mt-1.5 text-meta leading-5 text-ink-500">{copy.mimoQuotaHint}</p>
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <p className="min-w-0 truncate font-medium text-ink">
+                {mimoLoggedIn === undefined
+                  ? '—'
+                  : mimoLoggedIn
+                    ? copy.mimoLoggedIn
+                    : copy.mimoLoggedOut}
+              </p>
+              <button
+                className="rounded-badge border border-line bg-[#F8FAFC] px-3 py-2 text-[13px] font-semibold text-ink transition hover:bg-[#EEF2F7] active:translate-y-px disabled:opacity-60"
+                disabled={mimoBusy || mimoLoggedIn === undefined}
+                onClick={() => void toggleMimoLogin()}
+                type="button"
+              >
+                {mimoBusy ? copy.mimoWorking : mimoLoggedIn ? copy.mimoLogout : copy.mimoLogin}
+              </button>
             </div>
           </section>
 

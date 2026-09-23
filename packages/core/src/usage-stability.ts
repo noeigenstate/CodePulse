@@ -1,5 +1,6 @@
 import {
   codexQuotaFamily,
+  maxResetAheadMs,
   type AgentEvent,
   type AgentRuntimeState,
   type AgentType,
@@ -37,8 +38,6 @@ interface StableQuotaFamily {
 const LOWER_QUOTA_CONFIRMATION_READS = 5
 /** Maximum reset timestamp drift treated as one quota period. */
 const QUOTA_RESET_TOLERANCE_MS = 60_000
-/** Rolling CLI quota windows farther away than this are treated as malformed metadata. */
-const MAX_REASONABLE_RESET_AHEAD_MS = 10 * 24 * 60 * 60_000
 
 /**
  * Stabilizes account-wide quota observations across all runtime sessions.
@@ -437,8 +436,8 @@ function sanitizeQuotaWindow(
 ): TokenRateLimitWindow | undefined {
   if (!window) return undefined
   const usedPercent = finitePercent(window.usedPercent)
-  const resetsAt = plausibleResetAt(window.resetsAt)
   const windowMinutes = finitePositive(window.windowMinutes)
+  const resetsAt = plausibleResetAt(window.resetsAt, windowMinutes)
   if (usedPercent === undefined && resetsAt === undefined && windowMinutes === undefined) {
     return undefined
   }
@@ -476,13 +475,14 @@ function finitePositive(value: number | undefined): number | undefined {
  * Rejects reset timestamps that are implausibly far beyond rolling CLI windows.
  *
  * @param value Reset timestamp in epoch seconds or milliseconds.
+ * @param windowMinutes Declared window length; longer plans (monthly) widen the cap.
  * @returns Original timestamp when plausible.
 
  */
-function plausibleResetAt(value: number | undefined): number | undefined {
+function plausibleResetAt(value: number | undefined, windowMinutes?: number): number | undefined {
   if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
   const resetMs = normalizeResetAtMs(value)
-  if (resetMs - Date.now() > MAX_REASONABLE_RESET_AHEAD_MS) return undefined
+  if (resetMs - Date.now() > maxResetAheadMs(windowMinutes)) return undefined
   return value
 }
 

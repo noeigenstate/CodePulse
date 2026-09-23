@@ -36,7 +36,44 @@ export async function detectAgents(options: AgentDetectOptions = {}): Promise<Ag
     await detectCodexAgent(options),
     await detectGrokAgent(options),
     await detectKimiAgent(options),
+    await detectOpencodeAgent(options),
   ]
+}
+
+/**
+ * Detects the OpenCode CLI and its local session database.
+ *
+ * OpenCode has no CodePulse hook; `opencode.db` in its data directory is the
+ * data source, so a present database counts as configured.
+ *
+ * @param options Configuration and dependency overrides.
+ * @returns Promise resolving to OpenCode installation and data-source status.
+ */
+export async function detectOpencodeAgent(options: AgentDetectOptions = {}): Promise<Agent> {
+  const env = options.env ?? process.env
+  const runCommand = options.runCommand ?? createLocalCommandRunner(options)
+  const versionResult = await runFirstAvailableCommand(
+    env['OPENCODE_CLI_PATH']
+      ? [env['OPENCODE_CLI_PATH']]
+      : await commandCandidates('opencode', options),
+    ['--version'],
+    runCommand,
+  )
+  const dataDir =
+    env['OPENCODE_DATA_DIR'] ?? join(options.homeDir ?? homedir(), '.local', 'share', 'opencode')
+  const configured = await access(join(dataDir, 'opencode.db')).then(
+    () => true,
+    () => false,
+  )
+
+  return {
+    id: 'opencode',
+    type: 'opencode',
+    name: 'OpenCode',
+    installed: versionResult.ok || configured,
+    configured,
+    version: versionResult.ok ? cleanVersion(versionResult.stdout) : undefined,
+  }
 }
 
 /**

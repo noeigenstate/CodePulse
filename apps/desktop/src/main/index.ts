@@ -40,6 +40,7 @@ import { TrayController } from './tray.js'
 import { showNotification } from './notifications.js'
 import { FocusSyncScheduler } from './focus-sync.js'
 import { DisplayDeviceBrowser } from './device-browser.js'
+import { logoutMimo, openMimoLogin, provideMimoCookie, readMimoCookie } from './mimo-auth.js'
 import {
   DeviceProvisioningFailure,
   DeviceUsbManager,
@@ -305,6 +306,23 @@ function registerIpc(): void {
     return true
   })
   ipcMain.handle('codepulse:install-update', () => installLatestUpdate())
+  ipcMain.handle('codepulse:get-version', () => app.getVersion())
+  /** Manual update check from Settings — bypasses the 24h dismiss snooze. */
+  ipcMain.handle('codepulse:check-update', async () => {
+    if (checkingUpdate) return latestUpdate
+    checkingUpdate = true
+    try {
+      const update = await checkForUpdate(app.getVersion())
+      latestUpdate = update
+      if (update) broadcast('codepulse:update-available', update)
+      return update
+    } catch (err) {
+      console.error('[codepulse] manual update check failed', err)
+      throw err
+    } finally {
+      checkingUpdate = false
+    }
+  })
   ipcMain.handle('codepulse:get-stats', (_event, query?: UsageStatsQuery) =>
     queryUsageStats(db, query ?? {}, Date.now(), {
       dbPath: dbPath ?? undefined,
@@ -315,6 +333,17 @@ function registerIpc(): void {
   ipcMain.handle('codepulse:sync-sessions', async () => {
     await focusSync.schedule()
     return hub.snapshot()
+  })
+  ipcMain.handle('codepulse:mimo-login-status', async () => Boolean(await readMimoCookie()))
+  ipcMain.handle('codepulse:mimo-login', async () => {
+    const loggedIn = await openMimoLogin(mainWindow)
+    if (loggedIn) await server?.refreshMimoQuota()
+    return loggedIn
+  })
+  ipcMain.handle('codepulse:mimo-logout', async () => {
+    await logoutMimo()
+    await server?.refreshMimoQuota({ clear: true })
+    return false
   })
   ipcMain.handle('codepulse:get-device-provisioning', () => deviceProvisioning)
   ipcMain.handle('codepulse:start-device-scan', () => {
@@ -424,7 +453,7 @@ async function bootstrap(): Promise<void> {
 
   try {
     // startLocalServer awaits SessionSyncService first disk scan + writes local-auth token.
-    server = await startLocalServer({ hub })
+    server = await startLocalServer({ hub, mimoCookieProvider: provideMimoCookie })
     localServerReady = true
     console.log(`[codepulse] local server listening on ${server.url}`)
     console.log(

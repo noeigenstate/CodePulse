@@ -758,6 +758,7 @@ function agentName(agent: AgentType): string {
   if (agent === 'codex') return 'Codex'
   if (agent === 'grok') return 'Grok'
   if (agent === 'kimi') return 'Kimi Code'
+  if (agent === 'opencode') return 'OpenCode'
   return 'Claude Code'
 }
 
@@ -1126,6 +1127,7 @@ function AgentLogo({ agentType }: { agentType: AgentType }): JSX.Element {
   if (agentType === 'codex') return <CodexLogo />
   if (agentType === 'grok') return <GrokLogo />
   if (agentType === 'kimi') return <KimiLogo />
+  if (agentType === 'opencode') return <OpenCodeLogo />
   return <ClaudeLogo />
 }
 
@@ -1189,6 +1191,20 @@ function GrokLogo(): JSX.Element {
         className="text-ink"
         d="M6.227 3.5h3.12l4.38 7.12L18.13 3.5H21.3l-6.02 9.05L21.5 20.5h-3.13l-4.62-7.42-4.63 7.42H6.01l6.24-8.01L6.227 3.5zm-.85 0L12 12.35 5.12 20.5H2.5l6.9-8.19L2.5 3.5h2.877z"
       />
+    </svg>
+  )
+}
+
+/**
+ * OpenCode mark (opencode.ai favicon): a tall frame whose opening is half filled.
+ *
+ * @returns Rendered React element.
+ */
+function OpenCodeLogo(): JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" role="img" aria-label="OpenCode" className="h-7 w-7 text-ink">
+      <path fill="currentColor" fillOpacity={0.4} d="M9 10.5h6v6H9z" />
+      <path fill="currentColor" fillRule="evenodd" d="M18 19.5H6v-15h12v15zM15 7.5H9v9h6v-9z" />
     </svg>
   )
 }
@@ -1299,6 +1315,8 @@ function PanelQuotaMeter({
 }): JSX.Element {
   const now = useNow()
   const showFiveHour = showsFiveHourQuota(agentType)
+  // OpenCode's single bar is the MiMo Token Plan billing period, fed by the console login.
+  const isPlanQuota = agentType === 'opencode'
 
   // No quota yet — keep waiting bars so pane layout stays stable.
   // Claude and Kimi use 5h + weekly; Codex/Grok only weekly.
@@ -1325,9 +1343,9 @@ function PanelQuotaMeter({
       <div className="grid grid-cols-1 gap-2">
         <TokenMeter
           brand={brand}
-          label={copy.weeklyQuota}
+          label={isPlanQuota ? copy.monthlyPlanQuota : copy.weeklyQuota}
           percent={undefined}
-          detail={copy.waitingQuota}
+          detail={isPlanQuota ? copy.waitingMimoLogin : copy.waitingQuota}
         />
       </div>
     )
@@ -1366,15 +1384,16 @@ function PanelQuotaMeter({
           <TokenMeter
             key={meter.id}
             brand={brand}
-            label={weeklyMeterLabel(
-              meter.token,
-              copy.weeklyQuota,
-              copy.lunaReserveQuota,
-              agentType,
-            )}
+            label={
+              isPlanQuota
+                ? copy.monthlyPlanQuota
+                : weeklyMeterLabel(meter.token, copy.weeklyQuota, copy.lunaReserveQuota, agentType)
+            }
             percent={sevenDay?.usedPercent}
             detail={
-              hasQuota ? formatQuotaReset(sevenDay?.resetsAt, now, locale) : copy.waitingQuota
+              hasQuota
+                ? formatQuotaReset(sevenDay?.resetsAt, now, locale, sevenDay?.windowMinutes)
+                : copy.waitingQuota
             }
           />
         )
@@ -1554,7 +1573,7 @@ function effectiveContextWindow(agent: AgentRuntimeState): number | undefined {
   return agent.token?.contextWindow
 }
 
-type BrandClass = 'brand-claude' | 'brand-codex' | 'brand-grok' | 'brand-kimi'
+type BrandClass = 'brand-claude' | 'brand-codex' | 'brand-grok' | 'brand-kimi' | 'brand-opencode'
 
 /**
  * Computes brand class.
@@ -1565,6 +1584,7 @@ function brandClass(agentType: AgentType): BrandClass {
   if (agentType === 'codex') return 'brand-codex'
   if (agentType === 'grok') return 'brand-grok'
   if (agentType === 'kimi') return 'brand-kimi'
+  if (agentType === 'opencode') return 'brand-opencode'
   return 'brand-claude'
 }
 

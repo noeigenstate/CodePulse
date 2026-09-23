@@ -1,5 +1,5 @@
 import type { AgentType, TokenPayload, TokenRateLimitWindow } from '@codepulse/shared'
-import { codexQuotaFamily, formatTokenPercent } from '@codepulse/shared'
+import { codexQuotaFamily, formatTokenPercent, maxResetAheadMs } from '@codepulse/shared'
 import type { Locale } from './i18n.js'
 import { showsFiveHourQuota } from './panelFormat.js'
 
@@ -41,7 +41,18 @@ export function formatQuotaDetail(
     ...(showsFiveHourQuota(agentType)
       ? [formatQuotaWindow(locale === 'zh' ? '5 小时' : '5h', rateLimits?.fiveHour, now, locale)]
       : []),
-    formatQuotaWindow(locale === 'zh' ? '每周' : 'Weekly', rateLimits?.sevenDay, now, locale),
+    formatQuotaWindow(
+      agentType === 'opencode'
+        ? locale === 'zh'
+          ? '套餐'
+          : 'Plan'
+        : locale === 'zh'
+          ? '每周'
+          : 'Weekly',
+      rateLimits?.sevenDay,
+      now,
+      locale,
+    ),
   ]
   return parts.join(' / ')
 }
@@ -56,23 +67,22 @@ function formatQuotaWindow(
     window?.resetsAt,
     now,
     locale,
+    window?.windowMinutes,
   )}`
 }
-
-/** Weekly Claude/Codex windows are ≤7 days; anything farther is bad/stale test data. */
-const MAX_REASONABLE_RESET_REMAINING_MS = 10 * 24 * 60 * 60_000
 
 export function formatQuotaReset(
   resetsAt: number | undefined,
   now = Date.now(),
   locale: Locale = 'zh',
+  windowMinutes?: number,
 ): string {
   if (!resetsAt) return locale === 'zh' ? '刷新 —' : 'Refresh —'
   const resetAtMs = resetsAt < 1_000_000_000_000 ? resetsAt * 1000 : resetsAt
   const remaining = resetAtMs - now
   if (remaining <= 0) return locale === 'zh' ? '可刷新' : 'Ready'
   // Guard against bogus far-future resets_at (e.g. 2000000000 → "2498 天").
-  if (remaining > MAX_REASONABLE_RESET_REMAINING_MS) {
+  if (remaining > maxResetAheadMs(windowMinutes)) {
     return locale === 'zh' ? '刷新 —' : 'Refresh —'
   }
   return `${locale === 'zh' ? '刷新' : 'Refresh'} ${formatResetDuration(remaining, locale)}`

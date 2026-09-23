@@ -67,10 +67,16 @@ export class TrayController {
   }
 }
 
+const AGENT_DISPLAY_NAMES: Record<string, string> = {
+  codex: 'Codex',
+  claude_code: 'Claude Code',
+  grok: 'Grok',
+  kimi: 'Kimi Code',
+  opencode: 'OpenCode',
+}
+
 function agentLine(agent: AgentRuntimeState): string {
-  const name =
-    agent.agentType === 'codex' ? 'Codex' : agent.agentType === 'grok' ? 'Grok' : 'Claude Code'
-  return `${name}: ${stateLabel(agent.state)}`
+  return `${AGENT_DISPLAY_NAMES[agent.agentType] ?? 'Agent'}: ${stateLabel(agent.state)}`
 }
 
 function stateLabel(state: TurnState): string {

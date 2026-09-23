@@ -49,7 +49,7 @@ test('native dependency scripts keep Node tests and Electron runtime ABIs separa
   assert.equal(desktopPackage.scripts?.['rebuild:electron'], 'electron-builder install-app-deps')
   assert.equal(desktopPackage.scripts?.predev, 'pnpm rebuild:electron')
   assert.equal(desktopPackage.scripts?.prestart, 'pnpm rebuild:electron')
-  assert.equal(rootPackage.scripts?.pretest, 'npm rebuild better-sqlite3')
+  assert.equal(rootPackage.scripts?.pretest, 'npm run install --prefix node_modules/better-sqlite3')
 })
 
 test('desktop package scripts and builder config include Windows, Linux, and macOS targets', () => {

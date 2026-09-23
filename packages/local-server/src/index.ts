@@ -19,6 +19,7 @@ import { registerEventRoutes } from './routes/events.js'
 import { registerStatusRoutes } from './routes/status.js'
 import { QuotaRefreshWatcher } from './quota-watcher.js'
 import { SessionSyncService } from './session-sync.js'
+import type { MimoCookieProvider } from './mimo-quota.js'
 import {
   CodexAppServerQuotaService,
   type CodexAppServerQuotaServiceOptions,
@@ -60,6 +61,8 @@ export interface LocalServerOptions {
   authToken?: string | false
   /** 覆盖 local-auth 文件路径（测试）。 */
   authTokenPath?: string
+  /** Supplies the MiMo console cookie for OpenCode Token Plan quota (desktop login window). */
+  mimoCookieProvider?: MimoCookieProvider
 }
 
 /** Minimal lifecycle used by the local server for Codex quota synchronization. */
@@ -113,6 +116,11 @@ export interface LocalServer {
   authToken?: string
   /** 立即再扫一轮本机 CLI 会话（窗口聚焦时调用）。 */
   syncSessions: () => Promise<void>
+  /**
+   * Re-queries MiMo Token Plan quota right away (after login or logout).
+   * @param options `clear` drops the cached quota so a logout stops publishing it.
+   */
+  refreshMimoQuota: (options?: { clear?: boolean }) => Promise<void>
   /** 停止服务器并释放端口。 */
   close: () => Promise<void>
 }
@@ -171,6 +179,7 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
     ? undefined
     : new SessionSyncService({
         hub: options.hub,
+        mimoCookieProvider: options.mimoCookieProvider,
         isCodexQuotaAuthoritative: () => codexQuotaAuthoritative,
         excludedCodexProcessIds: () => {
           const pid = codexQuotaService?.getProcessId?.()
@@ -282,6 +291,10 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
     syncSessions: async () => {
       await Promise.all([sessionSync?.syncNow(), codexQuotaService?.refresh()])
     },
+    refreshMimoQuota: async (refreshOptions) => {
+      sessionSync?.refreshMimoQuota(refreshOptions)
+      await sessionSync?.syncNow(['opencode'])
+    },
     close: async () => {
       sessionSync?.stop()
       codexQuotaService?.stop()
@@ -377,6 +390,11 @@ function shouldRefreshCodexQuota(eventType: AgentEventType): boolean {
   )
 }
 
+export {
+  MIMO_PLATFORM_API_BASE,
+  type MimoCookieProvider,
+  type MimoCookieRequest,
+} from './mimo-quota.js'
 export {
   commandCandidates,
   detectAgents,

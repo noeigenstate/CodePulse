@@ -11,6 +11,27 @@ import type { TokenPayload, TokenRateLimitWindow } from './types/token.js'
 /** AI CLI 滚动配额窗口的用户可见标签。 */
 export const TOKEN_QUOTA_WINDOW_LABEL = '5 小时额度'
 
+/** Rolling CLI windows are ≤7 days; resets farther out are usually placeholder data. */
+const DEFAULT_MAX_RESET_AHEAD_MS = 10 * 24 * 60 * 60_000
+
+/**
+ * Farthest plausible reset for a quota window.
+ *
+ * Weekly/5h windows keep the 10-day guard against bogus far-future resets; a
+ * window that declares a longer length (MiMo's monthly plan) may reset up to
+ * one day beyond its own length.
+ *
+ * @param windowMinutes Declared window length in minutes, when reported.
+ * @returns Maximum accepted distance between now and the reset, in milliseconds.
+ */
+export function maxResetAheadMs(windowMinutes?: number): number {
+  const declared =
+    typeof windowMinutes === 'number' && Number.isFinite(windowMinutes) && windowMinutes > 0
+      ? (windowMinutes + 24 * 60) * 60_000
+      : 0
+  return Math.max(DEFAULT_MAX_RESET_AHEAD_MS, declared)
+}
+
 /**
  * Parses token count.
  * @param value Human-readable token count such as `1.2M` or `32k`.
@@ -87,6 +108,42 @@ export function formatTokenUsage(token: TokenPayload | undefined): string {
   }
   if (token.total != null) parts.push(`总计 ${formatTokenCountWithUnit(token.total)}`)
   return parts.length > 0 ? parts.join(' / ') : 'Token 暂无数据'
+}
+
+/**
+ * 把 token 用量渲染成 Codex 官方 usage 行的格式：
+ * `usage: total=3,666,704 input=3,268,650 (+ 66,327,168 cached) output=190,000 (reasoning 207,774)`
+ *
+ * 数字使用精确千分位（与 Codex 一致），缺失的分段直接省略，
+ * 不展示任何周/时段额度信息。
+ *
+ * @param token token 载荷（可能不存在）。
+ * @returns Codex 风格 usage 行；无数据时各分段省略，仅保留 `usage:` 前缀。
+ */
+export function formatTokenUsageLine(token: TokenPayload | undefined): string {
+  const parts: string[] = []
+  if (token?.total != null) parts.push(`total=${formatTokenExact(token.total)}`)
+  if (token?.input != null) parts.push(`input=${formatTokenExact(token.input)}`)
+  if (token?.cachedInput != null && token.cachedInput > 0) {
+    parts.push(`(+ ${formatTokenExact(token.cachedInput)} cached)`)
+  }
+  if (token?.output != null) {
+    const reasoning =
+      token.reasoningOutput != null && token.reasoningOutput > 0
+        ? ` (reasoning ${formatTokenExact(token.reasoningOutput)})`
+        : ''
+    parts.push(`output=${formatTokenExact(token.output)}${reasoning}`)
+  }
+  return parts.length > 0 ? `usage: ${parts.join(' ')}` : 'usage: —'
+}
+
+/**
+ * 精确 token 计数的千分位格式化（Codex 官方 usage 行风格）。
+ * @param n token 数量。
+ * @returns 带千分位分隔符的数字字符串。
+ */
+function formatTokenExact(n: number): string {
+  return Math.round(n).toLocaleString('en-US')
 }
 
 /** Codex / Grok 仅周额度；Claude Code 保留 5 小时 + 周额度。
@@ -184,14 +241,16 @@ export function formatTokenQuotaNotice(
   const pct = formatTokenPercent(token.contextUsedPercent)
   const quotaText = formatTokenQuotaDetail(token, now, agent)
   const sourceNote =
-    agent === 'codex'
-      ? 'Codex token 为估算值'
-      : agent === 'grok'
-        ? (token.contextAccuracy ?? token.accuracy) === 'estimated'
-          ? 'Grok token 为估算值'
-          : 'Grok token 来自 hook'
-        : (token.contextAccuracy ?? token.accuracy) === 'estimated'
-          ? 'Claude token 为估算值'
-          : 'Claude token 来自 status line'
+    agent === 'opencode'
+      ? 'OpenCode token 为本地会话库累计值'
+      : agent === 'codex'
+        ? 'Codex token 为估算值'
+        : agent === 'grok'
+          ? (token.contextAccuracy ?? token.accuracy) === 'estimated'
+            ? 'Grok token 为估算值'
+            : 'Grok token 来自 hook'
+          : (token.contextAccuracy ?? token.accuracy) === 'estimated'
+            ? 'Claude token 为估算值'
+            : 'Claude token 来自 status line'
   return `Token/context 已使用 ${pct}。${quotaText}，窗口以对应 CLI 的官方重置时间为准，${sourceNote}。`
 }

@@ -11,7 +11,13 @@ import {
 } from '@codepulse/shared'
 import { visibleRateLimitWindows } from './panelFormat.js'
 
-export const DISPLAY_AGENT_ORDER: readonly AgentType[] = ['claude_code', 'codex', 'grok', 'kimi']
+export const DISPLAY_AGENT_ORDER: readonly AgentType[] = [
+  'claude_code',
+  'codex',
+  'grok',
+  'kimi',
+  'opencode',
+]
 const QUOTA_RECENCY_WINDOW_MS = 30 * 60_000
 
 /** 人类可读的 agent 显示名称。 */
@@ -19,6 +25,7 @@ export function agentDisplayName(agentType: AgentType): string {
   if (agentType === 'codex') return 'Codex'
   if (agentType === 'grok') return 'Grok'
   if (agentType === 'kimi') return 'Kimi Code'
+  if (agentType === 'opencode') return 'OpenCode'
   return 'Claude Code'
 }
 

@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { formatTokenCount, formatTokenQuotaNotice, formatTokenUsage } from '@codepulse/shared'
+import {
+  formatTokenCount,
+  formatTokenQuotaNotice,
+  formatTokenUsage,
+  formatTokenUsageLine,
+} from '@codepulse/shared'
 import {
   formatContextWindowStatus,
   formatProjectDirectoryBadge,
@@ -12,6 +17,34 @@ import {
   formatQuotaReset,
   weeklyMeterLabel,
 } from '../apps/desktop/src/renderer/src/lib/quotaFormat.js'
+
+test('Codex-style usage line shows exact grouped totals with cached and reasoning', () => {
+  assert.equal(
+    formatTokenUsageLine({
+      accuracy: 'exact',
+      total: 3_666_704,
+      input: 3_268_650,
+      cachedInput: 66_327_168,
+      output: 198_054,
+      reasoningOutput: 207_774,
+    }),
+    'usage: total=3,666,704 input=3,268,650 (+ 66,327,168 cached) output=198,054 (reasoning 207,774)',
+  )
+})
+
+test('Codex-style usage line omits missing segments and zero cached', () => {
+  assert.equal(
+    formatTokenUsageLine({
+      accuracy: 'estimated',
+      input: 5000,
+      cachedInput: 0,
+      output: 1200,
+    }),
+    'usage: input=5,000 output=1,200',
+  )
+  assert.equal(formatTokenUsageLine(undefined), 'usage: —')
+  assert.equal(formatTokenUsageLine({ accuracy: 'unknown' }), 'usage: —')
+})
 
 test('Codex quota labels honor native IDs over conflicting display names', () => {
   assert.equal(
@@ -227,4 +260,18 @@ test('project directory badge omits the duplicated project title segment', () =>
     formatProjectDirectoryBadge('C:\\work\\projects\\CodePulse\\desktop', 'desktop'),
     '... / projects / CodePulse',
   )
+})
+
+test('formatQuotaReset accepts monthly resets when the window declares its length', () => {
+  const now = Date.UTC(2026, 8, 22)
+  const inTwentyDays = now / 1000 + 20 * 24 * 3600
+  assert.equal(formatQuotaReset(inTwentyDays, now, 'en'), 'Refresh —')
+  assert.match(formatQuotaReset(inTwentyDays, now, 'en', 31 * 24 * 60), /^Refresh 20d/)
+  assert.equal(formatQuotaReset(2_000_000_000, now, 'en', 31 * 24 * 60), 'Refresh —')
+})
+
+test('formatQuotaDetail labels the OpenCode window as the plan period', () => {
+  const token = { accuracy: 'exact' as const, rateLimits: { sevenDay: { usedPercent: 25 } } }
+  assert.match(formatQuotaDetail(token, Date.now(), 'zh', 'opencode'), /^套餐 25%/)
+  assert.match(formatQuotaDetail(token, Date.now(), 'en', 'codex'), /^Weekly 25%/)
 })

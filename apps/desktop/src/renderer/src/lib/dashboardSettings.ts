@@ -11,6 +11,7 @@ export const CLI_TOOL_TYPES = [
   'claude_code',
   'grok',
   'kimi',
+  'opencode',
 ] as const satisfies readonly AgentType[]
 
 /** One supported CLI tool key stored in {@link DashboardSettings.visibleTools}. */
@@ -49,6 +50,7 @@ export const DEFAULT_DASHBOARD_SETTINGS: DashboardSettings = {
     claude_code: true,
     grok: true,
     kimi: true,
+    opencode: true,
   },
 }
 
@@ -82,6 +84,7 @@ export function readDashboardSettings(storage: StorageLike | undefined): Dashboa
         claude_code: visibleTools.claude_code !== false,
         grok: visibleTools.grok !== false,
         kimi: visibleTools.kimi !== false,
+        opencode: visibleTools.opencode !== false,
       },
     }
   } catch {

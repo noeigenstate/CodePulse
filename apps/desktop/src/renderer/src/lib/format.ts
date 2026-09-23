@@ -93,6 +93,7 @@ export function agentName(type: string): string {
   if (type === 'codex') return 'Codex'
   if (type === 'grok') return 'Grok'
   if (type === 'kimi') return 'Kimi Code'
+  if (type === 'opencode') return 'OpenCode'
   return 'Claude Code'
 }
 

@@ -27,7 +27,7 @@ test('dashboard settings default to automatic theme selection with every CLI pan
   assert.equal(settings.theme, 'auto')
   assert.deepEqual(
     CLI_TOOL_TYPES.filter((tool) => settings.visibleTools[tool]),
-    ['codex', 'claude_code', 'grok', 'kimi'],
+    ['codex', 'claude_code', 'grok', 'kimi', 'opencode'],
   )
 })
 
@@ -82,7 +82,13 @@ test('dashboard settings persist changes and apply the selected root theme', () 
   const storage = new MemoryStorage()
   const next = {
     theme: 'dark' as const,
-    visibleTools: { codex: true, claude_code: false, grok: true, kimi: false },
+    visibleTools: {
+      codex: true,
+      claude_code: false,
+      grok: true,
+      kimi: false,
+      opencode: true,
+    },
   }
   writeDashboardSettings(storage, next)
 
@@ -96,7 +102,7 @@ test('dashboard settings persist automatic theme selection', () => {
   const storage = new MemoryStorage()
   const next = {
     theme: 'auto' as const,
-    visibleTools: { codex: true, claude_code: true, grok: true, kimi: true },
+    visibleTools: { codex: true, claude_code: true, grok: true, kimi: true, opencode: true },
   }
 
   writeDashboardSettings(storage, next)
@@ -118,7 +124,7 @@ test('dashboard settings retain safe in-memory defaults when storage is unavaila
   assert.doesNotThrow(() =>
     writeDashboardSettings(unavailableStorage, {
       theme: 'dark',
-      visibleTools: { codex: true, claude_code: true, grok: true, kimi: true },
+      visibleTools: { codex: true, claude_code: true, grok: true, kimi: true, opencode: true },
     }),
   )
 })

@@ -37,6 +37,10 @@ const api = {
     ipcRenderer.invoke('codepulse:set-window-theme', theme),
   detectAgents: (): Promise<Agent[]> => ipcRenderer.invoke('codepulse:detect-agents'),
   getUpdate: (): Promise<UpdateInfo | null> => ipcRenderer.invoke('codepulse:get-update'),
+  /** Current app version from the main process (package metadata). */
+  getVersion: (): Promise<string> => ipcRenderer.invoke('codepulse:get-version'),
+  /** Manual update check initiated from Settings. Resolves null when up to date. */
+  checkUpdate: (): Promise<UpdateInfo | null> => ipcRenderer.invoke('codepulse:check-update'),
   /** User dismissed the update modal — main process snoozes checks for 24h. */
   dismissUpdate: (): Promise<boolean> => ipcRenderer.invoke('codepulse:dismiss-update'),
   installUpdate: (): Promise<UpdateInstallResult> => ipcRenderer.invoke('codepulse:install-update'),
@@ -44,6 +48,12 @@ const api = {
     ipcRenderer.invoke('codepulse:get-stats', query),
   /** 主动扫本机 Codex/Grok 会话目录，返回最新 StatusHub 快照。 */
   syncSessions: (): Promise<StatusSnapshot> => ipcRenderer.invoke('codepulse:sync-sessions'),
+  /** Whether the MiMo console login (for OpenCode Token Plan quota) is present. */
+  getMimoLogin: (): Promise<boolean> => ipcRenderer.invoke('codepulse:mimo-login-status'),
+  /** Opens the Xiaomi login window; resolves with the resulting login state. */
+  loginMimo: (): Promise<boolean> => ipcRenderer.invoke('codepulse:mimo-login'),
+  /** Clears the MiMo console login. */
+  logoutMimo: (): Promise<boolean> => ipcRenderer.invoke('codepulse:mimo-logout'),
   getDeviceProvisioning: (): Promise<DeviceProvisioningSnapshot> =>
     ipcRenderer.invoke('codepulse:get-device-provisioning'),
   startDeviceScan: (): Promise<DeviceProvisioningSnapshot> =>

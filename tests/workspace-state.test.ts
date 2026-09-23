@@ -3336,10 +3336,12 @@ test('display agents are grouped by workspace with a shared token', () => {
       'E:/project/a:codex',
       'E:/project/a:grok',
       'E:/project/a:kimi',
+      'E:/project/a:opencode',
       'E:/project/b:claude_code',
       'E:/project/b:codex',
       'E:/project/b:grok',
       'E:/project/b:kimi',
+      'E:/project/b:opencode',
     ],
   )
   assert.equal(groups.find((group) => group.workspacePath === 'E:/project/a')?.token?.total, 1200)

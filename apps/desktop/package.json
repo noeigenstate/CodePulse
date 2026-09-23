@@ -1,6 +1,6 @@
 {
   "name": "@codepulse/desktop",
-  "version": "1.4.1",
+  "version": "1.4.4",
   "private": true,
   "description": "CodePulse Desktop Electron app",
   "main": "./out/main/index.js",
@@ -22,7 +22,7 @@
     "rebuild:electron": "electron-builder install-app-deps"
   },
   "dependencies": {
-    "better-sqlite3": "^11.8.1",
+    "better-sqlite3": "^12.11.1",
     "serialport": "^13.0.0"
   },
   "devDependencies": {

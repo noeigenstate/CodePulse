@@ -45,6 +45,7 @@ import {
   type QuotaMeterSource,
 } from './lib/displayAgents.js'
 import { formatDuration, formatRelative, turnStateStyle } from './lib/format.js'
+import { formatModelName } from './lib/modelName.js'
 import {
   formatContextWindowStatus,
   formatProjectDirectoryBadge,
@@ -1360,7 +1361,10 @@ const ProjectTile = memo(function ProjectTile({
         </div>
 
         <div className="grid grid-cols-[minmax(7rem,1fr)_minmax(4.75rem,0.7fr)_minmax(5.5rem,0.7fr)] gap-2">
-          <InlineMetric label={copy.model} value={agent.model ?? '—'} />
+          <InlineMetric
+            label={copy.model}
+            value={agent.model ? formatModelName(agent.model) : '—'}
+          />
           <InlineMetric
             label={copy.thinkingDepth}
             value={formatThinkingDepth(agent.reasoningEffort, locale)}
@@ -1560,7 +1564,7 @@ function ContextMeter({
   const width = hasPercent ? `${Math.min(100, Math.max(2, usedPercent))}%` : '0%'
 
   return (
-    <div className="rounded-badge border border-line bg-[#F8FAFC] px-3 py-2">
+    <div className="border-t border-line-soft pt-2.5">
       <div className="mb-1.5 flex min-w-0 items-center justify-between gap-2 text-xs">
         <span className="shrink-0 font-medium text-ink-500">{copy.contextWindow}</span>
         <span className="truncate font-semibold text-ink">{status.text}</span>
@@ -1620,7 +1624,7 @@ function TokenMeter({
  */
 function InlineMetric({ label, value }: { label: string; value: ReactNode }): JSX.Element {
   return (
-    <div className="stat-pill min-w-0">
+    <div className="min-w-0">
       <p className="text-[10px] font-medium text-ink-500">{label}</p>
       <p className="mt-0.5 truncate text-[13px] font-semibold text-ink">{value}</p>
     </div>

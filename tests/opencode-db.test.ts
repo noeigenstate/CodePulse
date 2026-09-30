@@ -83,3 +83,12 @@ test('readOpencodeSessions maps tokens, model id, and context usage', async () =
     await rm(home, { recursive: true, force: true })
   }
 })
+
+test('readOpencodeSessions returns nothing when OpenCode has no database yet', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'codepulse-opencode-missing-'))
+  try {
+    assert.deepEqual(readOpencodeSessions(home), [])
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})

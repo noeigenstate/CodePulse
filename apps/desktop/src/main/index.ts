@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { readFileSync, writeFileSync, unlinkSync } from 'node:fs'
 import { networkInterfaces } from 'node:os'
 import { join } from 'node:path'
-import { app, BrowserWindow, ipcMain, Menu, powerMonitor, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, powerMonitor, shell } from 'electron'
 import {
   type Agent,
   type AgentType,
@@ -188,6 +188,13 @@ function createWindow(): void {
   })
   mainWindow.on('closed', () => {
     mainWindow = null
+  })
+  // A crashed or killed renderer leaves a blank window; reload it instead.
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error('[codepulse] renderer gone', details.reason, details.exitCode)
+    if (details.reason === 'clean-exit') return
+    const win = mainWindow
+    if (win && !win.isDestroyed()) win.webContents.reload()
   })
 
   const devUrl = process.env['ELECTRON_RENDERER_URL']
@@ -910,13 +917,30 @@ if (cleanupMode) {
 } else if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
+  // Background sync, watchers and timers must never take the tray app down or
+  // surface Electron's "JavaScript error in the main process" dialog.
+  process.on('uncaughtException', (err) => {
+    console.error('[codepulse] uncaught exception', err)
+  })
+  process.on('unhandledRejection', (reason) => {
+    console.error('[codepulse] unhandled rejection', reason)
+  })
+
   app.on('second-instance', showWindow)
 
   app
     .whenReady()
     .then(bootstrap)
     .catch((err) => {
+      // Without a window or tray the process would linger invisibly and keep the
+      // single-instance lock, so every later launch would silently exit.
       console.error('[codepulse] bootstrap failed', err)
+      dialog.showErrorBox(
+        'CodePulse',
+        `CodePulse failed to start / 启动失败:
+${err instanceof Error ? err.message : String(err)}`,
+      )
+      app.exit(1)
     })
 
   app.on('window-all-closed', () => {

@@ -6,6 +6,7 @@
  * @module local-server/opencode-db
  */
 import Database from 'better-sqlite3'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { TokenPayload } from '@codepulse/shared'
 
@@ -56,6 +57,8 @@ interface OpencodeMessageState {
  */
 export function readOpencodeSessions(opencodeHome: string): OpencodeSessionSnapshot[] {
   const sourcePath = join(opencodeHome, 'opencode.db')
+  // OpenCode not installed (or never run): nothing to read, and not an error.
+  if (!existsSync(sourcePath)) return []
   const db = new Database(sourcePath, { readonly: true, fileMustExist: true })
   try {
     const table = findSessionTable(db)

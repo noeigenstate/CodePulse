@@ -32,7 +32,9 @@ export function shouldShowAgentSetupReminder(
   codexTrustAcknowledged = false,
 ): boolean {
   if (agentCheckId <= 0 || dismissedAgentCheckId === agentCheckId) return false
-  if (reminder.missingCli.length > 0 || reminder.missingHook.length > 0) return true
+  // A CLI that is not installed is simply unused; only an installed CLI without
+  // CodePulse hooks is a setup problem worth interrupting every launch for.
+  if (reminder.missingHook.length > 0) return true
   return reminder.needsCodexTrust && !codexTrustAcknowledged
 }
 

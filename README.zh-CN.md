@@ -7,7 +7,7 @@
 一眼看清 Codex、Claude Code、Grok 与 Kimi Code 正在工作、在等你、已完成，还是卡住了——
 无需切回终端反复确认。
 
-[![status](https://img.shields.io/badge/status-v1.4.4-brightgreen)](#功能特性)
+[![status](https://img.shields.io/badge/status-v1.4.6-brightgreen)](#功能特性)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#下载)
 [![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#开发)
@@ -16,6 +16,10 @@
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
 [English](./README.md) · [简体中文](./README.zh-CN.md) · [产品需求](./requirements.md)
+
+**[⬇ 下载 Windows / macOS / Linux 版](https://github.com/noeigenstate/CodePulse/releases/latest)** · [安装说明](#下载)
+
+<img src="./docs/screenshots/dashboard-zh.png" alt="CodePulse 实时控制台：Claude Code、Codex、Grok 与 Kimi Code 并排显示" width="920" />
 
 </div>
 
@@ -141,13 +145,13 @@ Fastify · better-sqlite3 · Drizzle ORM。
 - **Windows：** `CodePulse_*_x64-setup.exe`
 - **macOS Apple Silicon：** `CodePulse_*_mac-arm64.dmg`（M 系列芯片）
 - **macOS Intel：** `CodePulse_*_mac-x64.dmg`
-- **Linux x64：** `CodePulse_*_linux-x86_64.AppImage`
+- **Linux x64：** `CodePulse_*_x86_64.AppImage`
 
 Linux 下载后需要先添加可执行权限，再启动 AppImage：
 
 ```bash
-chmod +x CodePulse_*_linux-x86_64.AppImage
-./CodePulse_*_linux-x86_64.AppImage
+chmod +x CodePulse_*_x86_64.AppImage
+./CodePulse_*_x86_64.AppImage
 ```
 
 ### macOS 首次打开（未签名构建）

@@ -13,66 +13,144 @@ const STATE_COLORS: Record<OverallState, [number, number, number]> = {
 
 const crcTable = buildCrcTable()
 
+/** Subsamples per axis; 4×4 keeps the rim and pulse smooth at 16–32 px. */
+const SUPERSAMPLE = 4
+
+/**
+ * Pulse waveform from `build/icon.png` / `codepulse-icon.svg`, in unit
+ * coordinates of the icon square.
+ */
+const PULSE_POINTS: ReadonlyArray<readonly [number, number]> = [
+  [0.24, 0.51],
+  [0.38, 0.51],
+  [0.425, 0.415],
+  [0.5, 0.64],
+  [0.58, 0.32],
+  [0.64, 0.51],
+  [0.76, 0.51],
+]
+
+type Rgba = [number, number, number, number]
+
+/**
+ * Renders the tray icon: the CodePulse app logo (black badge, gold rim, gold
+ * pulse) plus a status dot for non-idle states.
+ *
+ * @param state Aggregate dashboard state that picks the dot color.
+ * @param size Square edge length in pixels.
+ * @returns PNG-encoded RGBA image.
+ */
 export function trayIconPngFor(state: OverallState, size = 32): Buffer {
-  const [accentR, accentG, accentB] = STATE_COLORS[state]
   const raw = Buffer.alloc(size * (size * 4 + 1))
-  const cx = (size - 1) / 2
-  const cy = (size - 1) / 2
-  const outerRadius = size * 0.45
-  const innerRadius = size * 0.37
+  const dot = state === 'idle' ? undefined : STATE_COLORS[state]
   let p = 0
 
   for (let y = 0; y < size; y++) {
     raw[p++] = 0
     for (let x = 0; x < size; x++) {
-      const dx = x - cx
-      const dy = y - cy
-      const distance = Math.hypot(dx, dy)
-      let rgba: [number, number, number, number] = [0, 0, 0, 0]
-
-      if (distance <= outerRadius) {
-        const shade = Math.max(0, 1 - distance / outerRadius)
-        const base = Math.round(236 + shade * 18)
-        rgba = [base, Math.min(255, base + 3), 255, 255]
+      // Average premultiplied subsamples so edges anti-alias against transparency.
+      let r = 0
+      let g = 0
+      let b = 0
+      let a = 0
+      for (let sy = 0; sy < SUPERSAMPLE; sy++) {
+        for (let sx = 0; sx < SUPERSAMPLE; sx++) {
+          const u = (x + (sx + 0.5) / SUPERSAMPLE) / size
+          const v = (y + (sy + 0.5) / SUPERSAMPLE) / size
+          const [cr, cg, cb, ca] = logoSample(u, v, dot, size)
+          r += cr * ca
+          g += cg * ca
+          b += cb * ca
+          a += ca
+        }
       }
-
-      if (distance > innerRadius && distance <= outerRadius) {
-        rgba = blend(rgba, [accentR, accentG, accentB, 60])
-      }
-
-      if (onPulsePath(x, y, size) && Math.hypot(x - cx, y - cy) > size * 0.08) {
-        rgba = blend(rgba, [245, 158, 11, 255])
-      }
-
-      if (state !== 'idle' && Math.hypot(x - size * 0.72, y - size * 0.72) <= size * 0.1) {
-        rgba = blend(rgba, [accentR, accentG, accentB, 255])
-      }
-
-      raw[p++] = rgba[0]
-      raw[p++] = rgba[1]
-      raw[p++] = rgba[2]
-      raw[p++] = rgba[3]
+      raw[p++] = a > 0 ? Math.round(r / a) : 0
+      raw[p++] = a > 0 ? Math.round(g / a) : 0
+      raw[p++] = a > 0 ? Math.round(b / a) : 0
+      raw[p++] = Math.round((a / (SUPERSAMPLE * SUPERSAMPLE)) * 255)
     }
   }
 
   return buildPng(size, size, raw)
 }
 
-function onPulsePath(x: number, y: number, size: number): boolean {
-  const points = [
-    [0.22, 0.56],
-    [0.34, 0.56],
-    [0.4, 0.43],
-    [0.48, 0.7],
-    [0.56, 0.28],
-    [0.64, 0.56],
-    [0.78, 0.56],
-  ].map(([px, py]) => [px * size, py * size] as const)
+/**
+ * Colors one point of the logo.
+ *
+ * @param u Horizontal unit coordinate.
+ * @param v Vertical unit coordinate.
+ * @param dot Status dot color, or `undefined` when idle.
+ * @param size Output size; thin features widen slightly at tray sizes.
+ * @returns Straight RGBA with alpha in 0–1.
+ */
+function logoSample(
+  u: number,
+  v: number,
+  dot: [number, number, number] | undefined,
+  size: number,
+): Rgba {
+  const dotCx = 0.8
+  const dotCy = 0.8
+  const dotR = 0.17
+  const dotDistance = Math.hypot(u - dotCx, v - dotCy)
+  if (dot) {
+    if (dotDistance <= dotR) return [dot[0], dot[1], dot[2], 1]
+    // A transparent gap keeps the dot readable against the gold rim.
+    if (dotDistance <= dotR + 0.06) return [0, 0, 0, 0]
+  }
 
-  return points.some((point, index) => {
-    const next = points[index + 1]
-    return next ? distanceToSegment(x, y, point[0], point[1], next[0], next[1]) <= 1.15 : false
-  })
+  const distance = Math.hypot(u - 0.5, v - 0.5)
+  const outer = 0.47
+  // Rim and stroke are proportionally thicker when tiny so they survive downscaling.
+  const rim = size <= 32 ? 0.085 : 0.05
+  if (distance > outer) return [0, 0, 0, 0]
+  if (distance > outer - rim) {
+    // Gold rim lit from the upper left, deepening toward the lower right.
+    const t = Math.min(1, Math.max(0, (u + v) / 2))
+    return [lerp(255, 185, t), lerp(214, 107, t), lerp(90, 5, t), 1]
+  }
+
+  const stroke = size <= 32 ? 0.05 : 0.03
+  if (distanceToPolyline(u, v, PULSE_POINTS) <= stroke) {
+    return [255, lerp(221, 190, u), lerp(87, 46, u), 1]
+  }
+
+  // Near-black face with a faint upper-left sheen, as in the app icon.
+  const sheen = Math.max(0, 1 - Math.hypot(u - 0.35, v - 0.3) / 0.6)
+  const base = 24 + Math.round(sheen * 12)
+  return [base, base, base + 3, 1]
+}
+
+/**
+ * Linear interpolation rounded to a byte.
+ * @param from Value at t=0.
+ * @param to Value at t=1.
+ * @param t Position in 0–1.
+ * @returns Interpolated channel value.
+ */
+function lerp(from: number, to: number, t: number): number {
+  return Math.round(from + (to - from) * t)
+}
+
+/**
+ * Shortest distance from a point to an open polyline.
+ * @param x Point x.
+ * @param y Point y.
+ * @param points Polyline vertices.
+ * @returns Distance in the same units as the inputs.
+ */
+function distanceToPolyline(
+  x: number,
+  y: number,
+  points: ReadonlyArray<readonly [number, number]>,
+): number {
+  let best = Infinity
+  for (let i = 0; i + 1 < points.length; i++) {
+    const [x1, y1] = points[i]!
+    const [x2, y2] = points[i + 1]!
+    best = Math.min(best, distanceToSegment(x, y, x1, y1, x2, y2))
+  }
+  return best
 }
 
 function distanceToSegment(
@@ -91,20 +169,6 @@ function distanceToSegment(
       ? 0
       : Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / lengthSquared))
   return Math.hypot(x - (x1 + t * dx), y - (y1 + t * dy))
-}
-
-function blend(
-  bottom: [number, number, number, number],
-  top: [number, number, number, number],
-): [number, number, number, number] {
-  const alpha = top[3] / 255
-  const inverse = 1 - alpha
-  return [
-    Math.round(top[0] * alpha + bottom[0] * inverse),
-    Math.round(top[1] * alpha + bottom[1] * inverse),
-    Math.round(top[2] * alpha + bottom[2] * inverse),
-    Math.max(bottom[3], top[3]),
-  ]
 }
 
 function buildPng(width: number, height: number, raw: Buffer): Buffer {

@@ -29,6 +29,8 @@ export interface UiCopy {
   waitingQuota: string
   /** OpenCode pane hint before a MiMo console login exists. */
   waitingMimoLogin: string
+  /** Tooltip on a panel header explaining it can be dragged. */
+  dragToReorder: string
   read: string
   contextWindow: string
   unknownProject: string
@@ -314,6 +316,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
     lunaReserveQuota: 'Luna Reserve',
     waitingQuota: '等待命令行同步额度',
     waitingMimoLogin: '在设置中登录 MiMo 后显示',
+    dragToReorder: '按住拖动可调整位置',
     read: '已读',
     contextWindow: '上下文窗口：',
     unknownProject: '未识别项目',
@@ -550,6 +553,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
     lunaReserveQuota: 'Luna Reserve',
     waitingQuota: 'Waiting for CLI quota sync',
     waitingMimoLogin: 'Log in to MiMo in Settings',
+    dragToReorder: 'Drag to reorder',
     read: 'Read',
     contextWindow: 'Context window:',
     unknownProject: 'Unknown project',

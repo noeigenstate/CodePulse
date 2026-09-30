@@ -88,7 +88,11 @@ mac:
         - x64
 linux:
   icon: build/icon.png
-  artifactName: CodePulse_${version}_linux-${arch}.${ext}
+  # AppImageHub mounts with a squashfuse runtime that rejects the xz / 1 MiB-block
+  # SquashFS produced by `compression: maximum`; keep the AppImage on gzip.
+  compression: normal
+  # No "linux" in the name: AppImageHub flags it (every AppImage is Linux).
+  artifactName: CodePulse_${version}_${arch}.${ext}
   target:
     - target: AppImage
       arch:

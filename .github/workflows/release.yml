@@ -219,7 +219,7 @@ jobs:
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
-          appimage="apps/desktop/release/CodePulse_${RELEASE_VERSION}_linux-x86_64.AppImage"
+          appimage="apps/desktop/release/CodePulse_${RELEASE_VERSION}_x86_64.AppImage"
 
           echo "Release directory contents:"
           ls -lah apps/desktop/release

@@ -7,7 +7,7 @@
 Know at a glance whether Codex, Claude Code, Grok, and Kimi Code are working, waiting on
 you, finished, or stuck — without alt-tabbing back to a terminal.
 
-[![status](https://img.shields.io/badge/status-v1.4.4-brightgreen)](#features)
+[![status](https://img.shields.io/badge/status-v1.4.6-brightgreen)](#features)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#download)
 [![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#development)
@@ -16,6 +16,10 @@ you, finished, or stuck — without alt-tabbing back to a terminal.
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
 [English](./README.md) · [简体中文](./README.zh-CN.md) · [Product spec](./requirements.md)
+
+**[⬇ Download for Windows / macOS / Linux](https://github.com/noeigenstate/CodePulse/releases/latest)** · [Install guide](#download)
+
+<img src="./docs/screenshots/dashboard.png" alt="CodePulse live console showing Claude Code, Codex, Grok and Kimi Code side by side" width="920" />
 
 </div>
 
@@ -158,13 +162,13 @@ Download installers from
 - **Windows:** `CodePulse_*_x64-setup.exe`
 - **macOS Apple Silicon:** `CodePulse_*_mac-arm64.dmg` (M-series)
 - **macOS Intel:** `CodePulse_*_mac-x64.dmg`
-- **Linux x64:** `CodePulse_*_linux-x86_64.AppImage`
+- **Linux x64:** `CodePulse_*_x86_64.AppImage`
 
 On Linux, make the downloaded AppImage executable and run it:
 
 ```bash
-chmod +x CodePulse_*_linux-x86_64.AppImage
-./CodePulse_*_linux-x86_64.AppImage
+chmod +x CodePulse_*_x86_64.AppImage
+./CodePulse_*_x86_64.AppImage
 ```
 
 ### macOS first open (unsigned builds)

@@ -286,15 +286,15 @@ const HEADER_COPY: Record<Locale, HeaderCopy> = {
   zh: {
     brandTag: '',
     subtitle: '编程助手实时控制台',
-    languageToggle: '英文',
-    stats: '后台',
+    languageToggle: '切换语言',
+    stats: '用量统计',
     settings: '设置',
   },
   en: {
     brandTag: '',
     subtitle: 'AI coding-agent live console',
-    languageToggle: 'Chinese',
-    stats: 'Insights',
+    languageToggle: 'Switch language',
+    stats: 'Usage',
     settings: 'Settings',
   },
 }
@@ -475,7 +475,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
       granularityDay: '按日',
       granularityWeek: '按周',
       granularityMonth: '按月',
-      noData: '暂无统计数据。开始 CLI 任务后，后台会自动汇总 Token、耗时与项目。',
+      noData: '暂无统计数据。开始 CLI 任务后，这里会自动汇总 Token、耗时与项目。',
       privacyNote: '数据仅存本机，不上传云端。',
       kpiTotalTokens: '总消耗 Token',
       kpiTotalDuration: '总开发时长',

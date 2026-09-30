@@ -37,7 +37,7 @@ machine, and surfaces the result in a few focused ways:
   and quota meters.
 - ⚙️ **Display settings** — choose automatic, light, or dark appearance and hide
   CLI panels you do not need. Automatic mode uses light from 08:00–20:00.
-- 📈 **Local analytics console** — open **Insights** (Chinese UI: **后台**) for
+- 📈 **Local analytics console** — open **Usage** (Chinese UI: **用量统计**) for
   full-screen rollups of tokens, coding time, projects, model mix, and peak hours
   from your local SQLite history; refresh anytime.
 - 🎨 **Color-coded tray icon** — the overall state of every agent, visible at
@@ -60,7 +60,7 @@ CodePulse isn't running — your agents are never blocked or slowed down.
 Adaptive four-pane console: Claude and Kimi Code show **5h + weekly** quota
 meters; Codex and Grok show **weekly only**. Each project card surfaces the
 verified model, thinking depth, native elapsed time, context window, and state.
-Use the gear button to change theme or visible CLI panels; open **Insights** for
+Use the gear button to change theme or visible CLI panels; open **Usage** for
 local analytics.
 _(Sample data shown.)_
 
@@ -97,8 +97,8 @@ nothing is uploaded. _(Sample data shown.)_
 The live dashboard answers “what is running now.” The **local analytics console**
 answers “how much did I spend over this period.”
 
-1. On the live console, click **Insights** in the top-right (Chinese UI label:
-   **后台**).
+1. On the live console, click **Usage** in the top-right (Chinese UI label:
+   **用量统计**).
 2. A full-screen analytics view opens. Metrics are aggregated from the on-disk
    `codepulse.sqlite` via in-app IPC — **nothing is uploaded**.
 3. Pick **Today / Last 7 days / Last 30 days**, then **Refresh** when you want a
@@ -255,7 +255,7 @@ launchctl setenv KIMI_CLI_PATH "$(which kimi)"
 5. Run a Claude Code, Codex, Grok, or Kimi Code task. Only panes for CLIs that report
    activity appear on the dashboard (adaptive layout).
 6. Use the gear button to select automatic/light/dark theme and visible CLI panels.
-7. To review spend over time, open **Insights** in the top-right (see
+7. To review spend over time, open **Usage** in the top-right (see
    [Local analytics console](#local-analytics-console)).
 
 CodePulse only manages CodePulse-owned hook and status-line entries. Existing

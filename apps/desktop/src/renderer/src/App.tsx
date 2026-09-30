@@ -47,6 +47,7 @@ import {
 } from './lib/displayAgents.js'
 import { formatDuration, formatRelative, turnStateStyle } from './lib/format.js'
 import { formatModelName } from './lib/modelName.js'
+import { installPointerEffects } from './lib/pointerEffects.js'
 import {
   formatContextWindowStatus,
   formatProjectDirectoryBadge,
@@ -85,6 +86,7 @@ import {
   type UiCopy,
 } from './lib/i18n.js'
 import codePulseIcon from './assets/codepulse-icon.svg'
+import codePulseIconSmall from './assets/codepulse-icon-small.svg'
 
 /**
  * 应用外壳 Dashboard。
@@ -183,6 +185,7 @@ export function App(): JSX.Element {
   }, [orderedProjects])
 
   useEffect(() => init(), [init])
+  useEffect(() => installPointerEffects(), [])
 
   const toggleLocale = (): void => {
     setLocale((current) => {
@@ -307,7 +310,7 @@ export function App(): JSX.Element {
 function WindowTitleBar(): JSX.Element {
   return (
     <div aria-hidden="true" className="window-titlebar">
-      <img alt="" className="window-titlebar-logo" src={codePulseIcon} />
+      <img alt="" className="window-titlebar-logo" src={codePulseIconSmall} />
       <span>CodePulse</span>
     </div>
   )
@@ -869,7 +872,7 @@ const AgentPanelView = memo(function AgentPanelView({
 
   return (
     <section
-      className={`agent-panel flex min-h-0 flex-col p-3.5 ${dragging ? 'is-dragging' : ''} ${
+      className={`agent-panel fx-spot flex min-h-0 flex-col p-3.5 ${dragging ? 'is-dragging' : ''} ${
         dropTarget ? 'is-drop-target' : ''
       }`}
       data-agent={panel.agentType}
@@ -902,7 +905,7 @@ const AgentPanelView = memo(function AgentPanelView({
           <span className="agent-brand-icon relative" data-agent={panel.agentType}>
             <AgentLogo agentType={panel.agentType} />
             <span
-              className={`absolute bottom-1 right-1 h-2.5 w-2.5 rounded-full ring-2 ring-white ${style.dot}`}
+              className={`status-dot-ring absolute bottom-1 right-1 h-2.5 w-2.5 rounded-full ${style.dot}`}
             />
           </span>
           <div className="min-w-0 flex-1">
@@ -990,7 +993,7 @@ function ProjectList({
   }
 
   return (
-    <div className="grid min-h-0 flex-1 content-start gap-2.5 overflow-y-auto pr-1">
+    <div className="project-scroll grid min-h-0 flex-1 content-start gap-2.5 overflow-y-auto pr-1">
       {items.map((item) => (
         <ProjectTile
           key={item.id}
@@ -1128,7 +1131,11 @@ function VirtualProjectList({
   }, [])
 
   return (
-    <div ref={viewportRef} className="min-h-0 flex-1 overflow-y-auto pr-1" onScroll={handleScroll}>
+    <div
+      ref={viewportRef}
+      className="project-scroll min-h-0 flex-1 overflow-y-auto pr-1"
+      onScroll={handleScroll}
+    >
       <div className="relative" style={{ height: layout.totalSize }}>
         {layout.rows.slice(range.start, range.end).map((row) => {
           const item = items[row.index]!
@@ -1321,7 +1328,10 @@ const ProjectTile = memo(function ProjectTile({
   const contextWindow = effectiveContextWindow(agent)
 
   return (
-    <article className="project-tile px-3.5 py-3">
+    <article
+      className="project-tile fx-spot fx-tilt px-3.5 py-3"
+      data-live={isLiveState(agent.state) ? '' : undefined}
+    >
       <div className="grid gap-2.5">
         <div className="flex min-w-0 items-center justify-between gap-3">
           <div className="min-w-0">
@@ -1673,6 +1683,15 @@ function brandClass(agentType: AgentType): BrandClass {
  * @param state Runtime state to inspect.
  * @returns CSS class for the runtime state chip.
  */
+/** Turn states that animate as "working" (live status dot, shimmering context meter). */
+function isLiveState(state: AgentRuntimeState['state']): boolean {
+  return (
+    state === TurnState.PROMPT_SUBMITTED ||
+    state === TurnState.THINKING ||
+    state === TurnState.TOOL_RUNNING
+  )
+}
+
 function stateChipClass(state: AgentRuntimeState['state']): string {
   switch (state) {
     case TurnState.DONE:

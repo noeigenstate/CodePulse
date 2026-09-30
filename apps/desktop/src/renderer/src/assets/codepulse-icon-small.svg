@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Small-size CodePulse mark (16–24 px, e.g. the window title bar).
+  The full logo's thin rim, elliptical badge and drop-shadow filters alias at
+  these sizes, so this variant is a true circle with a pixel-weight rim and pulse.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="rim" x1="10" y1="4" x2="54" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFE77A" />
+      <stop offset="0.4" stop-color="#F4A917" />
+      <stop offset="0.75" stop-color="#B76803" />
+      <stop offset="1" stop-color="#E99B0D" />
+    </linearGradient>
+    <radialGradient id="face" cx="24" cy="20" r="34" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#232327" />
+      <stop offset="1" stop-color="#0E0F12" />
+    </radialGradient>
+    <linearGradient id="pulse" x1="16" y1="22" x2="48" y2="41" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFEA6C" />
+      <stop offset="1" stop-color="#FFC334" />
+    </linearGradient>
+  </defs>
+  <circle cx="32" cy="32" r="31" fill="url(#rim)" />
+  <circle cx="32" cy="32" r="26.5" fill="url(#face)" />
+  <path
+    d="M15.5 33.2H24.6L27.9 27.3L32.2 41L37.2 22L40.9 33.2H48.5"
+    stroke="url(#pulse)"
+    stroke-width="4.6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

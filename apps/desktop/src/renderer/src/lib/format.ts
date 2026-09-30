@@ -31,9 +31,9 @@ export function turnStateStyle(state: TurnState): StateStyle {
       return { label: '空闲', dot: 'bg-amber-500', text: 'text-slate-600' }
     case TurnState.PROMPT_SUBMITTED:
     case TurnState.THINKING:
-      return { label: '处理中', dot: 'bg-blue-500 animate-pulse', text: 'text-blue-700' }
+      return { label: '处理中', dot: 'bg-blue-500 status-dot-live', text: 'text-blue-700' }
     case TurnState.TOOL_RUNNING:
-      return { label: '执行工具', dot: 'bg-blue-500 animate-pulse', text: 'text-blue-700' }
+      return { label: '执行工具', dot: 'bg-blue-500 status-dot-live', text: 'text-blue-700' }
     case TurnState.WAITING_PERMISSION:
       return { label: '等待授权', dot: 'bg-amber-500', text: 'text-amber-700' }
     case TurnState.WAITING_USER_INPUT:

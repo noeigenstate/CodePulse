@@ -8,7 +8,7 @@
 还是卡住了——无需切回终端反复确认。任务完成桌面通知、彩色托盘图标、实时额度与上下文进度、
 本地 Token 用量统计，支持 Windows、macOS 与 Linux。
 
-[![status](https://img.shields.io/badge/status-v1.4.6-brightgreen)](#功能特性)
+[![status](https://img.shields.io/badge/status-v1.4.7-brightgreen)](#功能特性)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#下载)
 [![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#开发)

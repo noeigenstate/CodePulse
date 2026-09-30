@@ -17,6 +17,10 @@
 
 [English](./README.md) · [简体中文](./README.zh-CN.md) · [产品需求](./requirements.md)
 
+**[⬇ 下载 Windows / macOS / Linux 版](https://github.com/noeigenstate/CodePulse/releases/latest)** · [安装说明](#下载)
+
+<img src="./docs/screenshots/dashboard-zh.png" alt="CodePulse 实时控制台：Claude Code、Codex、Grok 与 Kimi Code 并排显示" width="920" />
+
 </div>
 
 ---

@@ -17,6 +17,10 @@ you, finished, or stuck — without alt-tabbing back to a terminal.
 
 [English](./README.md) · [简体中文](./README.zh-CN.md) · [Product spec](./requirements.md)
 
+**[⬇ Download for Windows / macOS / Linux](https://github.com/noeigenstate/CodePulse/releases/latest)** · [Install guide](#download)
+
+<img src="./docs/screenshots/dashboard.png" alt="CodePulse live console showing Claude Code, Codex, Grok and Kimi Code side by side" width="920" />
+
 </div>
 
 ---

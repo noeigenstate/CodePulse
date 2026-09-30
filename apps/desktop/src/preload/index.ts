@@ -9,6 +9,9 @@ import type {
   UpdateDownloadProgress,
   UpdateInfo,
   UpdateInstallResult,
+  StatsRangePreset,
+  StatsTrendGranularity,
+  UsageLedgerSnapshot,
   UsageStatsQuery,
   UsageStatsSnapshot,
 } from '@codepulse/shared'
@@ -48,6 +51,10 @@ const api = {
   installUpdate: (): Promise<UpdateInstallResult> => ipcRenderer.invoke('codepulse:install-update'),
   getStats: (query?: UsageStatsQuery): Promise<UsageStatsSnapshot> =>
     ipcRenderer.invoke('codepulse:get-stats', query),
+  getUsage: (query?: {
+    range?: StatsRangePreset
+    granularity?: StatsTrendGranularity
+  }): Promise<UsageLedgerSnapshot | null> => ipcRenderer.invoke('codepulse:get-usage', query),
   /** 主动扫本机 Codex/Grok 会话目录，返回最新 StatusHub 快照。 */
   syncSessions: (): Promise<StatusSnapshot> => ipcRenderer.invoke('codepulse:sync-sessions'),
   /** Whether the MiMo console login (for OpenCode Token Plan quota) is present. */

@@ -8,6 +8,7 @@ import { createRequire } from 'node:module'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import Database from 'better-sqlite3'
+import { ensureUsageLedgerSchema } from '../usage-ledger.js'
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import { toPersistedFileTypeHints } from '../privacy.js'
 import * as schema from './schema.js'
@@ -76,6 +77,7 @@ export function openDb(file: string): OpenDbResult {
  */
 export function ensureStorageSchema(sqlite: Database.Database): void {
   ensureSchema(sqlite)
+  ensureUsageLedgerSchema(sqlite)
   ensureEventPrivacyColumns(sqlite)
   migratePrivateEventData(sqlite)
   installPrivacyGuards(sqlite)

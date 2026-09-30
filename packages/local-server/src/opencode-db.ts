@@ -255,3 +255,62 @@ function toToken(
     accuracy: 'exact',
   }
 }
+
+/** Cumulative token totals of one OpenCode session, for the usage ledger. */
+export interface OpencodeUsageTotals {
+  sessionId: string
+  cwd: string
+  model?: string
+  updatedAt: number
+  input: number
+  cacheRead: number
+  cacheWrite: number
+  /** Output including reasoning tokens. */
+  output: number
+}
+
+/**
+ * Reads every session's running token totals. OpenCode keeps no per-request
+ * log, so each session is one ledger row that is replaced as it grows.
+ *
+ * @param opencodeHome OpenCode data directory (contains `opencode.db`).
+ * @returns Sessions with any usage; empty when OpenCode is not installed.
+ */
+export function readOpencodeUsageTotals(opencodeHome: string): OpencodeUsageTotals[] {
+  const sourcePath = join(opencodeHome, 'opencode.db')
+  if (!existsSync(sourcePath)) return []
+  const db = new Database(sourcePath, { readonly: true, fileMustExist: true })
+  try {
+    const table = findSessionTable(db)
+    if (!table) return []
+    const rows = db
+      .prepare(
+        `SELECT id, directory, model, tokens_input, tokens_output, tokens_reasoning, ` +
+          `tokens_cache_read, tokens_cache_write, time_created, time_updated FROM ${table}`,
+      )
+      .all() as OpencodeSessionRow[]
+    const totals: OpencodeUsageTotals[] = []
+    for (const row of rows) {
+      const sessionId = typeof row.id === 'string' ? row.id : ''
+      if (!sessionId) continue
+      const input = toCount(row.tokens_input) ?? 0
+      const cacheRead = toCount(row.tokens_cache_read) ?? 0
+      const cacheWrite = toCount(row.tokens_cache_write) ?? 0
+      const output = (toCount(row.tokens_output) ?? 0) + (toCount(row.tokens_reasoning) ?? 0)
+      if (input + cacheRead + cacheWrite + output === 0) continue
+      totals.push({
+        sessionId,
+        cwd: typeof row.directory === 'string' ? row.directory : '',
+        model: toModelId(row.model),
+        updatedAt: toMs(row.time_updated ?? row.time_created),
+        input,
+        cacheRead,
+        cacheWrite,
+        output,
+      })
+    }
+    return totals
+  } finally {
+    db.close()
+  }
+}

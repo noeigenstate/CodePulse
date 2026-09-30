@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { readFileSync, writeFileSync, unlinkSync } from 'node:fs'
-import { networkInterfaces } from 'node:os'
+import { homedir, networkInterfaces } from 'node:os'
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, Menu, powerMonitor, shell } from 'electron'
 import {
@@ -15,6 +15,7 @@ import {
   type UpdateDownloadProgress,
   type UpdateInfo,
   type UpdateInstallResult,
+  type UsageLedgerSnapshot,
   type UsageStatsQuery,
 } from '@codepulse/shared'
 import { StatusHub } from '@codepulse/core'
@@ -22,8 +23,11 @@ import {
   openDb,
   persistEvent,
   pruneEventsBefore,
+  queryUsageLedger,
   queryUsageStats,
+  UsageScanner,
   type DB,
+  type UsageLedgerQuery,
 } from '@codepulse/storage'
 import {
   cleanupAgents,
@@ -31,6 +35,7 @@ import {
   defaultDeviceAuthPath,
   detectAgents,
   readDeviceServerConfig,
+  readOpencodeUsageTotals,
   startDeviceServer,
   startLocalServer,
   type DeviceServer,
@@ -84,6 +89,9 @@ let updateTimer: NodeJS.Timeout | null = null
 let pruneTimer: NodeJS.Timeout | null = null
 let latestUpdate: UpdateInfo | null = null
 let checkingUpdate = false
+/** Reads per-request usage from CLI logs into SQLite for the Usage dashboard. */
+let usageScanner: UsageScanner | null = null
+let usageScanTimer: NodeJS.Timeout | null = null
 /** Desktop toast opt-in, persisted in userData; off until the user enables it in settings. */
 let notificationsEnabled = false
 let shutdownStarted = false
@@ -323,6 +331,9 @@ function registerIpc(): void {
       checkingUpdate = false
     }
   })
+  ipcMain.handle('codepulse:get-usage', (_event, query?: Partial<UsageLedgerQuery>) =>
+    getUsageSnapshot(query),
+  )
   ipcMain.handle('codepulse:get-stats', (_event, query?: UsageStatsQuery) =>
     queryUsageStats(db, query ?? {}, Date.now(), {
       dbPath: dbPath ?? undefined,
@@ -437,7 +448,9 @@ async function bootstrap(): Promise<void> {
 
   dbPath = join(app.getPath('userData'), 'codepulse.sqlite')
   try {
-    db = openDb(dbPath).db
+    const opened = openDb(dbPath)
+    db = opened.db
+    usageScanner = createUsageScanner(opened.sqlite)
     dbOpenError = undefined
     console.log(`[codepulse] SQLite ready at ${dbPath}`)
   } catch (err) {
@@ -608,6 +621,7 @@ function safeErrorMessage(error: unknown): string {
 
 function startMaintenanceTimers(): void {
   prunePersistedEvents()
+  startUsageScans()
 
   if (pruneTimer) clearInterval(pruneTimer)
   pruneTimer = setInterval(prunePersistedEvents, EVENT_PRUNE_INTERVAL_MS)
@@ -648,8 +662,68 @@ async function shutdownRuntime(): Promise<void> {
 function stopMaintenanceTimers(): void {
   if (pruneTimer) clearInterval(pruneTimer)
   if (updateTimer) clearInterval(updateTimer)
+  if (usageScanTimer) clearInterval(usageScanTimer)
   pruneTimer = null
   updateTimer = null
+  usageScanTimer = null
+}
+
+/** Background rescans keep the ledger current; the dashboard also rescans on open. */
+const USAGE_SCAN_INTERVAL_MS = 60_000
+const USAGE_FIRST_SCAN_DELAY_MS = 3_000
+
+function createUsageScanner(
+  sqlite: ConstructorParameters<typeof UsageScanner>[0]['sqlite'],
+): UsageScanner {
+  const home = homedir()
+  const claudeHome = process.env['CLAUDE_HOME'] ?? join(home, '.claude')
+  const codexHome = process.env['CODEX_HOME'] ?? join(home, '.codex')
+  const opencodeHome = process.env['OPENCODE_DATA_DIR'] ?? join(home, '.local', 'share', 'opencode')
+  return new UsageScanner({
+    sqlite,
+    claudeProjectsDir: join(claudeHome, 'projects'),
+    codexSessionsDir: join(codexHome, 'sessions'),
+    readOpencodeTotals: () => readOpencodeUsageTotals(opencodeHome),
+  })
+}
+
+function runUsageScan(): Promise<void> {
+  if (!usageScanner) return Promise.resolve()
+  return usageScanner.scan().then(
+    (result) => {
+      if (result.changedFiles > 0) {
+        console.log(
+          `[codepulse] usage scan: ${result.changedFiles}/${result.files} files, ` +
+            `${result.records} requests, ${result.prompts} prompts in ${result.durationMs}ms`,
+        )
+      }
+    },
+    (err) => console.error('[codepulse] usage scan failed', err),
+  )
+}
+
+function startUsageScans(): void {
+  if (!usageScanner) return
+  const first = setTimeout(() => void runUsageScan(), USAGE_FIRST_SCAN_DELAY_MS)
+  first.unref?.()
+  if (usageScanTimer) clearInterval(usageScanTimer)
+  usageScanTimer = setInterval(() => void runUsageScan(), USAGE_SCAN_INTERVAL_MS)
+  usageScanTimer.unref?.()
+}
+
+async function getUsageSnapshot(
+  query: Partial<UsageLedgerQuery> | undefined,
+): Promise<UsageLedgerSnapshot | null> {
+  const sqlite = usageScanner?.options.sqlite
+  if (!sqlite) return null
+  await runUsageScan()
+  const range = query?.range === 'today' || query?.range === '30d' ? query.range : '7d'
+  const granularity =
+    query?.granularity === 'week' || query?.granularity === 'month' ? query.granularity : 'day'
+  return {
+    ...queryUsageLedger(sqlite, { range, granularity }),
+    scannedAt: usageScanner?.lastScanAt,
+  }
 }
 
 function prunePersistedEvents(): void {

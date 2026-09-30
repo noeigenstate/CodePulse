@@ -9,6 +9,9 @@ import type {
   UpdateDownloadProgress,
   UpdateInfo,
   UpdateInstallResult,
+  StatsRangePreset,
+  StatsTrendGranularity,
+  UsageLedgerSnapshot,
   UsageStatsQuery,
   UsageStatsSnapshot,
 } from '@codepulse/shared'
@@ -37,6 +40,10 @@ export interface CodePulseApi {
   dismissUpdate: () => Promise<boolean>
   installUpdate: () => Promise<UpdateInstallResult>
   getStats: (query?: UsageStatsQuery) => Promise<UsageStatsSnapshot>
+  getUsage: (query?: {
+    range?: StatsRangePreset
+    granularity?: StatsTrendGranularity
+  }) => Promise<UsageLedgerSnapshot | null>
   syncSessions: () => Promise<StatusSnapshot>
   /** Whether the MiMo console login (for OpenCode Token Plan quota) is present. */
   getMimoLogin: () => Promise<boolean>

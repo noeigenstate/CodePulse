@@ -4,8 +4,9 @@
 
 **面向 AI 编程代理的本地状态中心。**
 
-一眼看清 Codex、Claude Code、Grok 与 Kimi Code 正在工作、在等你、已完成，还是卡住了——
-无需切回终端反复确认。
+一眼看清 Claude Code、Codex CLI、OpenCode、Grok 与 Kimi Code 正在工作、在等你、已完成，
+还是卡住了——无需切回终端反复确认。任务完成桌面通知、彩色托盘图标、实时额度与上下文进度、
+本地 Token 用量统计，支持 Windows、macOS 与 Linux。
 
 [![status](https://img.shields.io/badge/status-v1.4.6-brightgreen)](#功能特性)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#下载)
@@ -19,7 +20,7 @@
 
 **[⬇ 下载 Windows / macOS / Linux 版](https://github.com/noeigenstate/CodePulse/releases/latest)** · [安装说明](#下载)
 
-<img src="./docs/screenshots/dashboard-zh.png" alt="CodePulse 实时控制台：Claude Code、Codex、Grok 与 Kimi Code 并排显示" width="920" />
+<img src="./docs/screenshots/demo-zh.gif" alt="CodePulse 演示：Claude Code 任务完成后弹出桌面通知、托盘图标变绿；另一个会话请求授权时托盘变黄" width="920" />
 
 </div>
 
@@ -29,7 +30,7 @@ AI 编程代理很擅长无人值守地干活，却不擅长在需要你时通�
 监听 Codex、Claude Code、Grok 与 Kimi Code 暴露的生命周期 hook，把每一个事件
 送进同一个状态机，再用几种清晰的方式把结果呈现出来：
 
-- 📊 **实时 Dashboard** —— 自适应分屏（Claude Code / Codex / Grok / Kimi Code，
+- 📊 **实时 Dashboard** —— 自适应分屏（Claude Code / Codex / OpenCode / Grok / Kimi Code，
   只用到的 CLI 才出栏），品牌色面板、项目卡片、上下文与额度进度一目了然。
 - ⚙️ **显示设置** —— 可选择自动、白色或黑色主题，也可隐藏不需要的 CLI 面板；
   自动主题在 08:00–20:00 使用白色，其余时间使用黑色。
@@ -443,6 +444,30 @@ pnpm 10 默认会拦截依赖的构建脚本，除非加入允许清单。它们
 `pnpm.onlyBuiltDependencies` 下；重新运行 `pnpm install`，或执行 `pnpm rebuild`。
 
 </details>
+
+## 常见问题
+
+**Claude Code / Codex 跑完任务时怎么收到提醒？**
+安装 CodePulse，首次运行时让它注册 hook。任务完成后会弹出以项目名为标题的桌面通知，
+托盘图标变绿直到你查看；疑似卡住的任务也会提醒。
+
+**怎么查看 Claude Code 用量限制和 Codex 额度？**
+实时控制台会显示 Claude Code 的 5 小时与每周额度、Codex 每周额度（普通、Reserve、Spark
+分开统计），以及每个会话剩余的上下文窗口，随 CLI 上报实时刷新。
+
+**支持哪些 AI 编程工具？**
+Claude Code、Codex CLI、OpenCode、Grok CLI 与 Kimi Code。只有你在用的 CLI 才会出现面板。
+
+**能同时监控多个 Agent 和多个项目吗？**
+可以。每个会话都有独立的项目卡片，按 CLI 分组；托盘图标显示所有会话中最需要你关注的状态。
+
+**CodePulse 会上传我的代码或提示词吗？**
+不会。服务只监听本机回环地址，提示词只保存短预览，历史记录全部存在本地 SQLite。
+详见[数据与隐私](#数据与隐私)。
+
+**支持哪些系统？**
+Windows（安装包）、macOS（Apple Silicon 与 Intel DMG）与 Linux（AppImage），
+见[下载](#下载)。
 
 ## 贡献
 

@@ -4,8 +4,10 @@
 
 **A local status hub for your AI coding agents.**
 
-Know at a glance whether Codex, Claude Code, Grok, and Kimi Code are working, waiting on
-you, finished, or stuck — without alt-tabbing back to a terminal.
+Know at a glance whether Claude Code, Codex CLI, OpenCode, Grok, and Kimi Code are working,
+waiting on you, finished, or stuck — without alt-tabbing back to a terminal. Desktop
+notifications when an agent finishes, a color-coded tray icon, live usage-limit and
+context-window meters, and local token analytics for Windows, macOS, and Linux.
 
 [![status](https://img.shields.io/badge/status-v1.4.6-brightgreen)](#features)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#download)
@@ -19,7 +21,7 @@ you, finished, or stuck — without alt-tabbing back to a terminal.
 
 **[⬇ Download for Windows / macOS / Linux](https://github.com/noeigenstate/CodePulse/releases/latest)** · [Install guide](#download)
 
-<img src="./docs/screenshots/dashboard.png" alt="CodePulse live console showing Claude Code, Codex, Grok and Kimi Code side by side" width="920" />
+<img src="./docs/screenshots/demo.gif" alt="CodePulse demo: a Claude Code turn finishes, a desktop notification pops up and the tray icon turns green, then another session asks for permission and the tray turns yellow" width="920" />
 
 </div>
 
@@ -30,8 +32,8 @@ when they need you. CodePulse listens to the lifecycle hooks that Codex, Claude
 Code, Grok, and Kimi Code expose, runs every event through a single state
 machine, and surfaces the result in a few focused ways:
 
-- 📊 **Live Dashboard** — adaptive panes for Claude Code / Codex / Grok / Kimi Code
-  (only the CLIs you are using), with brand colors, project cards, context bars,
+- 📊 **Live Dashboard** — adaptive panes for Claude Code / Codex / OpenCode / Grok /
+  Kimi Code (only the CLIs you are using), with brand colors, project cards, context bars,
   and quota meters.
 - ⚙️ **Display settings** — choose automatic, light, or dark appearance and hide
   CLI panels you do not need. Automatic mode uses light from 08:00–20:00.
@@ -74,21 +76,21 @@ nothing is uploaded. _(Sample data shown.)_
 
 ## Features
 
-|                                     |                                                                                                                                         |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| 🚦 **Unified state machine**        | One turn lifecycle for every agent: idle → processing → tool running → waiting for permission/input → done / error / cancelled / stuck. |
-| 🧭 **Multi-agent, multi-workspace** | Concurrent Codex, Claude Code, Grok, and Kimi Code sessions stay separate, while project card order remains fixed across updates.       |
-| 🪟 **Adaptive panes**               | Only CLIs with active tasks or retained quota appear — from one pane up to four panes.                                                  |
-| 🎨 **Automatic light/dark theme**   | Automatic mode uses light from 08:00–20:00 and dark overnight; light and dark can also be selected manually.                            |
-| ⚙️ **Configurable CLI panels**      | The gear menu lets you show or hide each CLI panel without stopping background sync or notifications.                                   |
-| 🧠 **Model, depth, and timing**     | Stable model identity, thinking depth when available, and native CLI elapsed time remain visible across refreshes.                      |
-| 📈 **Context tracking**             | Reads native CLI context snapshots, fixes missed Windows long-session updates, and handles confirmed compression correctly.             |
-| 🎟️ **Quota awareness**              | Codex ordinary, Reserve, and Spark quotas stay separate; increases appear immediately and five distinct lower readings confirm a reset. |
-| 🔔 **Glanceable toasts**            | Only completed or likely stuck turns notify; completion uses the project name and a cleaned prompt summary.                             |
-| 🕰️ **Stuck detection**              | A watchdog flags turns with no activity so silent failures don't burn your afternoon.                                                   |
-| 💾 **Local history**                | Events, sessions, turns, and token snapshots persisted to SQLite — yours to query or delete.                                            |
-| 📊 **Local analytics console**      | SQLite rollups of tokens, coding time, projects, and dialogs — today / 7d / 30d, with day / week / month trends.                        |
-| 🔌 **Open local API**               | Plain HTTP + WebSocket on `127.0.0.1:17888` for local integrations.                                                                     |
+|                                     |                                                                                                                                             |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🚦 **Unified state machine**        | One turn lifecycle for every agent: idle → processing → tool running → waiting for permission/input → done / error / cancelled / stuck.     |
+| 🧭 **Multi-agent, multi-workspace** | Concurrent Codex, Claude Code, OpenCode, Grok, and Kimi Code sessions stay separate, while project card order remains fixed across updates. |
+| 🪟 **Adaptive panes**               | Only CLIs with active tasks or retained quota appear — from one pane up to four panes.                                                      |
+| 🎨 **Automatic light/dark theme**   | Automatic mode uses light from 08:00–20:00 and dark overnight; light and dark can also be selected manually.                                |
+| ⚙️ **Configurable CLI panels**      | The gear menu lets you show or hide each CLI panel without stopping background sync or notifications.                                       |
+| 🧠 **Model, depth, and timing**     | Stable model identity, thinking depth when available, and native CLI elapsed time remain visible across refreshes.                          |
+| 📈 **Context tracking**             | Reads native CLI context snapshots, fixes missed Windows long-session updates, and handles confirmed compression correctly.                 |
+| 🎟️ **Quota awareness**              | Codex ordinary, Reserve, and Spark quotas stay separate; increases appear immediately and five distinct lower readings confirm a reset.     |
+| 🔔 **Glanceable toasts**            | Only completed or likely stuck turns notify; completion uses the project name and a cleaned prompt summary.                                 |
+| 🕰️ **Stuck detection**              | A watchdog flags turns with no activity so silent failures don't burn your afternoon.                                                       |
+| 💾 **Local history**                | Events, sessions, turns, and token snapshots persisted to SQLite — yours to query or delete.                                                |
+| 📊 **Local analytics console**      | SQLite rollups of tokens, coding time, projects, and dialogs — today / 7d / 30d, with day / week / month trends.                            |
+| 🔌 **Open local API**               | Plain HTTP + WebSocket on `127.0.0.1:17888` for local integrations.                                                                         |
 
 ## Local analytics console
 
@@ -491,6 +493,35 @@ under `pnpm.onlyBuiltDependencies` in the root `package.json`; run
 `pnpm install` again, or `pnpm rebuild`.
 
 </details>
+
+## FAQ
+
+**How do I get notified when Claude Code (or Codex) finishes a task?**
+Install CodePulse and let it register its hooks on first run. When a turn
+completes, you get a desktop notification titled with the project name, and the
+tray icon turns green until you look. Turns that look stuck notify too.
+
+**How can I see my Claude Code usage limits and Codex quota?**
+The live console shows Claude Code's 5-hour and weekly usage, Codex's weekly
+quota (ordinary, Reserve, and Spark kept separate), and the context window left
+in every session, refreshed as the CLIs report them.
+
+**Which AI coding agents are supported?**
+Claude Code, Codex CLI, OpenCode, Grok CLI, and Kimi Code. Only the CLIs you
+actually use get a panel.
+
+**Can I monitor several agents and projects at once?**
+Yes. Every session gets its own project card, grouped by CLI, and the tray icon
+reflects the most urgent state across all of them.
+
+**Does CodePulse send my code or prompts anywhere?**
+No. The server listens on loopback only, prompts are stored as short previews,
+and all history stays in a local SQLite database. See
+[Data & privacy](#data--privacy).
+
+**Which platforms does it run on?**
+Windows (installer), macOS (Apple Silicon and Intel DMG), and Linux (AppImage).
+See [Download](#download).
 
 ## Contributing
 

@@ -158,13 +158,13 @@ Download installers from
 - **Windows:** `CodePulse_*_x64-setup.exe`
 - **macOS Apple Silicon:** `CodePulse_*_mac-arm64.dmg` (M-series)
 - **macOS Intel:** `CodePulse_*_mac-x64.dmg`
-- **Linux x64:** `CodePulse_*_linux-x86_64.AppImage`
+- **Linux x64:** `CodePulse_*_x86_64.AppImage`
 
 On Linux, make the downloaded AppImage executable and run it:
 
 ```bash
-chmod +x CodePulse_*_linux-x86_64.AppImage
-./CodePulse_*_linux-x86_64.AppImage
+chmod +x CodePulse_*_x86_64.AppImage
+./CodePulse_*_x86_64.AppImage
 ```
 
 ### macOS first open (unsigned builds)

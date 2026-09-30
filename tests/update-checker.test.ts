@@ -161,7 +161,7 @@ test('buildUpdateInfo never offers a Windows installer on Linux', () => {
           browser_download_url: 'https://example.test/installer',
         },
         {
-          name: 'CodePulse_0.1.6_linux-x86_64.AppImage',
+          name: 'CodePulse_0.1.6_x86_64.AppImage',
           browser_download_url: 'https://example.test/appimage',
         },
       ],

@@ -141,13 +141,13 @@ Fastify · better-sqlite3 · Drizzle ORM。
 - **Windows：** `CodePulse_*_x64-setup.exe`
 - **macOS Apple Silicon：** `CodePulse_*_mac-arm64.dmg`（M 系列芯片）
 - **macOS Intel：** `CodePulse_*_mac-x64.dmg`
-- **Linux x64：** `CodePulse_*_linux-x86_64.AppImage`
+- **Linux x64：** `CodePulse_*_x86_64.AppImage`
 
 Linux 下载后需要先添加可执行权限，再启动 AppImage：
 
 ```bash
-chmod +x CodePulse_*_linux-x86_64.AppImage
-./CodePulse_*_linux-x86_64.AppImage
+chmod +x CodePulse_*_x86_64.AppImage
+./CodePulse_*_x86_64.AppImage
 ```
 
 ### macOS 首次打开（未签名构建）

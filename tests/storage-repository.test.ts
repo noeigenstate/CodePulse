@@ -7,13 +7,12 @@ import {
   openDb,
   persistEvent,
   pruneEventsBefore,
-  queryUsageStats,
   recentEvents,
   tokenSnapshots,
   turns,
 } from '@codepulse/storage'
 
-test('openDb and queryUsageStats heal legacy events schema without file_type_hints', async () => {
+test('openDb heals legacy events schema without file_type_hints', async () => {
   const home = await mkdtemp(join(tmpdir(), 'codepulse-storage-legacy-'))
   const file = join(home, 'legacy.sqlite')
   let opened: ReturnType<typeof openDb>
@@ -48,16 +47,13 @@ test('openDb and queryUsageStats heal legacy events schema without file_type_hin
     throw error
   }
 
-  const { db, sqlite } = opened
+  const { sqlite } = opened
   try {
     const cols = sqlite.prepare('PRAGMA table_info(events)').all() as Array<{ name: string }>
     assert.ok(
       cols.some((c) => c.name === 'file_type_hints'),
       'openDb must add file_type_hints to legacy events tables',
     )
-    const stats = queryUsageStats(db, { range: '7d' }, Date.now(), { dbPath: file })
-    assert.equal(stats.persistenceAvailable, true)
-    assert.equal(stats.persistenceError, undefined)
   } finally {
     sqlite.close()
     await rm(home, { recursive: true, force: true })
@@ -115,7 +111,7 @@ test('pruneEventsBefore deletes old raw events and token snapshots', async () =>
   }
 })
 
-test('persistEvent never stores complete hook payloads while previews and stats remain available', async () => {
+test('persistEvent never stores complete hook payloads while previews remain available', async () => {
   const home = await mkdtemp(join(tmpdir(), 'codepulse-storage-privacy-'))
   let opened: ReturnType<typeof openDb>
   try {
@@ -234,14 +230,6 @@ test('persistEvent never stores complete hook payloads while previews and stats 
     assert.equal(storedToken?.inputTokens, 30)
     assert.equal(storedToken?.outputTokens, 12)
     assert.equal(storedToken?.totalTokens, 42)
-
-    const stats = queryUsageStats(db, { range: '7d' }, now)
-    assert.equal(stats.hasData, true)
-    assert.equal(stats.kpis.dialogCount, 1)
-    assert.equal(stats.kpis.projectCount, 1)
-    assert.equal(stats.kpis.totalTokens, 42)
-    assert.equal(stats.fileTypes.find((item) => item.key === 'JavaScript')?.count, 1)
-    assert.equal(stats.fileTypes.find((item) => item.key === 'Python')?.count, 1)
 
     const persistedSnapshot = JSON.stringify({
       events: storedEvents,

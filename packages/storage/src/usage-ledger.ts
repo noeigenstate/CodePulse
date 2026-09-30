@@ -61,6 +61,33 @@ export interface UsageScanFileState {
   context?: Record<string, unknown>
 }
 
+/**
+ * Forgets saved read positions when the log parser changes, so files are read
+ * again and anything an older parser missed is added. Row ids make the re-read
+ * idempotent; existing rows (including history whose logs are gone) are kept.
+ *
+ * @param sqlite Open database.
+ * @param parserVersion Current parser version.
+ * @returns Whether positions were reset.
+ */
+export function resetUsageScanOnParserChange(
+  sqlite: Database.Database,
+  parserVersion: number,
+): boolean {
+  ensureUsageLedgerSchema(sqlite)
+  const row = sqlite.prepare(`SELECT value FROM usage_meta WHERE key = 'parser_version'`).get() as
+    | { value: string }
+    | undefined
+  if (row && Number(row.value) === parserVersion) return false
+  sqlite.transaction(() => {
+    sqlite.prepare(`DELETE FROM usage_scan_files`).run()
+    sqlite
+      .prepare(`INSERT OR REPLACE INTO usage_meta (key, value) VALUES ('parser_version', ?)`)
+      .run(String(parserVersion))
+  })()
+  return true
+}
+
 export function ensureUsageLedgerSchema(sqlite: Database.Database): void {
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS usage_records (
@@ -98,6 +125,11 @@ export function ensureUsageLedgerSchema(sqlite: Database.Database): void {
       size INTEGER NOT NULL,
       mtime_ms INTEGER NOT NULL,
       context TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS usage_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
     );
   `)
 }
@@ -280,17 +312,25 @@ export function usageRangeStart(range: StatsRangePreset, now: number): number {
   return day.getTime() - days * DAY_MS
 }
 
-function bucketStart(ts: number, granularity: StatsTrendGranularity): number {
+/** Trend bucket size; `hour` is used for the single-day range. */
+type LedgerBucket = StatsTrendGranularity | 'hour'
+
+function bucketStart(ts: number, granularity: LedgerBucket): number {
   const d = new Date(ts)
+  if (granularity === 'hour') {
+    d.setMinutes(0, 0, 0)
+    return d.getTime()
+  }
   d.setHours(0, 0, 0, 0)
   if (granularity === 'week') d.setDate(d.getDate() - ((d.getDay() + 6) % 7))
   if (granularity === 'month') d.setDate(1)
   return d.getTime()
 }
 
-function nextBucket(start: number, granularity: StatsTrendGranularity): number {
+function nextBucket(start: number, granularity: LedgerBucket): number {
   const d = new Date(start)
-  if (granularity === 'day') d.setDate(d.getDate() + 1)
+  if (granularity === 'hour') d.setHours(d.getHours() + 1)
+  else if (granularity === 'day') d.setDate(d.getDate() + 1)
   else if (granularity === 'week') d.setDate(d.getDate() + 7)
   else d.setMonth(d.getMonth() + 1)
   return d.getTime()
@@ -321,7 +361,7 @@ export function queryUsageLedger(
   const now = query.now ?? Date.now()
   const start = usageRangeStart(query.range, now)
   const end = now
-  const granularity = query.granularity ?? (query.range === 'today' ? 'day' : 'day')
+  const granularity: LedgerBucket = query.range === 'today' ? 'hour' : (query.granularity ?? 'day')
   const span = end - start + 1
   const previousStart = start - span
 
@@ -364,6 +404,29 @@ export function queryUsageLedger(
     trend.set(b, { costUsd: 0, tokens: 0, byAgent: new Map() })
   }
 
+  // A session belongs to the directory it started in; later `cd`s inside the
+  // CLI change the logged cwd but not the project the work is for.
+  const roots = new Map<string, string>()
+  for (const root of sqlite
+    .prepare(
+      `SELECT agent_type AS agentType, session_id AS sessionId, workspace_path AS path, MIN(ts)
+       FROM (
+         SELECT agent_type, session_id, workspace_path, ts FROM usage_records
+           WHERE workspace_path IS NOT NULL AND workspace_path <> ''
+         UNION ALL
+         SELECT agent_type, session_id, workspace_path, ts FROM usage_prompts
+           WHERE workspace_path IS NOT NULL AND workspace_path <> ''
+       ) GROUP BY agent_type, session_id`,
+    )
+    .all() as { agentType: string; sessionId: string; path: string }[]) {
+    roots.set(`${root.agentType}:${root.sessionId}`, root.path)
+  }
+  const rootPath = (row: {
+    agentType: AgentType
+    sessionId: string
+    workspacePath: string | null
+  }): string | null => roots.get(`${row.agentType}:${row.sessionId}`) ?? row.workspacePath
+
   const sessionFor = (row: {
     agentType: AgentType
     sessionId: string
@@ -371,13 +434,14 @@ export function queryUsageLedger(
     ts: number
   }): UsageLedgerSession => {
     const key = `${row.agentType}:${row.sessionId}`
+    const root = rootPath(row)
     let session = sessions.get(key)
     if (!session) {
       session = {
         agentType: row.agentType,
         sessionId: row.sessionId,
-        projectPath: row.workspacePath ?? '',
-        projectName: projectName(row.workspacePath),
+        projectPath: root ?? '',
+        projectName: projectName(root),
         startedAt: row.ts,
         lastActiveAt: row.ts,
         rounds: 0,
@@ -388,9 +452,9 @@ export function queryUsageLedger(
       }
       sessions.set(key, session)
     }
-    if (!session.projectPath && row.workspacePath) {
-      session.projectPath = row.workspacePath
-      session.projectName = projectName(row.workspacePath)
+    if (!session.projectPath && root) {
+      session.projectPath = root
+      session.projectName = projectName(root)
     }
     session.startedAt = Math.min(session.startedAt, row.ts)
     session.lastActiveAt = Math.max(session.lastActiveAt, row.ts)
@@ -428,10 +492,11 @@ export function queryUsageLedger(
     addRecord(model, row, cost)
     byModel.set(modelKey, model)
 
-    const pKey = projectKey(row.workspacePath)
+    const projectPath = rootPath(row)
+    const pKey = projectKey(projectPath)
     const project = byProject.get(pKey) ?? {
       ...emptyTotals(),
-      path: row.workspacePath ?? '',
+      path: projectPath ?? '',
       agents: new Set<AgentType>(),
       sessions: new Set<string>(),
       last: 0,
@@ -468,8 +533,7 @@ export function queryUsageLedger(
     agent.sessions.add(row.sessionId)
     byAgent.set(row.agentType, agent)
 
-    const pKey = projectKey(row.workspacePath)
-    const project = byProject.get(pKey)
+    const project = byProject.get(projectKey(rootPath(row)))
     if (project) project.rounds += 1
 
     const session = sessionFor(row)
@@ -497,6 +561,7 @@ export function queryUsageLedger(
     rangeEnd: end,
     generatedAt: now,
     pricingAsOf: PRICING_AS_OF,
+    trendBucket: granularity,
     totals: { ...totals, sessions: sessionList.length, projects: projectCount },
     previous,
     byAgent: [...byAgent.entries()]

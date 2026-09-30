@@ -88,10 +88,12 @@ export function formatRelative(ts: number, now: number, locale: Locale = 'zh'): 
     if (diff < 5_000) return '刚刚'
     if (diff < 60_000) return `${Math.floor(diff / 1000)} 秒前`
     if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`
-    return `${Math.floor(diff / 3_600_000)} 小时前`
+    if (diff < 48 * 3_600_000) return `${Math.floor(diff / 3_600_000)} 小时前`
+    return `${Math.floor(diff / 86_400_000)} 天前`
   }
   if (diff < 5_000) return 'just now'
   if (diff < 60_000) return `${Math.floor(diff / 1000)}s ago`
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
-  return `${Math.floor(diff / 3_600_000)}h ago`
+  if (diff < 48 * 3_600_000) return `${Math.floor(diff / 3_600_000)}h ago`
+  return `${Math.floor(diff / 86_400_000)}d ago`
 }

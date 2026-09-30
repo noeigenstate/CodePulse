@@ -37,9 +37,8 @@ machine, and surfaces the result in a few focused ways:
   and quota meters.
 - ⚙️ **Display settings** — choose automatic, light, or dark appearance and hide
   CLI panels you do not need. Automatic mode uses light from 08:00–20:00.
-- 📈 **Local analytics console** — open **Usage** (Chinese UI: **用量统计**) for
-  full-screen rollups of tokens, coding time, projects, model mix, and peak hours
-  from your local SQLite history; refresh anytime.
+- 📈 **Usage & cost** — exact per-request token usage from each CLI's own logs,
+  priced at official API rates, per tool, project and model, plus rounds per problem.
 - 🎨 **Color-coded tray icon** — the overall state of every agent, visible at
   all times.
 - 🔔 **Desktop notifications** (opt-in) — alerts only when a turn completes or
@@ -64,15 +63,15 @@ Use the gear button to change theme or visible CLI panels; open **Usage** for
 local analytics.
 _(Sample data shown.)_
 
-### Local analytics console
+### Usage
 
 <p align="center">
-  <img src="./docs/screenshots/stats.png" alt="CodePulse local analytics console" width="920" />
+  <img src="./docs/screenshots/usage.png" alt="CodePulse Usage page: API-equivalent cost, token mix, per-tool cards and cost trend" width="920" />
 </p>
 
-SQLite-backed rollups of tokens, coding time, project ranking, model mix, and
-peak hours — today / 7d / 30d with day / week / month trends. Local only,
-nothing is uploaded. _(Sample data shown.)_
+Exact token usage read from each CLI's own logs, priced at official API rates:
+cost and tokens per tool, project and model, plus how many rounds each problem
+took and which models answered them. Local only. _(Sample data shown.)_
 
 ## Features
 
@@ -89,39 +88,39 @@ nothing is uploaded. _(Sample data shown.)_
 | 🔔 **Glanceable toasts**            | Only completed or likely stuck turns notify; completion uses the project name and a cleaned prompt summary.                                 |
 | 🕰️ **Stuck detection**              | A watchdog flags turns with no activity so silent failures don't burn your afternoon.                                                       |
 | 💾 **Local history**                | Events, sessions, turns, and token snapshots persisted to SQLite — yours to query or delete.                                                |
-| 📊 **Local analytics console**      | SQLite rollups of tokens, coding time, projects, and dialogs — today / 7d / 30d, with day / week / month trends.                            |
+| 📊 **Usage & cost**                 | Token usage from CLI logs priced at official API rates, by tool / project / model, with rounds per problem.                                 |
 | 🔌 **Open local API**               | Plain HTTP + WebSocket on `127.0.0.1:17888` for local integrations.                                                                         |
 
-## Local analytics console
+## Usage page
 
-The live dashboard answers “what is running now.” The **local analytics console**
-answers “how much did I spend over this period.”
+The live dashboard answers “what is running now.” **Usage** answers “how much
+did that cost, and where did it go.”
 
-1. On the live console, click **Usage** in the top-right (Chinese UI label:
-   **用量统计**).
-2. A full-screen analytics view opens. Metrics are aggregated from the on-disk
-   `codepulse.sqlite` via in-app IPC — **nothing is uploaded**.
-3. Pick **Today / Last 7 days / Last 30 days**, then **Refresh** when you want a
-   fresh rollup of the latest events.
-4. Trend charts can switch **Day / Week / Month**. Press `Esc` or **Exit** to
-   return to the live console.
+Click **Usage** in the top-right of the live console (Chinese UI: **用量统计**),
+pick **Today / 7 days / 30 days**, and press `Esc` or **Back to console** to return.
 
-What you get:
+| Section                | What it shows                                                                                                   |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------- |
+| **Cost & tokens**      | API-equivalent cost, total tokens split into input / cache write / cache read / output, rounds, cost per round. |
+| **By tool**            | Claude Code, Codex, OpenCode side by side: cost, share of cost, tokens, rounds, requests, top model.            |
+| **Cost trend**         | Hourly for today, daily otherwise; hover a bar for the per-tool split.                                          |
+| **By project / model** | Where the spend went, and each model's average rounds per conversation.                                         |
+| **Rounds per problem** | Each conversation as one problem: how many prompts it took, how many rounds each model answered, and its cost.  |
 
-| Section                   | What it shows                                                                                                 |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| **Overview KPIs**         | Total tokens, total / average daily coding time, project count, dialog count, with period-over-period deltas. |
-| **Trends**                | Token and coding-time curves so peak days stand out.                                                          |
-| **Model mix**             | Share of models in use (Claude / GPT / Gemini, etc.).                                                         |
-| **Peak hours**            | Weekday × hour heatmap of activity.                                                                           |
-| **Project ranking**       | Per-project tokens, duration, dialogs, and last activity.                                                     |
-| **Insights**              | Lightweight tips from local rollups (peak day, top model, efficiency hints).                                  |
-| **Distributions & score** | Project types, best-effort file types, tokens-per-dialog buckets, local efficiency score.                     |
+**Where the numbers come from.** CodePulse reads each CLI's own logs, which
+record exact per-request usage: Claude Code transcripts
+(`~/.claude/projects/**/*.jsonl`), Codex rollouts (`~/.codex/sessions/**`), and
+OpenCode's session database. It scans incrementally in the background (every
+minute and whenever the page opens) into a local ledger, counting each API
+request once. Rounds are the prompts you typed, including ones sent mid-turn;
+tool results and injected context are not counted.
 
-> Charts fill in after CLI tasks have been recorded in the local database. A
-> fresh install or wiped history will show empty-state hints until you run turns.  
-> During active Grok turns, context usage is read from the session’s
-> `updates.jsonl`; after a turn ends, `signals.json` is preferred when present.
+**How cost is priced.** Each request is priced at the model's official API list
+price, with input, cache writes (5-minute and 1-hour), cache reads and output
+billed separately, and OpenAI's long-context tier applied above 272K input
+tokens. The price table (`packages/shared/src/pricing.ts`) is dated; models
+without a published price show tokens but no cost. Subscription plans are not
+billed per token, so read this as "what the API would have charged."
 
 ## How it works
 
@@ -135,13 +134,13 @@ What you get:
                                         ├─► tray icon update
                                         ├─► desktop notification
                                         └─► WebSocket / IPC push ──► Dashboard (React)
-                                                                  └─► Analytics (SQLite rollups)
+                                                                  └─► Usage (ledger from CLI logs)
 ```
 
 The repository is a `pnpm` workspace:
 
 ```
-apps/desktop/        Electron app (main / preload / renderer, incl. analytics UI)
+apps/desktop/        Electron app (main / preload / renderer, incl. Usage UI)
 packages/
   shared/            Domain types (Agent, Turn, AgentEvent, UsageStats, …) + constants
   core/              State machine, rule engine, aggregation, StatusHub
@@ -256,7 +255,7 @@ launchctl setenv KIMI_CLI_PATH "$(which kimi)"
    activity appear on the dashboard (adaptive layout).
 6. Use the gear button to select automatic/light/dark theme and visible CLI panels.
 7. To review spend over time, open **Usage** in the top-right (see
-   [Local analytics console](#local-analytics-console)).
+   [Usage page](#usage-page)).
 
 CodePulse only manages CodePulse-owned hook and status-line entries. Existing
 user hooks, models, plugins, and preferences are preserved. On uninstall, the
@@ -349,7 +348,7 @@ and token snapshots older than 30 days are pruned automatically. Prompts are
 stored only as short previews, never in full. Delete the file to reset all
 history.
 
-The **local analytics console** only reads this database on-device for rollups.
+The **Usage** page reads this database and your CLI logs on-device only.
 Usage totals and project paths are never uploaded to a remote server.
 The LAN device server is disabled by default. When enabled, it reduces project
 identity to a basename instead of an absolute workspace path and requires a

@@ -18,7 +18,11 @@ import { open, readdir, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import type Database from 'better-sqlite3'
 import type { AgentType } from '@codepulse/shared'
-import { UsageLedgerWriter, type UsageScanFileState } from './usage-ledger.js'
+import {
+  resetUsageScanOnParserChange,
+  UsageLedgerWriter,
+  type UsageScanFileState,
+} from './usage-ledger.js'
 
 export interface OpencodeTotalsRow {
   sessionId: string
@@ -51,6 +55,14 @@ export interface UsageScanResult {
 
 const CHUNK_BYTES = 1 << 20
 
+/**
+ * Bump whenever parsing changes what is extracted from a log line, so files
+ * already read by an older parser are read again.
+ *
+ * 2: whitespace-agnostic line pre-filter.
+ */
+export const USAGE_PARSER_VERSION = 2
+
 /** System-injected user lines that are not prompts the person typed. */
 const INJECTED_PROMPT =
   /^\s*(<(task-notification|command-name|command-message|command-args|local-command-|system-reminder|bash-input|bash-stdout|bash-stderr|user-memory-input)|\[Request interrupted)/
@@ -62,6 +74,7 @@ export class UsageScanner {
   lastScanAt: number | undefined
 
   constructor(readonly options: UsageScannerOptions) {
+    resetUsageScanOnParserChange(options.sqlite, USAGE_PARSER_VERSION)
     this.writer = new UsageLedgerWriter(options.sqlite)
   }
 
@@ -195,8 +208,9 @@ export class UsageScanner {
   }
 
   private claudeLine(line: string, path: string, result: UsageScanResult): void {
-    const isAssistant = line.includes('"type":"assistant"') && line.includes('"usage"')
-    const isUser = !isAssistant && line.includes('"type":"user"')
+    // Cheap keyword pre-filter (whitespace-agnostic); fields are checked after parsing.
+    const isAssistant = line.includes('"assistant"') && line.includes('"usage"')
+    const isUser = !isAssistant && line.includes('"user"')
     // Prompts typed while a turn is running are logged as queued-command attachments.
     const isQueued = !isAssistant && line.includes('"queued_command"')
     if (!isAssistant && !isUser && !isQueued) return
@@ -283,7 +297,7 @@ export class UsageScanner {
       line.includes('"token_count"') ||
       line.includes('"turn_context"') ||
       line.includes('"session_meta"') ||
-      line.includes('"role":"user"')
+      line.includes('"user"')
     if (!relevant) return
     let row: CodexLine
     try {

@@ -12,8 +12,6 @@ import type {
   StatsRangePreset,
   StatsTrendGranularity,
   UsageLedgerSnapshot,
-  UsageStatsQuery,
-  UsageStatsSnapshot,
 } from '@codepulse/shared'
 
 type Unsubscribe = () => void
@@ -39,7 +37,6 @@ export interface CodePulseApi {
   checkUpdate: () => Promise<UpdateInfo | null>
   dismissUpdate: () => Promise<boolean>
   installUpdate: () => Promise<UpdateInstallResult>
-  getStats: (query?: UsageStatsQuery) => Promise<UsageStatsSnapshot>
   getUsage: (query?: {
     range?: StatsRangePreset
     granularity?: StatsTrendGranularity

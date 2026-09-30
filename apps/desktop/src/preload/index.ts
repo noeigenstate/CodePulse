@@ -12,8 +12,6 @@ import type {
   StatsRangePreset,
   StatsTrendGranularity,
   UsageLedgerSnapshot,
-  UsageStatsQuery,
-  UsageStatsSnapshot,
 } from '@codepulse/shared'
 
 type Unsubscribe = () => void
@@ -49,8 +47,6 @@ const api = {
   /** User dismissed the update modal — main process snoozes checks for 24h. */
   dismissUpdate: (): Promise<boolean> => ipcRenderer.invoke('codepulse:dismiss-update'),
   installUpdate: (): Promise<UpdateInstallResult> => ipcRenderer.invoke('codepulse:install-update'),
-  getStats: (query?: UsageStatsQuery): Promise<UsageStatsSnapshot> =>
-    ipcRenderer.invoke('codepulse:get-stats', query),
   getUsage: (query?: {
     range?: StatsRangePreset
     granularity?: StatsTrendGranularity

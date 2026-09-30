@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { findModelPrice, priceRequest } from '@codepulse/shared'
-import { queryUsageLedger, UsageScanner } from '@codepulse/storage'
+import { queryUsageLedger, resetUsageScanOnParserChange, UsageScanner } from '@codepulse/storage'
 
 type Sqlite = import('better-sqlite3').Database
 
@@ -73,7 +73,8 @@ test('Claude transcripts: one row per API request, typed prompts only, exact cos
         claudeAssistant('msg_1', 'req_1', 59_000),
         claudeAssistant('msg_1', 'req_1', 59_000),
         claudeUser('t1', [{ type: 'tool_result', content: 'ok' }], 58_000, { toolUseResult: {} }),
-        claudeAssistant('msg_2', 'req_2', 57_000),
+        // Pretty-printed JSON must parse the same as compact JSON.
+        claudeAssistant('msg_2', 'req_2', 57_000).replace(/":/g, '": ').replace(/,"/g, ', "'),
         claudeUser('m1', 'Caveat: meta', 56_000, { isMeta: true }),
         claudeUser('n1', '<task-notification>\n<task-id>x</task-id>', 55_000),
         line({
@@ -122,6 +123,53 @@ test('Claude transcripts: one row per API request, typed prompts only, exact cos
     // Rescanning an unchanged file adds nothing.
     await scanner.scan()
     assert.equal(queryUsageLedger(sqlite, { range: 'today', now: NOW }).totals.requests, 2)
+  } finally {
+    sqlite.close()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('a session stays with the project it started in after the CLI changes directory', async () => {
+  const { home, claude, codex, sqlite } = await fixture()
+  try {
+    const moved = claudeAssistant('msg_2', 'req_2', 20_000).replace(
+      JSON.stringify('C:\\work\\app'),
+      JSON.stringify('C:\\work\\app\\src'),
+    )
+    await writeFile(
+      join(claude, 'C--work-app', 'sess-1.jsonl'),
+      claudeUser('p1', 'start here', 40_000) + claudeAssistant('msg_1', 'req_1', 30_000) + moved,
+    )
+    await new UsageScanner({ sqlite, claudeProjectsDir: claude, codexSessionsDir: codex }).scan()
+    const snap = queryUsageLedger(sqlite, { range: 'today', now: NOW })
+    assert.equal(snap.byProject.length, 1)
+    assert.equal(snap.byProject[0]?.name, 'app')
+    assert.equal(snap.byProject[0]?.requests, 2)
+  } finally {
+    sqlite.close()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('a parser version change re-reads logs without double counting', async () => {
+  const { home, claude, codex, sqlite } = await fixture()
+  try {
+    await writeFile(
+      join(claude, 'C--work-app', 'sess-1.jsonl'),
+      claudeUser('p1', 'hello', 40_000) + claudeAssistant('msg_1', 'req_1', 30_000),
+    )
+    await new UsageScanner({ sqlite, claudeProjectsDir: claude, codexSessionsDir: codex }).scan()
+    assert.equal(resetUsageScanOnParserChange(sqlite, 9_999), true)
+    assert.equal(resetUsageScanOnParserChange(sqlite, 9_999), false)
+    const rescan = await new UsageScanner({
+      sqlite,
+      claudeProjectsDir: claude,
+      codexSessionsDir: codex,
+    }).scan()
+    assert.equal(rescan.changedFiles, 1, 'constructor saw a new version and reset positions')
+    const snap = queryUsageLedger(sqlite, { range: 'today', now: NOW })
+    assert.equal(snap.totals.requests, 1)
+    assert.equal(snap.totals.rounds, 1)
   } finally {
     sqlite.close()
     await rm(home, { recursive: true, force: true })

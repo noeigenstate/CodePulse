@@ -16,7 +16,6 @@ import {
   type UpdateInfo,
   type UpdateInstallResult,
   type UsageLedgerSnapshot,
-  type UsageStatsQuery,
 } from '@codepulse/shared'
 import { StatusHub } from '@codepulse/core'
 import {
@@ -24,7 +23,6 @@ import {
   persistEvent,
   pruneEventsBefore,
   queryUsageLedger,
-  queryUsageStats,
   UsageScanner,
   type DB,
   type UsageLedgerQuery,
@@ -81,10 +79,6 @@ let displayBrowser: DisplayDeviceBrowser | null = null
 /** 本地 HTTP 服务是否已成功监听（失败时禁止配置 Hook，避免打到其它进程）。 */
 let localServerReady = false
 let db: DB | null = null
-/** 本机 SQLite 路径；统计后台只读此库（与实时 StatusHub 内存态分离）。 */
-let dbPath: string | null = null
-/** openDb 失败时的原因，用于统计页诊断。 */
-let dbOpenError: string | undefined
 let updateTimer: NodeJS.Timeout | null = null
 let pruneTimer: NodeJS.Timeout | null = null
 let latestUpdate: UpdateInfo | null = null
@@ -334,12 +328,6 @@ function registerIpc(): void {
   ipcMain.handle('codepulse:get-usage', (_event, query?: Partial<UsageLedgerQuery>) =>
     getUsageSnapshot(query),
   )
-  ipcMain.handle('codepulse:get-stats', (_event, query?: UsageStatsQuery) =>
-    queryUsageStats(db, query ?? {}, Date.now(), {
-      dbPath: dbPath ?? undefined,
-      openError: dbOpenError,
-    }),
-  )
   /** 渲染进程主动触发本机 CLI 会话扫盘（不依赖 hook / 用户发消息）。 */
   ipcMain.handle('codepulse:sync-sessions', async () => {
     await focusSync.schedule()
@@ -446,19 +434,17 @@ async function bootstrap(): Promise<void> {
   Menu.setApplicationMenu(null)
   notificationsEnabled = readNotificationsEnabled(notificationSettingsPath())
 
-  dbPath = join(app.getPath('userData'), 'codepulse.sqlite')
+  const dbPath = join(app.getPath('userData'), 'codepulse.sqlite')
   try {
     const opened = openDb(dbPath)
     db = opened.db
     usageScanner = createUsageScanner(opened.sqlite)
-    dbOpenError = undefined
     console.log(`[codepulse] SQLite ready at ${dbPath}`)
   } catch (err) {
     db = null
-    dbOpenError = err instanceof Error ? err.message : String(err)
     console.error('[codepulse] SQLite unavailable - running without persistence', err)
     console.error(
-      '[codepulse] Live dashboard still works; local analytics will stay empty until SQLite loads.',
+      '[codepulse] Live dashboard still works; the Usage page stays empty until SQLite loads.',
     )
   }
 

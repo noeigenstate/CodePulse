@@ -6,8 +6,6 @@ export type Locale = 'zh' | 'en'
 export interface HeaderCopy {
   brandTag: string
   subtitle: string
-  mute: string
-  muted: string
   languageToggle: string
   /** Local stats / insights console */
   stats: string
@@ -57,6 +55,9 @@ export interface SettingsCopy {
   themeAutoHint: string
   themeLight: string
   themeDark: string
+  notifications: string
+  notificationsHint: string
+  notificationsToggle: string
   cliTools: string
   cliToolsHint: string
   codex: string
@@ -285,8 +286,6 @@ const HEADER_COPY: Record<Locale, HeaderCopy> = {
   zh: {
     brandTag: '',
     subtitle: '编程助手实时控制台',
-    mute: '静音 30 分钟',
-    muted: '已静音',
     languageToggle: '英文',
     stats: '后台',
     settings: '设置',
@@ -294,8 +293,6 @@ const HEADER_COPY: Record<Locale, HeaderCopy> = {
   en: {
     brandTag: '',
     subtitle: 'AI coding-agent live console',
-    mute: 'Mute 30 min',
-    muted: 'Muted',
     languageToggle: 'Chinese',
     stats: 'Insights',
     settings: 'Settings',
@@ -401,6 +398,9 @@ const UI_COPY: Record<Locale, UiCopy> = {
       themeAutoHint: '自动：08:00–20:00 白色，20:00–08:00 黑色。',
       themeLight: '白色',
       themeDark: '黑色',
+      notifications: '桌面通知',
+      notificationsHint: '任务完成或疑似卡住时弹出系统通知。关闭后托盘图标和控制台仍会实时更新。',
+      notificationsToggle: '实时消息通知',
       cliTools: '显示的 CLI 工具',
       cliToolsHint: '隐藏仅影响主控制台显示，不会停止本机同步或通知。',
       codex: 'Codex',
@@ -638,6 +638,10 @@ const UI_COPY: Record<Locale, UiCopy> = {
       themeAutoHint: 'Automatic: light from 08:00–20:00 and dark otherwise.',
       themeLight: 'White',
       themeDark: 'Black',
+      notifications: 'Desktop notifications',
+      notificationsHint:
+        'Show a system notification when a turn finishes or looks stuck. When off, the tray icon and live console still update in real time.',
+      notificationsToggle: 'Real-time notifications',
       cliTools: 'Visible CLI tools',
       cliToolsHint:
         'Hiding a tool only changes the live console; syncing and notifications continue.',

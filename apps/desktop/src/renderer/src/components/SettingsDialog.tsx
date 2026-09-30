@@ -44,10 +44,18 @@ export function SettingsDialog({
 
   const [mimoLoggedIn, setMimoLoggedIn] = useState<boolean>()
   const [mimoBusy, setMimoBusy] = useState(false)
+  const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>()
 
   useEffect(() => {
     void window.codepulse.getVersion().then(setAppVersion)
     void window.codepulse.getMimoLogin().then(setMimoLoggedIn)
+    void window.codepulse.getNotifications().then(setNotificationsEnabled)
+  }, [])
+
+  /** Persists the desktop-notification opt-in in main, which gates every toast. */
+  const changeNotifications = useCallback(async (enabled: boolean): Promise<void> => {
+    setNotificationsEnabled(enabled)
+    setNotificationsEnabled(await window.codepulse.setNotifications(enabled))
   }, [])
 
   /** Opens the Xiaomi login window, or clears the login when already signed in. */
@@ -181,6 +189,19 @@ export function SettingsDialog({
           </section>
 
           <section>
+            <h3 className="text-sm font-semibold text-ink">{copy.notifications}</h3>
+            <p className="mt-1.5 text-meta leading-5 text-ink-500">{copy.notificationsHint}</p>
+            <div className="mt-3 grid gap-2">
+              <ToolToggle
+                checked={notificationsEnabled ?? false}
+                disabled={notificationsEnabled === undefined}
+                label={copy.notificationsToggle}
+                onChange={(enabled) => void changeNotifications(enabled)}
+              />
+            </div>
+          </section>
+
+          <section>
             <h3 className="text-sm font-semibold text-ink">{copy.cliTools}</h3>
             <p className="mt-1.5 text-meta leading-5 text-ink-500">{copy.cliToolsHint}</p>
             <div className="mt-3 grid gap-2">
@@ -281,10 +302,12 @@ function ThemeOption({
 
 function ToolToggle({
   checked,
+  disabled = false,
   label,
   onChange,
 }: {
   checked: boolean
+  disabled?: boolean
   label: string
   onChange: (checked: boolean) => void
 }): JSX.Element {
@@ -294,6 +317,7 @@ function ToolToggle({
       <input
         checked={checked}
         className="settings-switch"
+        disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
         type="checkbox"
       />

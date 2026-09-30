@@ -29,7 +29,9 @@ const api = {
   getStatus: (): Promise<StatusSnapshot> => ipcRenderer.invoke('codepulse:get-status'),
   ack: (agent: AgentType, workspacePath?: string): Promise<boolean> =>
     ipcRenderer.invoke('codepulse:ack', agent, workspacePath),
-  setMute: (muted: boolean): Promise<boolean> => ipcRenderer.invoke('codepulse:set-mute', muted),
+  getNotifications: (): Promise<boolean> => ipcRenderer.invoke('codepulse:get-notifications'),
+  setNotifications: (enabled: boolean): Promise<boolean> =>
+    ipcRenderer.invoke('codepulse:set-notifications', enabled),
   setLocale: (locale: UiLocale): Promise<UiLocale> =>
     ipcRenderer.invoke('codepulse:set-locale', locale),
   /** Keeps native window controls aligned with the renderer's selected palette. */
@@ -67,7 +69,6 @@ const api = {
   onStatus: (cb: (snapshot: StatusSnapshot) => void): Unsubscribe =>
     subscribe('codepulse:status', cb),
   onAgents: (cb: (agents: Agent[]) => void): Unsubscribe => subscribe('codepulse:agents', cb),
-  onMute: (cb: (muted: boolean) => void): Unsubscribe => subscribe('codepulse:mute', cb),
   onUpdateAvailable: (cb: (update: UpdateInfo) => void): Unsubscribe =>
     subscribe('codepulse:update-available', cb),
   onUpdateProgress: (cb: (progress: UpdateDownloadProgress) => void): Unsubscribe =>

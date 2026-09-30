@@ -13,7 +13,6 @@ const EMPTY_SNAPSHOT: StatusSnapshot = { overall: 'idle', agents: [], updatedAt:
 interface CodePulseStore {
   ready: boolean
   snapshot: StatusSnapshot
-  muted: boolean
   agents: Agent[]
   agentCheckId: number
   updateInfo: UpdateInfo | null
@@ -22,7 +21,6 @@ interface CodePulseStore {
   updateError?: string
   init: () => () => void
   ack: (agent: AgentType, workspacePath?: string) => void
-  toggleMute: () => void
   dismissUpdate: () => void
   installUpdate: () => void
 }
@@ -30,7 +28,6 @@ interface CodePulseStore {
 export const useStore = create<CodePulseStore>((set, get) => ({
   ready: false,
   snapshot: EMPTY_SNAPSHOT,
-  muted: false,
   agents: [],
   agentCheckId: 0,
   updateInfo: null,
@@ -93,9 +90,6 @@ export const useStore = create<CodePulseStore>((set, get) => ({
       statusReceived = true
       applySnapshot(snapshot, true)
     })
-    const offMute = api.onMute((muted) => {
-      if (!disposed) set({ muted })
-    })
     const offAgents = api.onAgents((agents) => {
       agentsReceived = true
       applyAgents(agents)
@@ -136,7 +130,6 @@ export const useStore = create<CodePulseStore>((set, get) => ({
     return () => {
       disposed = true
       offStatus()
-      offMute()
       offAgents()
       offUpdate()
       offUpdateProgress()
@@ -145,12 +138,6 @@ export const useStore = create<CodePulseStore>((set, get) => ({
 
   ack: (agent, workspacePath) => {
     void window.codepulse.ack(agent, workspacePath)
-  },
-
-  toggleMute: () => {
-    const next = !get().muted
-    set({ muted: next })
-    void window.codepulse.setMute(next)
   },
 
   dismissUpdate: () => {

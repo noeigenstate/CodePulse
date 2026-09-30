@@ -9,13 +9,11 @@ import { trayIconFor } from './icon.js'
 
 export interface TrayCallbacks {
   onOpen: () => void
-  onToggleMute: (muted: boolean) => void
   onQuit: () => void
 }
 
 export class TrayController {
   private tray: Tray
-  private muted = false
   private snapshot: StatusSnapshot = { overall: 'idle', agents: [], updatedAt: Date.now() }
 
   constructor(private callbacks: TrayCallbacks) {
@@ -30,11 +28,6 @@ export class TrayController {
     this.tray.setImage(trayIconFor(snapshot.overall))
     this.tray.setToolTip(`CodePulse - ${overallLabel(snapshot.overall)}`)
     this.tray.setContextMenu(this.buildMenu(snapshot))
-  }
-
-  setMuted(muted: boolean): void {
-    this.muted = muted
-    this.tray.setContextMenu(this.buildMenu(this.snapshot))
   }
 
   destroy(): void {
@@ -54,13 +47,6 @@ export class TrayController {
       ...agentItems,
       { type: 'separator' },
       { label: '打开面板', click: () => this.callbacks.onOpen() },
-      {
-        label: this.muted ? '取消静音' : '静音 30 分钟',
-        click: () => {
-          this.muted = !this.muted
-          this.callbacks.onToggleMute(this.muted)
-        },
-      },
       { type: 'separator' },
       { label: '退出', click: () => this.callbacks.onQuit() },
     ])

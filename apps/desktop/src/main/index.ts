@@ -38,6 +38,7 @@ import {
 } from '@codepulse/local-server'
 import { TrayController } from './tray.js'
 import { showNotification } from './notifications.js'
+import { readNotificationsEnabled, writeNotificationsEnabled } from './notification-settings.js'
 import { FocusSyncScheduler } from './focus-sync.js'
 import { DisplayDeviceBrowser } from './device-browser.js'
 import { logoutMimo, openMimoLogin, provideMimoCookie, readMimoCookie } from './mimo-auth.js'
@@ -60,7 +61,6 @@ import {
   type WindowTheme,
 } from './window-chrome.js'
 
-const MUTE_DURATION_MS = 30 * 60_000
 const DISABLE_UPDATE_CHECK_ENV = 'CODEPULSE_DISABLE_UPDATE_CHECKS'
 const EVENT_RETENTION_MS = 30 * 24 * 60 * 60_000
 const EVENT_PRUNE_INTERVAL_MS = 24 * 60 * 60_000
@@ -80,11 +80,12 @@ let db: DB | null = null
 let dbPath: string | null = null
 /** openDb 失败时的原因，用于统计页诊断。 */
 let dbOpenError: string | undefined
-let muteTimer: NodeJS.Timeout | null = null
 let updateTimer: NodeJS.Timeout | null = null
 let pruneTimer: NodeJS.Timeout | null = null
 let latestUpdate: UpdateInfo | null = null
 let checkingUpdate = false
+/** Desktop toast opt-in, persisted in userData; off until the user enables it in settings. */
+let notificationsEnabled = false
 let shutdownStarted = false
 let installingUpdate = false
 let lastTrayStatusKey: string | undefined
@@ -230,22 +231,13 @@ function wireHub(): void {
   })
 
   hub.on('notification', (note: NotificationRequest) => {
-    showNotification(note, showWindow)
+    // Desktop notifications are opt-in; the tray and dashboard still show every state.
+    if (notificationsEnabled) showNotification(note, showWindow)
   })
 }
 
-function setMuted(muted: boolean): void {
-  hub.setMuted(muted)
-  tray?.setMuted(muted)
-  if (muteTimer) {
-    clearTimeout(muteTimer)
-    muteTimer = null
-  }
-  if (muted) {
-    muteTimer = setTimeout(() => setMuted(false), MUTE_DURATION_MS)
-    muteTimer.unref?.()
-  }
-  broadcast('codepulse:mute', muted)
+function notificationSettingsPath(): string {
+  return join(app.getPath('userData'), 'notification-settings.json')
 }
 
 function setLocale(value: unknown): UiLocale {
@@ -284,9 +276,10 @@ function registerIpc(): void {
     hub.acknowledge(agent, workspacePath)
     return true
   })
-  ipcMain.handle('codepulse:set-mute', (_event, muted: boolean) => {
-    setMuted(muted)
-    return muted
+  ipcMain.handle('codepulse:get-notifications', () => notificationsEnabled)
+  ipcMain.handle('codepulse:set-notifications', (_event, enabled: unknown) => {
+    notificationsEnabled = writeNotificationsEnabled(notificationSettingsPath(), enabled)
+    return notificationsEnabled
   })
   ipcMain.handle('codepulse:set-locale', (_event, locale: unknown) => setLocale(locale))
   ipcMain.handle('codepulse:set-window-theme', (event, theme: unknown) =>
@@ -433,6 +426,7 @@ function registerIpc(): void {
 
 async function bootstrap(): Promise<void> {
   Menu.setApplicationMenu(null)
+  notificationsEnabled = readNotificationsEnabled(notificationSettingsPath())
 
   dbPath = join(app.getPath('userData'), 'codepulse.sqlite')
   try {
@@ -515,7 +509,6 @@ async function bootstrap(): Promise<void> {
 
   tray = new TrayController({
     onOpen: showWindow,
-    onToggleMute: setMuted,
     onQuit: () => {
       app.quit()
     },

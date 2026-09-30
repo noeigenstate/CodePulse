@@ -42,8 +42,8 @@ machine, and surfaces the result in a few focused ways:
   from your local SQLite history; refresh anytime.
 - 🎨 **Color-coded tray icon** — the overall state of every agent, visible at
   all times.
-- 🔔 **Desktop notifications** — alerts only when a turn completes or appears
-  stuck. Completion toasts use the project name and a short prompt summary.
+- 🔔 **Desktop notifications** (opt-in) — alerts only when a turn completes or
+  appears stuck. Completion toasts use the project name and a short prompt summary.
 
 Everything runs **100% locally**. The server binds to loopback only, prompts
 are stored as short previews (never in full), and the hooks fail silently when
@@ -286,8 +286,8 @@ curl http://127.0.0.1:17888/api/status
 Notifications are throttled and deduplicated so you're informed, not nagged.
 On completion, the toast title is `{emoji} {project} done` and the body is a
 short summary of the user prompt (Chinese ≤15 characters, English ≤15 words).
-**Mute** (tray or header button) silences sound for 30 minutes; notifications
-still appear, just silently.
+Desktop notifications are **off by default**: turn on **Real-time notifications**
+in Settings (gear button). The tray icon and live console update either way.
 Claude Code's routine "waiting for your input" idle reminder is ignored; yellow
 means CodePulse saw a real permission or explicit input request.
 
@@ -303,7 +303,6 @@ hooks elsewhere with the `CODEPULSE_URL` environment variable.
 | `GET`  | `/api/device/status` | Minimal status for lightweight local clients            |
 | `GET`  | `/api/agents/detect` | Detect local Codex / Claude / Grok / Kimi CLI and hooks |
 | `POST` | `/api/ack/:agent`    | Mark an agent's terminal result as read                 |
-| `POST` | `/api/mute`          | `{ "muted": true }` to silence notification sound       |
 | `GET`  | `/api/health`        | Liveness probe                                          |
 | `WS`   | `/ws`                | Push channel: `status` + `notification` messages        |
 
@@ -311,7 +310,7 @@ hooks elsewhere with the `CODEPULSE_URL` environment variable.
 
 Read-only displays such as an ESP32 use a separate `0.0.0.0:17889` service. It is
 disabled by default, uses its own device token, and exposes no event-ingestion,
-acknowledgement, or mute endpoints, so the loopback API above remains private.
+or acknowledgement endpoints, so the loopback API above remains private.
 When enabled, CodePulse keeps a stable pairing ID in
 `~/.codepulse/device-server-id` and publishes `_codepulse._tcp.local` with the
 protocol version, pairing ID, and status path.
@@ -497,7 +496,8 @@ under `pnpm.onlyBuiltDependencies` in the root `package.json`; run
 ## FAQ
 
 **How do I get notified when Claude Code (or Codex) finishes a task?**
-Install CodePulse and let it register its hooks on first run. When a turn
+Install CodePulse, let it register its hooks on first run, and turn on
+**Real-time notifications** in Settings (they are off by default). When a turn
 completes, you get a desktop notification titled with the project name, and the
 tray icon turns green until you look. Turns that look stuck notify too.
 

@@ -91,9 +91,8 @@ import codePulseIcon from './assets/codepulse-icon.svg'
 
  */
 export function App(): JSX.Element {
-  // Select slices so update progress / mute ticks do not force unrelated work.
+  // Select slices so update progress ticks do not force unrelated work.
   const snapshot = useStore((s) => s.snapshot)
-  const muted = useStore((s) => s.muted)
   const agents = useStore((s) => s.agents)
   const agentCheckId = useStore((s) => s.agentCheckId)
   const updateInfo = useStore((s) => s.updateInfo)
@@ -102,7 +101,6 @@ export function App(): JSX.Element {
   const updateError = useStore((s) => s.updateError)
   const init = useStore((s) => s.init)
   const ack = useStore((s) => s.ack)
-  const toggleMute = useStore((s) => s.toggleMute)
   const dismissUpdate = useStore((s) => s.dismissUpdate)
   const installUpdate = useStore((s) => s.installUpdate)
   const [locale, setLocale] = useState<Locale>(() => readStoredLocale(window.localStorage))
@@ -258,9 +256,7 @@ export function App(): JSX.Element {
         <>
           <Header
             locale={locale}
-            muted={muted}
             onToggleLocale={toggleLocale}
-            onToggleMute={toggleMute}
             onOpenStats={() => setStatsOpen(true)}
             onOpenSettings={() => setSettingsOpen(true)}
             settingsOpen={settingsOpen}

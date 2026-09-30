@@ -23,7 +23,8 @@ export interface CodePulseApi {
   platform: NodeJS.Platform
   getStatus: () => Promise<StatusSnapshot>
   ack: (agent: AgentType, workspacePath?: string) => Promise<boolean>
-  setMute: (muted: boolean) => Promise<boolean>
+  getNotifications: () => Promise<boolean>
+  setNotifications: (enabled: boolean) => Promise<boolean>
   setLocale: (locale: UiLocale) => Promise<UiLocale>
   /** Synchronizes native title-bar colors with the resolved renderer theme. */
   setWindowTheme: (theme: WindowTheme) => Promise<WindowTheme>
@@ -50,7 +51,6 @@ export interface CodePulseApi {
   cancelDeviceProvisioning: () => Promise<DeviceProvisioningSnapshot>
   onStatus: (cb: (snapshot: StatusSnapshot) => void) => Unsubscribe
   onAgents: (cb: (agents: Agent[]) => void) => Unsubscribe
-  onMute: (cb: (muted: boolean) => void) => Unsubscribe
   onUpdateAvailable: (cb: (update: UpdateInfo) => void) => Unsubscribe
   onUpdateProgress: (cb: (progress: UpdateDownloadProgress) => void) => Unsubscribe
   onDeviceProvisioning: (cb: (snapshot: DeviceProvisioningSnapshot) => void) => Unsubscribe

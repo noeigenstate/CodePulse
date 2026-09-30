@@ -1,4 +1,5 @@
 import {
+  AGENT_DISPLAY_NAMES,
   codexQuotaFamily,
   type CodexQuotaFamily,
   TurnState,
@@ -22,11 +23,7 @@ const QUOTA_RECENCY_WINDOW_MS = 30 * 60_000
 
 /** 人类可读的 agent 显示名称。 */
 export function agentDisplayName(agentType: AgentType): string {
-  if (agentType === 'codex') return 'Codex'
-  if (agentType === 'grok') return 'Grok'
-  if (agentType === 'kimi') return 'Kimi Code'
-  if (agentType === 'opencode') return 'OpenCode'
-  return 'Claude Code'
+  return AGENT_DISPLAY_NAMES[agentType] ?? AGENT_DISPLAY_NAMES.claude_code
 }
 
 export interface WorkspaceAgentGroup {

@@ -1,5 +1,6 @@
 import { Menu, Tray, type MenuItemConstructorOptions } from 'electron'
 import {
+  AGENT_DISPLAY_NAMES,
   type AgentRuntimeState,
   type OverallState,
   type StatusSnapshot,
@@ -51,14 +52,6 @@ export class TrayController {
       { label: '退出', click: () => this.callbacks.onQuit() },
     ])
   }
-}
-
-const AGENT_DISPLAY_NAMES: Record<string, string> = {
-  codex: 'Codex',
-  claude_code: 'Claude Code',
-  grok: 'Grok',
-  kimi: 'Kimi Code',
-  opencode: 'OpenCode',
 }
 
 function agentLine(agent: AgentRuntimeState): string {

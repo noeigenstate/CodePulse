@@ -4,12 +4,7 @@
  *
  * @module renderer/lib/format
  */
-import {
-  formatTokenCount,
-  formatTokenPercent,
-  type OverallState,
-  TurnState,
-} from '@codepulse/shared'
+import { TurnState } from '@codepulse/shared'
 import type { Locale } from './i18n.js'
 
 /**
@@ -59,45 +54,6 @@ export function turnStateStyle(state: TurnState): StateStyle {
 }
 
 /**
- * 返回聚合总体状态的标签 + 颜色类。
- *
- * @param overall 要设置样式的总体状态。
- * @returns 匹配的 {@link StateStyle}。
- */
-export function overallStyle(overall: OverallState): StateStyle {
-  switch (overall) {
-    case 'running':
-      return { label: '执行中', dot: 'bg-blue-500', text: 'text-blue-700' }
-    case 'attention':
-      return { label: '需要介入', dot: 'bg-amber-500', text: 'text-amber-700' }
-    case 'done_unread':
-      return { label: '一轮完成', dot: 'bg-emerald-500', text: 'text-emerald-700' }
-    case 'error':
-      return { label: '出错', dot: 'bg-red-500', text: 'text-red-700' }
-    case 'stuck':
-      return { label: '疑似卡住', dot: 'bg-orange-500', text: 'text-orange-700' }
-    case 'limited':
-      return { label: '用量上限', dot: 'bg-red-500', text: 'text-red-700' }
-    default:
-      return { label: '空闲', dot: 'bg-amber-500', text: 'text-slate-600' }
-  }
-}
-
-/**
- * 把 agent 类型映射为显示名称。
- *
- * @param type agent 类型字符串。
- * @returns `"Codex"`、`"Claude Code"` 或 `"Grok"`。
- */
-export function agentName(type: string): string {
-  if (type === 'codex') return 'Codex'
-  if (type === 'grok') return 'Grok'
-  if (type === 'kimi') return 'Kimi Code'
-  if (type === 'opencode') return 'OpenCode'
-  return 'Claude Code'
-}
-
-/**
  * 紧凑格式化已用时长，例如 `"3m 12s"` 或 `"1h 4m"`。
  *
  * @param ms 时长（毫秒，负值按 0 处理）。
@@ -117,43 +73,6 @@ export function formatDuration(ms: number, locale: Locale = 'zh'): string {
   if (h > 0) return `${h}h ${m}m`
   if (m > 0) return `${m}m ${s}s`
   return `${s}s`
-}
-
-/**
- * 返回路径的最后一段（同时处理 `/` 与 `\`）。
- *
- * @param path 路径，可能为 `undefined`。
- * @returns 最后一段；未提供路径时返回 `"—"`。
- */
-export function basename(path: string | undefined): string {
-  if (!path) return '—'
-  return (
-    path
-      .replace(/[\\/]+$/, '')
-      .split(/[\\/]/)
-      .pop() || path
-  )
-}
-
-/**
- * 紧凑格式化 token 数，例如 `512` → `"512"`、`66899` → `"66.9k"`、
- * `1_250_000` → `"1.25M"`。
- *
- * @param n token 数，可能为 `undefined`。
- * @returns 紧凑字符串；无值时返回 `"—"`。
- */
-export function formatTokens(n: number | undefined): string {
-  return formatTokenCount(n)
-}
-
-/**
- * 格式化 token/上下文百分比，例如 `83.4` → `"83%"`。
- *
- * @param pct 百分比，可能为 `undefined`。
- * @returns 格式化后的百分比；无值时返回 `"—"`。
- */
-export function formatPercent(pct: number | undefined): string {
-  return formatTokenPercent(pct)
 }
 
 /**

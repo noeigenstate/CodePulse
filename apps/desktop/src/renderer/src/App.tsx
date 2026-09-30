@@ -39,6 +39,7 @@ import {
   type AgentSetupReminder,
 } from './lib/codexTrustTutorial.js'
 import {
+  agentDisplayName,
   buildAgentPanels,
   type AgentPanel,
   type AgentWorkspaceItem,
@@ -736,7 +737,7 @@ function AgentSetupReminderModal({
                 >
                   <span className="font-medium text-ink-700">{issue.label}</span>
                   <span className="rounded-full bg-ink px-2.5 py-1 text-xs font-semibold text-white">
-                    {agentName(issue.agent)}
+                    {agentDisplayName(issue.agent)}
                   </span>
                 </div>
               ))}
@@ -791,19 +792,6 @@ function AgentSetupReminderModal({
       </section>
     </div>
   )
-}
-
-/**
- * Computes agent name.
- * @param agent Agent runtime state.
- * @returns Localized display name for the agent family.
- */
-function agentName(agent: AgentType): string {
-  if (agent === 'codex') return 'Codex'
-  if (agent === 'grok') return 'Grok'
-  if (agent === 'kimi') return 'Kimi Code'
-  if (agent === 'opencode') return 'OpenCode'
-  return 'Claude Code'
 }
 
 /** 按已启用 CLI 分屏数量自适应列布局。
@@ -1031,7 +1019,7 @@ function AgentProjectEmptyState({
   agentType: AgentType
   copy: UiCopy
 }): JSX.Element {
-  const body = copy.emptyDashboard.agentBody.replace('{agent}', agentName(agentType))
+  const body = copy.emptyDashboard.agentBody.replace('{agent}', agentDisplayName(agentType))
 
   return (
     <div className="agent-empty-state" role="status">

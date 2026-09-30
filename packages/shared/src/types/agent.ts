@@ -11,6 +11,15 @@
  */
 export type AgentType = 'codex' | 'claude_code' | 'grok' | 'kimi' | 'opencode'
 
+/** Product names shown in the dashboard, tray and setup prompts. */
+export const AGENT_DISPLAY_NAMES: Readonly<Record<AgentType, string>> = {
+  codex: 'Codex',
+  claude_code: 'Claude Code',
+  grok: 'Grok',
+  kimi: 'Kimi Code',
+  opencode: 'OpenCode',
+}
+
 /**
  * 一个被监控的 AI agent 及 CodePulse 掌握的安装信息。
  *

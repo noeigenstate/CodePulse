@@ -4,12 +4,7 @@
  *
  * @module renderer/lib/format
  */
-import {
-  formatTokenCount,
-  formatTokenPercent,
-  type OverallState,
-  TurnState,
-} from '@codepulse/shared'
+import { TurnState } from '@codepulse/shared'
 import type { Locale } from './i18n.js'
 
 /**
@@ -36,9 +31,9 @@ export function turnStateStyle(state: TurnState): StateStyle {
       return { label: '空闲', dot: 'bg-amber-500', text: 'text-slate-600' }
     case TurnState.PROMPT_SUBMITTED:
     case TurnState.THINKING:
-      return { label: '处理中', dot: 'bg-blue-500 animate-pulse', text: 'text-blue-700' }
+      return { label: '处理中', dot: 'bg-blue-500 status-dot-live', text: 'text-blue-700' }
     case TurnState.TOOL_RUNNING:
-      return { label: '执行工具', dot: 'bg-blue-500 animate-pulse', text: 'text-blue-700' }
+      return { label: '执行工具', dot: 'bg-blue-500 status-dot-live', text: 'text-blue-700' }
     case TurnState.WAITING_PERMISSION:
       return { label: '等待授权', dot: 'bg-amber-500', text: 'text-amber-700' }
     case TurnState.WAITING_USER_INPUT:
@@ -56,45 +51,6 @@ export function turnStateStyle(state: TurnState): StateStyle {
     default:
       return { label: state, dot: 'bg-slate-400', text: 'text-slate-500' }
   }
-}
-
-/**
- * 返回聚合总体状态的标签 + 颜色类。
- *
- * @param overall 要设置样式的总体状态。
- * @returns 匹配的 {@link StateStyle}。
- */
-export function overallStyle(overall: OverallState): StateStyle {
-  switch (overall) {
-    case 'running':
-      return { label: '执行中', dot: 'bg-blue-500', text: 'text-blue-700' }
-    case 'attention':
-      return { label: '需要介入', dot: 'bg-amber-500', text: 'text-amber-700' }
-    case 'done_unread':
-      return { label: '一轮完成', dot: 'bg-emerald-500', text: 'text-emerald-700' }
-    case 'error':
-      return { label: '出错', dot: 'bg-red-500', text: 'text-red-700' }
-    case 'stuck':
-      return { label: '疑似卡住', dot: 'bg-orange-500', text: 'text-orange-700' }
-    case 'limited':
-      return { label: '用量上限', dot: 'bg-red-500', text: 'text-red-700' }
-    default:
-      return { label: '空闲', dot: 'bg-amber-500', text: 'text-slate-600' }
-  }
-}
-
-/**
- * 把 agent 类型映射为显示名称。
- *
- * @param type agent 类型字符串。
- * @returns `"Codex"`、`"Claude Code"` 或 `"Grok"`。
- */
-export function agentName(type: string): string {
-  if (type === 'codex') return 'Codex'
-  if (type === 'grok') return 'Grok'
-  if (type === 'kimi') return 'Kimi Code'
-  if (type === 'opencode') return 'OpenCode'
-  return 'Claude Code'
 }
 
 /**
@@ -120,43 +76,6 @@ export function formatDuration(ms: number, locale: Locale = 'zh'): string {
 }
 
 /**
- * 返回路径的最后一段（同时处理 `/` 与 `\`）。
- *
- * @param path 路径，可能为 `undefined`。
- * @returns 最后一段；未提供路径时返回 `"—"`。
- */
-export function basename(path: string | undefined): string {
-  if (!path) return '—'
-  return (
-    path
-      .replace(/[\\/]+$/, '')
-      .split(/[\\/]/)
-      .pop() || path
-  )
-}
-
-/**
- * 紧凑格式化 token 数，例如 `512` → `"512"`、`66899` → `"66.9k"`、
- * `1_250_000` → `"1.25M"`。
- *
- * @param n token 数，可能为 `undefined`。
- * @returns 紧凑字符串；无值时返回 `"—"`。
- */
-export function formatTokens(n: number | undefined): string {
-  return formatTokenCount(n)
-}
-
-/**
- * 格式化 token/上下文百分比，例如 `83.4` → `"83%"`。
- *
- * @param pct 百分比，可能为 `undefined`。
- * @returns 格式化后的百分比；无值时返回 `"—"`。
- */
-export function formatPercent(pct: number | undefined): string {
-  return formatTokenPercent(pct)
-}
-
-/**
  * 把时间戳格式化为相对当前的时间，例如 `"刚刚"`、`"12s ago"`、`"3m ago"`。
  *
  * @param ts 事件时间（epoch 毫秒）。
@@ -169,10 +88,12 @@ export function formatRelative(ts: number, now: number, locale: Locale = 'zh'): 
     if (diff < 5_000) return '刚刚'
     if (diff < 60_000) return `${Math.floor(diff / 1000)} 秒前`
     if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`
-    return `${Math.floor(diff / 3_600_000)} 小时前`
+    if (diff < 48 * 3_600_000) return `${Math.floor(diff / 3_600_000)} 小时前`
+    return `${Math.floor(diff / 86_400_000)} 天前`
   }
   if (diff < 5_000) return 'just now'
   if (diff < 60_000) return `${Math.floor(diff / 1000)}s ago`
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
-  return `${Math.floor(diff / 3_600_000)}h ago`
+  if (diff < 48 * 3_600_000) return `${Math.floor(diff / 3_600_000)}h ago`
+  return `${Math.floor(diff / 86_400_000)}d ago`
 }

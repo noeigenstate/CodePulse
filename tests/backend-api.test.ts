@@ -425,49 +425,25 @@ test('POST /api/ack/:agent rejects unknown agent names', async () => {
   assert.deepEqual(response.body, { error: 'invalid_agent' })
 })
 
-test('POST /api/mute toggles notification sound behavior', async () => {
+test('completion notifications keep sound and the removed mute route is gone', async () => {
   const notifications: NotificationRequest[] = []
   const { base, hub } = await createApi()
   hub.on('notification', (note) => notifications.push(note))
 
-  const muted = await postJson<{ ok: boolean; muted: boolean }>(base, '/api/mute', {
-    muted: true,
-  })
-  assert.equal(muted.response.status, 200)
-  assert.deepEqual(muted.body, { ok: true, muted: true })
+  const mute = await postJson(base, '/api/mute', { muted: true })
+  assert.equal(mute.response.status, 404)
 
   await postJson(base, '/api/events', {
     source: 'codex',
     hook_event_name: 'UserPromptSubmit',
-    session_id: 'mute-api',
-    turn_id: 'mute-turn',
+    session_id: 'sound-api',
+    turn_id: 'sound-turn',
   })
   await postJson(base, '/api/events', {
     source: 'codex',
     hook_event_name: 'Stop',
-    session_id: 'mute-api',
-    turn_id: 'mute-turn',
-    last_message: 'done',
-  })
-  assert.equal(notifications.at(-1)?.level, 'normal')
-  assert.equal(notifications.at(-1)?.sound, false)
-
-  const unmuted = await postJson<{ ok: boolean; muted: boolean }>(base, '/api/mute', {
-    muted: false,
-  })
-  assert.deepEqual(unmuted.body, { ok: true, muted: false })
-
-  await postJson(base, '/api/events', {
-    source: 'codex',
-    hook_event_name: 'UserPromptSubmit',
-    session_id: 'unmute-api',
-    turn_id: 'unmute-turn',
-  })
-  await postJson(base, '/api/events', {
-    source: 'codex',
-    hook_event_name: 'Stop',
-    session_id: 'unmute-api',
-    turn_id: 'unmute-turn',
+    session_id: 'sound-api',
+    turn_id: 'sound-turn',
     last_message: 'done',
   })
   assert.equal(notifications.at(-1)?.level, 'normal')

@@ -231,3 +231,10 @@ test('reduced transparency keeps the selected theme surface instead of forcing w
   assert.match(reducedTransparency, /background: var\(--surface-solid\)/)
   assert.doesNotMatch(reducedTransparency, /background: #ffffff/)
 })
+
+test('relative time switches to days after two days', () => {
+  const hour = 3_600_000
+  assert.equal(formatRelative(0, 30 * hour, 'zh'), '30 小时前')
+  assert.equal(formatRelative(0, 74 * hour, 'zh'), '3 天前')
+  assert.equal(formatRelative(0, 74 * hour, 'en'), '3d ago')
+})

@@ -14,7 +14,6 @@ export const STUCK_VISIBLE_MS = 5 * 60_000
 export const STUCK_STRONG_MS = 10 * 60_000
 
 export interface RuleEngineOptions {
-  muted?: boolean
   locale?: UiLocale
   sessionThrottleMs?: number
   permissionThrottleMs?: number
@@ -35,10 +34,6 @@ export class RuleEngine {
   private lastFiredAt = new Map<string, number>()
 
   constructor(private options: RuleEngineOptions = {}) {}
-
-  setMuted(muted: boolean): void {
-    this.options.muted = muted
-  }
 
   setLocale(locale: UiLocale): void {
     this.options.locale = locale
@@ -109,7 +104,7 @@ export class RuleEngine {
       title: spec.title,
       body: spec.body,
       dedupeKey: spec.dedupeKey,
-      sound: !this.options.muted && spec.level !== 'soft',
+      sound: spec.level !== 'soft',
       createdAt: now,
     })
   }

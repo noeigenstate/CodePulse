@@ -11,7 +11,3 @@ export function snapshotDataKey(snapshot: StatusSnapshot): string {
     agents: snapshot.agents,
   })
 }
-
-export function sameSnapshotData(a: StatusSnapshot, b: StatusSnapshot): boolean {
-  return snapshotDataKey(a) === snapshotDataKey(b)
-}

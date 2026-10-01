@@ -12,4 +12,5 @@
 export * from './sqlite/db.js'
 export * from './sqlite/schema.js'
 export * from './repository.js'
-export * from './stats.js'
+export * from './usage-ledger.js'
+export * from './usage-scanner.js'

@@ -83,3 +83,20 @@ test('Codex trust acknowledgement is persisted in local storage', () => {
   assert.equal(values.get(CODEX_TRUST_ACKNOWLEDGED_STORAGE_KEY), '1')
   assert.equal(readCodexTrustAcknowledged(storage), true)
 })
+
+test('agent setup reminder ignores CLIs that simply are not installed', () => {
+  const reminder = buildAgentSetupReminder([
+    {
+      id: 'claude_code',
+      type: 'claude_code',
+      name: 'Claude Code',
+      installed: true,
+      configured: true,
+    },
+    { id: 'grok', type: 'grok', name: 'Grok', installed: false, configured: false },
+    { id: 'kimi', type: 'kimi', name: 'Kimi Code', installed: false, configured: false },
+  ])
+
+  assert.deepEqual(reminder.missingCli, ['grok', 'kimi'])
+  assert.equal(shouldShowAgentSetupReminder(reminder, 1, undefined), false)
+})

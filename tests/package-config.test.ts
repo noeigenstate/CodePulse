@@ -86,8 +86,12 @@ test('desktop package scripts and builder config include Windows, Linux, and mac
   assert.match(config, /^\s+- arm64$/m)
   assert.match(config, /^\s+- x64$/m)
   assert.match(config, /CodePulse_\$\{version\}_mac-\$\{arch\}\.\$\{ext\}/)
-  assert.match(config, /CodePulse_\$\{version\}_linux-\$\{arch\}\.\$\{ext\}/)
+  // AppImageHub warns about "linux" in AppImage names.
+  assert.match(config, /CodePulse_\$\{version\}_\$\{arch\}\.\$\{ext\}/)
+  assert.doesNotMatch(config, /_linux-\$\{arch\}/)
   assert.match(config, /^linux:\n(?:.*\n)*?\s+- target: AppImage$/m)
+  // AppImageHub cannot mount the xz SquashFS that `compression: maximum` produces.
+  assert.match(config, /^linux:\n(?:\s+.*\n)*?\s+compression: normal$/m)
   // Must not build a single universal binary target.
   assert.doesNotMatch(config, /^\s+- universal\s*$/m)
   assert.doesNotMatch(config, /target:\s*universal/)

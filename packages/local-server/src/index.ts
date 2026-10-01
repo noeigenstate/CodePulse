@@ -515,3 +515,4 @@ export {
   type DeviceServerConfig,
   type DeviceServerOptions,
 } from './device-server.js'
+export { readOpencodeUsageTotals, type OpencodeUsageTotals } from './opencode-db.js'

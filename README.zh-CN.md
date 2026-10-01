@@ -4,10 +4,11 @@
 
 **面向 AI 编程代理的本地状态中心。**
 
-一眼看清 Codex、Claude Code、Grok 与 Kimi Code 正在工作、在等你、已完成，还是卡住了——
-无需切回终端反复确认。
+一眼看清 Claude Code、Codex CLI、OpenCode、Grok 与 Kimi Code 正在工作、在等你、已完成，
+还是卡住了——无需切回终端反复确认。任务完成桌面通知、彩色托盘图标、实时额度与上下文进度、
+本地 Token 用量统计，支持 Windows、macOS 与 Linux。
 
-[![status](https://img.shields.io/badge/status-v1.4.6-brightgreen)](#功能特性)
+[![status](https://img.shields.io/badge/status-v1.4.8-brightgreen)](#功能特性)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#下载)
 [![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#开发)
@@ -19,7 +20,7 @@
 
 **[⬇ 下载 Windows / macOS / Linux 版](https://github.com/noeigenstate/CodePulse/releases/latest)** · [安装说明](#下载)
 
-<img src="./docs/screenshots/dashboard-zh.png" alt="CodePulse 实时控制台：Claude Code、Codex、Grok 与 Kimi Code 并排显示" width="920" />
+<img src="./docs/screenshots/demo-zh.gif" alt="CodePulse 演示：Claude Code 任务完成后弹出桌面通知、托盘图标变绿；另一个会话请求授权时托盘变黄" width="920" />
 
 </div>
 
@@ -29,14 +30,14 @@ AI 编程代理很擅长无人值守地干活，却不擅长在需要你时通�
 监听 Codex、Claude Code、Grok 与 Kimi Code 暴露的生命周期 hook，把每一个事件
 送进同一个状态机，再用几种清晰的方式把结果呈现出来：
 
-- 📊 **实时 Dashboard** —— 自适应分屏（Claude Code / Codex / Grok / Kimi Code，
+- 📊 **实时 Dashboard** —— 自适应分屏（Claude Code / Codex / OpenCode / Grok / Kimi Code，
   只用到的 CLI 才出栏），品牌色面板、项目卡片、上下文与额度进度一目了然。
 - ⚙️ **显示设置** —— 可选择自动、白色或黑色主题，也可隐藏不需要的 CLI 面板；
   自动主题在 08:00–20:00 使用白色，其余时间使用黑色。
-- 📈 **本地统计后台** —— 右上角「后台」进入全屏分析：Token、时长、项目排行、
-  模型占比与高峰时段，全部从本机 SQLite 汇总，可随时刷新同步。
+- 📈 **用量与费用** —— 从各 CLI 自己的日志读取精确 Token 用量，按官方 API 价格折算，
+  按工具、项目、模型拆分，并统计每个问题的修复轮次。
 - 🎨 **彩色托盘图标** —— 所有 agent 的总体状态，随时可见。
-- 🔔 **桌面通知** —— 仅在任务完成或疑似卡住时提醒；完成通知以项目名为标题，
+- 🔔 **桌面通知**（可选开启）—— 仅在任务完成或疑似卡住时提醒；完成通知以项目名为标题，
   正文为精简后的用户提问摘要。
 
 一切都在 **本地** 运行。服务只绑定回环地址，提示词仅保存短预览（绝不保存全文），
@@ -52,15 +53,15 @@ AI 编程代理很擅长无人值守地干活，却不擅长在需要你时通�
 
 四栏自适应控制台：Claude 与 Kimi Code 显示 **5 小时 + 每周** 额度；Codex / Grok
 仅显示 **每周额度**。项目卡片展示稳定识别的模型、思考深度、CLI 原生耗时、上下文窗口
-与状态。右上角齿轮可设置主题和显示哪些 CLI；**「后台」** 可进入本地统计。_（图为示意数据。）_
+与状态。右上角齿轮可设置主题和显示哪些 CLI；**「用量统计」** 可进入本地统计。_（图为示意数据。）_
 
-### 本地统计后台
+### 用量统计
 
 <p align="center">
-  <img src="./docs/screenshots/stats-zh.png" alt="CodePulse 本地统计后台" width="920" />
+  <img src="./docs/screenshots/usage-zh.png" alt="CodePulse 用量统计：折算费用、Token 构成、各工具卡片与费用趋势" width="920" />
 </p>
 
-从本机 SQLite 汇总 Token、开发时长、项目排行、模型占比与高峰时段；支持今日 / 近 7 天 / 近 30 天与按日 / 周 / 月趋势，数据不上传云端。_（图为示意数据。）_
+从各 CLI 自己的日志读取精确的 Token 用量，按官方 API 价格折算成美元：按工具、项目、模型拆分费用与 Token，并统计每个问题提问了几轮、各模型分别回答了几轮。数据只在本机。_（图为示意数据。）_
 
 ## 功能特性
 
@@ -77,32 +78,26 @@ AI 编程代理很擅长无人值守地干活，却不擅长在需要你时通�
 | 🔔 **一眼可读的通知**     | 仅任务完成或疑似卡住时提醒；完成标题为项目名，正文为精简后的提问摘要。                                  |
 | 🕰️ **卡住检测**           | 看门狗会标记长时间无活动的轮次，让静默失败不再白白浪费时间。                                            |
 | 💾 **本地历史**           | 事件、会话、轮次与 token 快照持久化到 SQLite——数据归你所有，可查可删。                                  |
-| 📊 **本地统计后台**       | 从 SQLite 汇总 Token / 开发时长 / 项目 / 对话；支持今日、近 7 天、近 30 天与按日/周/月趋势。            |
+| 📊 **用量与费用**         | 从 CLI 日志读取 Token 用量并按官方 API 价格折算；按工具 / 项目 / 模型拆分，统计问题修复轮次。           |
 | 🔌 **开放本地 API**       | `127.0.0.1:17888` 上的纯 HTTP + WebSocket，可用于本地集成。                                             |
 
-## 本地统计后台
+## 用量统计
 
-实时 Dashboard 回答「现在谁在跑」；**本地统计后台** 回答「这段时间花了多少资源」。
+实时 Dashboard 回答「现在谁在跑」；**用量统计** 回答「花了多少钱、花在哪了」。
 
-1. 在实时控制台右上角点击 **「后台」**（英文界面为 **Insights**）。
-2. 全屏打开统计台，数据来自本机 `codepulse.sqlite`（经应用内 IPC 聚合，**不上传云端**）。
-3. 选择 **今日 / 近 7 天 / 近 30 天**，需要时点 **「刷新数据」** 重新汇总最新事件。
-4. 趋势图可切换 **按日 / 按周 / 按月**。按 `Esc` 或 **「退出大屏」** 返回实时控制台。
+在实时控制台右上角点击 **「用量统计」**（英文界面为 **Usage**），选择 **今天 / 近 7 天 / 近 30 天**；按 `Esc` 或 **「返回控制台」** 回到实时面板。
 
-后台主要模块：
+| 模块              | 说明                                                                               |
+| ----------------- | ---------------------------------------------------------------------------------- |
+| **费用与 Token**  | 折算费用、Token 总量（输入 / 缓存写入 / 缓存读取 / 输出）、对话轮次、每轮费用。    |
+| **按工具**        | Claude Code、Codex、OpenCode 分别的费用、费用占比、Token、轮次、请求数、主要模型。 |
+| **费用趋势**      | 今天按小时、其余按天；悬停柱子可看各工具的费用拆分。                               |
+| **按项目 / 模型** | 钱花在哪些项目和模型上，以及各模型平均每个会话的轮次。                             |
+| **问题修复轮次**  | 一个会话视为一个问题：提问了几轮、各模型分别回答了几轮、总共花了多少。             |
 
-| 模块             | 说明                                                                  |
-| ---------------- | --------------------------------------------------------------------- |
-| **概览 KPI**     | 总消耗 Token、总/日均开发时长、项目数、对话次数，并给出与上期的环比。 |
-| **趋势**         | Token 消耗与开发时长曲线，便于发现峰值日。                            |
-| **模型占比**     | 各模型用量份额（如 Claude / GPT / Gemini 等）。                       |
-| **高峰时段**     | 按星期 × 小时的热力图，看清活跃集中时段。                             |
-| **项目消耗排行** | 按项目汇总 Token、时长、对话次数与最近活跃时间。                      |
-| **使用洞察**     | 基于本地汇总的轻量提示（峰值日、主力模型、效率建议等）。              |
-| **分布与评分**   | 项目类型、文件类型（尽力而为）、单次对话 Token 分桶、本地效率评分。   |
+**数据来源。** CodePulse 直接读取各 CLI 自己记录的逐请求用量：Claude Code 会话记录（`~/.claude/projects/**/*.jsonl`）、Codex rollout（`~/.codex/sessions/**`）以及 OpenCode 的会话数据库。后台每分钟、以及每次打开页面时增量扫描，写入本地账本，每个 API 请求只计一次。「轮次」是你自己输入的提问（包括任务进行中插入的消息），工具结果和系统注入的上下文不计入。
 
-> 有 CLI 任务并成功写入本地库后，后台才会逐步填满；全新安装或刚清理历史时会提示暂无数据。  
-> Grok 执行中的上下文占用会优先读活动会话的 `updates.jsonl`，任务结束后以 `signals.json` 为准。
+**费用怎么算。** 每个请求按对应模型的官方 API 列表价计算：输入、缓存写入（5 分钟 / 1 小时）、缓存读取、输出分别计价，OpenAI 输入超过 272K 时按长上下文价。价格表（`packages/shared/src/pricing.ts`）标注了核对日期；没有官方价格的模型只显示 Token。订阅套餐并不按 Token 计费，这里表示「如果走 API 大约要花多少」。
 
 ## 工作原理
 
@@ -116,13 +111,13 @@ AI 编程代理很擅长无人值守地干活，却不擅长在需要你时通�
                                      ├─► 托盘图标更新
                                      ├─► 桌面通知
                                      └─► WebSocket / IPC 推送 ──► Dashboard（React）
-                                                              └─► 统计后台（SQLite 聚合）
+                                                              └─► 用量统计（CLI 日志账本）
 ```
 
 仓库是一个 `pnpm` workspace：
 
 ```
-apps/desktop/        Electron 应用（main / preload / renderer，含统计后台 UI）
+apps/desktop/        Electron 应用（main / preload / renderer，含用量统计 UI）
 packages/
   shared/            领域类型（Agent、Turn、AgentEvent、UsageStats…）与常量
   core/              状态机、规则引擎、聚合、StatusHub
@@ -232,8 +227,8 @@ launchctl setenv KIMI_CLI_PATH "$(which kimi)"
 5. 运行一轮 Claude Code、Codex、Grok 或 Kimi Code 任务。Dashboard 只显示有活动的 CLI
    对应分屏（自适应布局）。
 6. 点击齿轮可选择自动/白色/黑色主题，并增删要显示的 CLI 面板。
-7. 需要复盘消耗时，点右上角 **「后台」** 打开本地统计台（详见
-   [本地统计后台](#本地统计后台)）。
+7. 需要复盘消耗时，点右上角 **「用量统计」**（详见
+   [用量统计](#用量统计)）。
 
 CodePulse 只管理 CodePulse 自己的 hook 和 status line 配置。你原有的 hook、模型、
 插件和偏好设置会保留。卸载时，安装器会自动删除 CodePulse 管理的配置。
@@ -260,7 +255,7 @@ curl http://127.0.0.1:17888/api/status
 
 通知经过节流与去重，确保你被告知、而不是被骚扰。完成时标题为
 `{emoji} {项目} 已完成`，正文为用户提问摘要（中文 ≤15 字，英文 ≤15 词）。
-**静音**（托盘或顶栏按钮）会让声音静默 30 分钟；通知仍会出现，只是没有声音。
+桌面通知**默认关闭**，可在设置（齿轮按钮）中打开 **实时消息通知**；无论是否开启，托盘图标和控制台都会实时更新。
 Claude Code 常规的“waiting for your input”空闲提醒会被忽略；黄色状态只表示
 CodePulse 确认看到了真实授权请求或明确输入请求。
 
@@ -276,14 +271,13 @@ CodePulse 确认看到了真实授权请求或明确输入请求。
 | `GET`  | `/api/device/status` | 轻量本地客户端使用的精简状态                      |
 | `GET`  | `/api/agents/detect` | 检测本地 Codex / Claude / Grok / Kimi CLI 与 hook |
 | `POST` | `/api/ack/:agent`    | 把某个 agent 的终结结果标记为已读                 |
-| `POST` | `/api/mute`          | `{ "muted": true }` 静音通知声音                  |
 | `GET`  | `/api/health`        | 存活探针                                          |
 | `WS`   | `/ws`                | 推送通道：`status` + `notification` 消息          |
 
 ## 局域网设备 API（可选）
 
 ESP32 等只读显示设备使用独立的 `0.0.0.0:17889` 服务。它默认关闭、使用单独的
-设备 token，且不包含事件写入、确认任务或静音接口，因此不会改变上面的回环 API
+设备 token，且不包含事件写入或确认任务接口，因此不会改变上面的回环 API
 安全边界。
 
 ```bash
@@ -310,7 +304,7 @@ CodePulse 把单个 SQLite 数据库存放在 Electron 的 user-data 目录：
 它记录事件、会话、轮次、工作区与 token 快照。30 天前的原始事件与 token 快照会自动清理。
 提示词只保存短预览，绝不保存全文。删除该文件即可重置全部历史。
 
-**本地统计后台** 只在本机读取上述数据库做聚合展示，不会把用量或项目路径上传到任何服务器。
+**用量统计** 只在本机读取上述数据库和 CLI 日志，不会把用量或项目路径上传到任何服务器。
 局域网设备服务默认关闭；启用后把项目标识缩减为目录名而非绝对工作区路径，并要求独立设备
 token。
 
@@ -443,6 +437,30 @@ pnpm 10 默认会拦截依赖的构建脚本，除非加入允许清单。它们
 `pnpm.onlyBuiltDependencies` 下；重新运行 `pnpm install`，或执行 `pnpm rebuild`。
 
 </details>
+
+## 常见问题
+
+**Claude Code / Codex 跑完任务时怎么收到提醒？**
+安装 CodePulse，首次运行时让它注册 hook，并在设置中打开 **实时消息通知**（默认关闭）。任务完成后会弹出以项目名为标题的桌面通知，
+托盘图标变绿直到你查看；疑似卡住的任务也会提醒。
+
+**怎么查看 Claude Code 用量限制和 Codex 额度？**
+实时控制台会显示 Claude Code 的 5 小时与每周额度、Codex 每周额度（普通、Reserve、Spark
+分开统计），以及每个会话剩余的上下文窗口，随 CLI 上报实时刷新。
+
+**支持哪些 AI 编程工具？**
+Claude Code、Codex CLI、OpenCode、Grok CLI 与 Kimi Code。只有你在用的 CLI 才会出现面板。
+
+**能同时监控多个 Agent 和多个项目吗？**
+可以。每个会话都有独立的项目卡片，按 CLI 分组；托盘图标显示所有会话中最需要你关注的状态。
+
+**CodePulse 会上传我的代码或提示词吗？**
+不会。服务只监听本机回环地址，提示词只保存短预览，历史记录全部存在本地 SQLite。
+详见[数据与隐私](#数据与隐私)。
+
+**支持哪些系统？**
+Windows（安装包）、macOS（Apple Silicon 与 Intel DMG）与 Linux（AppImage），
+见[下载](#下载)。
 
 ## 贡献
 

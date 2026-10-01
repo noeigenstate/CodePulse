@@ -95,7 +95,7 @@ export function readDeviceServerConfig(
  * 启动只包含健康检查和状态读取的局域网服务。
  *
  * 该服务与 127.0.0.1:17888 的 Hook API 分离，局域网客户端无法写事件、
- * 确认任务或修改静音状态。
+ * 确认任务。
  */
 export async function startDeviceServer(options: DeviceServerOptions): Promise<DeviceServer> {
   const host = options.host ?? DEFAULT_DEVICE_SERVER_HOST

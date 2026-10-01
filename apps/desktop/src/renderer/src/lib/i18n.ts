@@ -6,8 +6,6 @@ export type Locale = 'zh' | 'en'
 export interface HeaderCopy {
   brandTag: string
   subtitle: string
-  mute: string
-  muted: string
   languageToggle: string
   /** Local stats / insights console */
   stats: string
@@ -41,7 +39,7 @@ export interface UiCopy {
   contextStatus: ContextStatusCopy
   pathStatus: PathStatusCopy
   settings: SettingsCopy
-  stats: StatsCopy
+  usageBoard: UsageCopy
 }
 
 /**
@@ -57,6 +55,9 @@ export interface SettingsCopy {
   themeAutoHint: string
   themeLight: string
   themeDark: string
+  notifications: string
+  notificationsHint: string
+  notificationsToggle: string
   cliTools: string
   cliToolsHint: string
   codex: string
@@ -114,92 +115,56 @@ export interface DeviceProvisioningCopy {
   securityNote: string
 }
 
-export interface StatsCopy {
+/** Copy for the Usage dashboard (usage ledger: tokens, API-equivalent cost, rounds). */
+export interface UsageCopy {
   title: string
   subtitle: string
-  close: string
-  backToLive: string
-  pageTitle: string
-  pageSubtitle: string
-  overview: string
-  overviewHint: string
+  back: string
   rangeToday: string
   range7d: string
   range30d: string
   refresh: string
-  refreshing: string
-  granularityDay: string
-  granularityWeek: string
-  granularityMonth: string
-  noData: string
-  privacyNote: string
-  /** KPI */
-  kpiTotalTokens: string
-  kpiTotalDuration: string
-  kpiProjects: string
-  kpiAvgDailyTokens: string
-  kpiAvgDailyDuration: string
-  kpiDialogs: string
-  vsPrev: string
-  vsPrevWeek: string
-  /** Charts */
-  tokenTrendTitle: string
-  durationTrendTitle: string
-  modelMixTitle: string
-  heatmapTitle: string
-  projectRankTitle: string
-  insightsTitle: string
-  projectTypeTitle: string
-  fileTypeTitle: string
-  dialogBucketTitle: string
-  efficiencyTitle: string
-  /** Table columns */
-  colRank: string
-  colProject: string
-  colTokens: string
-  colShare: string
-  colDuration: string
-  colDialogs: string
-  colLastActive: string
-  /** Categories */
-  projectTypeTool: string
-  projectTypeResearch: string
-  projectTypeWeb: string
-  projectTypeOther: string
-  bucket0_500: string
-  bucket500_2k: string
-  bucket2k_5k: string
-  bucket5k_10k: string
-  bucket10k_plus: string
-  /** Efficiency */
-  gradeExcellent: string
-  gradeGood: string
-  gradeFair: string
-  gradeLow: string
-  scoreCodeGen: string
-  scoreProblemSolve: string
-  scoreDialogQuality: string
-  scoreFocus: string
-  weekdayLabels: string[]
-  /** Insights templates */
-  insightPeakDay: string
-  insightPeakDayDetail: string
-  insightTopModel: string
-  insightTopModelDetail: string
-  insightEfficiency: string
-  insightEfficiencyDetail: string
-  insightPeakHour: string
-  insightPeakHourDetail: string
-  insightEmpty: string
-  insightEmptyDetail: string
-  otherModels: string
+  syncedAt: string
   loading: string
-  syncFailed: string
-  /** SQLite 未打开：实时面板可用，但历史统计为空 */
-  persistenceUnavailable: string
-  /** 库可用但时间范围内无记录 */
-  emptyHistory: string
-  queryFailed: string
+  error: string
+  kpiCost: string
+  kpiTokens: string
+  kpiRounds: string
+  kpiCostPerRound: string
+  tokensPerRound: string
+  vsPrevious: string
+  noPrevious: string
+  sessions: string
+  projects: string
+  requests: string
+  unpriced: string
+  tokenInput: string
+  tokenCacheWrite: string
+  tokenCacheRead: string
+  tokenOutput: string
+  byTool: string
+  costShare: string
+  topModel: string
+  trendTitle: string
+  trendHourly: string
+  trendDaily: string
+  byProject: string
+  byModel: string
+  colProject: string
+  colRounds: string
+  colTokens: string
+  colCost: string
+  colModel: string
+  colRequests: string
+  colAvgRounds: string
+  noPrice: string
+  roundsTitle: string
+  roundsHint: string
+  roundsUnit: string
+  untitled: string
+  emptyTitle: string
+  emptyBody: string
+  footnote: string
 }
 
 /** Localized content for an idle dashboard and the intentional all-tools-hidden state. */
@@ -285,19 +250,15 @@ const HEADER_COPY: Record<Locale, HeaderCopy> = {
   zh: {
     brandTag: '',
     subtitle: '编程助手实时控制台',
-    mute: '静音 30 分钟',
-    muted: '已静音',
-    languageToggle: '英文',
-    stats: '后台',
+    languageToggle: '切换语言',
+    stats: '用量统计',
     settings: '设置',
   },
   en: {
     brandTag: '',
     subtitle: 'AI coding-agent live console',
-    mute: 'Mute 30 min',
-    muted: 'Muted',
-    languageToggle: 'Chinese',
-    stats: 'Insights',
+    languageToggle: 'Switch language',
+    stats: 'Usage',
     settings: 'Settings',
   },
 }
@@ -401,6 +362,9 @@ const UI_COPY: Record<Locale, UiCopy> = {
       themeAutoHint: '自动：08:00–20:00 白色，20:00–08:00 黑色。',
       themeLight: '白色',
       themeDark: '黑色',
+      notifications: '桌面通知',
+      notificationsHint: '任务完成或疑似卡住时弹出系统通知。关闭后托盘图标和控制台仍会实时更新。',
+      notificationsToggle: '实时消息通知',
       cliTools: '显示的 CLI 工具',
       cliToolsHint: '隐藏仅影响主控制台显示，不会停止本机同步或通知。',
       codex: 'Codex',
@@ -458,86 +422,56 @@ const UI_COPY: Record<Locale, UiCopy> = {
           '串口操作只在主进程执行；设备 token 不会发送给界面，密码和 token 均不会写入日志。',
       },
     },
-    stats: {
-      title: '本地开发数据统计',
-      subtitle: '专注于本地开发效率与资源消耗分析，帮助团队做出更优决策',
-      close: '关闭',
-      backToLive: '退出大屏',
-      pageTitle: '概览',
-      pageSubtitle: '全面掌握本地开发活动与资源消耗情况',
-      overview: '概览',
-      overviewHint: '数据来自本机 SQLite，点击刷新可同步最新记录',
-      rangeToday: '今日',
+    usageBoard: {
+      title: '用量统计',
+      subtitle: '各 CLI 的 Token 消耗，按官方 API 价格折算成美元',
+      back: '返回控制台',
+      rangeToday: '今天',
       range7d: '近 7 天',
       range30d: '近 30 天',
-      refresh: '刷新数据',
-      refreshing: '同步中…',
-      granularityDay: '按日',
-      granularityWeek: '按周',
-      granularityMonth: '按月',
-      noData: '暂无统计数据。开始 CLI 任务后，后台会自动汇总 Token、耗时与项目。',
-      privacyNote: '数据仅存本机，不上传云端。',
-      kpiTotalTokens: '总消耗 Token',
-      kpiTotalDuration: '总开发时长',
-      kpiProjects: '总项目数',
-      kpiAvgDailyTokens: '日均 Token',
-      kpiAvgDailyDuration: '日均开发时长',
-      kpiDialogs: '总对话次数',
-      vsPrev: '较上期',
-      vsPrevWeek: '较上周',
-      tokenTrendTitle: 'Token 消耗趋势',
-      durationTrendTitle: '开发时长趋势',
-      modelMixTitle: '模型使用占比',
-      heatmapTitle: '高峰时段分布',
-      projectRankTitle: '项目消耗排行',
-      insightsTitle: '使用洞察',
-      projectTypeTitle: '项目类型分布',
-      fileTypeTitle: '文件类型分布',
-      dialogBucketTitle: '单次对话消耗分布 (Token)',
-      efficiencyTitle: '本地开发效率评分',
-      colRank: '#',
-      colProject: '项目名称',
-      colTokens: 'Token 消耗',
-      colShare: '占比',
-      colDuration: '开发时长',
-      colDialogs: '对话次数',
-      colLastActive: '最后活跃',
-      projectTypeTool: '工具/脚本',
-      projectTypeResearch: '研究/实验',
-      projectTypeWeb: 'Web 应用',
-      projectTypeOther: '其他',
-      bucket0_500: '0-500',
-      bucket500_2k: '500-2K',
-      bucket2k_5k: '2K-5K',
-      bucket5k_10k: '5K-10K',
-      bucket10k_plus: '10K+',
-      gradeExcellent: '优秀',
-      gradeGood: '良好',
-      gradeFair: '一般',
-      gradeLow: '待提升',
-      scoreCodeGen: '代码生成效率',
-      scoreProblemSolve: '问题解决效率',
-      scoreDialogQuality: '对话质量',
-      scoreFocus: '持续专注度',
-      weekdayLabels: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
-      insightPeakDay: '峰值日使用最高',
-      insightPeakDayDetail: '{day} Token 消耗达峰值 {tokens}',
-      insightTopModel: '模型使用占比最高',
-      insightTopModelDetail: '{model} 占比 {percent}%，建议关注成本',
-      insightEfficiency: '效率提升建议',
-      insightEfficiencyDetail: '平均每次对话消耗 {avgTokens} Token，可优化提示',
-      insightPeakHour: '活跃高峰',
-      insightPeakHourDetail: '{weekday} {hour}:00 附近最活跃（{value} 次事件）',
-      insightEmpty: '等待数据',
-      insightEmptyDetail: '近 {days} 天尚无足够记录，开始 CLI 任务后自动同步。',
-      otherModels: '其他',
-      loading: '正在同步本地数据…',
-      syncFailed: '同步失败，请稍后重试',
-      persistenceUnavailable:
-        '本机历史库未就绪（SQLite 不可用）。实时控制台仍可工作，但统计需要落盘后的本地数据。请确认安装包完整，或查看主进程日志中的 SQLite 错误。',
-      emptyHistory:
-        '当前时间范围内没有本地历史记录。统计只读 SQLite（%APPDATA%\\CodePulse\\codepulse.sqlite），不会读取实时内存状态。请在本安装实例下再跑几轮 CLI 任务后点「刷新数据」。',
-      queryFailed: '统计聚合失败：{error}',
+      refresh: '刷新',
+      syncedAt: '同步于 {time}',
+      loading: '正在读取本机 CLI 日志…',
+      error: '读取用量失败，请稍后重试。',
+      kpiCost: '折算费用',
+      kpiTokens: 'Token 总量',
+      kpiRounds: '对话轮次',
+      kpiCostPerRound: '每轮平均费用',
+      tokensPerRound: '每轮约 {tokens} Token',
+      vsPrevious: '较上一周期',
+      noPrevious: '上一周期无数据',
+      sessions: '{n} 个会话',
+      projects: '{n} 个项目',
+      requests: '{n} 次请求',
+      unpriced: '另有 {tokens} Token 的模型暂无官方价格',
+      tokenInput: '输入',
+      tokenCacheWrite: '缓存写入',
+      tokenCacheRead: '缓存读取',
+      tokenOutput: '输出',
+      byTool: '按工具',
+      costShare: '占总费用 {pct}',
+      topModel: '主要模型',
+      trendTitle: '费用趋势',
+      trendHourly: '按小时',
+      trendDaily: '按天',
+      byProject: '按项目',
+      byModel: '按模型',
+      colProject: '项目',
+      colRounds: '轮次',
+      colTokens: 'Token',
+      colCost: '费用',
+      colModel: '模型',
+      colRequests: '请求',
+      colAvgRounds: '平均每会话轮次',
+      noPrice: '无官方价格',
+      roundsTitle: '问题修复轮次',
+      roundsHint: '一个会话视为一个问题：你提了几轮、各模型分别回答了几轮、总共花了多少。',
+      roundsUnit: '轮',
+      untitled: '（无标题）',
+      emptyTitle: '这个时间段还没有用量',
+      emptyBody: '在 Claude Code、Codex 或 OpenCode 里工作后，这里会自动统计。',
+      footnote:
+        '费用按各模型官方 API 列表价折算（价格核对于 {date}），输入、缓存写入、缓存读取、输出分别计价；订阅套餐实际并不按此计费。数据读取自本机 CLI 日志，不会上传。',
     },
   },
   en: {
@@ -638,6 +572,10 @@ const UI_COPY: Record<Locale, UiCopy> = {
       themeAutoHint: 'Automatic: light from 08:00–20:00 and dark otherwise.',
       themeLight: 'White',
       themeDark: 'Black',
+      notifications: 'Desktop notifications',
+      notificationsHint:
+        'Show a system notification when a turn finishes or looks stuck. When off, the tray icon and live console still update in real time.',
+      notificationsToggle: 'Real-time notifications',
       cliTools: 'Visible CLI tools',
       cliToolsHint:
         'Hiding a tool only changes the live console; syncing and notifications continue.',
@@ -699,86 +637,57 @@ const UI_COPY: Record<Locale, UiCopy> = {
           'Serial operations stay in the main process. The UI never receives the device token, and passwords/tokens are never logged.',
       },
     },
-    stats: {
-      title: 'Local development analytics',
-      subtitle: 'Local efficiency and resource analysis — nothing leaves this machine',
-      close: 'Close',
-      backToLive: 'Exit',
-      pageTitle: 'Overview',
-      pageSubtitle: 'Local development activity and resource consumption at a glance',
-      overview: 'Overview',
-      overviewHint: 'Data from local SQLite. Refresh syncs the latest records.',
+    usageBoard: {
+      title: 'Usage',
+      subtitle: 'Token usage per CLI, priced at official API rates',
+      back: 'Back to console',
       rangeToday: 'Today',
-      range7d: 'Last 7 days',
-      range30d: 'Last 30 days',
+      range7d: '7 days',
+      range30d: '30 days',
       refresh: 'Refresh',
-      refreshing: 'Syncing…',
-      granularityDay: 'Day',
-      granularityWeek: 'Week',
-      granularityMonth: 'Month',
-      noData: 'No stats yet. Start a CLI task and tokens, time, and projects will roll up here.',
-      privacyNote: 'Local only — nothing is uploaded.',
-      kpiTotalTokens: 'Total tokens',
-      kpiTotalDuration: 'Total coding time',
-      kpiProjects: 'Projects',
-      kpiAvgDailyTokens: 'Avg daily tokens',
-      kpiAvgDailyDuration: 'Avg daily time',
-      kpiDialogs: 'Dialogs',
-      vsPrev: 'vs prev',
-      vsPrevWeek: 'vs last period',
-      tokenTrendTitle: 'Token usage trend',
-      durationTrendTitle: 'Coding time trend',
-      modelMixTitle: 'Model mix',
-      heatmapTitle: 'Peak hours',
-      projectRankTitle: 'Project ranking',
-      insightsTitle: 'Insights',
-      projectTypeTitle: 'Project types',
-      fileTypeTitle: 'File types',
-      dialogBucketTitle: 'Tokens per dialog',
-      efficiencyTitle: 'Local efficiency score',
-      colRank: '#',
+      syncedAt: 'Synced {time}',
+      loading: 'Reading local CLI logs…',
+      error: 'Could not read usage. Try again shortly.',
+      kpiCost: 'API-equivalent cost',
+      kpiTokens: 'Total tokens',
+      kpiRounds: 'Rounds',
+      kpiCostPerRound: 'Cost per round',
+      tokensPerRound: '≈ {tokens} tokens per round',
+      vsPrevious: 'vs previous period',
+      noPrevious: 'No data in previous period',
+      sessions: '{n} sessions',
+      projects: '{n} projects',
+      requests: '{n} requests',
+      unpriced: 'Plus {tokens} tokens from models without an official price',
+      tokenInput: 'Input',
+      tokenCacheWrite: 'Cache write',
+      tokenCacheRead: 'Cache read',
+      tokenOutput: 'Output',
+      byTool: 'By tool',
+      costShare: '{pct} of cost',
+      topModel: 'Top model',
+      trendTitle: 'Cost trend',
+      trendHourly: 'Hourly',
+      trendDaily: 'Daily',
+      byProject: 'By project',
+      byModel: 'By model',
       colProject: 'Project',
+      colRounds: 'Rounds',
       colTokens: 'Tokens',
-      colShare: 'Share',
-      colDuration: 'Duration',
-      colDialogs: 'Dialogs',
-      colLastActive: 'Last active',
-      projectTypeTool: 'Tools / scripts',
-      projectTypeResearch: 'Research',
-      projectTypeWeb: 'Web apps',
-      projectTypeOther: 'Other',
-      bucket0_500: '0-500',
-      bucket500_2k: '500-2K',
-      bucket2k_5k: '2K-5K',
-      bucket5k_10k: '5K-10K',
-      bucket10k_plus: '10K+',
-      gradeExcellent: 'Excellent',
-      gradeGood: 'Good',
-      gradeFair: 'Fair',
-      gradeLow: 'Needs work',
-      scoreCodeGen: 'Code generation',
-      scoreProblemSolve: 'Problem solving',
-      scoreDialogQuality: 'Dialog quality',
-      scoreFocus: 'Focus',
-      weekdayLabels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-      insightPeakDay: 'Peak day',
-      insightPeakDayDetail: '{day} peaked at {tokens} tokens',
-      insightTopModel: 'Top model',
-      insightTopModelDetail: '{model} is {percent}% — watch cost',
-      insightEfficiency: 'Efficiency tip',
-      insightEfficiencyDetail: 'Avg {avgTokens} tokens per dialog — prompts can be tightened',
-      insightPeakHour: 'Busy hour',
-      insightPeakHourDetail: 'Most active around {weekday} {hour}:00 ({value} events)',
-      insightEmpty: 'Waiting for data',
-      insightEmptyDetail: 'Not enough records in the last {days} day(s). Start a CLI task to sync.',
-      otherModels: 'Other',
-      loading: 'Syncing local data…',
-      syncFailed: 'Sync failed. Try again shortly.',
-      persistenceUnavailable:
-        'Local history DB is unavailable (SQLite did not open). The live console still works, but analytics needs on-disk data. Check that the installer is complete and look for SQLite errors in the main-process log.',
-      emptyHistory:
-        'No local history in this date range. Analytics reads only SQLite (not the in-memory live state). Run a few CLI turns with this installed app, then hit Refresh.',
-      queryFailed: 'Stats aggregation failed: {error}',
+      colCost: 'Cost',
+      colModel: 'Model',
+      colRequests: 'Requests',
+      colAvgRounds: 'Avg rounds / session',
+      noPrice: 'No official price',
+      roundsTitle: 'Rounds per problem',
+      roundsHint:
+        'Each conversation counts as one problem: how many rounds you asked, which models answered them, and what it cost.',
+      roundsUnit: 'rounds',
+      untitled: '(untitled)',
+      emptyTitle: 'No usage in this period',
+      emptyBody: 'Work in Claude Code, Codex or OpenCode and it shows up here automatically.',
+      footnote:
+        'Cost uses each model’s official API list price (checked {date}), billing input, cache writes, cache reads and output separately; subscription plans are not billed this way. Read from local CLI logs; nothing is uploaded.',
     },
   },
 }

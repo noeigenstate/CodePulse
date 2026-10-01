@@ -9,8 +9,9 @@ import type {
   UpdateDownloadProgress,
   UpdateInfo,
   UpdateInstallResult,
-  UsageStatsQuery,
-  UsageStatsSnapshot,
+  StatsRangePreset,
+  StatsTrendGranularity,
+  UsageLedgerSnapshot,
 } from '@codepulse/shared'
 
 type Unsubscribe = () => void
@@ -29,7 +30,9 @@ const api = {
   getStatus: (): Promise<StatusSnapshot> => ipcRenderer.invoke('codepulse:get-status'),
   ack: (agent: AgentType, workspacePath?: string): Promise<boolean> =>
     ipcRenderer.invoke('codepulse:ack', agent, workspacePath),
-  setMute: (muted: boolean): Promise<boolean> => ipcRenderer.invoke('codepulse:set-mute', muted),
+  getNotifications: (): Promise<boolean> => ipcRenderer.invoke('codepulse:get-notifications'),
+  setNotifications: (enabled: boolean): Promise<boolean> =>
+    ipcRenderer.invoke('codepulse:set-notifications', enabled),
   setLocale: (locale: UiLocale): Promise<UiLocale> =>
     ipcRenderer.invoke('codepulse:set-locale', locale),
   /** Keeps native window controls aligned with the renderer's selected palette. */
@@ -44,8 +47,10 @@ const api = {
   /** User dismissed the update modal — main process snoozes checks for 24h. */
   dismissUpdate: (): Promise<boolean> => ipcRenderer.invoke('codepulse:dismiss-update'),
   installUpdate: (): Promise<UpdateInstallResult> => ipcRenderer.invoke('codepulse:install-update'),
-  getStats: (query?: UsageStatsQuery): Promise<UsageStatsSnapshot> =>
-    ipcRenderer.invoke('codepulse:get-stats', query),
+  getUsage: (query?: {
+    range?: StatsRangePreset
+    granularity?: StatsTrendGranularity
+  }): Promise<UsageLedgerSnapshot | null> => ipcRenderer.invoke('codepulse:get-usage', query),
   /** 主动扫本机 Codex/Grok 会话目录，返回最新 StatusHub 快照。 */
   syncSessions: (): Promise<StatusSnapshot> => ipcRenderer.invoke('codepulse:sync-sessions'),
   /** Whether the MiMo console login (for OpenCode Token Plan quota) is present. */
@@ -67,7 +72,6 @@ const api = {
   onStatus: (cb: (snapshot: StatusSnapshot) => void): Unsubscribe =>
     subscribe('codepulse:status', cb),
   onAgents: (cb: (agents: Agent[]) => void): Unsubscribe => subscribe('codepulse:agents', cb),
-  onMute: (cb: (muted: boolean) => void): Unsubscribe => subscribe('codepulse:mute', cb),
   onUpdateAvailable: (cb: (update: UpdateInfo) => void): Unsubscribe =>
     subscribe('codepulse:update-available', cb),
   onUpdateProgress: (cb: (progress: UpdateDownloadProgress) => void): Unsubscribe =>

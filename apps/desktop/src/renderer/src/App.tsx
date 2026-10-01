@@ -27,9 +27,10 @@ import {
   TurnState,
 } from '@codepulse/shared'
 import { useStore } from './store.js'
+import { AgentLogo, CodexLogo } from './components/AgentLogo.js'
 import { Header } from './components/Header.js'
 import { SettingsDialog } from './components/SettingsDialog.js'
-import { StatsDashboard } from './components/StatsDashboard.js'
+import { UsageDashboard } from './components/UsageDashboard.js'
 import {
   acknowledgeCodexTrust,
   buildAgentSetupReminder,
@@ -39,12 +40,15 @@ import {
   type AgentSetupReminder,
 } from './lib/codexTrustTutorial.js'
 import {
+  agentDisplayName,
   buildAgentPanels,
   type AgentPanel,
   type AgentWorkspaceItem,
   type QuotaMeterSource,
 } from './lib/displayAgents.js'
 import { formatDuration, formatRelative, turnStateStyle } from './lib/format.js'
+import { formatModelName } from './lib/modelName.js'
+import { installPointerEffects } from './lib/pointerEffects.js'
 import {
   formatContextWindowStatus,
   formatProjectDirectoryBadge,
@@ -83,6 +87,7 @@ import {
   type UiCopy,
 } from './lib/i18n.js'
 import codePulseIcon from './assets/codepulse-icon.svg'
+import codePulseIconSmall from './assets/codepulse-icon-small.svg'
 
 /**
  * 应用外壳 Dashboard。
@@ -91,9 +96,8 @@ import codePulseIcon from './assets/codepulse-icon.svg'
 
  */
 export function App(): JSX.Element {
-  // Select slices so update progress / mute ticks do not force unrelated work.
+  // Select slices so update progress ticks do not force unrelated work.
   const snapshot = useStore((s) => s.snapshot)
-  const muted = useStore((s) => s.muted)
   const agents = useStore((s) => s.agents)
   const agentCheckId = useStore((s) => s.agentCheckId)
   const updateInfo = useStore((s) => s.updateInfo)
@@ -102,7 +106,6 @@ export function App(): JSX.Element {
   const updateError = useStore((s) => s.updateError)
   const init = useStore((s) => s.init)
   const ack = useStore((s) => s.ack)
-  const toggleMute = useStore((s) => s.toggleMute)
   const dismissUpdate = useStore((s) => s.dismissUpdate)
   const installUpdate = useStore((s) => s.installUpdate)
   const [locale, setLocale] = useState<Locale>(() => readStoredLocale(window.localStorage))
@@ -183,6 +186,7 @@ export function App(): JSX.Element {
   }, [orderedProjects])
 
   useEffect(() => init(), [init])
+  useEffect(() => installPointerEffects(), [])
 
   const toggleLocale = (): void => {
     setLocale((current) => {
@@ -253,14 +257,16 @@ export function App(): JSX.Element {
     <div className="app-shell flex h-full flex-col text-ink">
       {window.codepulse.platform === 'win32' ? <WindowTitleBar /> : null}
       {statsOpen ? (
-        <StatsDashboard locale={locale} copy={copy} onClose={() => setStatsOpen(false)} />
+        <UsageDashboard
+          locale={locale}
+          copy={copy.usageBoard}
+          onClose={() => setStatsOpen(false)}
+        />
       ) : (
         <>
           <Header
             locale={locale}
-            muted={muted}
             onToggleLocale={toggleLocale}
-            onToggleMute={toggleMute}
             onOpenStats={() => setStatsOpen(true)}
             onOpenSettings={() => setSettingsOpen(true)}
             settingsOpen={settingsOpen}
@@ -309,7 +315,7 @@ export function App(): JSX.Element {
 function WindowTitleBar(): JSX.Element {
   return (
     <div aria-hidden="true" className="window-titlebar">
-      <img alt="" className="window-titlebar-logo" src={codePulseIcon} />
+      <img alt="" className="window-titlebar-logo" src={codePulseIconSmall} />
       <span>CodePulse</span>
     </div>
   )
@@ -739,7 +745,7 @@ function AgentSetupReminderModal({
                 >
                   <span className="font-medium text-ink-700">{issue.label}</span>
                   <span className="rounded-full bg-ink px-2.5 py-1 text-xs font-semibold text-white">
-                    {agentName(issue.agent)}
+                    {agentDisplayName(issue.agent)}
                   </span>
                 </div>
               ))}
@@ -794,19 +800,6 @@ function AgentSetupReminderModal({
       </section>
     </div>
   )
-}
-
-/**
- * Computes agent name.
- * @param agent Agent runtime state.
- * @returns Localized display name for the agent family.
- */
-function agentName(agent: AgentType): string {
-  if (agent === 'codex') return 'Codex'
-  if (agent === 'grok') return 'Grok'
-  if (agent === 'kimi') return 'Kimi Code'
-  if (agent === 'opencode') return 'OpenCode'
-  return 'Claude Code'
 }
 
 /** 按已启用 CLI 分屏数量自适应列布局。
@@ -884,7 +877,7 @@ const AgentPanelView = memo(function AgentPanelView({
 
   return (
     <section
-      className={`agent-panel flex min-h-0 flex-col p-3.5 ${dragging ? 'is-dragging' : ''} ${
+      className={`agent-panel fx-spot flex min-h-0 flex-col p-3.5 ${dragging ? 'is-dragging' : ''} ${
         dropTarget ? 'is-drop-target' : ''
       }`}
       data-agent={panel.agentType}
@@ -917,7 +910,7 @@ const AgentPanelView = memo(function AgentPanelView({
           <span className="agent-brand-icon relative" data-agent={panel.agentType}>
             <AgentLogo agentType={panel.agentType} />
             <span
-              className={`absolute bottom-1 right-1 h-2.5 w-2.5 rounded-full ring-2 ring-white ${style.dot}`}
+              className={`status-dot-ring absolute bottom-1 right-1 h-2.5 w-2.5 rounded-full ${style.dot}`}
             />
           </span>
           <div className="min-w-0 flex-1">
@@ -1005,7 +998,7 @@ function ProjectList({
   }
 
   return (
-    <div className="grid min-h-0 flex-1 content-start gap-2.5 overflow-y-auto pr-1">
+    <div className="project-scroll grid min-h-0 flex-1 content-start gap-2.5 overflow-y-auto pr-1">
       {items.map((item) => (
         <ProjectTile
           key={item.id}
@@ -1034,7 +1027,7 @@ function AgentProjectEmptyState({
   agentType: AgentType
   copy: UiCopy
 }): JSX.Element {
-  const body = copy.emptyDashboard.agentBody.replace('{agent}', agentName(agentType))
+  const body = copy.emptyDashboard.agentBody.replace('{agent}', agentDisplayName(agentType))
 
   return (
     <div className="agent-empty-state" role="status">
@@ -1143,7 +1136,11 @@ function VirtualProjectList({
   }, [])
 
   return (
-    <div ref={viewportRef} className="min-h-0 flex-1 overflow-y-auto pr-1" onScroll={handleScroll}>
+    <div
+      ref={viewportRef}
+      className="project-scroll min-h-0 flex-1 overflow-y-auto pr-1"
+      onScroll={handleScroll}
+    >
       <div className="relative" style={{ height: layout.totalSize }}>
         {layout.rows.slice(range.start, range.end).map((row) => {
           const item = items[row.index]!
@@ -1210,113 +1207,6 @@ function MeasuredProjectRow({
   )
 }
 
-/**
- * Computes agent logo.
- * @param props Component properties.
- * @returns Rendered React element.
- */
-function AgentLogo({ agentType }: { agentType: AgentType }): JSX.Element {
-  if (agentType === 'codex') return <CodexLogo />
-  if (agentType === 'grok') return <GrokLogo />
-  if (agentType === 'kimi') return <KimiLogo />
-  if (agentType === 'opencode') return <OpenCodeLogo />
-  return <ClaudeLogo />
-}
-
-/**
- * Computes claude logo.
- * @returns Rendered React element.
- */
-function ClaudeLogo(): JSX.Element {
-  return (
-    <svg viewBox="0 0 24 24" role="img" aria-label="Claude Code" className="h-7 w-7">
-      <path
-        clipRule="evenodd"
-        fill="#D97757"
-        fillRule="evenodd"
-        d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z"
-      />
-    </svg>
-  )
-}
-
-/**
- * Computes codex logo.
- * @returns Rendered React element.
- */
-function CodexLogo(): JSX.Element {
-  return (
-    <svg viewBox="0 0 24 24" role="img" aria-label="Codex" className="h-7 w-7">
-      <path
-        clipRule="evenodd"
-        fill="url(#codexLogoGradient)"
-        fillRule="evenodd"
-        d="M8.086.457a6.105 6.105 0 013.046-.415c1.333.153 2.521.72 3.564 1.7a.117.117 0 00.107.029c1.408-.346 2.762-.224 4.061.366l.063.03.154.076c1.357.703 2.33 1.77 2.918 3.198.278.679.418 1.388.421 2.126a5.655 5.655 0 01-.18 1.631.167.167 0 00.04.155 5.982 5.982 0 011.578 2.891c.385 1.901-.01 3.615-1.183 5.14l-.182.22a6.063 6.063 0 01-2.934 1.851.162.162 0 00-.108.102c-.255.736-.511 1.364-.987 1.992-1.199 1.582-2.962 2.462-4.948 2.451-1.583-.008-2.986-.587-4.21-1.736a.145.145 0 00-.14-.032c-.518.167-1.04.191-1.604.185a5.924 5.924 0 01-2.595-.622 6.058 6.058 0 01-2.146-1.781c-.203-.269-.404-.522-.551-.821a7.74 7.74 0 01-.495-1.283 6.11 6.11 0 01-.017-3.064.166.166 0 00.008-.074.115.115 0 00-.037-.064 5.958 5.958 0 01-1.38-2.202 5.196 5.196 0 01-.333-1.589 6.915 6.915 0 01.188-2.132c.45-1.484 1.309-2.648 2.577-3.493.282-.188.55-.334.802-.438.286-.12.573-.22.861-.304a.129.129 0 00.087-.087A6.016 6.016 0 015.635 2.31C6.315 1.464 7.132.846 8.086.457zm-.804 7.85a.848.848 0 00-1.473.842l1.694 2.965-1.688 2.848a.849.849 0 001.46.864l1.94-3.272a.849.849 0 00.007-.854l-1.94-3.393zm5.446 6.24a.849.849 0 000 1.695h4.848a.849.849 0 000-1.696h-4.848z"
-      />
-      <defs>
-        <linearGradient
-          gradientUnits="userSpaceOnUse"
-          id="codexLogoGradient"
-          x1="12"
-          x2="12"
-          y1="0"
-          y2="24"
-        >
-          <stop stopColor="#B1A7FF" />
-          <stop offset=".5" stopColor="#7A9DFF" />
-          <stop offset="1" stopColor="#3941FF" />
-        </linearGradient>
-      </defs>
-    </svg>
-  )
-}
-
-/**
- * Computes grok logo.
- * @returns Rendered React element.
- */
-function GrokLogo(): JSX.Element {
-  return (
-    <svg viewBox="0 0 24 24" role="img" aria-label="Grok" className="h-7 w-7">
-      <path
-        fill="currentColor"
-        className="text-ink"
-        d="M6.227 3.5h3.12l4.38 7.12L18.13 3.5H21.3l-6.02 9.05L21.5 20.5h-3.13l-4.62-7.42-4.63 7.42H6.01l6.24-8.01L6.227 3.5zm-.85 0L12 12.35 5.12 20.5H2.5l6.9-8.19L2.5 3.5h2.877z"
-      />
-    </svg>
-  )
-}
-
-/**
- * OpenCode mark (opencode.ai favicon): a tall frame whose opening is half filled.
- *
- * @returns Rendered React element.
- */
-function OpenCodeLogo(): JSX.Element {
-  return (
-    <svg viewBox="0 0 24 24" role="img" aria-label="OpenCode" className="h-7 w-7 text-ink">
-      <path fill="currentColor" fillOpacity={0.4} d="M9 10.5h6v6H9z" />
-      <path fill="currentColor" fillRule="evenodd" d="M18 19.5H6v-15h12v15zM15 7.5H9v9h6v-9z" />
-    </svg>
-  )
-}
-
-/** Kimi Code wordmark reduced to a clear dashboard monogram.
-
- * @returns Rendered React element.
-*/
-function KimiLogo(): JSX.Element {
-  return (
-    <svg viewBox="0 0 24 24" role="img" aria-label="Kimi Code" className="h-7 w-7">
-      <path
-        fill="currentColor"
-        className="text-brand-kimi"
-        d="M5 3.5h3v7.15L14.35 3.5h3.8l-6.8 7.5 7.15 9.5h-3.7l-5.55-7.35L8 14.5v6H5v-17z"
-      />
-    </svg>
-  )
-}
-
 const ProjectTile = memo(function ProjectTile({
   item,
   brand,
@@ -1336,7 +1226,10 @@ const ProjectTile = memo(function ProjectTile({
   const contextWindow = effectiveContextWindow(agent)
 
   return (
-    <article className="project-tile px-3.5 py-3">
+    <article
+      className="project-tile fx-spot fx-tilt px-3.5 py-3"
+      data-live={isLiveState(agent.state) ? '' : undefined}
+    >
       <div className="grid gap-2.5">
         <div className="flex min-w-0 items-center justify-between gap-3">
           <div className="min-w-0">
@@ -1364,7 +1257,10 @@ const ProjectTile = memo(function ProjectTile({
         </div>
 
         <div className="grid grid-cols-[minmax(7rem,1fr)_minmax(4.75rem,0.7fr)_minmax(5.5rem,0.7fr)] gap-2">
-          <InlineMetric label={copy.model} value={agent.model ?? '—'} />
+          <InlineMetric
+            label={copy.model}
+            value={agent.model ? formatModelName(agent.model) : '—'}
+          />
           <InlineMetric
             label={copy.thinkingDepth}
             value={formatThinkingDepth(agent.reasoningEffort, locale)}
@@ -1564,7 +1460,7 @@ function ContextMeter({
   const width = hasPercent ? `${Math.min(100, Math.max(2, usedPercent))}%` : '0%'
 
   return (
-    <div className="rounded-badge border border-line bg-[#F8FAFC] px-3 py-2">
+    <div className="border-t border-line-soft pt-2.5">
       <div className="mb-1.5 flex min-w-0 items-center justify-between gap-2 text-xs">
         <span className="shrink-0 font-medium text-ink-500">{copy.contextWindow}</span>
         <span className="truncate font-semibold text-ink">{status.text}</span>
@@ -1624,7 +1520,7 @@ function TokenMeter({
  */
 function InlineMetric({ label, value }: { label: string; value: ReactNode }): JSX.Element {
   return (
-    <div className="stat-pill min-w-0">
+    <div className="min-w-0">
       <p className="text-[10px] font-medium text-ink-500">{label}</p>
       <p className="mt-0.5 truncate text-[13px] font-semibold text-ink">{value}</p>
     </div>
@@ -1685,6 +1581,15 @@ function brandClass(agentType: AgentType): BrandClass {
  * @param state Runtime state to inspect.
  * @returns CSS class for the runtime state chip.
  */
+/** Turn states that animate as "working" (live status dot, shimmering context meter). */
+function isLiveState(state: AgentRuntimeState['state']): boolean {
+  return (
+    state === TurnState.PROMPT_SUBMITTED ||
+    state === TurnState.THINKING ||
+    state === TurnState.TOOL_RUNNING
+  )
+}
+
 function stateChipClass(state: AgentRuntimeState['state']): string {
   switch (state) {
     case TurnState.DONE:

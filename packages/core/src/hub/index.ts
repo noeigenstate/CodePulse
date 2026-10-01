@@ -187,16 +187,6 @@ export class StatusHub extends EventEmitter {
     if (changed) this.emit('status', this.snapshot())
   }
 
-  /**
-   * 全局开启或关闭通知声音。
-   *
-   * @param muted `true` 表示抑制声音。
-
-   */
-  setMuted(muted: boolean): void {
-    this.rules.setMuted(muted)
-  }
-
   /** 让后续系统通知使用桌面端当前选择的语言。
 
    * @param locale Active user-interface locale.

@@ -139,12 +139,11 @@ body {
     -webkit-app-region: drag;
   }
 
+  /* Integer size with the small-size mark (no CSS clip) keeps the badge edge crisp. */
   .window-titlebar-logo {
-    width: 1.1rem;
-    height: 1.1rem;
+    width: 18px;
+    height: 18px;
     flex-shrink: 0;
-    border-radius: 999px;
-    object-fit: contain;
   }
 
   .app-shell::before {
@@ -629,6 +628,67 @@ body {
 :root[data-theme='dark'] [class*='bg-[#F8FAFC]'],
 :root[data-theme='dark'] [class*='bg-[#F6F8FC]'] {
   background-color: var(--surface-muted) !important;
+}
+
+/* Tinted status chips and notices: Tailwind's -50 fills glare on the dark canvas. */
+:root[data-theme='dark'] .bg-blue-50 {
+  background-color: rgba(59, 130, 246, 0.16) !important;
+}
+:root[data-theme='dark'] .bg-emerald-50,
+:root[data-theme='dark'] [class~='bg-emerald-50/80'] {
+  background-color: rgba(16, 185, 129, 0.15) !important;
+}
+:root[data-theme='dark'] .bg-amber-50 {
+  background-color: rgba(245, 158, 11, 0.15) !important;
+}
+:root[data-theme='dark'] .bg-orange-50 {
+  background-color: rgba(249, 115, 22, 0.15) !important;
+}
+:root[data-theme='dark'] .bg-red-50 {
+  background-color: rgba(239, 68, 68, 0.15) !important;
+}
+:root[data-theme='dark'] .text-blue-700 {
+  color: #93c5fd !important;
+}
+:root[data-theme='dark'] .text-emerald-700 {
+  color: #6ee7b7 !important;
+}
+:root[data-theme='dark'] .text-amber-700,
+:root[data-theme='dark'] .text-amber-800 {
+  color: #fcd34d !important;
+}
+:root[data-theme='dark'] .text-orange-700 {
+  color: #fdba74 !important;
+}
+:root[data-theme='dark'] .text-red-700 {
+  color: #fca5a5 !important;
+}
+:root[data-theme='dark'] .text-slate-600 {
+  color: var(--ink-muted) !important;
+}
+:root[data-theme='dark'] .ring-blue-200 {
+  --tw-ring-color: rgba(59, 130, 246, 0.35) !important;
+}
+:root[data-theme='dark'] .ring-emerald-200,
+:root[data-theme='dark'] .border-emerald-200 {
+  --tw-ring-color: rgba(16, 185, 129, 0.35) !important;
+  border-color: rgba(16, 185, 129, 0.35) !important;
+}
+:root[data-theme='dark'] .ring-amber-200,
+:root[data-theme='dark'] .border-amber-200 {
+  --tw-ring-color: rgba(245, 158, 11, 0.35) !important;
+  border-color: rgba(245, 158, 11, 0.35) !important;
+}
+:root[data-theme='dark'] .ring-orange-200 {
+  --tw-ring-color: rgba(249, 115, 22, 0.35) !important;
+}
+:root[data-theme='dark'] .ring-red-200,
+:root[data-theme='dark'] .border-red-200 {
+  --tw-ring-color: rgba(239, 68, 68, 0.35) !important;
+  border-color: rgba(239, 68, 68, 0.35) !important;
+}
+:root[data-theme='dark'] .ring-slate-200 {
+  --tw-ring-color: var(--line) !important;
 }
 
 :root[data-theme='dark'] [class~='bg-ink'] {

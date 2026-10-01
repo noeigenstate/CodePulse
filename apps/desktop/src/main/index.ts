@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process'
 import { readFileSync, writeFileSync, unlinkSync } from 'node:fs'
-import { networkInterfaces } from 'node:os'
+import { homedir, networkInterfaces } from 'node:os'
 import { join } from 'node:path'
-import { app, BrowserWindow, ipcMain, Menu, powerMonitor, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, powerMonitor, shell } from 'electron'
 import {
   type Agent,
   type AgentType,
@@ -15,15 +15,17 @@ import {
   type UpdateDownloadProgress,
   type UpdateInfo,
   type UpdateInstallResult,
-  type UsageStatsQuery,
+  type UsageLedgerSnapshot,
 } from '@codepulse/shared'
 import { StatusHub } from '@codepulse/core'
 import {
   openDb,
   persistEvent,
   pruneEventsBefore,
-  queryUsageStats,
+  queryUsageLedger,
+  UsageScanner,
   type DB,
+  type UsageLedgerQuery,
 } from '@codepulse/storage'
 import {
   cleanupAgents,
@@ -31,6 +33,7 @@ import {
   defaultDeviceAuthPath,
   detectAgents,
   readDeviceServerConfig,
+  readOpencodeUsageTotals,
   startDeviceServer,
   startLocalServer,
   type DeviceServer,
@@ -38,6 +41,7 @@ import {
 } from '@codepulse/local-server'
 import { TrayController } from './tray.js'
 import { showNotification } from './notifications.js'
+import { readNotificationsEnabled, writeNotificationsEnabled } from './notification-settings.js'
 import { FocusSyncScheduler } from './focus-sync.js'
 import { DisplayDeviceBrowser } from './device-browser.js'
 import { logoutMimo, openMimoLogin, provideMimoCookie, readMimoCookie } from './mimo-auth.js'
@@ -60,7 +64,6 @@ import {
   type WindowTheme,
 } from './window-chrome.js'
 
-const MUTE_DURATION_MS = 30 * 60_000
 const DISABLE_UPDATE_CHECK_ENV = 'CODEPULSE_DISABLE_UPDATE_CHECKS'
 const EVENT_RETENTION_MS = 30 * 24 * 60 * 60_000
 const EVENT_PRUNE_INTERVAL_MS = 24 * 60 * 60_000
@@ -76,15 +79,15 @@ let displayBrowser: DisplayDeviceBrowser | null = null
 /** 本地 HTTP 服务是否已成功监听（失败时禁止配置 Hook，避免打到其它进程）。 */
 let localServerReady = false
 let db: DB | null = null
-/** 本机 SQLite 路径；统计后台只读此库（与实时 StatusHub 内存态分离）。 */
-let dbPath: string | null = null
-/** openDb 失败时的原因，用于统计页诊断。 */
-let dbOpenError: string | undefined
-let muteTimer: NodeJS.Timeout | null = null
 let updateTimer: NodeJS.Timeout | null = null
 let pruneTimer: NodeJS.Timeout | null = null
 let latestUpdate: UpdateInfo | null = null
 let checkingUpdate = false
+/** Reads per-request usage from CLI logs into SQLite for the Usage dashboard. */
+let usageScanner: UsageScanner | null = null
+let usageScanTimer: NodeJS.Timeout | null = null
+/** Desktop toast opt-in, persisted in userData; off until the user enables it in settings. */
+let notificationsEnabled = false
 let shutdownStarted = false
 let installingUpdate = false
 let lastTrayStatusKey: string | undefined
@@ -188,6 +191,13 @@ function createWindow(): void {
   mainWindow.on('closed', () => {
     mainWindow = null
   })
+  // A crashed or killed renderer leaves a blank window; reload it instead.
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error('[codepulse] renderer gone', details.reason, details.exitCode)
+    if (details.reason === 'clean-exit') return
+    const win = mainWindow
+    if (win && !win.isDestroyed()) win.webContents.reload()
+  })
 
   const devUrl = process.env['ELECTRON_RENDERER_URL']
   if (devUrl) {
@@ -230,22 +240,13 @@ function wireHub(): void {
   })
 
   hub.on('notification', (note: NotificationRequest) => {
-    showNotification(note, showWindow)
+    // Desktop notifications are opt-in; the tray and dashboard still show every state.
+    if (notificationsEnabled) showNotification(note, showWindow)
   })
 }
 
-function setMuted(muted: boolean): void {
-  hub.setMuted(muted)
-  tray?.setMuted(muted)
-  if (muteTimer) {
-    clearTimeout(muteTimer)
-    muteTimer = null
-  }
-  if (muted) {
-    muteTimer = setTimeout(() => setMuted(false), MUTE_DURATION_MS)
-    muteTimer.unref?.()
-  }
-  broadcast('codepulse:mute', muted)
+function notificationSettingsPath(): string {
+  return join(app.getPath('userData'), 'notification-settings.json')
 }
 
 function setLocale(value: unknown): UiLocale {
@@ -284,9 +285,10 @@ function registerIpc(): void {
     hub.acknowledge(agent, workspacePath)
     return true
   })
-  ipcMain.handle('codepulse:set-mute', (_event, muted: boolean) => {
-    setMuted(muted)
-    return muted
+  ipcMain.handle('codepulse:get-notifications', () => notificationsEnabled)
+  ipcMain.handle('codepulse:set-notifications', (_event, enabled: unknown) => {
+    notificationsEnabled = writeNotificationsEnabled(notificationSettingsPath(), enabled)
+    return notificationsEnabled
   })
   ipcMain.handle('codepulse:set-locale', (_event, locale: unknown) => setLocale(locale))
   ipcMain.handle('codepulse:set-window-theme', (event, theme: unknown) =>
@@ -323,11 +325,8 @@ function registerIpc(): void {
       checkingUpdate = false
     }
   })
-  ipcMain.handle('codepulse:get-stats', (_event, query?: UsageStatsQuery) =>
-    queryUsageStats(db, query ?? {}, Date.now(), {
-      dbPath: dbPath ?? undefined,
-      openError: dbOpenError,
-    }),
+  ipcMain.handle('codepulse:get-usage', (_event, query?: Partial<UsageLedgerQuery>) =>
+    getUsageSnapshot(query),
   )
   /** 渲染进程主动触发本机 CLI 会话扫盘（不依赖 hook / 用户发消息）。 */
   ipcMain.handle('codepulse:sync-sessions', async () => {
@@ -433,18 +432,19 @@ function registerIpc(): void {
 
 async function bootstrap(): Promise<void> {
   Menu.setApplicationMenu(null)
+  notificationsEnabled = readNotificationsEnabled(notificationSettingsPath())
 
-  dbPath = join(app.getPath('userData'), 'codepulse.sqlite')
+  const dbPath = join(app.getPath('userData'), 'codepulse.sqlite')
   try {
-    db = openDb(dbPath).db
-    dbOpenError = undefined
+    const opened = openDb(dbPath)
+    db = opened.db
+    usageScanner = createUsageScanner(opened.sqlite)
     console.log(`[codepulse] SQLite ready at ${dbPath}`)
   } catch (err) {
     db = null
-    dbOpenError = err instanceof Error ? err.message : String(err)
     console.error('[codepulse] SQLite unavailable - running without persistence', err)
     console.error(
-      '[codepulse] Live dashboard still works; local analytics will stay empty until SQLite loads.',
+      '[codepulse] Live dashboard still works; the Usage page stays empty until SQLite loads.',
     )
   }
 
@@ -515,7 +515,6 @@ async function bootstrap(): Promise<void> {
 
   tray = new TrayController({
     onOpen: showWindow,
-    onToggleMute: setMuted,
     onQuit: () => {
       app.quit()
     },
@@ -608,6 +607,7 @@ function safeErrorMessage(error: unknown): string {
 
 function startMaintenanceTimers(): void {
   prunePersistedEvents()
+  startUsageScans()
 
   if (pruneTimer) clearInterval(pruneTimer)
   pruneTimer = setInterval(prunePersistedEvents, EVENT_PRUNE_INTERVAL_MS)
@@ -648,8 +648,68 @@ async function shutdownRuntime(): Promise<void> {
 function stopMaintenanceTimers(): void {
   if (pruneTimer) clearInterval(pruneTimer)
   if (updateTimer) clearInterval(updateTimer)
+  if (usageScanTimer) clearInterval(usageScanTimer)
   pruneTimer = null
   updateTimer = null
+  usageScanTimer = null
+}
+
+/** Background rescans keep the ledger current; the dashboard also rescans on open. */
+const USAGE_SCAN_INTERVAL_MS = 60_000
+const USAGE_FIRST_SCAN_DELAY_MS = 3_000
+
+function createUsageScanner(
+  sqlite: ConstructorParameters<typeof UsageScanner>[0]['sqlite'],
+): UsageScanner {
+  const home = homedir()
+  const claudeHome = process.env['CLAUDE_HOME'] ?? join(home, '.claude')
+  const codexHome = process.env['CODEX_HOME'] ?? join(home, '.codex')
+  const opencodeHome = process.env['OPENCODE_DATA_DIR'] ?? join(home, '.local', 'share', 'opencode')
+  return new UsageScanner({
+    sqlite,
+    claudeProjectsDir: join(claudeHome, 'projects'),
+    codexSessionsDir: join(codexHome, 'sessions'),
+    readOpencodeTotals: () => readOpencodeUsageTotals(opencodeHome),
+  })
+}
+
+function runUsageScan(): Promise<void> {
+  if (!usageScanner) return Promise.resolve()
+  return usageScanner.scan().then(
+    (result) => {
+      if (result.changedFiles > 0) {
+        console.log(
+          `[codepulse] usage scan: ${result.changedFiles}/${result.files} files, ` +
+            `${result.records} requests, ${result.prompts} prompts in ${result.durationMs}ms`,
+        )
+      }
+    },
+    (err) => console.error('[codepulse] usage scan failed', err),
+  )
+}
+
+function startUsageScans(): void {
+  if (!usageScanner) return
+  const first = setTimeout(() => void runUsageScan(), USAGE_FIRST_SCAN_DELAY_MS)
+  first.unref?.()
+  if (usageScanTimer) clearInterval(usageScanTimer)
+  usageScanTimer = setInterval(() => void runUsageScan(), USAGE_SCAN_INTERVAL_MS)
+  usageScanTimer.unref?.()
+}
+
+async function getUsageSnapshot(
+  query: Partial<UsageLedgerQuery> | undefined,
+): Promise<UsageLedgerSnapshot | null> {
+  const sqlite = usageScanner?.options.sqlite
+  if (!sqlite) return null
+  await runUsageScan()
+  const range = query?.range === 'today' || query?.range === '30d' ? query.range : '7d'
+  const granularity =
+    query?.granularity === 'week' || query?.granularity === 'month' ? query.granularity : 'day'
+  return {
+    ...queryUsageLedger(sqlite, { range, granularity }),
+    scannedAt: usageScanner?.lastScanAt,
+  }
 }
 
 function prunePersistedEvents(): void {
@@ -917,13 +977,30 @@ if (cleanupMode) {
 } else if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
+  // Background sync, watchers and timers must never take the tray app down or
+  // surface Electron's "JavaScript error in the main process" dialog.
+  process.on('uncaughtException', (err) => {
+    console.error('[codepulse] uncaught exception', err)
+  })
+  process.on('unhandledRejection', (reason) => {
+    console.error('[codepulse] unhandled rejection', reason)
+  })
+
   app.on('second-instance', showWindow)
 
   app
     .whenReady()
     .then(bootstrap)
     .catch((err) => {
+      // Without a window or tray the process would linger invisibly and keep the
+      // single-instance lock, so every later launch would silently exit.
       console.error('[codepulse] bootstrap failed', err)
+      dialog.showErrorBox(
+        'CodePulse',
+        `CodePulse failed to start / 启动失败:
+${err instanceof Error ? err.message : String(err)}`,
+      )
+      app.exit(1)
     })
 
   app.on('window-all-closed', () => {

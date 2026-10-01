@@ -45,7 +45,6 @@ function storeApi(
     detectAgents: async () => [],
     getUpdate: async () => null,
     onStatus,
-    onMute: () => () => undefined,
     onAgents: () => () => undefined,
     onUpdateAvailable: () => () => undefined,
     onUpdateProgress: () => () => undefined,

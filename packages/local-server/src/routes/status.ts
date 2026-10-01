@@ -16,7 +16,6 @@ const AGENT_TYPES: readonly AgentType[] = ['codex', 'claude_code', 'grok', 'kimi
  * - `GET /api/status` —— Dashboard 用的完整 {@link StatusSnapshot}。
  * - `GET /api/device/status` —— 硬件用的极简 {@link DeviceStatus}。
  * - `POST /api/ack/:agent` —— 把 agent 的终结结果标记为已读。
- * - `POST /api/mute` —— `{ muted }` 切换通知声音。
  * - `GET /api/health` —— 存活探针。
  *
  * @param app 注册路由的 Fastify 实例。
@@ -42,12 +41,6 @@ export function registerStatusRoutes(app: FastifyInstance, hub: StatusHub): void
       request.body?.workspacePath ?? request.query.workspacePath,
     )
     return { ok: true }
-  })
-
-  app.post<{ Body: { muted?: boolean } }>('/api/mute', async (request) => {
-    const muted = Boolean(request.body?.muted)
-    hub.setMuted(muted)
-    return { ok: true, muted }
   })
 
   app.get('/api/health', async () => ({ ok: true, ts: Date.now() }))

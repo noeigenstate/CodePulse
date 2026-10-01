@@ -214,6 +214,23 @@ jobs:
       - name: Build Linux x64 AppImage
         run: pnpm dist:linux
 
+      # AppImageUpdate-compatible updates: update information in the runtime's
+      # .upd_info section plus a .zsync published next to the AppImage.
+      - name: Embed AppImage update information and build zsync
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zsync
+          name="CodePulse_${RELEASE_VERSION}_x86_64.AppImage"
+          owner="${GITHUB_REPOSITORY%%/*}"
+          repo="${GITHUB_REPOSITORY#*/}"
+          node scripts/appimage-update-info.mjs "apps/desktop/release/${name}" \
+            "gh-releases-zsync|${owner}|${repo}|latest|CodePulse_*_x86_64.AppImage.zsync"
+          cd apps/desktop/release
+          zsyncmake -u "${name}" -o "${name}.zsync" "${name}"
+
       - name: Verify Linux AppImage exists and is executable
         env:
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
@@ -234,6 +251,16 @@ jobs:
           fi
 
           "${appimage}" --appimage-version
+          update_info="$("${appimage}" --appimage-updateinformation)"
+          echo "Update information: ${update_info}"
+          case "${update_info}" in
+            gh-releases-zsync\|*\|latest\|CodePulse_\*_x86_64.AppImage.zsync) ;;
+            *) echo "Missing or unexpected AppImage update information"; exit 1 ;;
+          esac
+          if [ ! -s "${appimage}.zsync" ]; then
+            echo "Missing zsync file: ${appimage}.zsync"
+            exit 1
+          fi
           echo "OK Linux AppImage: ${appimage} ($(wc -c < "${appimage}") bytes)"
 
       - name: Upload Linux AppImage artifact
@@ -241,7 +268,9 @@ jobs:
         with:
           name: codepulse-linux-${{ needs.prepare.outputs.tag }}
           if-no-files-found: error
-          path: apps/desktop/release/*.AppImage
+          path: |
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.AppImage.zsync
 
   macos:
     name: Build macOS installer
@@ -371,6 +400,7 @@ jobs:
               -name '*.exe' -o \
               -name '*.dmg' -o \
               -name '*.AppImage' -o \
+              -name '*.AppImage.zsync' -o \
               -name '*.zip' -o \
               -name '*.blockmap' -o \
               -name 'latest.yml' -o \

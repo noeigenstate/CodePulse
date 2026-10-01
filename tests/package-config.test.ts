@@ -99,6 +99,14 @@ test('desktop package scripts and builder config include Windows, Linux, and mac
   assert.match(workflow, /pnpm dist:mac/)
   assert.match(workflow, /pnpm dist:win/)
   assert.match(workflow, /pnpm dist:linux/)
+  // AppImageUpdate: update information embedded in the runtime and a .zsync published.
+  assert.match(workflow, /appimage-update-info\.mjs/)
+  assert.match(
+    workflow,
+    /gh-releases-zsync\|\$\{owner\}\|\$\{repo\}\|latest\|CodePulse_\*_x86_64\.AppImage\.zsync/,
+  )
+  assert.match(workflow, /zsyncmake -u/)
+  assert.match(workflow, /-name '\*\.AppImage\.zsync'/)
   assert.match(workflow, /runs-on: ubuntu-latest/)
   assert.match(workflow, /node: \[20, 22\]/)
   assert.match(workflow, /needs: \[prepare, verify\]/)

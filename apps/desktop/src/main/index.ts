@@ -250,8 +250,9 @@ function notificationSettingsPath(): string {
 }
 
 function setLocale(value: unknown): UiLocale {
-  const locale: UiLocale = value === 'en' ? 'en' : 'zh'
+  const locale: UiLocale = value === 'zh' ? 'zh' : 'en'
   hub.setLocale(locale)
+  tray?.setLocale(locale)
   return locale
 }
 
@@ -519,6 +520,9 @@ async function bootstrap(): Promise<void> {
       app.quit()
     },
   })
+  // Until the dashboard restores the user's saved choice: Chinese on a Chinese
+  // system, English elsewhere (including the POSIX C locale).
+  setLocale(app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en')
 
   createWindow()
   // Safety net: rescan after the window is up (covers late-arriving rollouts).

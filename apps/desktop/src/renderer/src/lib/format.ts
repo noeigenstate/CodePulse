@@ -59,7 +59,7 @@ export function turnStateStyle(state: TurnState): StateStyle {
  * @param ms 时长（毫秒，负值按 0 处理）。
  * @returns 格式化后的字符串。
  */
-export function formatDuration(ms: number, locale: Locale = 'zh'): string {
+export function formatDuration(ms: number, locale: Locale = 'en'): string {
   if (ms < 0) ms = 0
   const totalSec = Math.floor(ms / 1000)
   const h = Math.floor(totalSec / 3600)
@@ -82,7 +82,7 @@ export function formatDuration(ms: number, locale: Locale = 'zh'): string {
  * @param now 当前时间（epoch 毫秒）。
  * @returns 简短的相对时间字符串。
  */
-export function formatRelative(ts: number, now: number, locale: Locale = 'zh'): string {
+export function formatRelative(ts: number, now: number, locale: Locale = 'en'): string {
   const diff = now - ts
   if (locale === 'zh') {
     if (diff < 5_000) return '刚刚'

@@ -798,7 +798,34 @@ export function formatThinkingDepth(effort: string | undefined, locale: Locale):
   return THINKING_DEPTH_LABELS[locale][normalized] ?? effort
 }
 
-export function readStoredLocale(storage: LocaleStorageLike | undefined): Locale {
-  const value = storage?.getItem('codepulse:locale')
-  return value === 'en' ? 'en' : 'zh'
+/**
+ * Maps a system language tag to the UI locale: Chinese for `zh*`, English
+ * otherwise (including the POSIX `C` locale, which Electron reports as `en-US`).
+ *
+ * @param systemLanguage BCP 47 tag such as `navigator.language` / `app.getLocale()`.
+ * @returns UI locale to use when the user has not chosen one.
+ */
+export function localeFromSystem(systemLanguage: string | undefined): Locale {
+  return systemLanguage?.toLowerCase().startsWith('zh') ? 'zh' : 'en'
+}
+
+/**
+ * Reads the language the user picked, falling back to the system language.
+ *
+ * @param storage Renderer local storage.
+ * @param systemLanguage System language tag, defaulting to `navigator.language`.
+ * @returns The saved choice, else Chinese on a Chinese system and English elsewhere.
+ */
+export function readStoredLocale(
+  storage: LocaleStorageLike | undefined,
+  systemLanguage: string | undefined = globalThis.navigator?.language,
+): Locale {
+  let value: string | null | undefined
+  try {
+    value = storage?.getItem('codepulse:locale')
+  } catch {
+    value = undefined
+  }
+  if (value === 'zh' || value === 'en') return value
+  return localeFromSystem(systemLanguage)
 }

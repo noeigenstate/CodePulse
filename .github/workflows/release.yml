@@ -178,9 +178,20 @@ jobs:
             apps/desktop/release/latest.yml
 
   linux:
-    name: Build Linux AppImage
+    name: Build Linux AppImage (${{ matrix.arch }})
     needs: [prepare, verify]
-    runs-on: ubuntu-latest
+    # Native runner per arch: electronDist is the host-arch Electron from node_modules.
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-latest
+            appimage_arch: x86_64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            appimage_arch: arm64
 
     steps:
       - name: Check out repository
@@ -211,32 +222,35 @@ jobs:
       - name: Clean release output
         run: rm -rf apps/desktop/release
 
-      - name: Build Linux x64 AppImage
-        run: pnpm dist:linux
+      - name: Build Linux ${{ matrix.arch }} AppImage
+        run: pnpm dist:linux:${{ matrix.arch }}
 
       # AppImageUpdate-compatible updates: update information in the runtime's
       # .upd_info section plus a .zsync published next to the AppImage.
+      # Per-arch zsync pattern so each AppImage only ever updates to its own arch.
       - name: Embed AppImage update information and build zsync
         env:
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          APPIMAGE_ARCH: ${{ matrix.appimage_arch }}
         run: |
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y -qq zsync
-          name="CodePulse_${RELEASE_VERSION}_x86_64.AppImage"
+          name="CodePulse_${RELEASE_VERSION}_${APPIMAGE_ARCH}.AppImage"
           owner="${GITHUB_REPOSITORY%%/*}"
           repo="${GITHUB_REPOSITORY#*/}"
           node scripts/appimage-update-info.mjs "apps/desktop/release/${name}" \
-            "gh-releases-zsync|${owner}|${repo}|latest|CodePulse_*_x86_64.AppImage.zsync"
+            "gh-releases-zsync|${owner}|${repo}|latest|CodePulse_*_${APPIMAGE_ARCH}.AppImage.zsync"
           cd apps/desktop/release
           zsyncmake -u "${name}" -o "${name}.zsync" "${name}"
 
       - name: Verify Linux AppImage exists and is executable
         env:
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          APPIMAGE_ARCH: ${{ matrix.appimage_arch }}
         run: |
           set -euo pipefail
-          appimage="apps/desktop/release/CodePulse_${RELEASE_VERSION}_x86_64.AppImage"
+          appimage="apps/desktop/release/CodePulse_${RELEASE_VERSION}_${APPIMAGE_ARCH}.AppImage"
 
           echo "Release directory contents:"
           ls -lah apps/desktop/release
@@ -254,7 +268,7 @@ jobs:
           update_info="$("${appimage}" --appimage-updateinformation)"
           echo "Update information: ${update_info}"
           case "${update_info}" in
-            gh-releases-zsync\|*\|latest\|CodePulse_\*_x86_64.AppImage.zsync) ;;
+            "gh-releases-zsync|"*"|latest|CodePulse_*_${APPIMAGE_ARCH}.AppImage.zsync") ;;
             *) echo "Missing or unexpected AppImage update information"; exit 1 ;;
           esac
           if [ ! -s "${appimage}.zsync" ]; then
@@ -266,7 +280,7 @@ jobs:
       - name: Upload Linux AppImage artifact
         uses: actions/upload-artifact@v4
         with:
-          name: codepulse-linux-${{ needs.prepare.outputs.tag }}
+          name: codepulse-linux-${{ matrix.arch }}-${{ needs.prepare.outputs.tag }}
           if-no-files-found: error
           path: |
             apps/desktop/release/*.AppImage
@@ -370,10 +384,11 @@ jobs:
           name: codepulse-macos-${{ needs.prepare.outputs.tag }}
           path: release-assets/macos
 
-      - name: Download Linux artifacts
+      - name: Download Linux artifacts (x64 + arm64)
         uses: actions/download-artifact@v4
         with:
-          name: codepulse-linux-${{ needs.prepare.outputs.tag }}
+          pattern: codepulse-linux-*-${{ needs.prepare.outputs.tag }}
+          merge-multiple: true
           path: release-assets/linux
 
       - name: Download release notes

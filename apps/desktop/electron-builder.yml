@@ -92,11 +92,13 @@ linux:
   # SquashFS produced by `compression: maximum`; keep the AppImage on gzip.
   compression: normal
   # No "linux" in the name: AppImageHub flags it (every AppImage is Linux).
+  #   CodePulse_<version>_x86_64.AppImage → x64
+  #   CodePulse_<version>_arm64.AppImage  → arm64 / aarch64
   artifactName: CodePulse_${version}_${arch}.${ext}
+  # No fixed arch: builds for the host CPU. `electronDist` is the locally installed
+  # Electron (host arch only), so each Linux arch must be packaged on a matching host.
   target:
     - target: AppImage
-      arch:
-        - x64
   category: Development
 nsis:
   oneClick: false

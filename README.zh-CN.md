@@ -141,8 +141,10 @@ Fastify · better-sqlite3 · Drizzle ORM。
 - **macOS Apple Silicon：** `CodePulse_*_mac-arm64.dmg`（M 系列芯片）
 - **macOS Intel：** `CodePulse_*_mac-x64.dmg`
 - **Linux x64：** `CodePulse_*_x86_64.AppImage`
+- **Linux arm64 / aarch64：** `CodePulse_*_arm64.AppImage`
 
-Linux 下载后需要先添加可执行权限，再启动 AppImage：
+Linux 下载后需要先添加可执行权限，再启动 AppImage（ARM 机器把 `x86_64` 换成 `arm64`，
+可用 `uname -m` 查看本机架构）：
 
 ```bash
 chmod +x CodePulse_*_x86_64.AppImage
@@ -339,7 +341,9 @@ workspace 内的包以 TypeScript **源码** 形式被消费（每个包的 `exp
 pnpm build        # 构建各包，再把应用打包进 apps/desktop/out
 pnpm dist         # 为当前操作系统打包安装包到 apps/desktop/release
 pnpm dist:win     # Windows NSIS 安装包（.exe）
-pnpm dist:linux   # Linux x64 AppImage
+pnpm dist:linux   # 按本机 CPU 构建 Linux AppImage（x64 或 arm64）
+pnpm dist:linux:x64
+pnpm dist:linux:arm64
 pnpm dist:mac     # macOS DMG：分别打 arm64 与 Intel x64（非 universal）
 pnpm dist:mac:arm64
 pnpm dist:mac:x64
@@ -352,7 +356,8 @@ pnpm dist:dir     # 免安装目录（更快，便于本地测试）
 如果用户可见行为发生变化，请在同一次改动里同步更新英文 README 和本中文版。
 
 打包目标在 `apps/desktop/electron-builder.yml` 中配置（Windows 用 NSIS、macOS 用
-Intel/Apple Silicon 双架构 DMG、Linux 用 AppImage）。原生模块 `better-sqlite3`
+Intel/Apple Silicon 双架构 DMG、Linux 用 x64 与 arm64 AppImage）。Linux 打包直接复用本地安装的
+Electron，因此每种 Linux 架构需要在同架构机器上构建，跨架构构建会直接报错退出。原生模块 `better-sqlite3`
 会保留在 asar 归档之外，以便运行时加载；非运行时源码和未使用的 Electron 语言资源会从
 安装包中排除。
 

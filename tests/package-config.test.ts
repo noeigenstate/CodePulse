@@ -63,9 +63,18 @@ test('desktop package scripts and builder config include Windows, Linux, and mac
   const workflow = readFileSync('.github/workflows/release.yml', 'utf8')
 
   assert.match(String(desktopPackage.scripts?.['dist:win'] ?? ''), /electron-builder --win/)
+  // Plain dist:linux follows the host CPU; electronDist is host-arch only.
   assert.match(
     String(desktopPackage.scripts?.['dist:linux'] ?? ''),
+    /electron-builder --linux AppImage$/,
+  )
+  assert.match(
+    String(desktopPackage.scripts?.['dist:linux:x64'] ?? ''),
     /electron-builder --linux AppImage --x64/,
+  )
+  assert.match(
+    String(desktopPackage.scripts?.['dist:linux:arm64'] ?? ''),
+    /electron-builder --linux AppImage --arm64/,
   )
   assert.match(
     String(desktopPackage.scripts?.['dist:mac'] ?? ''),
@@ -98,13 +107,16 @@ test('desktop package scripts and builder config include Windows, Linux, and mac
   assert.match(workflow, /runs-on: macos-latest/)
   assert.match(workflow, /pnpm dist:mac/)
   assert.match(workflow, /pnpm dist:win/)
-  assert.match(workflow, /pnpm dist:linux/)
+  assert.match(workflow, /pnpm dist:linux:\$\{\{ matrix\.arch \}\}/)
+  assert.match(workflow, /runner: ubuntu-24\.04-arm/)
   // AppImageUpdate: update information embedded in the runtime and a .zsync published.
   assert.match(workflow, /appimage-update-info\.mjs/)
   assert.match(
     workflow,
-    /gh-releases-zsync\|\$\{owner\}\|\$\{repo\}\|latest\|CodePulse_\*_x86_64\.AppImage\.zsync/,
+    /gh-releases-zsync\|\$\{owner\}\|\$\{repo\}\|latest\|CodePulse_\*_\$\{APPIMAGE_ARCH\}\.AppImage\.zsync/,
   )
+  assert.match(workflow, /appimage_arch: x86_64/)
+  assert.match(workflow, /appimage_arch: arm64/)
   assert.match(workflow, /zsyncmake -u/)
   assert.match(workflow, /-name '\*\.AppImage\.zsync'/)
   assert.match(workflow, /runs-on: ubuntu-latest/)

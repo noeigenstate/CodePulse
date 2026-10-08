@@ -164,8 +164,10 @@ Download installers from
 - **macOS Apple Silicon:** `CodePulse_*_mac-arm64.dmg` (M-series)
 - **macOS Intel:** `CodePulse_*_mac-x64.dmg`
 - **Linux x64:** `CodePulse_*_x86_64.AppImage`
+- **Linux arm64 / aarch64:** `CodePulse_*_arm64.AppImage`
 
-On Linux, make the downloaded AppImage executable and run it:
+On Linux, make the downloaded AppImage executable and run it (use `arm64` instead
+of `x86_64` on ARM machines; check with `uname -m`):
 
 ```bash
 chmod +x CodePulse_*_x86_64.AppImage
@@ -387,7 +389,9 @@ Electron rebuild, so tests never silently run against an Electron-only binary.
 pnpm build        # build packages, then bundle the app into apps/desktop/out
 pnpm dist         # package an installer for the current OS into apps/desktop/release
 pnpm dist:win     # Windows NSIS installer (.exe)
-pnpm dist:linux   # Linux x64 AppImage
+pnpm dist:linux   # Linux AppImage for the host CPU (x64 or arm64)
+pnpm dist:linux:x64
+pnpm dist:linux:arm64
 pnpm dist:mac     # macOS DMGs: separate arm64 + Intel x64 (not universal)
 pnpm dist:mac:arm64
 pnpm dist:mac:x64
@@ -401,7 +405,9 @@ will use that file as the release body. If user-facing behavior changes, update
 this README and `README.zh-CN.md` in the same change.
 
 Targets are configured in `apps/desktop/electron-builder.yml` (NSIS on
-Windows, DMG on macOS for both Intel and Apple Silicon, AppImage on Linux).
+Windows, DMG on macOS for both Intel and Apple Silicon, AppImage on Linux for
+x64 and arm64). Linux packages reuse the locally installed Electron, so build each
+Linux arch on a matching host — a cross-arch build stops with an error.
 The native `better-sqlite3` addon is unpacked so it loads at runtime; non-runtime
 sources and unused Electron locales are excluded from the installer.
 

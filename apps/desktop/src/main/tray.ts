@@ -11,6 +11,8 @@ import { trayIconFor } from './icon.js'
 
 export interface TrayCallbacks {
   onOpen: () => void
+  /** Put every CLI config back to its pre-CodePulse state, then quit. */
+  onRestoreConfigsAndQuit: () => void
   onQuit: () => void
 }
 
@@ -59,6 +61,7 @@ export class TrayController {
       { type: 'separator' },
       { label: copy.open, click: () => this.callbacks.onOpen() },
       { type: 'separator' },
+      { label: copy.restoreConfigs, click: () => this.callbacks.onRestoreConfigsAndQuit() },
       { label: copy.quit, click: () => this.callbacks.onQuit() },
     ])
   }
@@ -69,9 +72,22 @@ export class TrayController {
   }
 }
 
-const MENU_COPY: Record<UiLocale, { noAgents: string; open: string; quit: string }> = {
-  en: { noAgents: 'No active agents', open: 'Open dashboard', quit: 'Quit' },
-  zh: { noAgents: '暂无活动 Agent', open: '打开面板', quit: '退出' },
+const MENU_COPY: Record<
+  UiLocale,
+  { noAgents: string; open: string; restoreConfigs: string; quit: string }
+> = {
+  en: {
+    noAgents: 'No active agents',
+    open: 'Open dashboard',
+    restoreConfigs: 'Restore CLI configs & quit…',
+    quit: 'Quit',
+  },
+  zh: {
+    noAgents: '暂无活动 Agent',
+    open: '打开面板',
+    restoreConfigs: '还原 CLI 配置并退出…',
+    quit: '退出',
+  },
 }
 
 const STATE_LABELS: Record<UiLocale, Partial<Record<TurnState, string>>> = {

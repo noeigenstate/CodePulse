@@ -260,8 +260,17 @@ launchctl setenv KIMI_CLI_PATH "$(which kimi)"
    [Usage page](#usage-page)).
 
 CodePulse only manages CodePulse-owned hook and status-line entries. Existing
-user hooks, models, plugins, and preferences are preserved. On uninstall, the
-installer removes CodePulse-managed entries automatically.
+user hooks, models, plugins, and preferences are preserved. Before its first edit
+to each CLI config, CodePulse snapshots the original (`~/.codepulse/config-restore.json`).
+On uninstall the config is put back exactly as it was; if you edited the file after
+CodePulse configured it, only the CodePulse entries are removed and your edits stay.
+
+- **Windows:** the uninstaller restores the configs automatically.
+- **macOS / Linux:** deleting the app runs no uninstaller, so first choose
+  **还原 CLI 配置并退出…** (Restore CLI configs & quit) from the tray menu, or run
+  `CodePulse --cleanup-config` (e.g. `./CodePulse_*.AppImage --cleanup-config`, or
+  `/Applications/CodePulse.app/Contents/MacOS/CodePulse --cleanup-config`), then
+  delete the app.
 
 ### Verify
 

@@ -233,7 +233,15 @@ launchctl setenv KIMI_CLI_PATH "$(which kimi)"
    [用量统计](#用量统计)）。
 
 CodePulse 只管理 CodePulse 自己的 hook 和 status line 配置。你原有的 hook、模型、
-插件和偏好设置会保留。卸载时，安装器会自动删除 CodePulse 管理的配置。
+插件和偏好设置会保留。CodePulse 首次修改每个 CLI 配置前，会先保存原始内容
+（`~/.codepulse/config-restore.json`）；卸载时会把配置原样还原。如果你在 CodePulse
+接入之后又改过该文件，则只删除 CodePulse 的条目，保留你的改动。
+
+- **Windows：** 卸载程序会自动还原。
+- **macOS / Linux：** 删除应用不会触发卸载程序，请先在托盘菜单选择
+  **「还原 CLI 配置并退出…」**，或运行 `CodePulse --cleanup-config`（如
+  `./CodePulse_*.AppImage --cleanup-config`、
+  `/Applications/CodePulse.app/Contents/MacOS/CodePulse --cleanup-config`），再删除应用。
 
 ### 验证
 

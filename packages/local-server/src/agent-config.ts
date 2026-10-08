@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -196,16 +196,29 @@ export async function configureAgents(
   return { claude, codex, grok, kimi }
 }
 
+/**
+ * Uninstall path: puts every CLI config back the way it was before CodePulse.
+ *
+ * Files CodePulse has not touched since its last write are restored byte-for-byte
+ * from the snapshot taken before the first edit (or deleted if CodePulse created
+ * them). Files the user edited afterwards only lose the CodePulse entries.
+ */
 export async function cleanupAgents(
   options: AgentConfigurationOptions,
 ): Promise<AgentConfigurationResult> {
+  const manifest = await readRestoreManifest(options)
   const [claude, codex, grok, kimi] = await Promise.all([
-    cleanupClaudeAgent(options),
-    cleanupCodexAgent(options),
-    cleanupGrokAgent(options),
-    cleanupKimiAgent(options),
+    cleanupClaudeAgent(options, manifest),
+    cleanupCodexAgent(options, manifest),
+    cleanupGrokAgent(options, manifest),
+    cleanupKimiAgent(options, manifest),
   ])
-  return { claude, codex, grok, kimi }
+  const result = { claude, codex, grok, kimi }
+  // Keep the snapshots if anything failed so a later cleanup can still restore.
+  if (!Object.values(result).some((status) => status.error)) {
+    await unlink(restoreManifestPath(options)).catch(() => undefined)
+  }
+  return result
 }
 
 export async function configureClaudeAgent(
@@ -240,7 +253,9 @@ export async function configureClaudeAgent(
 
     const next = `${JSON.stringify(settings, null, 2)}\n`
     const changed = next !== (before ?? '')
-    if (changed) await writeText(path, next)
+    if (changed) {
+      await writeManagedText(options, path, next, (text) => isCodePulseCommand(text, 'claude-hook'))
+    }
     return { path, changed, configured: isClaudeConfigured(settings) }
   } catch (error) {
     return { path, changed: false, configured: false, error: errorMessage(error) }
@@ -249,9 +264,13 @@ export async function configureClaudeAgent(
 
 export async function cleanupClaudeAgent(
   options: AgentConfigurationOptions,
+  manifest?: RestoreManifest,
 ): Promise<AgentConfigurationStatus> {
   const path = claudeConfigPath(options)
   try {
+    const restored = await restoreSnapshot(path, manifest)
+    if (restored != null) return { path, changed: restored, configured: false }
+
     const before = await readTextIfExists(path)
     if (before == null) return { path, changed: false, configured: false }
 
@@ -266,6 +285,10 @@ export async function cleanupClaudeAgent(
     const statusLineCommand = typeof statusLine?.command === 'string' ? statusLine.command : ''
     if (isCodePulseCommand(statusLineCommand, 'claude-statusline')) delete settings.statusLine
 
+    if (createdByCodePulse(path, manifest) && Object.keys(settings).length === 0) {
+      await unlink(path)
+      return { path, changed: true, configured: false }
+    }
     const next = `${JSON.stringify(settings, null, 2)}\n`
     const changed = next !== before
     if (changed) await writeText(path, next)
@@ -283,6 +306,9 @@ export async function configureCodexAgent(
   const command = nodeCommand(join(options.hookBinDir, 'codex-hook.js'), options.localAuthToken)
   try {
     const beforeHooks = await readTextIfExists(hooksPath)
+    // Older builds enabled the feature flag without a snapshot; its original is unknown.
+    const previouslyConfigured =
+      beforeHooks != null && isCodePulseCommand(beforeHooks, 'codex-hook')
     const hooksJson = parseJsonObject(beforeHooks)
     const hooks = objectValue(hooksJson.hooks) ?? {}
     hooksJson.hooks = hooks
@@ -299,12 +325,18 @@ export async function configureCodexAgent(
 
     const nextHooks = `${JSON.stringify(hooksJson, null, 2)}\n`
     const hooksChanged = nextHooks !== (beforeHooks ?? '')
-    if (hooksChanged) await writeText(hooksPath, nextHooks)
+    if (hooksChanged) {
+      await writeManagedText(options, hooksPath, nextHooks, (text) =>
+        isCodePulseCommand(text, 'codex-hook'),
+      )
+    }
 
     const beforeConfig = await readTextIfExists(configPath)
     const nextConfig = ensureTomlFeatureEnabled(beforeConfig ?? '')
     const configChanged = nextConfig !== (beforeConfig ?? '')
-    if (configChanged) await writeText(configPath, nextConfig)
+    if (configChanged) {
+      await writeManagedText(options, configPath, nextConfig, () => previouslyConfigured)
+    }
 
     return {
       path: hooksPath,
@@ -318,12 +350,14 @@ export async function configureCodexAgent(
 
 export async function cleanupCodexAgent(
   options: AgentConfigurationOptions,
+  manifest?: RestoreManifest,
 ): Promise<AgentConfigurationStatus> {
   const hooksPath = codexHooksPath(options)
   const configPath = codexConfigPath(options)
   try {
-    const beforeHooks = await readTextIfExists(hooksPath)
-    let hooksChanged = false
+    const restoredHooks = await restoreSnapshot(hooksPath, manifest)
+    const beforeHooks = restoredHooks == null ? await readTextIfExists(hooksPath) : undefined
+    let hooksChanged = restoredHooks ?? false
     let hasRemainingHooks = true
     if (beforeHooks != null) {
       const hooksJson = parseJsonObject(beforeHooks)
@@ -333,14 +367,31 @@ export async function cleanupCodexAgent(
         if (Object.keys(hooks).length === 0) delete hooksJson.hooks
       }
       hasRemainingHooks = hasAnyHookCommand(objectValue(hooksJson.hooks))
-      const nextHooks = `${JSON.stringify(hooksJson, null, 2)}\n`
-      hooksChanged = nextHooks !== beforeHooks
-      if (hooksChanged) await writeText(hooksPath, nextHooks)
+      if (createdByCodePulse(hooksPath, manifest) && Object.keys(hooksJson).length === 0) {
+        await unlink(hooksPath)
+        hooksChanged = true
+      } else {
+        const nextHooks = `${JSON.stringify(hooksJson, null, 2)}\n`
+        hooksChanged = nextHooks !== beforeHooks
+        if (hooksChanged) await writeText(hooksPath, nextHooks)
+      }
     }
 
-    const beforeConfig = await readTextIfExists(configPath)
-    let configChanged = false
-    if (beforeConfig != null && !hasRemainingHooks) {
+    const restoredConfig = await restoreSnapshot(configPath, manifest)
+    let configChanged = restoredConfig ?? false
+    const configEntry = manifest?.files[configPath]
+    const beforeConfig = restoredConfig == null ? await readTextIfExists(configPath) : undefined
+    if (beforeConfig != null && configEntry && !configEntry.legacy) {
+      // User edited config.toml since: put back only the original feature flag.
+      const nextConfig = restoreTomlHooksFeature(beforeConfig, configEntry.original ?? '')
+      if (!configEntry.existed && nextConfig.trim().length === 0) {
+        await unlink(configPath)
+        configChanged = true
+      } else {
+        configChanged = nextConfig !== beforeConfig
+        if (configChanged) await writeText(configPath, nextConfig)
+      }
+    } else if (beforeConfig != null && !hasRemainingHooks) {
       const nextConfig = disableTomlHooksFeature(beforeConfig)
       configChanged = nextConfig !== beforeConfig
       if (configChanged) await writeText(configPath, nextConfig)
@@ -515,6 +566,67 @@ function disableTomlHooksFeature(text: string): string {
   return text
 }
 
+interface TomlFeaturesSection {
+  lines: string[]
+  /** Index of the `[features]` header, or -1. */
+  start: number
+  /** First line after the section. */
+  end: number
+  /** Index of the `hooks = …` line inside the section, or -1. */
+  hooksLine: number
+}
+
+function findTomlFeaturesSection(text: string): TomlFeaturesSection {
+  const lines = text.length > 0 ? text.replace(/\r\n/g, '\n').split('\n') : []
+  let start = -1
+  let end = lines.length
+  let hooksLine = -1
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]?.trim() ?? ''
+    if (start < 0) {
+      if (line === '[features]') start = index
+      continue
+    }
+    if (line.startsWith('[')) {
+      end = index
+      break
+    }
+    if (hooksLine < 0 && /^\s*hooks\s*=/.test(lines[index] ?? '')) hooksLine = index
+  }
+  return { lines, start, end, hooksLine }
+}
+
+/**
+ * Puts `[features] hooks` back to its value in `original` while keeping every
+ * other edit the user made after CodePulse enabled it.
+ */
+function restoreTomlHooksFeature(current: string, original: string): string {
+  const now = findTomlFeaturesSection(current)
+  if (now.hooksLine < 0) return current
+  const before = findTomlFeaturesSection(original)
+  const { lines } = now
+
+  if (before.hooksLine >= 0) {
+    lines[now.hooksLine] = before.lines[before.hooksLine]!
+    return lines.join('\n')
+  }
+
+  lines.splice(now.hooksLine, 1)
+  const sectionEnd = now.end - 1
+  const sectionEmpty = lines.slice(now.start + 1, sectionEnd).every((line) => !line.trim())
+  if (before.start < 0 && sectionEmpty) {
+    // Drop the header CodePulse added, plus the blank separator it inserted,
+    // but keep the file's final newline.
+    let removeStart = now.start
+    if (removeStart > 0 && !lines[removeStart - 1]?.trim()) removeStart -= 1
+    let removeEnd = sectionEnd
+    if (removeEnd === lines.length && lines[removeEnd - 1] === '') removeEnd -= 1
+    lines.splice(removeStart, removeEnd - removeStart)
+  }
+  const text = lines.join('\n')
+  return text.trim().length === 0 ? '' : text
+}
+
 function parseJsonObject(text: string | undefined): JsonObject {
   if (!text || text.trim().length === 0) return {}
   const value = JSON.parse(text) as unknown
@@ -619,7 +731,9 @@ export async function configureGrokAgent(
 
     const next = `${JSON.stringify(hooksJson, null, 2)}\n`
     const changed = next !== (before ?? '')
-    if (changed) await writeText(path, next)
+    if (changed) {
+      await writeManagedText(options, path, next, (text) => isCodePulseCommand(text, 'grok-hook'))
+    }
     return { path, changed, configured: isGrokConfigured(hooksJson) }
   } catch (error) {
     return { path, changed: false, configured: false, error: errorMessage(error) }
@@ -628,9 +742,13 @@ export async function configureGrokAgent(
 
 export async function cleanupGrokAgent(
   options: AgentConfigurationOptions,
+  manifest?: RestoreManifest,
 ): Promise<AgentConfigurationStatus> {
   const path = grokHooksPath(options)
   try {
+    const restored = await restoreSnapshot(path, manifest)
+    if (restored != null) return { path, changed: restored, configured: false }
+
     const before = await readTextIfExists(path)
     if (before == null) return { path, changed: false, configured: false }
 
@@ -692,7 +810,12 @@ export async function configureKimiAgent(
     const changed = next !== before
     if (changed) {
       await writeBackupOnce(path, before)
-      await writeText(path, next)
+      await writeManagedText(
+        options,
+        path,
+        next,
+        (text) => text.includes(KIMI_BLOCK_START) || isCodePulseCommand(text, 'kimi-hook'),
+      )
     }
     return { path, changed, configured: next.includes('kimi-hook.js') }
   } catch (error) {
@@ -708,12 +831,20 @@ export async function configureKimiAgent(
  */
 export async function cleanupKimiAgent(
   options: AgentConfigurationOptions,
+  manifest?: RestoreManifest,
 ): Promise<AgentConfigurationStatus> {
   const path = kimiConfigPath(options)
   try {
+    const restored = await restoreSnapshot(path, manifest)
+    if (restored != null) return { path, changed: restored, configured: false }
+
     const before = await readTextIfExists(path)
     if (before == null) return { path, changed: false, configured: false }
     const next = removeCodePulseKimiHookTables(removeKimiManagedBlock(before))
+    if (createdByCodePulse(path, manifest) && next.trim().length === 0) {
+      await unlink(path)
+      return { path, changed: true, configured: false }
+    }
     const changed = next !== before
     if (changed) await writeText(path, next)
     return { path, changed, configured: false }
@@ -803,6 +934,110 @@ function removeCodePulseKimiHookTables(text: string): string {
  */
 function isTomlTableHeader(line: string): boolean {
   return /^\s*\[{1,2}[^\]\r\n]+\]{1,2}\s*(?:#.*)?$/.test(line.trimEnd())
+}
+
+/** Pre-CodePulse state of one CLI config file, recorded before the first edit. */
+export interface ConfigSnapshot {
+  existed: boolean
+  /** Original bytes; absent when the file did not exist or is `legacy`. */
+  original?: string
+  /**
+   * The file already held CodePulse entries when first snapshotted (installed by
+   * a build without snapshots), so the true original is unknown.
+   */
+  legacy?: boolean
+  /** Exactly what CodePulse last wrote; a mismatch means the user edited it since. */
+  written?: string
+  /** The user changed the file between two CodePulse writes; never restore wholesale. */
+  edited?: boolean
+}
+
+export interface RestoreManifest {
+  version: 1
+  files: Record<string, ConfigSnapshot>
+}
+
+function restoreManifestPath(options: Pick<AgentConfigurationOptions, 'homeDir'>): string {
+  return join(options.homeDir ?? homedir(), '.codepulse', 'config-restore.json')
+}
+
+export async function readRestoreManifest(
+  options: Pick<AgentConfigurationOptions, 'homeDir'>,
+): Promise<RestoreManifest> {
+  let parsed: Partial<RestoreManifest> | undefined
+  try {
+    const text = await readTextIfExists(restoreManifestPath(options))
+    parsed = text ? (JSON.parse(text) as Partial<RestoreManifest>) : undefined
+  } catch {
+    // Unreadable snapshots: cleanup falls back to stripping CodePulse entries.
+  }
+  return { version: 1, files: (objectValue(parsed?.files) as RestoreManifest['files']) ?? {} }
+}
+
+// Agents are configured in parallel; serialize read-modify-write of the manifest.
+let manifestQueue: Promise<unknown> = Promise.resolve()
+
+/**
+ * Writes a CLI config file, snapshotting its pre-CodePulse content the first
+ * time so uninstall can put it back exactly.
+ */
+async function writeManagedText(
+  options: AgentConfigurationOptions,
+  path: string,
+  text: string,
+  hasCodePulseEntries: (original: string) => boolean,
+): Promise<void> {
+  const task = manifestQueue.then(async () => {
+    const manifest = await readRestoreManifest(options)
+    let entry = manifest.files[path]
+    if (entry) {
+      if (entry.written != null && (await readTextIfExists(path)) !== entry.written) {
+        entry.edited = true
+      }
+    } else {
+      const original = await readTextIfExists(path)
+      if (original == null) entry = { existed: false }
+      else if (hasCodePulseEntries(original)) entry = { existed: true, legacy: true }
+      else entry = { existed: true, original }
+      manifest.files[path] = entry
+    }
+    await writeText(path, text)
+    entry.written = text
+    const manifestPath = restoreManifestPath(options)
+    // Snapshots may hold credentials from the user's CLI configs.
+    await writeText(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    await chmod(manifestPath, 0o600).catch(() => undefined)
+  })
+  manifestQueue = task.catch(() => undefined)
+  await task
+}
+
+/**
+ * Restores `path` byte-for-byte when CodePulse's last write is still on disk.
+ *
+ * @returns Whether the file changed, or `undefined` when no exact restore is
+ *   possible (no snapshot, legacy snapshot, or edited since) and the caller
+ *   should strip CodePulse entries instead.
+ */
+async function restoreSnapshot(
+  path: string,
+  manifest: RestoreManifest | undefined,
+): Promise<boolean | undefined> {
+  const entry = manifest?.files[path]
+  if (!entry || entry.legacy || entry.edited || entry.written == null) return undefined
+  const current = await readTextIfExists(path)
+  if (current !== entry.written) return undefined
+  if (entry.existed) {
+    await writeText(path, entry.original ?? '')
+  } else {
+    await unlink(path)
+  }
+  return true
+}
+
+function createdByCodePulse(path: string, manifest: RestoreManifest | undefined): boolean {
+  const entry = manifest?.files[path]
+  return !!entry && !entry.existed
 }
 
 /** Writes the original config once without replacing a previous safety copy. */

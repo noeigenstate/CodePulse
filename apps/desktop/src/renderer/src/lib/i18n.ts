@@ -295,7 +295,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
       firstRunNotice:
         '首次打开时，CodePulse 会在 ~/.claude/settings.json、~/.codex/hooks.json、~/.codex/config.toml、~/.grok/hooks/codepulse.json 和 ~/.kimi-code/config.toml 写入必要的 CodePulse hook 配置。',
       cleanupNotice:
-        '卸载 CodePulse 时，安装器会自动删除这些 CodePulse hook 和 statusLine 配置；用户原有的其它 hook、模型、插件和偏好设置会保留。',
+        '卸载时会把这些配置还原为安装 CodePulse 之前的状态（之后的手动改动会保留）。Windows 卸载程序自动还原；macOS / Linux 请在删除应用前从托盘菜单选择「还原 CLI 配置并退出」。',
       missingCli: '未检测到命令行工具',
       missingHook: '未完成 CodePulse 钩子配置',
     },
@@ -505,7 +505,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
       firstRunNotice:
         'On first launch, CodePulse writes the required hook configuration to ~/.claude/settings.json, ~/.codex/hooks.json, ~/.codex/config.toml, ~/.grok/hooks/codepulse.json, and ~/.kimi-code/config.toml.',
       cleanupNotice:
-        'When CodePulse is uninstalled, the installer removes those CodePulse hooks and statusLine entries automatically. Your other hooks, models, plugins, and preferences are preserved.',
+        'On uninstall these configs are restored to their pre-CodePulse state (later edits of yours are kept). The Windows uninstaller does this automatically; on macOS / Linux choose "Restore CLI configs & quit" from the tray menu before deleting the app.',
       missingCli: 'CLI not detected',
       missingHook: 'CodePulse hook is not configured',
     },

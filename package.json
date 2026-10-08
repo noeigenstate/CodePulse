@@ -1,7 +1,7 @@
 {
   "name": "codepulse-desktop",
   "private": true,
-  "version": "1.4.8",
+  "version": "1.4.11",
   "description": "CodePulse Desktop / 码脉桌面端 — local AI coding-agent status hub",
   "license": "MIT",
   "type": "module",
@@ -16,6 +16,8 @@
     "dist": "pnpm --filter @codepulse/desktop dist",
     "dist:win": "pnpm --filter @codepulse/desktop dist:win",
     "dist:linux": "pnpm --filter @codepulse/desktop dist:linux",
+    "dist:linux:x64": "pnpm --filter @codepulse/desktop dist:linux:x64",
+    "dist:linux:arm64": "pnpm --filter @codepulse/desktop dist:linux:arm64",
     "dist:mac": "pnpm --filter @codepulse/desktop dist:mac",
     "dist:mac:arm64": "pnpm --filter @codepulse/desktop dist:mac:arm64",
     "dist:mac:x64": "pnpm --filter @codepulse/desktop dist:mac:x64",

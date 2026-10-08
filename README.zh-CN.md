@@ -8,7 +8,7 @@
 还是卡住了——无需切回终端反复确认。任务完成桌面通知、彩色托盘图标、实时额度与上下文进度、
 本地 Token 用量统计，支持 Windows、macOS 与 Linux。
 
-[![status](https://img.shields.io/badge/status-v1.4.8-brightgreen)](#功能特性)
+[![status](https://img.shields.io/badge/status-v1.4.11-brightgreen)](#功能特性)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#下载)
 [![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#开发)
@@ -141,8 +141,10 @@ Fastify · better-sqlite3 · Drizzle ORM。
 - **macOS Apple Silicon：** `CodePulse_*_mac-arm64.dmg`（M 系列芯片）
 - **macOS Intel：** `CodePulse_*_mac-x64.dmg`
 - **Linux x64：** `CodePulse_*_x86_64.AppImage`
+- **Linux arm64 / aarch64：** `CodePulse_*_arm64.AppImage`
 
-Linux 下载后需要先添加可执行权限，再启动 AppImage：
+Linux 下载后需要先添加可执行权限，再启动 AppImage（ARM 机器把 `x86_64` 换成 `arm64`，
+可用 `uname -m` 查看本机架构）：
 
 ```bash
 chmod +x CodePulse_*_x86_64.AppImage
@@ -231,7 +233,15 @@ launchctl setenv KIMI_CLI_PATH "$(which kimi)"
    [用量统计](#用量统计)）。
 
 CodePulse 只管理 CodePulse 自己的 hook 和 status line 配置。你原有的 hook、模型、
-插件和偏好设置会保留。卸载时，安装器会自动删除 CodePulse 管理的配置。
+插件和偏好设置会保留。CodePulse 首次修改每个 CLI 配置前，会先保存原始内容
+（`~/.codepulse/config-restore.json`）；卸载时会把配置原样还原。如果你在 CodePulse
+接入之后又改过该文件，则只删除 CodePulse 的条目，保留你的改动。
+
+- **Windows：** 卸载程序会自动还原。
+- **macOS / Linux：** 删除应用不会触发卸载程序，请先在托盘菜单选择
+  **「还原 CLI 配置并退出…」**，或运行 `CodePulse --cleanup-config`（如
+  `./CodePulse_*.AppImage --cleanup-config`、
+  `/Applications/CodePulse.app/Contents/MacOS/CodePulse --cleanup-config`），再删除应用。
 
 ### 验证
 
@@ -339,7 +349,9 @@ workspace 内的包以 TypeScript **源码** 形式被消费（每个包的 `exp
 pnpm build        # 构建各包，再把应用打包进 apps/desktop/out
 pnpm dist         # 为当前操作系统打包安装包到 apps/desktop/release
 pnpm dist:win     # Windows NSIS 安装包（.exe）
-pnpm dist:linux   # Linux x64 AppImage
+pnpm dist:linux   # 按本机 CPU 构建 Linux AppImage（x64 或 arm64）
+pnpm dist:linux:x64
+pnpm dist:linux:arm64
 pnpm dist:mac     # macOS DMG：分别打 arm64 与 Intel x64（非 universal）
 pnpm dist:mac:arm64
 pnpm dist:mac:x64
@@ -352,7 +364,8 @@ pnpm dist:dir     # 免安装目录（更快，便于本地测试）
 如果用户可见行为发生变化，请在同一次改动里同步更新英文 README 和本中文版。
 
 打包目标在 `apps/desktop/electron-builder.yml` 中配置（Windows 用 NSIS、macOS 用
-Intel/Apple Silicon 双架构 DMG、Linux 用 AppImage）。原生模块 `better-sqlite3`
+Intel/Apple Silicon 双架构 DMG、Linux 用 x64 与 arm64 AppImage）。Linux 打包直接复用本地安装的
+Electron，因此每种 Linux 架构需要在同架构机器上构建，跨架构构建会直接报错退出。原生模块 `better-sqlite3`
 会保留在 asar 归档之外，以便运行时加载；非运行时源码和未使用的 Electron 语言资源会从
 安装包中排除。
 

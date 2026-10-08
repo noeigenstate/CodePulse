@@ -250,8 +250,9 @@ function notificationSettingsPath(): string {
 }
 
 function setLocale(value: unknown): UiLocale {
-  const locale: UiLocale = value === 'en' ? 'en' : 'zh'
+  const locale: UiLocale = value === 'zh' ? 'zh' : 'en'
   hub.setLocale(locale)
+  tray?.setLocale(locale)
   return locale
 }
 
@@ -515,10 +516,16 @@ async function bootstrap(): Promise<void> {
 
   tray = new TrayController({
     onOpen: showWindow,
+    onRestoreConfigsAndQuit: () => {
+      void restoreConfigsAndQuit()
+    },
     onQuit: () => {
       app.quit()
     },
   })
+  // Until the dashboard restores the user's saved choice: Chinese on a Chinese
+  // system, English elsewhere (including the POSIX C locale).
+  setLocale(app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en')
 
   createWindow()
   // Safety net: rescan after the window is up (covers late-arriving rollouts).
@@ -918,7 +925,11 @@ function trayStatusKey(snapshot: StatusSnapshot): string {
   })
 }
 
+/** Set once CLI configs were restored, so nothing re-adds hooks before quitting. */
+let agentConfigsRestored = false
+
 async function configureLocalAgents(): Promise<void> {
+  if (agentConfigsRestored) return
   // Prefer the token the local server is actually enforcing; fall back to disk.
   const localAuthToken = server?.authToken
   const result = await configureAgents({
@@ -943,6 +954,32 @@ async function cleanupLocalAgents(): Promise<void> {
     }
     if (status.changed) console.log(`[codepulse] cleaned ${agent} hooks at ${status.path}`)
   }
+}
+
+/**
+ * Uninstall helper for macOS / Linux, where removing the app runs no uninstaller:
+ * restore the CLI configs CodePulse changed, then quit.
+ */
+async function restoreConfigsAndQuit(): Promise<void> {
+  const { response } = await dialog.showMessageBox({
+    type: 'question',
+    buttons: ['还原并退出 / Restore & Quit', '取消 / Cancel'],
+    defaultId: 0,
+    cancelId: 1,
+    title: 'CodePulse',
+    message: '还原 Claude Code / Codex / Grok / Kimi 的配置？\nRestore CLI configs?',
+    detail:
+      '将 CLI 配置恢复到安装 CodePulse 之前的状态，然后退出。之后可直接删除应用；再次启动 CodePulse 会重新接入。\n' +
+      'Puts CLI configs back to how they were before CodePulse, then quits. You can then delete the app; launching CodePulse again re-enables it.',
+  })
+  if (response !== 0) return
+  agentConfigsRestored = true
+  try {
+    await cleanupLocalAgents()
+  } catch (err) {
+    console.error('[codepulse] restore failed', err)
+  }
+  app.quit()
 }
 
 async function refreshLocalAgents(): Promise<Agent[]> {

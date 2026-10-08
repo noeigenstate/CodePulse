@@ -444,3 +444,100 @@ test('Kimi configuration migrates duplicate legacy CodePulse hook tables', async
   assert.match(afterCleanup, /echo keep-user-hook/)
   assert.ok(afterCleanup.includes(`command = ${JSON.stringify(userCommand)}`))
 })
+
+test('agent cleanup restores untouched CLI configs byte-for-byte', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'codepulse-agent-restore-'))
+  const hookBinDir = join(home, 'CodePulse', 'hooks')
+  const claudePath = join(home, '.claude', 'settings.json')
+  const codexConfigPath = join(home, '.codex', 'config.toml')
+  const kimiPath = join(home, '.kimi-code', 'config.toml')
+  await mkdir(join(home, '.claude'), { recursive: true })
+  await mkdir(join(home, '.codex'), { recursive: true })
+  await mkdir(join(home, '.kimi-code'), { recursive: true })
+  // Formatting JSON.stringify would not reproduce, to prove the bytes come back.
+  const claudeOriginal =
+    '{"model": "opus",\n    "statusLine": {"type":"command","command":"my-line"}}'
+  const codexOriginal = 'model = "gpt-5"\r\n'
+  const kimiOriginal = 'default_model = "k2"'
+  await writeFile(claudePath, claudeOriginal)
+  await writeFile(codexConfigPath, codexOriginal)
+  await writeFile(kimiPath, kimiOriginal)
+
+  await configureAgents({ homeDir: home, hookBinDir })
+  await configureAgents({ homeDir: home, hookBinDir })
+  assert.match(await readFile(claudePath, 'utf8'), /claude-hook\.js/)
+
+  const result = await cleanupAgents({ homeDir: home, hookBinDir })
+
+  for (const status of Object.values(result)) assert.equal(status.error, undefined)
+  assert.equal(await readFile(claudePath, 'utf8'), claudeOriginal)
+  assert.equal(await readFile(codexConfigPath, 'utf8'), codexOriginal)
+  assert.equal(await readFile(kimiPath, 'utf8'), kimiOriginal)
+  // Files CodePulse created are removed again.
+  await assert.rejects(readFile(join(home, '.codex', 'hooks.json'), 'utf8'), { code: 'ENOENT' })
+  await assert.rejects(readFile(join(home, '.grok', 'hooks', 'codepulse.json'), 'utf8'), {
+    code: 'ENOENT',
+  })
+  await assert.rejects(readFile(join(home, '.codepulse', 'config-restore.json'), 'utf8'), {
+    code: 'ENOENT',
+  })
+})
+
+test('agent cleanup keeps user edits made after CodePulse configured the CLIs', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'codepulse-agent-restore-edited-'))
+  const hookBinDir = join(home, 'CodePulse', 'hooks')
+  const claudePath = join(home, '.claude', 'settings.json')
+  const codexConfigPath = join(home, '.codex', 'config.toml')
+
+  await configureAgents({ homeDir: home, hookBinDir })
+
+  const claude = JSON.parse(await readFile(claudePath, 'utf8'))
+  claude.model = 'sonnet'
+  await writeFile(claudePath, JSON.stringify(claude))
+  await writeFile(codexConfigPath, `model = "gpt-5"\n${await readFile(codexConfigPath, 'utf8')}`)
+
+  await cleanupAgents({ homeDir: home, hookBinDir })
+
+  assert.deepEqual(JSON.parse(await readFile(claudePath, 'utf8')), { model: 'sonnet' })
+  assert.equal(await readFile(codexConfigPath, 'utf8'), 'model = "gpt-5"\n')
+})
+
+test('agent cleanup never rolls back edits made between two CodePulse writes', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'codepulse-agent-restore-between-'))
+  const claudePath = join(home, '.claude', 'settings.json')
+  await mkdir(join(home, '.claude'), { recursive: true })
+  await writeFile(claudePath, '{"model":"opus"}\n')
+
+  await configureAgents({ homeDir: home, hookBinDir: join(home, 'a') })
+  const claude = JSON.parse(await readFile(claudePath, 'utf8'))
+  claude.theme = 'dark'
+  await writeFile(claudePath, JSON.stringify(claude))
+  // A rewrite (new token / reformat) makes the user's edit part of CodePulse's write.
+  await configureAgents({ homeDir: home, hookBinDir: join(home, 'b'), localAuthToken: 't' })
+
+  await cleanupAgents({ homeDir: home, hookBinDir: join(home, 'b') })
+
+  assert.deepEqual(JSON.parse(await readFile(claudePath, 'utf8')), {
+    model: 'opus',
+    theme: 'dark',
+  })
+})
+
+test('agent cleanup restores the original Codex hooks feature flag', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'codepulse-agent-restore-codex-'))
+  const hookBinDir = join(home, 'CodePulse', 'hooks')
+  const codexConfigPath = join(home, '.codex', 'config.toml')
+  await mkdir(join(home, '.codex'), { recursive: true })
+  await writeFile(codexConfigPath, '[features]\nhooks = false # off for now\n')
+
+  await configureAgents({ homeDir: home, hookBinDir })
+  assert.match(await readFile(codexConfigPath, 'utf8'), /hooks = true/)
+  await writeFile(codexConfigPath, `${await readFile(codexConfigPath, 'utf8')}\n[tui]\nx = 1\n`)
+
+  await cleanupAgents({ homeDir: home, hookBinDir })
+
+  assert.equal(
+    await readFile(codexConfigPath, 'utf8'),
+    '[features]\nhooks = false # off for now\n\n[tui]\nx = 1\n',
+  )
+})

@@ -165,6 +165,7 @@ export function App(): JSX.Element {
   const resolvedTheme = useScheduledTheme(dashboardSettings.theme)
 
   useEffect(() => {
+    document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en'
     void window.codepulse.setLocale(locale)
   }, [locale])
 

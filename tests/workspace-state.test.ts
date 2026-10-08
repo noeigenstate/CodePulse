@@ -1658,6 +1658,7 @@ test('StatusHub marks context snapshots stale at session boundaries', () => {
 
 test('StatusHub only emits notifications for completed or stuck turns', () => {
   const hub = new StatusHub({ sessionThrottleMs: 0, permissionThrottleMs: 0 })
+  hub.setLocale('zh')
   const notifications: NotificationRequest[] = []
   hub.on('notification', (notification) => notifications.push(notification))
   const startedAt = 1_000_000
@@ -4749,4 +4750,31 @@ test('latest quota token skips empty zero-only rate-limit payloads', () => {
 
   assert.equal(quota?.rateLimits?.fiveHour?.usedPercent, 33)
   assert.equal(quota?.rateLimits?.sevenDay?.usedPercent, 7)
+})
+
+test('StatusHub notifications are in English until a locale is set', () => {
+  const hub = new StatusHub({ sessionThrottleMs: 0, permissionThrottleMs: 0 })
+  const notifications: NotificationRequest[] = []
+  hub.on('notification', (notification) => notifications.push(notification))
+  hub.ingest({
+    id: 'en-prompt',
+    source: 'codex',
+    eventType: 'prompt_submit',
+    externalSessionId: 'en-session',
+    externalTurnId: 'en-turn',
+    cwd: 'E:/project/app',
+    message: 'Fix the flaky login test',
+    timestamp: 1_000,
+  })
+  hub.ingest({
+    id: 'en-stop',
+    source: 'codex',
+    eventType: 'turn_stop',
+    externalSessionId: 'en-session',
+    externalTurnId: 'en-turn',
+    cwd: 'E:/project/app',
+    timestamp: 2_000,
+  })
+  assert.equal(notifications.length, 1)
+  assert.match(notifications[0]?.title ?? '', /app completed/)
 })

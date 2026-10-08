@@ -45,7 +45,7 @@ export class RuleEngine {
 
     const out: NotificationRequest[] = []
     const scope = agentScope(next)
-    const locale = this.options.locale ?? 'zh'
+    const locale = this.options.locale ?? 'en'
     const project = projectLabel(next.workspacePath, locale)
     const turn = next.externalTurnId ?? previous.externalTurnId ?? previous.turnStartedAt ?? now
 

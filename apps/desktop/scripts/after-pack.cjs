@@ -13,6 +13,19 @@ exports.default = async function afterPack(context) {
   const appOutDir = context.appOutDir
   const platform = context.electronPlatformName
 
+  if (platform === 'linux') {
+    // electronDist is the host-arch Electron from node_modules; a cross-arch Linux
+    // package would ship the wrong binary under the target arch's name.
+    const { Arch } = require('electron-builder')
+    const targetArch = Arch[context.arch]
+    if (targetArch !== process.arch) {
+      throw new Error(
+        `[after-pack] Linux ${targetArch} build needs a ${targetArch} host ` +
+          `(this host is ${process.arch}); run pnpm dist:linux on a matching machine.`,
+      )
+    }
+  }
+
   /** @type {string[]} */
   const candidates = []
 

@@ -295,7 +295,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
       firstRunNotice:
         '首次打开时，CodePulse 会在 ~/.claude/settings.json、~/.codex/hooks.json、~/.codex/config.toml、~/.grok/hooks/codepulse.json 和 ~/.kimi-code/config.toml 写入必要的 CodePulse hook 配置。',
       cleanupNotice:
-        '卸载 CodePulse 时，安装器会自动删除这些 CodePulse hook 和 statusLine 配置；用户原有的其它 hook、模型、插件和偏好设置会保留。',
+        '卸载时会把这些配置还原为安装 CodePulse 之前的状态（之后的手动改动会保留）。Windows 卸载程序自动还原；macOS / Linux 请在删除应用前从托盘菜单选择「还原 CLI 配置并退出」。',
       missingCli: '未检测到命令行工具',
       missingHook: '未完成 CodePulse 钩子配置',
     },
@@ -505,7 +505,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
       firstRunNotice:
         'On first launch, CodePulse writes the required hook configuration to ~/.claude/settings.json, ~/.codex/hooks.json, ~/.codex/config.toml, ~/.grok/hooks/codepulse.json, and ~/.kimi-code/config.toml.',
       cleanupNotice:
-        'When CodePulse is uninstalled, the installer removes those CodePulse hooks and statusLine entries automatically. Your other hooks, models, plugins, and preferences are preserved.',
+        'On uninstall these configs are restored to their pre-CodePulse state (later edits of yours are kept). The Windows uninstaller does this automatically; on macOS / Linux choose "Restore CLI configs & quit" from the tray menu before deleting the app.',
       missingCli: 'CLI not detected',
       missingHook: 'CodePulse hook is not configured',
     },
@@ -798,7 +798,34 @@ export function formatThinkingDepth(effort: string | undefined, locale: Locale):
   return THINKING_DEPTH_LABELS[locale][normalized] ?? effort
 }
 
-export function readStoredLocale(storage: LocaleStorageLike | undefined): Locale {
-  const value = storage?.getItem('codepulse:locale')
-  return value === 'en' ? 'en' : 'zh'
+/**
+ * Maps a system language tag to the UI locale: Chinese for `zh*`, English
+ * otherwise (including the POSIX `C` locale, which Electron reports as `en-US`).
+ *
+ * @param systemLanguage BCP 47 tag such as `navigator.language` / `app.getLocale()`.
+ * @returns UI locale to use when the user has not chosen one.
+ */
+export function localeFromSystem(systemLanguage: string | undefined): Locale {
+  return systemLanguage?.toLowerCase().startsWith('zh') ? 'zh' : 'en'
+}
+
+/**
+ * Reads the language the user picked, falling back to the system language.
+ *
+ * @param storage Renderer local storage.
+ * @param systemLanguage System language tag, defaulting to `navigator.language`.
+ * @returns The saved choice, else Chinese on a Chinese system and English elsewhere.
+ */
+export function readStoredLocale(
+  storage: LocaleStorageLike | undefined,
+  systemLanguage: string | undefined = globalThis.navigator?.language,
+): Locale {
+  let value: string | null | undefined
+  try {
+    value = storage?.getItem('codepulse:locale')
+  } catch {
+    value = undefined
+  }
+  if (value === 'zh' || value === 'en') return value
+  return localeFromSystem(systemLanguage)
 }

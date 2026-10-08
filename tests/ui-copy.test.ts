@@ -5,7 +5,9 @@ import { TurnState } from '@codepulse/shared'
 import {
   formatThinkingDepth,
   headerCopy,
+  localeFromSystem,
   nextLocale,
+  readStoredLocale,
   overallLabel,
   turnStateLabel,
   uiCopy,
@@ -177,7 +179,7 @@ test('setup tutorial explains written config, uninstall cleanup, and Codex hook 
   assert.match(zh.agentSetupReminder.firstRunNotice, /~\/\.codex\/config\.toml/)
   assert.match(zh.agentSetupReminder.firstRunNotice, /~\/\.grok\/hooks\/codepulse\.json/)
   assert.match(zh.agentSetupReminder.cleanupNotice, /卸载/)
-  assert.match(zh.agentSetupReminder.cleanupNotice, /自动删除/)
+  assert.match(zh.agentSetupReminder.cleanupNotice, /还原/)
   assert.match(zh.codexTrustTutorial.permissions.join(' '), /SessionStart/)
   assert.match(zh.codexTrustTutorial.permissions.join(' '), /PermissionRequest/)
   assert.match(zh.codexTrustTutorial.permissions.join(' '), /Stop/)
@@ -185,7 +187,8 @@ test('setup tutorial explains written config, uninstall cleanup, and Codex hook 
   const en = uiCopy('en')
   assert.match(en.agentSetupReminder.firstRunNotice, /~\/\.claude\/settings\.json/)
   assert.match(en.agentSetupReminder.firstRunNotice, /~\/\.grok\/hooks\/codepulse\.json/)
-  assert.match(en.agentSetupReminder.cleanupNotice, /uninstalled/)
+  assert.match(en.agentSetupReminder.cleanupNotice, /uninstall/)
+  assert.match(en.agentSetupReminder.cleanupNotice, /restored/)
   assert.match(en.codexTrustTutorial.permissions.join(' '), /SessionStart/)
   assert.match(en.codexTrustTutorial.permissions.join(' '), /PermissionRequest/)
   assert.match(en.codexTrustTutorial.permissions.join(' '), /Stop/)
@@ -237,4 +240,22 @@ test('relative time switches to days after two days', () => {
   assert.equal(formatRelative(0, 30 * hour, 'zh'), '30 小时前')
   assert.equal(formatRelative(0, 74 * hour, 'zh'), '3 天前')
   assert.equal(formatRelative(0, 74 * hour, 'en'), '3d ago')
+})
+
+test('without a saved choice the UI follows the system language, English by default', () => {
+  const empty = { getItem: (): string | null => null }
+  assert.equal(readStoredLocale(empty, 'en-US'), 'en')
+  assert.equal(readStoredLocale(empty, 'de-DE'), 'en')
+  assert.equal(readStoredLocale(empty, 'zh-CN'), 'zh')
+  assert.equal(readStoredLocale(empty, 'zh-TW'), 'zh')
+  assert.equal(localeFromSystem(undefined), 'en')
+  // The POSIX C locale (AppImageHub's test) is reported as en-US by Electron.
+  assert.equal(localeFromSystem('C'), 'en')
+})
+
+test('a saved language choice wins over the system language', () => {
+  const saved = (value: string) => ({ getItem: (): string | null => value })
+  assert.equal(readStoredLocale(saved('zh'), 'en-US'), 'zh')
+  assert.equal(readStoredLocale(saved('en'), 'zh-CN'), 'en')
+  assert.equal(readStoredLocale(saved('fr'), 'zh-CN'), 'zh', 'unknown values fall back')
 })

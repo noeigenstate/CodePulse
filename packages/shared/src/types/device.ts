@@ -87,6 +87,8 @@ export interface DeviceAgentStatusV1 {
 
 /** `GET /api/v1/device/status` 的完整 JSON 响应。 */
 export interface DeviceStatusV1 {
+  /** Optional presentation overlay; old firmware safely ignores it. */
+  ambient?: import('./ambient.js').DeviceAmbientCard
   /** Optional additive display extension; legacy firmware ignores it. */
   display?: import('./device-display.js').DeviceDisplayConfig
   threads?: import('./device-display.js').DeviceThreadV1[]

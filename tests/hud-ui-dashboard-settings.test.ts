@@ -1,0 +1,225 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import {
+  applyTheme,
+  CLI_TOOL_TYPES,
+  millisecondsUntilScheduledThemeChange,
+  readDashboardSettings,
+  resolveTheme,
+  writeDashboardSettings,
+} from '../apps/hud/src/renderer/src/lib/dashboardSettings.js'
+
+class MemoryStorage {
+  private readonly values = new Map<string, string>()
+
+  getItem(key: string): string | null {
+    return this.values.get(key) ?? null
+  }
+
+  setItem(key: string, value: string): void {
+    this.values.set(key, value)
+  }
+}
+
+test('dashboard settings default to the light HUD with calm attention and every CLI visible', () => {
+  const settings = readDashboardSettings(new MemoryStorage())
+
+  assert.equal(settings.theme, 'light')
+  assert.equal(settings.hudOpacity, 37)
+  assert.equal(settings.attentionEffect, 'steady')
+  assert.equal(settings.projectLayout, 'list')
+  assert.equal(settings.showUsageStrip, true)
+  assert.equal(settings.resultRetentionMinutes, 30)
+  assert.deepEqual(
+    CLI_TOOL_TYPES.filter((tool) => settings.visibleTools[tool]),
+    ['codex', 'claude_code', 'grok', 'kimi'],
+  )
+})
+
+test('automatic theme uses local time boundaries at 08:00 and 20:00', () => {
+  assert.equal(resolveTheme('auto', new Date(2026, 0, 1, 7, 59, 59)), 'dark')
+  assert.equal(resolveTheme('auto', new Date(2026, 0, 1, 8, 0, 0)), 'light')
+  assert.equal(resolveTheme('auto', new Date(2026, 0, 1, 19, 59, 59)), 'light')
+  assert.equal(resolveTheme('auto', new Date(2026, 0, 1, 20, 0, 0)), 'dark')
+})
+
+test('automatic theme schedules its next local boundary precisely', () => {
+  assert.equal(
+    millisecondsUntilScheduledThemeChange(new Date(2026, 0, 1, 7, 30, 0)),
+    30 * 60 * 1_000,
+  )
+  assert.equal(
+    millisecondsUntilScheduledThemeChange(new Date(2026, 0, 1, 19, 30, 0)),
+    30 * 60 * 1_000,
+  )
+  assert.equal(
+    millisecondsUntilScheduledThemeChange(new Date(2026, 0, 1, 20, 30, 0)),
+    11.5 * 60 * 60 * 1_000,
+  )
+})
+
+test('dashboard settings preserve saved theme and CLI visibility while filling new tools', () => {
+  const storage = new MemoryStorage()
+  storage.setItem(
+    'codepulse:dashboard-settings',
+    JSON.stringify({ theme: 'dark', visibleTools: { codex: false } }),
+  )
+
+  const settings = readDashboardSettings(storage)
+  assert.equal(settings.theme, 'dark')
+  assert.equal(settings.hudOpacity, 37)
+  assert.equal(settings.attentionEffect, 'steady')
+  assert.equal(settings.projectLayout, 'list')
+  assert.equal(settings.showUsageStrip, true)
+  assert.equal(settings.resultRetentionMinutes, 30)
+  assert.equal(settings.visibleTools.codex, false)
+  assert.equal(settings.visibleTools.claude_code, true)
+  assert.equal(settings.visibleTools.grok, true)
+  assert.equal(settings.visibleTools.kimi, true)
+})
+
+test('legacy manual palette selections remain explicit user preferences', () => {
+  const storage = new MemoryStorage()
+  storage.setItem(
+    'codepulse:dashboard-settings',
+    JSON.stringify({ theme: 'light', visibleTools: {} }),
+  )
+
+  assert.equal(readDashboardSettings(storage).theme, 'light')
+})
+
+test('legacy default HUD opacity migrates to 37 without replacing a custom value', () => {
+  const storage = new MemoryStorage()
+  storage.setItem(
+    'codepulse:dashboard-settings',
+    JSON.stringify({
+      schemaVersion: 2,
+      hudOpacity: 92,
+      projectLayout: 'grid',
+      visibleTools: {},
+    }),
+  )
+
+  assert.equal(readDashboardSettings(storage).hudOpacity, 37)
+  assert.equal(readDashboardSettings(storage).projectLayout, 'grid')
+
+  storage.setItem(
+    'codepulse:dashboard-settings',
+    JSON.stringify({ schemaVersion: 2, hudOpacity: 64, visibleTools: {} }),
+  )
+  assert.equal(readDashboardSettings(storage).hudOpacity, 64)
+})
+
+test('dashboard settings persist changes and apply the selected root theme', () => {
+  const storage = new MemoryStorage()
+  const next = {
+    theme: 'dark' as const,
+    hudOpacity: 76,
+    attentionEffect: 'breathe' as const,
+    projectLayout: 'list' as const,
+    showUsageStrip: false,
+    resultRetentionMinutes: 120,
+    visibleTools: { codex: true, claude_code: false, grok: true, kimi: false },
+  }
+  writeDashboardSettings(storage, next)
+
+  assert.deepEqual(readDashboardSettings(storage), next)
+  const root: { dataset: { theme?: string } } = { dataset: {} }
+  applyTheme(root, next.theme)
+  assert.equal(root.dataset.theme, 'dark')
+})
+
+test('dashboard settings persist automatic theme selection', () => {
+  const storage = new MemoryStorage()
+  const next = {
+    theme: 'auto' as const,
+    hudOpacity: 100,
+    attentionEffect: 'pulse' as const,
+    projectLayout: 'grid' as const,
+    showUsageStrip: true,
+    resultRetentionMinutes: 240,
+    visibleTools: { codex: true, claude_code: true, grok: true, kimi: true },
+  }
+
+  writeDashboardSettings(storage, next)
+
+  assert.deepEqual(readDashboardSettings(storage), next)
+})
+
+test('dashboard settings retain safe in-memory defaults when storage is unavailable', () => {
+  const unavailableStorage = {
+    getItem: () => {
+      throw new Error('storage blocked')
+    },
+    setItem: () => {
+      throw new Error('storage full')
+    },
+  }
+
+  assert.equal(readDashboardSettings(unavailableStorage).theme, 'light')
+  assert.doesNotThrow(() =>
+    writeDashboardSettings(unavailableStorage, {
+      theme: 'dark',
+      hudOpacity: 92,
+      attentionEffect: 'steady',
+      projectLayout: 'grid',
+      showUsageStrip: true,
+      resultRetentionMinutes: 30,
+      visibleTools: { codex: true, claude_code: true, grok: true, kimi: true },
+    }),
+  )
+})
+
+test('dashboard settings validate HUD opacity and attention motion independently', () => {
+  const storage = new MemoryStorage()
+  storage.setItem(
+    'codepulse:dashboard-settings',
+    JSON.stringify({
+      schemaVersion: 2,
+      theme: 'light',
+      hudOpacity: 7,
+      attentionEffect: 'breathe',
+      projectLayout: 'list',
+      showUsageStrip: false,
+      visibleTools: {},
+    }),
+  )
+  assert.equal(readDashboardSettings(storage).hudOpacity, 20)
+  assert.equal(readDashboardSettings(storage).attentionEffect, 'breathe')
+  assert.equal(readDashboardSettings(storage).projectLayout, 'list')
+  assert.equal(readDashboardSettings(storage).showUsageStrip, false)
+
+  storage.setItem(
+    'codepulse:dashboard-settings',
+    JSON.stringify({
+      theme: 'light',
+      hudOpacity: 140,
+      attentionEffect: 'spin',
+      projectLayout: 'tiles',
+      showUsageStrip: 'yes',
+      visibleTools: {},
+    }),
+  )
+  assert.equal(readDashboardSettings(storage).hudOpacity, 100)
+  assert.equal(readDashboardSettings(storage).attentionEffect, 'steady')
+  assert.equal(readDashboardSettings(storage).projectLayout, 'list')
+  assert.equal(readDashboardSettings(storage).showUsageStrip, true)
+})
+
+test('dashboard settings only accept offered result retention durations', () => {
+  const storage = new MemoryStorage()
+  storage.setItem('codepulse:dashboard-settings', JSON.stringify({ resultRetentionMinutes: 240 }))
+  assert.equal(readDashboardSettings(storage).resultRetentionMinutes, 240)
+
+  storage.setItem('codepulse:dashboard-settings', JSON.stringify({ resultRetentionMinutes: 45 }))
+  assert.equal(readDashboardSettings(storage).resultRetentionMinutes, 30)
+
+  storage.setItem('codepulse:dashboard-settings', JSON.stringify({ resultRetentionMinutes: '30' }))
+  assert.equal(readDashboardSettings(storage).resultRetentionMinutes, 30)
+})
+
+test('HUD narrows the shared model without affecting OpenCode in the standard client', async () => {
+  const { isHudTool } = await import('../apps/hud/src/renderer/src/lib/dashboardSettings.js')
+  assert.equal(isHudTool('codex'), true)
+  assert.equal(isHudTool('opencode'), false)
+})

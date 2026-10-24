@@ -1,3 +1,7 @@
+> **实验分支 `codex/unified-product`：** 标准桌面、HUD 和 400×300 墨水屏配置预览
+> 已整合在一个仓库，可单独构建运行。固件仍独立管理；本分支尚未合入 main。
+> 下方正式下载对应上游稳定版。请先阅读[构建启动说明](docs/WORKSPACE.md)和[整合说明](docs/UNIFIED-PRODUCT.md)。
+
 <div align="center">
 
 # CodePulse / 码脉
@@ -16,7 +20,7 @@
 [![built with](https://img.shields.io/badge/built%20with-Electron%20%2B%20TypeScript-47848F?logo=electron&logoColor=white)](#工作原理)
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
-[English](./README.md) · [简体中文](./README.zh-CN.md) · [产品需求](./requirements.md)
+[English](./README.md) · [简体中文](./README.zh-CN.md) · [产品需求](./docs/WORKSPACE.md)
 
 **[⬇ 下载 Windows / macOS / Linux 版](https://github.com/noeigenstate/CodePulse/releases/latest)** · [安装说明](#下载)
 
@@ -483,7 +487,7 @@ Windows（安装包）、macOS（Apple Silicon 与 Intel DMG）与 Linux（AppIm
 2. 用 `pnpm format` 格式化。
 3. 保持改动聚焦——一个 PR 只做一件事。
 
-产品背景请阅读 [`requirements.md`](./requirements.md)；其中 §8 的状态机迁移表是生命周期
+产品背景请阅读 [`requirements.md`](./docs/WORKSPACE.md)；其中 §8 的状态机迁移表是生命周期
 行为的权威依据。
 
 ## 许可证

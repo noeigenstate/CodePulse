@@ -1,3 +1,6 @@
+import { ProductFrame, ProductOverview, useProductNavigation } from './components/ProductFrame.js'
+import { ScreenWorkbench } from './components/ScreenWorkbench.js'
+import { AmbientPanel } from './components/AmbientPanel.js'
 /**
  * Dashboard 根组件。布局包含头部、agent 卡片网格与通知栏，
  * 并驱动高频时钟，使耗时与相对时间保持实时。
@@ -28,7 +31,6 @@ import {
 } from '@codepulse/shared'
 import { useStore } from './store.js'
 import { AgentLogo, CodexLogo } from './components/AgentLogo.js'
-import { Header } from './components/Header.js'
 import { SettingsDialog } from './components/SettingsDialog.js'
 import { UsageDashboard } from './components/UsageDashboard.js'
 import {
@@ -114,7 +116,9 @@ export function App(): JSX.Element {
     readCodexTrustAcknowledged(window.localStorage),
   )
   /** 本地开发数据统计后台（设计稿大屏） */
-  const [statsOpen, setStatsOpen] = useState(false)
+  const product = useProductNavigation()
+  const standaloneScreen = new URLSearchParams(window.location.search).get('surface') === 'screen'
+  const [usageTab, setUsageTab] = useState<'balance' | 'history'>('balance')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [dashboardSettings, setDashboardSettings] = useState<DashboardSettings>(() =>
     readDashboardSettings(window.localStorage),
@@ -181,10 +185,18 @@ export function App(): JSX.Element {
   }, [dashboardSettings])
 
   useEffect(() => {
-    if (!orderedProjects.changed) return
+    if (standaloneScreen || !orderedProjects.changed) return
     setProjectOrder(orderedProjects.order)
     writeProjectOrder(window.localStorage, orderedProjects.order)
-  }, [orderedProjects])
+  }, [orderedProjects, standaloneScreen])
+
+  useEffect(() => {
+    const sync = (event: StorageEvent) => {
+      if (event.storageArea === window.localStorage) setDashboardSettings(readDashboardSettings(window.localStorage))
+    }
+    window.addEventListener('storage', sync)
+    return () => window.removeEventListener('storage', sync)
+  }, [])
 
   useEffect(() => init(), [init])
   useEffect(() => installPointerEffects(), [])
@@ -254,27 +266,27 @@ export function App(): JSX.Element {
     />
   )
 
+  if (standaloneScreen) return <div className="app-shell h-full text-ink"><div className="product-scroll h-full"><ScreenWorkbench copy={copy.settings.deviceProvisioning} standalone /></div></div>
+
   return (
     <div className="app-shell flex h-full flex-col text-ink">
       {window.codepulse.platform === 'win32' ? <WindowTitleBar /> : null}
-      {statsOpen ? (
-        <UsageDashboard
-          locale={locale}
-          copy={copy.usageBoard}
-          onClose={() => setStatsOpen(false)}
-        />
-      ) : (
-        <>
-          <Header
-            locale={locale}
-            onToggleLocale={toggleLocale}
-            onOpenStats={() => setStatsOpen(true)}
-            onOpenSettings={() => setSettingsOpen(true)}
-            settingsOpen={settingsOpen}
-          />
-          {liveConsole}
-        </>
-      )}
+      <ProductFrame view={product.view} navigate={product.navigate} error={product.error} locale={locale} onLocale={toggleLocale} onSettings={() => setSettingsOpen(true)} snapshot={snapshot}>
+        {product.view === 'overview' && <ProductOverview snapshot={snapshot} navigate={product.navigate} locale={locale} />}
+        {product.visited.has('work') && <section className="min-h-0 flex-1 flex flex-col pt-4" hidden={product.view !== 'work'} aria-label={locale === 'zh' ? '工作状态' : 'Work status'}>{liveConsole}</section>}
+        {product.visited.has('usage') && <section className="min-h-0 flex-1 flex flex-col" hidden={product.view !== 'usage'} aria-label={locale === 'zh' ? '用量' : 'Usage'}>
+          <nav className="workspace-tabs mx-6 mt-5" aria-label={locale === 'zh' ? '用量视角' : 'Usage views'}>
+            <button type="button" aria-current={usageTab === 'balance' ? 'page' : undefined} onClick={() => setUsageTab('balance')}>{locale === 'zh' ? '账户额度' : 'Allowances'}</button>
+            <button type="button" aria-current={usageTab === 'history' ? 'page' : undefined} onClick={() => setUsageTab('history')}>{locale === 'zh' ? '历史统计' : 'History'}</button>
+          </nav>
+          <div hidden={usageTab !== 'balance'} className="product-quotas">
+            {panels.length ? panels.map(panel => <section className="agent-panel" key={panel.agentType}><h2>{panel.name}</h2><PanelQuotaMeter agentType={panel.agentType} brand={brandClass(panel.agentType)} meters={panel.quotaMeters} locale={locale} copy={copy} /></section>) : <p className="product-empty">{locale === 'zh' ? '等待账户额度同步。已有用量记录可在「历史统计」查看。' : 'Waiting for account allowances. Existing records are available in History.'}</p>}
+          </div>
+          {usageTab === 'history' && <UsageDashboard locale={locale} copy={copy.usageBoard} onClose={() => setUsageTab('balance')} />}
+        </section>}
+        {product.visited.has('ambient') && <section className="product-scroll" hidden={product.view !== 'ambient'}><AmbientPanel /></section>}
+        {product.visited.has('screen') && <section className="product-scroll" hidden={product.view !== 'screen'}><ScreenWorkbench copy={copy.settings.deviceProvisioning} active={product.view === 'screen'} /></section>}
+      </ProductFrame>
       {showSetupReminder && (
         <AgentSetupReminderModal
           copy={copy}

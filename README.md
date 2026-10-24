@@ -1,3 +1,9 @@
+> **Experimental unified product branch (`codex/unified-product`).** Standard
+> desktop, HUD and the 400×300 e-paper configuration preview now build from this
+> single repository. Firmware is independent. This branch has not been merged
+> into `main`; released downloads below still describe the stable upstream app.
+> See [the build/run guide](docs/WORKSPACE.md) and [integration notes](docs/UNIFIED-PRODUCT.md).
+
 <div align="center">
 
 # CodePulse
@@ -17,7 +23,7 @@ context-window meters, and local token analytics for Windows, macOS, and Linux.
 [![built with](https://img.shields.io/badge/built%20with-Electron%20%2B%20TypeScript-47848F?logo=electron&logoColor=white)](#how-it-works)
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
-[English](./README.md) · [简体中文](./README.zh-CN.md) · [Product spec](./requirements.md)
+[English](./README.md) · [简体中文](./README.zh-CN.md) · [Product spec](./docs/WORKSPACE.md)
 
 **[⬇ Download for Windows / macOS / Linux](https://github.com/noeigenstate/CodePulse/releases/latest)** · [Install guide](#download)
 
@@ -545,7 +551,7 @@ Issues and pull requests are welcome. Before submitting:
 2. Format with `pnpm format`.
 3. Keep changes focused — one concern per PR.
 
-For product context, read [`requirements.md`](./requirements.md); the
+For product context, read [`requirements.md`](./docs/WORKSPACE.md); the
 state-machine transition table in §8 is the source of truth for lifecycle
 behavior.
 

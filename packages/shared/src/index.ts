@@ -41,3 +41,7 @@ export const DEFAULT_DEVICE_SERVER_PORT = 17889
 export const DEFAULT_DISPLAY_DEVICE_PORT = 17890
 
 export * from './presentation-order.js'
+
+export * from './types/ambient.js'
+
+export * from './types/product-shell.js'

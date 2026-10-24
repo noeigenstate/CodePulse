@@ -1,8 +1,7 @@
+import { ProductModuleLinks } from './ProductModuleLinks.js'
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
 import type { SettingsCopy } from '../lib/i18n.js'
 import { CLI_TOOL_TYPES, type CliToolType, type ThemePreference } from '../lib/dashboardSettings.js'
-import { DeviceDisplayPanel } from './DeviceDisplayPanel.js'
-import { DeviceProvisioningPanel } from './DeviceProvisioningPanel.js'
 
 interface Props {
   copy: SettingsCopy
@@ -35,6 +34,8 @@ export function SettingsDialog({
   theme,
   visibleTools,
 }: Props): JSX.Element {
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
   const dialogRef = useRef<HTMLElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const [appVersion, setAppVersion] = useState<string>()
@@ -93,7 +94,7 @@ export function SettingsDialog({
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
         event.preventDefault()
-        onClose()
+        onCloseRef.current()
         return
       }
       if (event.key !== 'Tab') return
@@ -126,7 +127,7 @@ export function SettingsDialog({
       window.removeEventListener('keydown', onKeyDown)
       previouslyFocused?.focus()
     }
-  }, [onClose])
+  }, [])
 
   /** Close only when the user presses the inert backdrop itself. */
   const closeOnBackdrop = (event: MouseEvent<HTMLDivElement>): void => {
@@ -239,8 +240,7 @@ export function SettingsDialog({
             </div>
           </section>
 
-          <DeviceDisplayPanel />
-          <DeviceProvisioningPanel copy={copy.deviceProvisioning} />
+          <ProductModuleLinks onOpen={onClose} />
 
           <section>
             <h3 className="text-sm font-semibold text-ink">{copy.updates}</h3>

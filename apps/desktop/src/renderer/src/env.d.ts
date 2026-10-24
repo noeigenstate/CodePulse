@@ -1,5 +1,9 @@
 /// <reference types="vite/client" />
 import type {
+  ProductView, DesktopForm, ShellSnapshot, WorkbenchWindowState,
+  AmbientConfig,
+  AmbientSnapshot,
+  DeviceStatusV1,
   Agent,
   AgentType,
   DeviceDisplayConfig,
@@ -22,6 +26,24 @@ type WindowTheme = 'light' | 'dark'
 
 /** 镜像 src/preload/index.ts 通过 contextBridge 暴露的 API。 */
 export interface CodePulseApi {
+  openSettingsWindow: () => Promise<boolean>
+  getShell: () => Promise<ShellSnapshot>
+  navigateProduct: (view: ProductView) => Promise<ShellSnapshot>
+  selectDesktopForm: (form: DesktopForm) => Promise<ShellSnapshot>
+  openSurface: (surface: 'standard' | 'hud' | 'screen', view?: ProductView) => Promise<ShellSnapshot>
+  onShell: (cb: (snapshot: ShellSnapshot) => void) => Unsubscribe
+  setWorkbenchWindow: (patch: Partial<WorkbenchWindowState>) => Promise<WorkbenchWindowState>
+  onWorkbenchWindow: (cb: (state: WorkbenchWindowState) => void) => Unsubscribe
+  onDeviceDisplay: (cb: (snapshot: DeviceDisplaySnapshot) => void) => Unsubscribe
+  getAmbient: () => Promise<AmbientSnapshot>
+  setAmbient: (config: AmbientConfig) => Promise<AmbientSnapshot>
+  setAmbientKey: (provider: AmbientConfig['provider'], key: string) => Promise<AmbientSnapshot>
+  refreshAmbient: () => Promise<AmbientSnapshot>
+  showAmbient: (id: string) => Promise<AmbientSnapshot>
+  dismissAmbient: () => Promise<AmbientSnapshot>
+  previewAmbient: (id: string) => Promise<DeviceStatusV1>
+  openAmbient: (id: string) => Promise<void>
+  onAmbient: (cb: (snapshot: AmbientSnapshot) => void) => Unsubscribe
   /** Host platform exposed by the constrained preload bridge. */
   platform: NodeJS.Platform
   getStatus: () => Promise<StatusSnapshot>

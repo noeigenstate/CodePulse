@@ -12,6 +12,9 @@ import { trayIconFor } from './icon.js'
 export interface TrayCallbacks {
   onOpen: () => void
   onOpenHud?: () => void
+  onOpenStandard?: () => void
+  onOpenScreen?: () => void
+  onAddHud?: () => void
   /** Put every CLI config back to its pre-CodePulse state, then quit. */
   onRestoreConfigsAndQuit: () => void
   onQuit: () => void
@@ -21,6 +24,7 @@ export class TrayController {
   private tray: Tray
   private snapshot: StatusSnapshot = { overall: 'idle', agents: [], updatedAt: Date.now() }
   private locale: UiLocale = 'en'
+  private form: 'standard' | 'hud' = 'standard'
 
   constructor(private callbacks: TrayCallbacks) {
     this.tray = new Tray(trayIconFor('idle'))
@@ -43,6 +47,8 @@ export class TrayController {
     this.update(this.snapshot)
   }
 
+  setForm(form: 'standard' | 'hud'): void { this.form = form; this.update(this.snapshot) }
+
   destroy(): void {
     this.tray.destroy()
   }
@@ -61,9 +67,13 @@ export class TrayController {
       ...agentItems,
       { type: 'separator' },
       { label: copy.open, click: () => this.callbacks.onOpen() },
+      ...(this.callbacks.onOpenStandard ? [{ label: this.locale === 'zh' ? '标准客户端' : 'Standard client', type: 'radio' as const, checked: this.form === 'standard', click: () => this.callbacks.onOpenStandard?.() }] : []),
       ...(this.callbacks.onOpenHud
-        ? [{ label: 'CodePulse HUD', click: () => this.callbacks.onOpenHud?.() }]
+        ? [{ label: 'HUD', type: 'radio' as const, checked: this.form === 'hud', click: () => this.callbacks.onOpenHud?.() }]
         : []),
+      { type: 'separator' },
+      ...(this.callbacks.onAddHud ? [{ label: this.locale === 'zh' ? '额外打开 HUD' : 'Also open HUD', click: () => this.callbacks.onAddHud?.() }] : []),
+      ...(this.callbacks.onOpenScreen ? [{ label: this.locale === 'zh' ? '屏幕工作台' : 'Screen workbench', click: () => this.callbacks.onOpenScreen?.() }] : []),
       { type: 'separator' },
       { label: copy.restoreConfigs, click: () => this.callbacks.onRestoreConfigsAndQuit() },
       { label: copy.quit, click: () => this.callbacks.onQuit() },
@@ -82,13 +92,13 @@ const MENU_COPY: Record<
 > = {
   en: {
     noAgents: 'No active agents',
-    open: 'Open dashboard',
+    open: 'Open CodePulse',
     restoreConfigs: 'Restore CLI configs & quit…',
     quit: 'Quit',
   },
   zh: {
     noAgents: '暂无活动 Agent',
-    open: '打开面板',
+    open: '打开 CodePulse',
     restoreConfigs: '还原 CLI 配置并退出…',
     quit: '退出',
   },

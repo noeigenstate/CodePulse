@@ -15,7 +15,7 @@ function loadRenderer(): ReturnType<typeof createDeviceRenderer> {
   return renderer
 }
 
-export function DeviceScreenPreview({ status, sample = false }: { status: DeviceStatusV1; sample?: boolean }): JSX.Element {
+export function DeviceScreenPreview({ status, sample = false, live = false }: { status: DeviceStatusV1; sample?: boolean; live?: boolean }): JSX.Element {
   const canvas = useRef<HTMLCanvasElement>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
   const [zoom, setZoom] = useState(1)
@@ -34,17 +34,17 @@ export function DeviceScreenPreview({ status, sample = false }: { status: Device
     }).catch(() => { if (alive) setState('error') })
     return () => { alive = false }
   }, [status, retry])
-  const description = status.display?.mode === 'usage'
+  const description = status.ambient ? `桌边动态，${status.ambient.source}：${status.ambient.text}` : status.display?.mode === 'usage'
     ? `用量看板，${status.display.agents.length} 个账号`
     : `HUD 工作，${status.threads?.length ?? 0} 个线程。${(status.threads ?? []).map(t => t.title).join('；')}`
-  return <div className="device-preview">
-    <div className="device-preview-toolbar"><span>{sample ? '样例画面' : '最新任务画面'} · 400 × 300</span><div>{[1, 2].map(value => <button key={value} type="button" aria-pressed={zoom === value} onClick={() => setZoom(value)}>{value === 1 ? '实际像素' : '2 倍检查'}</button>)}</div></div>
+  return <div className="device-preview" data-render-state={state}>
+    <div className="device-preview-toolbar"><span>{live ? '当前目标画面' : status.ambient ? '内容预览' : sample ? '样例画面' : '最新任务画面'} · 400 × 300</span><div>{[1, 2].map(value => <button key={value} type="button" aria-pressed={zoom === value} onClick={() => setZoom(value)}>{value === 1 ? '实际像素' : '2 倍检查'}</button>)}</div></div>
     <div className="device-preview-scroll" aria-busy={state === 'loading'}>
       <div className="device-preview-frame" style={{ width: 400 * zoom + 24 }}>
         <canvas ref={canvas} width={400} height={300} className="device-screen" style={{ width: 400 * zoom, height: 300 * zoom, visibility: state === 'error' ? 'hidden' : 'visible' }} role="img" aria-label={description}>{description}</canvas>
       </div>
     </div>
-    <div className="device-preview-note" aria-live="polite">{state === 'error' ? <><span>预览暂时无法生成。</span><button type="button" onClick={() => setRetry(n => n + 1)}>重试预览</button></> : state === 'loading' ? '正在生成画面…' : sample ? '仅在桌面演示，不会更改设备内容或配置。' : `画面版本 ${manifest.firmwareVersion} · 调整后即时预览，点击「应用配置」才保存。`}</div>
-    <p className="device-preview-note">温湿度、电量和联网标记暂未回传，预览显示未知／未连接。预览展示最新目标画面，不代表实机已经刷新。0.0.18 起重要提醒优先更新，普通状态也不再等待稳定期；屏幕完成本轮低闪刷新后继续处理最新画面。这里不模拟闪烁与残影。</p>
+    <div className="device-preview-note" aria-live="polite">{state === 'error' ? <><span>预览暂时无法生成。</span><button type="button" onClick={() => setRetry(n => n + 1)}>重试预览</button></> : state === 'loading' ? '正在生成画面…' : live ? '随工作状态与展示规则自动更新。' : sample ? '仅在桌面演示，不会更改设备内容或配置。' : `画面版本 ${manifest.firmwareVersion} · 调整后即时预览，点击「应用配置」才保存。`}</div>
+    <p className="device-preview-note">{live ? '实体屏的温湿度、电量和刷新回执尚未回传；未知读数不会替换为模拟数据。' : '温湿度、电量和联网标记暂未回传，预览显示未知／未连接。这里展示目标画面，不代表实机已经刷新，也不模拟闪烁与残影。'}</p>
   </div>
 }

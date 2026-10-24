@@ -1,3 +1,10 @@
+import { DeviceViewLeases } from './device-view-leases.js'
+import { ProductShell, shellPreferenceStore } from './product-shell.js'
+import { registerProductIpc } from './product-ipc.js'
+import { ScreenWorkbenchWindow } from './screen-workbench-window.js'
+import { registerAmbientIpc } from './ambient-ipc.js'
+import { createAmbientRuntime } from './ambient-runtime.js'
+import { withAmbient } from './ambient-rules.js'
 import { spawn } from 'node:child_process'
 import { HudSurface } from './hud-surface.js'
 import { readFileSync, writeFileSync, unlinkSync } from 'node:fs'
@@ -74,6 +81,10 @@ const EVENT_PRUNE_INTERVAL_MS = 24 * 60 * 60_000
 /** Merges tray, focus, and renderer bootstrap refresh requests into one short batch. */
 const FOCUS_SYNC_DEBOUNCE_MS = 180
 
+let ambientRuntime: ReturnType<typeof createAmbientRuntime> | undefined
+let standardVisible = false
+let productShell: ProductShell | undefined
+let screenWorkbench: ScreenWorkbenchWindow | undefined
 let mainWindow: BrowserWindow | null = null
 let tray: TrayController | null = null
 let server: LocalServer | null = null
@@ -127,6 +138,7 @@ function scheduleFocusSync(): void {
 function broadcast(channel: string, payload: unknown): void {
   mainWindow?.webContents.send(channel, payload)
   hudSurface?.broadcast(channel, payload)
+  screenWorkbench?.broadcast(channel, payload)
 }
 
 function updateDeviceProvisioning(
@@ -138,6 +150,7 @@ function updateDeviceProvisioning(
 }
 
 function showWindow(): void {
+  standardVisible = true
   if (!mainWindow) {
     createWindow()
     void refreshLocalAgents()
@@ -164,8 +177,8 @@ function hookBinDir(): string {
 function createWindow(): void {
   const chrome = windowChromePalette(windowTheme)
   mainWindow = new BrowserWindow({
-    width: 960,
-    height: 680,
+    width: 1120,
+    height: 780,
     minWidth: 720,
     minHeight: 480,
     show: false,
@@ -190,7 +203,7 @@ function createWindow(): void {
     },
   })
 
-  mainWindow.on('ready-to-show', () => mainWindow?.show())
+  mainWindow.on('ready-to-show', () => { if (standardVisible) mainWindow?.show() })
   mainWindow.on('focus', () => {
     scheduleFocusSync()
   })
@@ -232,6 +245,7 @@ function wireHub(): void {
   })
 
   hub.on('status', (snapshot: StatusSnapshot) => {
+    ambientRuntime?.service.tick()
     pendingStatusSnapshot = snapshot
     if (statusFlushTimer) return
     statusFlushTimer = setTimeout(() => {
@@ -287,23 +301,41 @@ function setWindowTheme(value: unknown, targetWindow: BrowserWindow | null): Win
 }
 
 let deviceProjector: ReturnType<typeof createDeviceDisplayProjector> | undefined
-function projectDeviceDisplay(snapshot: StatusSnapshot, config?: import('@codepulse/shared').DeviceDisplayConfig) {
+function projectDeviceDisplay(snapshot: StatusSnapshot, config?: import('@codepulse/shared').DeviceDisplayConfig, includeAmbient = true) {
   deviceProjector ??= createDeviceDisplayProjector(join(app.getPath('userData'), 'device-thread-order.json'),
     () => console.warn('[codepulse] device display order could not be saved; retaining in-memory positions'))
-  return deviceProjector(snapshot, config)
+  return withAmbient(deviceProjector(snapshot, config), includeAmbient ? ambientRuntime?.service.current(snapshot) : undefined)
 }
 
 function deviceDisplaySnapshot(preview?: unknown) {
   const config = readDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json'))
-  return { config, status: projectDeviceDisplay(hub.snapshot(), preview === undefined ? config : normalizeDeviceDisplay(preview)), serverAvailable: Boolean(deviceServer) }
+  return { config, status: projectDeviceDisplay(hub.snapshot(), preview === undefined ? config : normalizeDeviceDisplay(preview), preview === undefined), serverAvailable: Boolean(deviceServer) }
+}
+
+const deviceViews = new Set<number>()
+const deviceLeases = new DeviceViewLeases(active => {
+  if (!deviceUsb) return
+  if (active && !shutdownStarted) deviceUsb.startScanning(); else deviceUsb.stopScanning()
+  updateDeviceProvisioning({ scanning: active && !shutdownStarted,
+    phase: deviceProvisioning.phase === 'idle' || deviceProvisioning.phase === 'scanning' ? (active ? 'scanning' : 'idle') : deviceProvisioning.phase })
+}, () => { void deviceUsb?.cancelProvisioning().catch(() => {}) })
+function trackDeviceView(sender: Electron.WebContents): void {
+  if (deviceViews.has(sender.id)) return
+  const id = sender.id
+  deviceViews.add(id)
+  sender.once('destroyed', () => { deviceViews.delete(id); deviceLeases.release(id) })
 }
 
 function registerIpc(): void {
+  registerProductIpc(ipcMain, productShell!, screenWorkbench!)
+  registerAmbientIpc(ipcMain, ambientRuntime!, () => deviceDisplaySnapshot().status, url => shell.openExternal(url))
   ipcMain.handle('codepulse:get-device-display', (_event, preview: unknown) => deviceDisplaySnapshot(preview))
   ipcMain.handle('codepulse:set-device-display', (_event, input: unknown) => {
     writeDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json'), input)
     deviceServer?.notifyChanged()
-    return deviceDisplaySnapshot()
+    const snapshot = deviceDisplaySnapshot()
+    broadcast('codepulse:device-display', snapshot)
+    return snapshot
   })
   ipcMain.handle('codepulse:get-status', (event) =>
     hudSurface?.owns(event.sender) ? hudSurface.snapshot() : hub.snapshot(),
@@ -378,24 +410,17 @@ function registerIpc(): void {
     return false
   })
   ipcMain.handle('codepulse:get-device-provisioning', () => deviceProvisioning)
-  ipcMain.handle('codepulse:start-device-scan', () => {
+  ipcMain.handle('codepulse:start-device-scan', event => {
     if (!deviceUsb) return deviceProvisioning
-    updateDeviceProvisioning({
-      scanning: true,
-      phase: deviceProvisioning.phase === 'sending' ? 'sending' : 'scanning',
-      errorCode: undefined,
-    })
-    deviceUsb.startScanning()
+    trackDeviceView(event.sender)
+    deviceLeases.start(event.sender.id)
     return deviceProvisioning
   })
-  ipcMain.handle('codepulse:stop-device-scan', () => {
-    deviceUsb?.stopScanning()
-    return updateDeviceProvisioning({
-      scanning: false,
-      phase: deviceProvisioning.phase === 'scanning' ? 'idle' : deviceProvisioning.phase,
-    })
+  ipcMain.handle('codepulse:stop-device-scan', event => {
+    deviceLeases.stop(event.sender.id)
+    return deviceProvisioning
   })
-  ipcMain.handle('codepulse:provision-device', async (_event, input: unknown) => {
+  ipcMain.handle('codepulse:provision-device', async (event, input: unknown) => {
     const request = parseProvisioningRequest(input)
     if (input && typeof input === 'object' && !Array.isArray(input)) {
       const rawInput = input as Record<string, unknown>
@@ -411,7 +436,8 @@ function registerIpc(): void {
       })
     }
 
-    deviceUsb.stopScanning()
+    trackDeviceView(event.sender)
+    if (!deviceLeases.claim(event.sender.id)) return deviceProvisioning
     updateDeviceProvisioning({
       scanning: false,
       phase: 'sending',
@@ -451,15 +477,11 @@ function registerIpc(): void {
         phase: errorCode === 'cancelled' ? 'cancelled' : 'error',
         errorCode,
       })
-    }
+    } finally { deviceLeases.finish(event.sender.id) }
   })
-  ipcMain.handle('codepulse:cancel-device-provisioning', async () => {
-    await deviceUsb?.cancelProvisioning()
-    return updateDeviceProvisioning({
-      scanning: false,
-      phase: 'cancelled',
-      errorCode: 'cancelled',
-    })
+  ipcMain.handle('codepulse:cancel-device-provisioning', event => {
+    deviceLeases.cancelFor(event.sender.id)
+    return deviceProvisioning
   })
 }
 
@@ -481,11 +503,28 @@ async function bootstrap(): Promise<void> {
     )
   }
 
-  const hudRoot = process.env.CODEPULSE_HUD_ROOT
-  if (hudRoot) {
-    hudSurface = new HudSurface(hub, hudRoot, join(app.getPath('userData'), 'hud-workspaces.json'))
-    hudSurface.registerIpc()
-  }
+  // Both presentations ship with this host, in development and inside app.asar.
+  hudSurface = new HudSurface(
+    hub, join(__dirname, '../hud'), join(app.getPath('userData'), 'hud-workspaces.json'),
+  )
+  hudSurface.registerIpc()
+  screenWorkbench = new ScreenWorkbenchWindow({
+    preload: join(__dirname, '../preload/index.js'), renderer: join(__dirname, '../renderer/index.html'),
+    icon: appIconPath(), devUrl: process.env.ELECTRON_RENDERER_URL,
+  })
+  const shellStore = shellPreferenceStore(join(app.getPath('userData'), 'product-shell.json'))
+  productShell = new ProductShell(shellStore.read(), shellStore.write, {
+    hudAvailable: () => Boolean(hudSurface), standard: showWindow, hud: () => hudSurface?.open(),
+    screen: () => screenWorkbench?.open(), hideStandard: () => { standardVisible = false; mainWindow?.hide() }, hideHud: () => hudSurface?.hide(),
+  }, state => { broadcast('codepulse:shell-status', state); tray?.setForm(state.form) })
+  ambientRuntime = createAmbientRuntime(app.getPath('userData'), {
+    status: () => hub.snapshot(),
+    changed: () => {
+      if (ambientRuntime) broadcast('codepulse:ambient-status', ambientRuntime.service.snapshot())
+      deviceServer?.notifyChanged()
+    },
+  })
+  ambientRuntime.service.start()
   wireHub()
   registerIpc()
 
@@ -554,8 +593,10 @@ async function bootstrap(): Promise<void> {
   }
 
   tray = new TrayController({
-    onOpen: showWindow,
-    ...(hudSurface ? { onOpenHud: () => hudSurface?.open() } : {}),
+    onOpen: () => productShell?.restore(),
+    onOpenStandard: () => productShell?.selectForm('standard'),
+    onOpenScreen: () => productShell?.open('screen'),
+    ...(hudSurface ? { onOpenHud: () => productShell?.selectForm('hud'), onAddHud: () => productShell?.open('hud') } : {}),
     onRestoreConfigsAndQuit: () => {
       void restoreConfigsAndQuit()
     },
@@ -567,8 +608,8 @@ async function bootstrap(): Promise<void> {
   // system, English elsewhere (including the POSIX C locale).
   setLocale(app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en')
 
-  createWindow()
-  hudSurface?.open()
+  tray.setForm(productShell.snapshot().form)
+  productShell.restore()
   // Safety net: rescan after the window is up (covers late-arriving rollouts).
   scheduleFocusSync()
   void checkForUpdatesOnce()
@@ -669,6 +710,8 @@ function startMaintenanceTimers(): void {
 }
 
 async function shutdownRuntime(): Promise<void> {
+  screenWorkbench?.destroy()
+  ambientRuntime?.service.stop()
   focusSync.cancel()
   hub.stopWatchdog()
   stopMaintenanceTimers()
@@ -1064,7 +1107,7 @@ if (cleanupMode) {
     console.error('[codepulse] unhandled rejection', reason)
   })
 
-  app.on('second-instance', showWindow)
+  app.on('second-instance', () => productShell?.restore())
 
   app
     .whenReady()
@@ -1086,7 +1129,7 @@ ${err instanceof Error ? err.message : String(err)}`,
   })
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    productShell?.restore()
   })
 
   app.on('before-quit', (event) => {

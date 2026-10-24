@@ -109,7 +109,7 @@ export function UsageDashboard({ locale, copy, onClose }: Props): JSX.Element {
         {error ? (
           <StateMessage title={copy.error} />
         ) : !data ? (
-          <StateMessage title={copy.loading} />
+          <StateMessage title={loading ? copy.loading : locale === 'zh' ? '暂无可用的历史统计' : 'Usage history is currently unavailable'} />
         ) : empty ? (
           <StateMessage title={copy.emptyTitle} body={copy.emptyBody} />
         ) : (

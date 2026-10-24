@@ -16,6 +16,7 @@ import {
 
 /** Hosts the existing HUD build in the same Electron process as the full desktop console. */
 export class HudSurface {
+  private visible = false
   private window: BrowserWindow | null = null
   private settings: BrowserWindow | null = null
   private projection: HudProjection
@@ -34,8 +35,8 @@ export class HudSurface {
       )
     })
     this.hub.setPresentationRetention((agent, now) => this.projection.shouldRetain(agent, now))
-    this.renderer = resolve(root, 'out/renderer/index.html')
-    this.preload = resolve(root, 'out/preload/index.js')
+    this.renderer = resolve(root, 'renderer/index.html')
+    this.preload = resolve(root, 'preload/index.js')
     if (!existsSync(this.renderer) || !existsSync(this.preload)) {
       throw new Error('Build the HUD frontend before starting the unified desktop.')
     }
@@ -129,7 +130,10 @@ export class HudSurface {
     })
   }
 
+  hide(): void { this.visible = false; this.window?.hide() }
+
   open(): void {
+    this.visible = true
     if (this.window && !this.window.isDestroyed()) {
       this.window.showInactive()
       return
@@ -153,7 +157,7 @@ export class HudSurface {
       },
     })
     this.window = window
-    window.once('ready-to-show', () => window.showInactive())
+    window.once('ready-to-show', () => { if (this.visible) window.showInactive() })
     window.on('closed', () => {
       this.window = null
     })

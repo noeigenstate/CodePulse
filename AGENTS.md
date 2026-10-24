@@ -1,10 +1,10 @@
-# Unified desktop host
+# CodePulse unified product
 
-Read docs/WORKSPACE.md. This is the codex/unified-desktop worktree, based on
-upstream Desktop 1.4.11; ../CodePulse is the HUD checkout. Use its
-scripts/start-desktop.ps1 to run one Electron backend for both presentations.
-Never start a second server on 17888. Preserve user changes and shared canonical
-state. Device preview and LAN API use the same projection and renderer assets.
-Do not publish private hardware records, runtime captures or credentials.
-If Node tests rebuild better-sqlite3, rebuild it for Electron before launching.
-Logs and temporary output belong in ../CodePulse/.tmpshots. Push only on request.
+Read docs/WORKSPACE.md and docs/UNIFIED-PRODUCT.md before changing entry points.
+
+- This branch builds from one checkout: apps/desktop owns the only Electron main process; apps/hud contains only its HUD renderer/preload.
+- Use pnpm build then pnpm start, or scripts/start-desktop.ps1 -Build -DeviceServer on Windows. Never run a second backend against port 17888.
+- Share one StatusHub, CLI hooks, collection services and device API. Presentation-specific theme, layout, ordering and dismissal must not mutate another surface's canonical data.
+- Both desktop previews use the checked-in production 400×300 C/Wasm renderer. Keep their assets byte-identical. Firmware is maintained in a separate repository and is not needed to build or run the desktop.
+- Preserve existing user changes. The experimental integration branch is codex/unified-product; publish only when explicitly authorized, never merge to main without approval.
+- Node tests may rebuild better-sqlite3. Restore the Electron ABI before launching (pnpm start does this). Keep tests, profiles and logs in .tmpshots; never stop or reconfigure running Codex tasks for validation.

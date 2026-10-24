@@ -60,6 +60,26 @@ export class HudProjection {
     return source.agents.filter((agent) => keys.has(rowKey(agent)))
   }
 
+  /** A task card acknowledges only its native session, even if tool cwd moved.
+   * Missing session means the legacy project/read-all contract; an invalid or
+   * unknown explicit session must never widen into project acknowledgement.
+   */
+  rowsForCard(
+    source: StatusSnapshot,
+    type: unknown,
+    workspace?: string,
+    session?: string,
+  ): AgentRuntimeState[] {
+    if (session !== undefined) {
+      if (typeof session !== 'string' || !session.trim() || !HUD_AGENT_TYPES.has(String(type)))
+        return []
+      return source.agents.filter(
+        (agent) => agent.agentType === type && agent.externalSessionId === session,
+      )
+    }
+    return this.rowsForProject(source, type, workspace)
+  }
+
   setRetention(value: unknown): boolean {
     if (typeof value !== 'number' || ![10, 30, 60, 120, 240].includes(value)) return false
     this.retentionMinutes = value

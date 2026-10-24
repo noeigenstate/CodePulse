@@ -49,9 +49,9 @@ export class HudSurface {
     return this.projection.snapshot(this.hub.snapshotForPresentation())
   }
 
-  acknowledge(type: unknown, workspace?: string): void {
+  acknowledge(type: unknown, workspace?: string, session?: string): void {
     this.hub.acknowledgeRows(
-      this.projection.rowsForProject(this.hub.snapshotForPresentation(), type, workspace),
+      this.projection.rowsForCard(this.hub.snapshotForPresentation(), type, workspace, session),
     )
   }
 

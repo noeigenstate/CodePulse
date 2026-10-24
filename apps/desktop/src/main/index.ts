@@ -308,8 +308,8 @@ function registerIpc(): void {
   ipcMain.handle('codepulse:get-status', (event) =>
     hudSurface?.owns(event.sender) ? hudSurface.snapshot() : hub.snapshot(),
   )
-  ipcMain.handle('codepulse:ack', (event, agent: AgentType, workspacePath?: string) => {
-    if (hudSurface?.owns(event.sender)) hudSurface.acknowledge(agent, workspacePath)
+  ipcMain.handle('codepulse:ack', (event, agent: AgentType, workspacePath?: string, session?: string) => {
+    if (hudSurface?.owns(event.sender)) hudSurface.acknowledge(agent, workspacePath, session)
     else hub.acknowledge(agent, workspacePath)
     return true
   })

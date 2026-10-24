@@ -66,3 +66,32 @@ Do not commit local logs, credentials, device tokens, Wi-Fi settings, native
 session data, recovery/feedback archives or private handoff documents. Keep them
 in ignored local storage. Experimental residual-ghosting work remains a firmware
 concern; the desktop preview shows target pixels, not physical refresh completion.
+
+## Verified baseline — 2026-10-24
+
+Integration source commit: `7eb6457`. The prior standard-host baseline was
+`2dbed0b`; the HUD presentation came from `ed71121` plus the preserved local
+product navigation/desk-content changes.
+
+- 645 Node regression tests passed, including native read receipts, automatic
+  approval routing, independent task cards, retention, stable ordering and device
+  projection. All workspace and test TypeScript checks passed.
+- Root build compiled both presentations. Production Wasm frames matched for
+  work/usage modes at 3, 6 and 9 tasks; the rendered workbench canvas also matched
+  the production renderer pixel-for-pixel.
+- Windows application directory packaging passed. An isolated Electron harness
+  loaded the standard, HUD and screen assets directly from the packaged app.asar.
+  It exercised all five destinations, form switching, independent workbench
+  lifetime, draft preservation, settings shortcuts and attention routing.
+- A separate single-branch clone, with no sibling firmware/HUD checkout and no
+  ancestor node_modules, passed frozen-lockfile installation, type checks, build,
+  Electron native dependency setup and the same surface smoke checks.
+- Original working-tree file hashes were unchanged. No production application,
+  Codex process, CLI hook, account database or firmware was restarted or altered
+  by this validation. All sample content was synthetic, under a disposable profile.
+
+This local run was Windows x64 / Node 22 / pnpm 10.19.0. Linux and macOS runtime
+behavior has not been revalidated locally; upstream packaging targets remain.
+The experimental branch has a Windows/Linux verification workflow and does not
+trigger the tag-based release workflow on an ordinary branch push. No installer
+release, firmware flash or main-branch merge is part of this integration.

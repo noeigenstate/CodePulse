@@ -9,6 +9,8 @@ import {
   CodexReadStateSync,
   parseCodexReadState,
 } from '../packages/local-server/src/codex-read-state.js'
+import type { NativeReadEvent } from '../packages/local-server/src/codex-read-events.js'
+import { HudProjection } from '../apps/desktop/src/main/hud-projection.js'
 
 const identity = 'a'.repeat(64),
   host = 'local:' + 'b'.repeat(64)
@@ -22,7 +24,23 @@ function fixture(t: { after(fn: () => void): void }) {
   const hub = new StatusHub()
   let native: unknown = state([]),
     now = Date.now()
-  const service = new CodexReadStateSync({ hub, intervalMs: 0, readState: async () => native })
+  let emitRead: ((event: NativeReadEvent) => void) | undefined, disconnect: (() => void) | undefined
+  const service = new CodexReadStateSync({
+    hub,
+    intervalMs: 0,
+    readState: async () => native,
+    now: () => now,
+    readEvents: {
+      start: (onRead, onReset) => {
+        emitRead = onRead
+        disconnect = onReset
+      },
+      stop: () => {
+        emitRead = undefined
+        disconnect = undefined
+      },
+    },
+  })
   t.after(() => service.stop())
   const event = (
     session: string,
@@ -51,6 +69,12 @@ function fixture(t: { after(fn: () => void): void }) {
     event,
     done,
     row,
+    read: (sessionId: string, unread = false, scope = `${identity}:${host}`) =>
+      emitRead?.({ sessionId, unread, scope }),
+    disconnect: () => disconnect?.(),
+    tick: (ms: number) => {
+      now += ms
+    },
     set: (value: unknown) => {
       native = value
     },
@@ -88,6 +112,110 @@ test('native read clears only the same completed task; desktop/device share the 
   assert.ok(device.threads)
   await f.service.syncNow()
   assert.equal(updates, 1)
+})
+
+test('HUD-only retained completions are acknowledged after they disappear from the ordinary snapshot', async (t) => {
+  for (const method of ['file', 'live']) {
+    const f = fixture(t),
+      hud = new HudProjection()
+    f.hub.setPresentationRetention((row, now) => hud.shouldRetain(row, now))
+    f.done('mars')
+    f.done('music')
+    f.tick(4 * 60 * 60_000)
+    ;(f.hub as unknown as { tick(now: number): void }).tick(Date.now() + 4 * 60 * 60_000)
+    assert.equal(f.hub.snapshot().agents.length, 0)
+    assert.equal(f.hub.snapshotForPresentation().agents.length, 2)
+    f.set(state(['mars', 'music']))
+    await f.service.start()
+    if (method === 'file') f.set(state(['music']))
+    else f.read('mars')
+    await f.service.syncNow()
+    assert.equal(f.hub.findSession('codex', 'mars')?.unread, false, method)
+    assert.equal(f.hub.findSession('codex', 'music')?.unread, true, method)
+    assert.equal(
+      f.hub.snapshot().agents.length,
+      0,
+      'acknowledgement does not resurrect expired dashboard cards',
+    )
+  }
+})
+
+test('live read receipts clear results even if the file never captured unread', async (t) => {
+  const f = fixture(t)
+  f.done('a')
+  f.done('b')
+  await f.service.start()
+  f.read('a', true)
+  f.read('a', false)
+  await f.service.syncNow()
+  assert.equal(f.row('a').unread, false)
+  assert.equal(f.row('b').unread, true)
+  assert.equal(f.row('a').state, 'DONE')
+})
+
+test('explicit read can precede a delayed projection of an already-completed turn', async (t) => {
+  const f = fixture(t)
+  f.event('a', 'prompt_submit')
+  await f.service.start()
+  f.tick(100)
+  f.read('a')
+  await f.service.syncNow()
+  // Projection arrives late but the underlying terminal timestamp precedes read.
+  f.tick(-50)
+  f.event('a', 'turn_stop')
+  f.tick(50)
+  await f.service.syncNow()
+  assert.equal(f.row('a').unread, false)
+})
+
+test('reading active work cannot clear a future result or another turn', async (t) => {
+  const f = fixture(t)
+  f.event('a', 'prompt_submit')
+  f.done('b')
+  await f.service.start()
+  f.read('a')
+  f.read('b')
+  f.event('a', 'turn_stop')
+  f.done('b', 'turn-2')
+  await f.service.syncNow()
+  assert.equal(f.row('a').unread, true)
+  assert.equal(f.row('b').unread, true)
+})
+
+test('live read never dismisses permission/input and requires a matching account/host', async (t) => {
+  const f = fixture(t)
+  f.event('a', 'prompt_submit')
+  f.event('a', 'permission_request')
+  f.event('b', 'prompt_submit')
+  f.event('b', 'user_input_required')
+  f.done('c')
+  await f.service.start()
+  const before = f.hub.snapshot().agents
+  f.read('a')
+  f.read('b')
+  f.read('c', false, `other:${host}`)
+  await f.service.syncNow()
+  assert.deepEqual(f.hub.snapshot().agents, before)
+})
+
+test('new unread, disconnection, expiry and stop invalidate pending live receipts', async (t) => {
+  for (const invalidate of ['unread', 'disconnect', 'expiry', 'stop']) {
+    const f = fixture(t)
+    f.event('a', 'prompt_submit')
+    await f.service.start()
+    f.tick(100)
+    f.read('a')
+    await f.service.syncNow()
+    if (invalidate === 'unread') f.read('a', true)
+    if (invalidate === 'disconnect') f.disconnect()
+    if (invalidate === 'stop') f.service.stop()
+    f.tick(-50)
+    f.event('a', 'turn_stop')
+    f.tick(50)
+    if (invalidate === 'expiry') f.tick(15_001)
+    await f.service.syncNow()
+    assert.equal(f.row('a').unread, true, invalidate)
+  }
 })
 
 test('startup absence is unknown; only a witnessed unread to read transition clears', async (t) => {

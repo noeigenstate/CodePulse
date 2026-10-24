@@ -3,6 +3,11 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { StatusHub } from '@codepulse/core'
 import { TurnState, type AgentRuntimeState } from '@codepulse/shared'
+import {
+  CodexReadEventObserver,
+  type NativeReadEvent,
+  type NativeReadEvents,
+} from './codex-read-events.js'
 
 const MAX_STATE_BYTES = 4 * 1024 * 1024
 const MAX_UNREAD_THREADS = 50_000
@@ -13,6 +18,11 @@ interface NativeReadState {
 interface ResultIdentity {
   turnId: string
   terminalAt: number
+}
+interface ReadReceipt {
+  scope: string
+  turnId: string
+  receivedAt: number
 }
 
 /** Compatibility reader for the desktop client's persisted local read state.
@@ -69,17 +79,21 @@ function resultIdentity(row: AgentRuntimeState): ResultIdentity | undefined {
     !Number.isFinite(row.terminalAt) ||
     row.needPermission ||
     row.needUserInput ||
-    ![TurnState.DONE, TurnState.ERROR, TurnState.CANCELLED, TurnState.USAGE_LIMITED].some(
-      (state) => row.state === state,
-    )
+    ![
+      TurnState.DONE,
+      TurnState.ERROR,
+      TurnState.CANCELLED,
+      TurnState.USAGE_LIMITED,
+      TurnState.TIMEOUT,
+    ].some((state) => row.state === state)
   )
     return
   return { turnId: row.externalTurnId, terminalAt: row.terminalAt! }
 }
 
-/** Clears only the same completed result observed both before and after a
- * native unread -> read transition. Running tasks and approvals are untouched.
- * Missing/partial files, logout, identity changes and restarts re-arm a baseline.
+/** Acknowledges a matching terminal turn using an explicit native read event,
+ * or a witnessed persisted unread -> read transition. Running work and real
+ * approvals are untouched; uncertain identity/read evidence never clears them.
  */
 export class CodexReadStateSync {
   private readonly read: () => Promise<unknown>
@@ -90,6 +104,9 @@ export class CodexReadStateSync {
   private pending?: Promise<void>
   private previous?: NativeReadState
   private results = new Map<string, ResultIdentity>()
+  private readonly events?: NativeReadEvents
+  private readonly now: () => number
+  private receipts = new Map<string, ReadReceipt>()
 
   constructor(
     private readonly options: {
@@ -97,6 +114,8 @@ export class CodexReadStateSync {
       codexHome?: string
       intervalMs?: number
       readState?: () => Promise<unknown>
+      readEvents?: NativeReadEvents | false
+      now?: () => number
     },
   ) {
     this.intervalMs = options.intervalMs ?? 1_000
@@ -105,11 +124,27 @@ export class CodexReadStateSync {
       '.codex-global-state.json',
     )
     this.read = options.readState ?? (() => readNativeState(path))
+    this.now = options.now ?? Date.now
+    // Injected state readers/tests never attach to the user's native client.
+    this.events =
+      options.readEvents === false
+        ? undefined
+        : (options.readEvents ??
+          (options.readState || options.codexHome
+            ? undefined
+            : new CodexReadEventObserver({
+                onConnected: () =>
+                  console.info('[CodexReadState] Native read-event observer connected'),
+              })))
   }
 
   async start(): Promise<void> {
     if (this.running) return
     this.running = true
+    this.events?.start(
+      (event) => this.onReadEvent(event),
+      () => this.receipts.clear(),
+    )
     await this.syncNow()
     if (this.running && this.intervalMs > 0) {
       this.timer = setInterval(() => {
@@ -126,6 +161,28 @@ export class CodexReadStateSync {
     this.timer = undefined
     this.previous = undefined
     this.results.clear()
+    this.receipts.clear()
+    this.events?.stop()
+  }
+
+  private onReadEvent(event: NativeReadEvent): void {
+    if (!this.running) return
+    this.receipts.delete(event.sessionId)
+    if (event.unread) return
+    // Bind synchronously, before file I/O. A subsequent turn cannot inherit the
+    // receipt. A late session projection can use it only if already terminal at
+    // the moment the native client sent the read notification.
+    // findSession includes results retained solely for HUD after the ordinary
+    // dashboard snapshot has expired them.
+    const row = this.options.hub.findSession('codex', event.sessionId)
+    if (!row?.externalTurnId || row.needPermission || row.needUserInput) return
+    if (this.receipts.size >= 1_000) this.receipts.delete(this.receipts.keys().next().value!)
+    this.receipts.set(event.sessionId, {
+      scope: event.scope,
+      turnId: row.externalTurnId,
+      receivedAt: this.now(),
+    })
+    void this.syncNow()
   }
 
   syncNow(): Promise<void> {
@@ -148,17 +205,42 @@ export class CodexReadStateSync {
     if (!state) {
       this.previous = undefined
       this.results.clear()
+      this.receipts.clear()
       return
     }
-    const rows = this.options.hub.snapshot().agents
+    const rows = this.options.hub.snapshotForPresentation().agents
     const acknowledged: AgentRuntimeState[] = []
     const nextResults = new Map<string, ResultIdentity>()
+    const now = this.now()
+    for (const [session, receipt] of this.receipts) {
+      if (
+        receipt.scope !== state.scope ||
+        now < receipt.receivedAt ||
+        now - receipt.receivedAt > 15_000
+      )
+        this.receipts.delete(session)
+    }
+    let liveReadCount = 0
     for (const row of rows) {
+      const session = row.externalSessionId!
+      const receipt = this.receipts.get(session)
+      if (
+        receipt &&
+        (receipt.turnId !== row.externalTurnId || row.needPermission || row.needUserInput)
+      )
+        this.receipts.delete(session)
       const current = resultIdentity(row)
       if (!current) continue
-      const session = row.externalSessionId!
       const previous = this.results.get(session)
       if (
+        this.receipts.has(session) &&
+        receipt?.turnId === current.turnId &&
+        current.terminalAt <= receipt.receivedAt
+      ) {
+        acknowledged.push(row)
+        this.receipts.delete(session)
+        liveReadCount++
+      } else if (
         this.previous?.scope === state.scope &&
         this.previous.unread.has(session) &&
         !state.unread.has(session) &&
@@ -172,5 +254,7 @@ export class CodexReadStateSync {
     this.results = nextResults
     // No await between the current snapshot comparison and acknowledgement.
     if (acknowledged.length) this.options.hub.acknowledgeRows(acknowledged)
+    if (liveReadCount)
+      console.info(`[CodexReadState] Native read acknowledged ${liveReadCount} completed result(s)`)
   }
 }

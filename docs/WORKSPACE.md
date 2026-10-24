@@ -6,6 +6,9 @@ The independent screen workbench uses the same 400×300 renderer and target data
 as the supported e-paper firmware. Work status, account allowances and occasional
 desk content are capabilities of the product, not separate applications.
 
+产品功能与嵌入式会话的分工、仓库边界和跨端交接规则见
+[DEVELOPMENT-OWNERSHIP.md](DEVELOPMENT-OWNERSHIP.md)。
+
 ## One checkout
 
 This experimental branch integrates the standard desktop, HUD and screen

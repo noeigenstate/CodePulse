@@ -13,6 +13,7 @@ import { writeClaudeQuotaCache } from '../claude-quota.js'
 import { resolveEventWorkspacePaths, WorkspacePathResolver } from '../workspace-path.js'
 
 import { CodexSessionTitles } from '../codex-session-titles.js'
+import { CodexApprovalContext } from '../codex-approval-context.js'
 
 const MAX_EVENT_BATCH = 1000
 
@@ -48,6 +49,7 @@ export function registerEventRoutes(
 ): void {
   const workspacePaths = new WorkspacePathResolver()
   const codexTitles = new CodexSessionTitles(options.codexHome)
+  const codexApprovals = new CodexApprovalContext(options.codexHome)
 
   app.post('/api/events', async (request, reply) => {
     const body = request.body
@@ -71,6 +73,12 @@ export function registerEventRoutes(
         workspacePaths,
       )
       let event = normalizeEvent(input)
+      if (await codexApprovals.isAutomaticSandboxApproval(event)) {
+        // The native reviewer is handling this boundary request. Acknowledge
+        // delivery without generating human attention or a second tool_start.
+        accepted += 1
+        continue
+      }
       if (
         event.source === 'codex' &&
         event.externalSessionId &&

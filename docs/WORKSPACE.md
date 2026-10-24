@@ -8,11 +8,11 @@ preview uses the same renderer as the supported e-paper firmware.
 
 Keep these siblings in a directory of your choice:
 
-| Directory | Branch / role |
-| --- | --- |
-| `CodePulse` | `main` in CodePulse-HUD; HUD renderer, preload and unified launcher |
-| `CodePulse-Desktop` | `codex/unified-desktop`; unified host based on upstream Desktop 1.4.11 |
-| `firmware` (optional, separate repository/access) | Device firmware and preview renderer source |
+| Directory                                         | Branch / role                                                          |
+| ------------------------------------------------- | ---------------------------------------------------------------------- |
+| `CodePulse`                                       | `main` in CodePulse-HUD; HUD renderer, preload and unified launcher    |
+| `CodePulse-Desktop`                               | `codex/unified-desktop`; unified host based on upstream Desktop 1.4.11 |
+| `firmware` (optional, separate repository/access) | Device firmware and preview renderer source                            |
 
 The two desktop branches share a Git repository, not their working-tree files.
 Do not merge one presentation over the other. From a new empty parent directory:
@@ -106,3 +106,7 @@ Do not commit credentials, native session logs, local account databases,
 provisioning payloads, Wi-Fi passwords or device flash/NVS dumps. Private
 hardware history and machine-transfer instructions belong outside this public
 repository. Push only when requested; never push changes to upstream by default.
+
+Native client viewing can acknowledge the matching completed task in the shared
+Hub. See [read-state compatibility and limits](NATIVE-READ-STATE.md) and
+[automatic approval routing](CODEX-APPROVAL-ROUTING.md).

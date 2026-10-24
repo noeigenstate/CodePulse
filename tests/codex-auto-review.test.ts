@@ -146,13 +146,47 @@ test('missing, out-of-root, malformed and incomplete files preserve the attentio
   assert.equal(await check(), false)
 })
 
-test('bounded tail handles large rollouts without using stale context outside the read window', async (t) => {
+test('long turns retain exact routing beyond the former 8 MiB tail', async (t) => {
   const { path, check } = await fixture(t)
   const padding = jsonl({ type: 'response_item', payload: 'x'.repeat(512 * 1024) })
   for (let i = 0; i < 18; i++) await appendFile(path, padding)
+  assert.equal(await check(), true)
+  // One image/tool row can itself exceed the old window. It is not metadata.
+  await appendFile(
+    path,
+    jsonl({
+      timestamp: '2026-01-01T00:00:00.000Z',
+      ordinal: 7656,
+      type: 'response_item',
+      payload: 'x'.repeat(20 * 1024 * 1024),
+    }),
+  )
+  assert.equal(await check(), true)
+  await appendFile(path, jsonl(context('user')))
+  for (let i = 0; i < 18; i++) await appendFile(path, padding)
+  assert.equal(await check(), false)
+})
+
+test('large newer settings and boundary-split metadata never reuse an older automatic context', async (t) => {
+  const { path, check } = await fixture(t)
+  await appendFile(
+    path,
+    jsonl({
+      type: 'event_msg',
+      payload: {
+        type: 'thread_settings_applied',
+        thread_settings: { approval_policy: 'on-request', approvals_reviewer: 'user' },
+        padding: 'x'.repeat(2 * 1024 * 1024),
+      },
+    }),
+  )
   assert.equal(await check(), false)
   await appendFile(path, jsonl(context('auto_review')))
+  // The current turn row must cross a backwards read chunk boundary.
+  await appendFile(path, jsonl({ type: 'response_item', payload: 'x'.repeat(256 * 1024 - 90) }))
   assert.equal(await check(), true)
+  await appendFile(path, jsonl(context('user')))
+  assert.equal(await check(), false)
 })
 
 test('other sessions and settings updates cannot inherit an automatic reviewer', async (t) => {

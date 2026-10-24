@@ -19,6 +19,7 @@ import { registerEventRoutes } from './routes/events.js'
 import { registerStatusRoutes } from './routes/status.js'
 import { QuotaRefreshWatcher } from './quota-watcher.js'
 import { SessionSyncService } from './session-sync.js'
+import { CodexReadStateSync } from './codex-read-state.js'
 import type { MimoCookieProvider } from './mimo-quota.js'
 import {
   CodexAppServerQuotaService,
@@ -187,6 +188,10 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
         },
       })
 
+  const codexReadState = options.disableSessionSync
+    ? undefined
+    : new CodexReadStateSync({ hub: options.hub })
+
   /**
    * Establishes an account boundary before any later rollout read can publish.
    *
@@ -267,11 +272,13 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
     await app.listen({ host, port })
     // The hook endpoint is live before disk or child-process hydration starts.
     const codexQuotaStart = codexQuotaService?.start().catch(() => undefined)
+    void codexReadState?.start()
     await sessionSync?.start()
     // Do not hold desktop startup on an optional CLI protocol. The service has
     // bounded retries and updates Hub asynchronously after the window is ready.
     void codexQuotaStart
   } catch (err) {
+    codexReadState?.stop()
     sessionSync?.stop()
     codexQuotaService?.stop()
     quotaWatcher.stop()
@@ -296,6 +303,7 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
       await sessionSync?.syncNow(['opencode'])
     },
     close: async () => {
+      codexReadState?.stop()
       sessionSync?.stop()
       codexQuotaService?.stop()
       quotaWatcher.stop()

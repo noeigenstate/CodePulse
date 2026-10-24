@@ -15,8 +15,10 @@ layout change, firmware change or automatic approval is added by CodePulse.
 Routing evidence comes from the hook's exact native session file and latest
 matching `turn_context`, with both session and turn identifiers checked. Any newer native `thread_settings_applied` must agree on the automatic reviewer and policy. Only
 `on-request` + `auto_review` for known command/file tools is suppressed. The
-reader is read-only, confined to the native sessions directory and bounded to a
-1 MiB header and 8 MiB tail. It does not read global defaults, another chat's
+reader is read-only and confined to the native sessions directory. It verifies
+a 1 MiB session header, then walks backward in 256 KiB chunks until the latest
+turn context is found. Memory stays bounded even across large image/tool rows;
+a 512 MiB scan budget preserves a visible fallback for unsupported extremes. It does not read global defaults, another chat's
 settings or store transcript contents. Hook-supplied permission mode alone is
 not sufficient evidence.
 
@@ -24,8 +26,12 @@ Missing/unsupported metadata, mismatched identifiers, unknown tools and other
 approval policies keep the normal attention signal. App-level computer-use
 permissions and requests for user input must not be hidden by this rule. The
 native transcript format is not a stable API; an unsupported format therefore
-fails visibly, rather than hiding a potentially necessary prompt. A context
-outside the bounded tail likewise falls back to the existing visible behavior.
+fails visibly, rather than hiding a potentially necessary prompt. Oversized or incomplete metadata also preserves the attention signal.
+
+The former fixed 8 MiB tail missed valid automatic reviewer settings in long
+running turns with large image/tool outputs. This caused intermittent orange
+permission cards even though the client was still reviewing automatically.
+The backward reader handles both legacy JSONL and ordinal-bearing native rows.
 
 Regression coverage: HTTP acknowledgement without orange state/notifications;
 manual reviewer and untrusted hook fields; session/turn isolation; latest mode

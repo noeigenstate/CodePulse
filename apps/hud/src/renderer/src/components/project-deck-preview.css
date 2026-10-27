@@ -1,0 +1,398 @@
+/* Production ProjectDeck rules, shared by the desktop preview. Keep in sync with index.css. */
+  .project-deck-shell {
+    display: flex;
+    height: 100%;
+    min-width: 0;
+    flex-direction: column;
+  }
+
+  .project-deck-header {
+    display: flex;
+    min-height: 3rem;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    border-bottom: 1px solid var(--line);
+    padding: 0.65rem 0.9rem;
+    user-select: none;
+    -webkit-app-region: drag;
+  }
+
+  .project-deck-brand,
+  .project-deck-state,
+  .project-deck-usage {
+    display: flex;
+    align-items: center;
+  }
+
+  .project-deck-item-main,
+  .project-deck-metrics {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .project-deck-item-main {
+    gap: 0.32rem;
+    padding-right: 1.35rem;
+  }
+
+  .project-deck-metrics {
+    align-items: flex-end;
+    gap: 0.28rem;
+  }
+
+  .project-deck-brand {
+    gap: 0.55rem;
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 750;
+    letter-spacing: 0.12em;
+  }
+
+  .project-deck-wordmark {
+    display: flex;
+    align-items: center;
+    gap: 0.38rem;
+  }
+
+  .project-deck-edition {
+    display: inline-grid;
+    height: 1rem;
+    place-items: center;
+    border: 1px solid color-mix(in srgb, var(--attention) 52%, transparent);
+    border-radius: 0.26rem;
+    padding: 0 0.28rem;
+    background: color-mix(in srgb, var(--attention) 9%, transparent);
+    color: var(--attention);
+    font-family: Inter, 'Segoe UI', system-ui, sans-serif;
+    font-size: 8px;
+    font-weight: 850;
+    line-height: 1;
+    letter-spacing: 0.08em;
+  }
+
+  .project-deck-signal {
+    position: relative;
+    width: 1rem;
+    height: 0.55rem;
+    border-bottom: 2px solid var(--ink);
+    transform: skewX(-26deg);
+  }
+
+  .project-deck-signal::after {
+    position: absolute;
+    right: 0.18rem;
+    bottom: -2px;
+    width: 0.28rem;
+    height: 0.55rem;
+    border-left: 2px solid var(--ink);
+    content: '';
+    transform: skewX(42deg);
+  }
+
+  .project-deck-viewport {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+  }
+
+  .project-deck-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-content: start;
+    gap: 1px;
+    background: var(--line-soft);
+  }
+
+  .project-deck-grid[data-layout='list'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Each project stays in one grid cell. Its agent cards always form one
+     vertical stack, including when the surrounding deck uses compact grid. */
+  .project-deck-group {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+    gap: 1px;
+    background: var(--line-soft);
+  }
+
+  /* Several agents in one project: a quiet shared frame — present, never loud. */
+  .project-deck-group[data-multi] {
+    margin: 3px;
+    overflow: hidden;
+    border-radius: 9px;
+    box-shadow: 0 0 0 1px var(--line);
+  }
+
+  .project-deck-item {
+    position: relative;
+    display: grid;
+    min-width: 0;
+    min-height: 6.25rem;
+    align-content: start;
+    gap: 0.42rem;
+    background: rgba(var(--hud-background-rgb), 0.72);
+    color: var(--ink);
+    padding: 0.72rem 0.85rem 0.68rem;
+    transition:
+      background-color 160ms ease,
+      box-shadow 160ms ease;
+  }
+
+  .project-deck-grid[data-layout='list'] .project-deck-item {
+    min-height: 4.4rem;
+    align-items: center;
+    grid-template-columns: minmax(0, 1fr) 5rem 7.5rem 3rem;
+    column-gap: 0.75rem;
+    padding-block: 0.55rem;
+  }
+
+  .project-deck-grid[data-layout='list'] .project-deck-item-main {
+    padding-right: 0;
+  }
+
+  .project-deck-ack-slot {
+    display: flex;
+    width: 3rem;
+    align-self: stretch;
+  }
+
+  .project-deck-grid[data-layout='list'] .project-deck-ack-slot {
+    width: auto;
+    grid-column: 4;
+  }
+
+  .project-deck-item[data-hud-level='notice'],
+  .project-deck-item[data-hud-level='action'],
+  .project-deck-item[data-hud-level='fault'] {
+    background: var(--attention);
+    box-shadow: inset 3px 0 0 rgba(21, 18, 15, 0.82);
+    color: var(--attention-ink);
+  }
+
+  .project-deck-source {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--ink-muted);
+    font-size: 9px;
+    font-weight: 750;
+    letter-spacing: 0.11em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .project-deck-path {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--ink-subtle);
+    font-size: 9px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .project-deck-item:is(
+      [data-hud-level='notice'],
+      [data-hud-level='action'],
+      [data-hud-level='fault']
+    )
+    .project-deck-path {
+    color: rgba(21, 18, 15, 0.55);
+  }
+
+  .project-deck-item:is(
+      [data-hud-level='notice'],
+      [data-hud-level='action'],
+      [data-hud-level='fault']
+    )
+    .project-deck-source {
+    color: rgba(21, 18, 15, 0.62);
+  }
+
+  .project-deck-state {
+    flex: 0 0 auto;
+    gap: 0.35rem;
+    overflow: hidden;
+    color: var(--ink-muted);
+    font-size: 11px;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .project-deck-item:is(
+      [data-hud-level='notice'],
+      [data-hud-level='action'],
+      [data-hud-level='fault']
+    )
+    .project-deck-state {
+    color: rgba(21, 18, 15, 0.76);
+  }
+
+  .project-deck-state-dot {
+    width: 0.42rem;
+    height: 0.42rem;
+    border-radius: 999px;
+    background: var(--ink-subtle);
+  }
+
+  .project-deck-state-dot.is-active {
+    background: var(--ink);
+    animation: hud-running 1.8s ease-in-out infinite;
+  }
+
+  .project-deck-state-dot:is(.is-notice, .is-action, .is-fault) {
+    background: var(--attention-ink);
+  }
+
+  .project-deck-item-main h2 {
+    min-width: 0;
+    overflow: hidden;
+    color: inherit;
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .project-deck-ack {
+    display: inline-flex;
+    flex: 1 1 auto;
+    align-items: center;
+    align-self: stretch;
+    justify-content: center;
+    border: 1px solid rgba(21, 18, 15, 0.38);
+    border-radius: 5px;
+    background: rgba(21, 18, 15, 0.84);
+    color: var(--attention);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 0.22rem 0.3rem;
+    -webkit-app-region: no-drag;
+  }
+
+  .project-deck-ack:hover {
+    background: var(--attention-ink);
+  }
+
+  .project-deck-dismiss {
+    position: absolute;
+    z-index: 3;
+    top: 0;
+    right: 0;
+    display: grid;
+    width: 0.78rem;
+    height: 0.78rem;
+    place-items: center;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--ink-subtle);
+    cursor: pointer;
+    opacity: 0.52;
+    padding: 0;
+    transition:
+      color 120ms ease,
+      background-color 120ms ease,
+      opacity 120ms ease;
+    -webkit-app-region: no-drag;
+  }
+
+  .project-deck-dismiss svg {
+    width: 0.52rem;
+    height: 0.52rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-width: 1.45;
+  }
+
+  .project-deck-dismiss:hover {
+    background: rgba(20, 23, 27, 0.1);
+    color: var(--ink);
+    opacity: 1;
+  }
+
+  .project-deck-dismiss:focus-visible {
+    outline: 1px solid currentColor;
+    outline-offset: 1px;
+    opacity: 1;
+  }
+
+  .project-deck-item:is(
+      [data-hud-level='notice'],
+      [data-hud-level='action'],
+      [data-hud-level='fault']
+    )
+    .project-deck-dismiss {
+    color: rgba(21, 18, 15, 0.62);
+  }
+
+  .project-deck-metrics {
+    color: var(--ink-muted);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.3;
+    white-space: nowrap;
+  }
+
+  .project-deck-context {
+    font-size: 9px;
+  }
+
+  .project-deck-item:is(
+      [data-hud-level='notice'],
+      [data-hud-level='action'],
+      [data-hud-level='fault']
+    )
+    .project-deck-metrics {
+    color: rgba(21, 18, 15, 0.72);
+  }
+
+  .project-deck-empty {
+    display: flex;
+    min-height: 5.5rem;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 0.45rem;
+    color: var(--ink-muted);
+    font-size: 11px;
+    padding: 1.5rem;
+    text-align: center;
+  }
+
+  .project-deck-empty strong {
+    color: var(--ink);
+    font-size: 14px;
+  }
+
+  .project-deck-usage {
+    min-height: 2.15rem;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    border-top: 1px solid var(--line);
+    color: var(--ink-muted);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    padding: 0.45rem 0.9rem;
+  }
+
+  .project-deck-usage-label {
+    color: var(--ink);
+    font-weight: 750;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  @media (max-width: 520px) {
+    .project-deck-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }

@@ -21,9 +21,11 @@ also includes it in the installer; other upstream package targets are retained.
 On Windows `scripts/start-desktop.ps1 -Build -DeviceServer` additionally enables
 the optional device service. No sibling source checkout is required.
 
-The standard client provides overview, work, usage, desk content and screen
-navigation. The form selector switches standard/HUD; the tray can open either
-form and an independent screen workbench. All three use the same host and saved
+The accepted standard client provides Control and Multimedia, with Usage and
+global Settings in the rail footer. Control offers connected desktop/HUD/e-paper
+cards with their existing configuration options. Focus mode collapses the console
+to the original work dashboard and has an explicit return control. HUD can coexist with the standard window; the screen
+workbench remains independent. All three use the same host and saved device
 configuration. Existing native task/session identities, manual/automatic approval
 distinction, retained result read receipts and stable HUD card order are kept.
 
@@ -67,6 +69,29 @@ session data, recovery/feedback archives or private handoff documents. Keep them
 in ignored local storage. Experimental residual-ghosting work remains a firmware
 concern; the desktop preview shows target pixels, not physical refresh completion.
 
+## Workstation update — 2026-10-27
+
+The approved workstation source was reconciled file by file onto the unified
+checkout, preserving the in-repository HUD paths and existing main-process
+integration. Device protocol and production renderer assets are unchanged.
+
+- Type checks, 649 regression tests, full build and isolated surface checks passed.
+- Surface checks cover focus return with drafts, target availability, large e-paper
+  preview, original HUD rendering/coexistence, independent workbench, settings
+  shortcuts, attention routing and unchanged canonical task state.
+- Both preview asset directories remain identical; all 38 manifest source hashes
+  match the separately inspected firmware source. This is source/preview evidence,
+  not evidence of a flashed device or acceptable physical refresh behavior.
+- Electron native dependencies were restored before launching the user instance.
+  Manual visual acceptance, live X access and current physical-device validation
+  remain pending. This update has not repeated installer/clean-clone validation;
+  those results below describe the earlier baseline only.
+
+Local check results are under ignored `.tmpshots/native-workstation-migration/`
+and `.tmpshots/surface-smoke/`. Hidden-window captures may be stale and must not
+be treated as visual acceptance; renderer/IPC assertions and pixel comparisons
+are reported separately. No firmware flash, release or main merge was performed.
+
 ## Verified baseline — 2026-10-24
 
 Integration source commit: `7eb6457`. The prior standard-host baseline was
@@ -95,3 +120,35 @@ behavior has not been revalidated locally; upstream packaging targets remain.
 The experimental branch has a Windows/Linux verification workflow and does not
 trigger the tag-based release workflow on an ordinary branch push. No installer
 release, firmware flash or main-branch merge is part of this integration.
+
+## Preview sizing verification — 2026-10-27
+
+The current Antigravity navigation and HUD/e-paper configuration were retained.
+Only the preview/container layout and related type cleanup were adjusted. Device
+pixels, fonts, protocol, stored settings and firmware assets were not changed.
+
+Type checks and builds passed. The isolated surface harness now uses software
+offscreen rendering for fresh captures and follows the consolidated navigation.
+It verifies unchanged 400×300 size across four typical window sizes, no page or
+preview overflow, visible Apply controls, identical bitmap data in the 2×
+inspector, keyboard return/Escape, draft retention, HUD coexistence and independent
+workbench pixel equivalence. Small stacked windows are also checked for horizontal
+overflow. These checks do not establish physical e-paper optical quality.
+
+## Commit readiness — 2026-10-27
+
+The current 37-file workstation change passed all 654 regression tests and the
+complete workspace/test type checks. Regression tests used Electron's Node
+runtime with temporary databases, preserving the native dependencies used by
+the running client. The full desktop build and the final HUD main-process
+build passed; both device-preview asset directories remain byte-identical.
+
+Surface checks cover immediate target selection under a delayed save, rapid
+selection, failed-save rollback, retained drafts, paused hidden previews, event
+coalescing, fixed-size preview inspection, HUD coexistence and explicit HUD
+reveal/recovery on the client's display. The user has accepted the current
+desktop experience. Windows can still refuse the independent workbench's native
+pin request; the latest isolated run observed that refusal, so pin reliability
+is not claimed. Installer/clean-clone checks, live X access and physical e-paper
+quality have not been revalidated for this change. Firmware and device protocol
+are unchanged.

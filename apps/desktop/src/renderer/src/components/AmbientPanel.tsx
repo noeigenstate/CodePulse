@@ -8,8 +8,10 @@ import {
 } from '@codepulse/shared'
 import { DeviceScreenPreview } from './DeviceScreenPreview.js'
 import './ambient-panel.css'
+import { useScreenTarget } from '../lib/useScreenTarget.js'
 
-export function AmbientPanel(): JSX.Element {
+export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Element {
+  const { target, error: targetError } = useScreenTarget(active)
   const [snapshot, setSnapshot] = useState<AmbientSnapshot>()
   const [draft, setDraft] = useState<AmbientConfig>({ ...DEFAULT_AMBIENT })
   const [key, setKey] = useState('')
@@ -32,7 +34,7 @@ export function AmbientPanel(): JSX.Element {
         }
       })
       .catch(() => {
-        if (alive) setMessage('当前桌面服务尚未加载桌边动态，请重新启动统一应用。')
+        if (alive) setMessage('当前桌面服务尚未加载信息推送，请重新启动统一应用。')
       })
     const stop = window.codepulse.onAmbient((s) => {
       received = true
@@ -107,21 +109,78 @@ export function AmbientPanel(): JSX.Element {
     <section className="ambient-panel" aria-labelledby="ambient-title">
       <div className="ambient-heading">
         <div>
-          <span className="ambient-eyebrow">DESK EDITION</span>
-          <h3 id="ambient-title">桌边动态</h3>
+          <span className="ambient-eyebrow">MULTIMEDIA</span>
+          <h3 id="ambient-title">多媒体玩法</h3>
         </div>
         <span className="ambient-tag">偶尔看看</span>
       </div>
       <p className="ambient-description">
         几条值得瞥一眼的 X 动态，一张有意思的 meme。没有合适内容就留白，工作提醒始终优先。
       </p>
+      <div className="product-config-grid ambient-workbench">
+        <div className="ambient-preview-column">
+          <section className="product-preview-stage">
+            <div className="product-preview-label"><span>{preview ? '内容示例' : '当前目标画面'}</span>
+              {preview && <button type="button" className="product-button" onClick={() => setPreview(undefined)}>返回实时画面</button>}
+            </div>
+            {preview || target ? <DeviceScreenPreview status={preview ?? target!.status} sample={Boolean(preview)} live={!preview} fit />
+              : <p className="product-empty">{targetError ? '预览暂不可用，等待设备服务连接。' : '正在读取当前画面…'}</p>}
+            {targetError && target && !preview && <p className="product-caption" role="status">连接暂时中断，当前显示最后收到的目标画面。</p>}
+          </section>
+          <h4 className="ambient-candidates-title">候选内容 <small>预览不会下发到设备</small></h4>
+      <div className="ambient-cards">
+        {!snapshot?.cards.length && (
+          <p className="ambient-empty">暂时没有合适内容。屏幕继续显示工作状态与用量。</p>
+        )}
+        {snapshot?.cards.map((card) => (
+          <article className="ambient-card" key={card.id}>
+            <div className="ambient-card-meta">
+              <strong>{card.source}</strong>
+              <span>
+                {card.score.toLocaleString()} 赞 · {card.kind === 'meme' ? '采集于 ' : ''}
+                {new Date(card.publishedAt).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </span>
+            </div>
+            <p>{card.text}</p>
+            <div className="ambient-actions">
+              <button type="button" disabled={busy} onClick={() => void showPreview(card)}>
+                预览画面
+              </button>
+              <button
+                type="button"
+                disabled={busy || Boolean(snapshot.pausedReason) || Boolean(snapshot.activeId)}
+                onClick={() => void action(() => window.codepulse.showAmbient(card.id))}
+              >
+                按规则展示
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  void window.codepulse
+                    .openAmbient(card.id)
+                    .catch(() => setMessage('原帖暂时无法打开'))
+                }
+              >
+                查看原帖 ↗
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+
+        </div>
+        <aside className="product-config ambient-configuration"><h2>更改配置</h2>
+        <fieldset disabled={busy || !snapshot}>
       <label className="ambient-toggle">
         <input
           type="checkbox"
           checked={draft.enabled}
           onChange={(e) => edit('enabled', e.target.checked)}
         />
-        启用桌边动态
+        启用多媒体玩法
       </label>
       <div className="ambient-status" role="status">
         <span>
@@ -321,12 +380,13 @@ export function AmbientPanel(): JSX.Element {
                 setKey('')
               }
               const s = await window.codepulse.setAmbient(draft)
+              savedConfig.current = s.config
               setDraft(s.config)
               return s
             }, '设置已保存')
           }
         >
-          保存设置
+          立即应用
         </button>
         <button
           type="button"
@@ -355,59 +415,9 @@ export function AmbientPanel(): JSX.Element {
           <span>最近检查 {new Date(snapshot!.lastCheckedAt).toLocaleTimeString()}</span>
         )}
       </div>
-      <div className="ambient-cards">
-        {!snapshot?.cards.length && (
-          <p className="ambient-empty">暂时没有合适内容。屏幕继续显示工作状态与用量。</p>
-        )}
-        {snapshot?.cards.map((card) => (
-          <article className="ambient-card" key={card.id}>
-            <div className="ambient-card-meta">
-              <strong>{card.source}</strong>
-              <span>
-                {card.score.toLocaleString()} 赞 · {card.kind === 'meme' ? '采集于 ' : ''}
-                {new Date(card.publishedAt).toLocaleTimeString([], {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-              </span>
-            </div>
-            <p>{card.text}</p>
-            <div className="ambient-actions">
-              <button type="button" disabled={busy} onClick={() => void showPreview(card)}>
-                预览画面
-              </button>
-              <button
-                type="button"
-                disabled={busy || Boolean(snapshot.pausedReason) || Boolean(snapshot.activeId)}
-                onClick={() => void action(() => window.codepulse.showAmbient(card.id))}
-              >
-                按规则展示
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  void window.codepulse
-                    .openAmbient(card.id)
-                    .catch(() => setMessage('原帖暂时无法打开'))
-                }
-              >
-                查看原帖 ↗
-              </button>
-            </div>
-          </article>
-        ))}
+
+        </fieldset></aside>
       </div>
-      {preview && (
-        <div className="ambient-preview">
-          <div className="ambient-card-meta">
-            <strong>屏幕预览 · 不改变设备</strong>
-            <button type="button" onClick={() => setPreview(undefined)}>
-              收起
-            </button>
-          </div>
-          <DeviceScreenPreview status={preview} sample />
-        </div>
-      )}
     </section>
   )
 }

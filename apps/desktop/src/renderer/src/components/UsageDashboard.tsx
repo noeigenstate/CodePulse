@@ -17,6 +17,8 @@ import { AgentLogo } from './AgentLogo.js'
 import './usage-dashboard.css'
 
 interface Props {
+  active?: boolean
+  embedded?: boolean
   locale: Locale
   copy: UsageCopy
   onClose: () => void
@@ -26,7 +28,7 @@ interface Props {
 const TOKEN_KINDS = ['input', 'cacheWrite', 'cacheRead', 'output'] as const
 type TokenKind = (typeof TOKEN_KINDS)[number]
 
-export function UsageDashboard({ locale, copy, onClose }: Props): JSX.Element {
+export function UsageDashboard({ locale, copy, onClose, active = true, embedded = false }: Props): JSX.Element {
   const [range, setRange] = useState<StatsRangePreset>('7d')
   const [data, setData] = useState<UsageLedgerSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
@@ -45,23 +47,24 @@ export function UsageDashboard({ locale, copy, onClose }: Props): JSX.Element {
   }, [range])
 
   useEffect(() => {
-    void load()
-  }, [load])
+    if (active) void load()
+  }, [load, active])
 
   useEffect(() => {
+    if (!active || embedded) return
     const onKey = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [onClose, active, embedded])
 
   const empty = data !== null && data.totals.requests === 0 && data.totals.rounds === 0
 
   return (
     <div className="usage-page flex min-h-0 flex-1 flex-col text-ink">
       <header className="usage-topbar">
-        <button type="button" className="control-btn" onClick={onClose}>
+        <button hidden={embedded} type="button" className="control-btn" onClick={onClose}>
           <BackIcon />
           <span>{copy.back}</span>
         </button>

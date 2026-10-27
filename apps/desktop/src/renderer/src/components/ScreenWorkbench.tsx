@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import type {
-  DeviceDisplaySnapshot,
   DeviceProvisioningSnapshot,
   WorkbenchWindowState,
 } from '@codepulse/shared'
@@ -10,62 +9,7 @@ import { DeviceProvisioningPanel } from './DeviceProvisioningPanel.js'
 import { AmbientPanel } from './AmbientPanel.js'
 import type { DeviceProvisioningCopy } from '../lib/i18n.js'
 import './product-shell.css'
-
-/** Coalesce source events into one read; rendering never starts another collector. */
-export function useScreenTarget(active = true) {
-  const [target, setTarget] = useState<DeviceDisplaySnapshot>()
-  const [error, setError] = useState(false)
-  useEffect(() => {
-    if (!active) return
-    let alive = true,
-      busy = false,
-      again = false
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const read = async () => {
-      if (busy) {
-        again = true
-        return
-      }
-      busy = true
-      try {
-        const next = await window.codepulse.getDeviceDisplay()
-        if (alive) {
-          setTarget(next)
-          setError(false)
-        }
-      } catch {
-        if (alive) setError(true)
-      } finally {
-        busy = false
-        if (alive && again) {
-          again = false
-          schedule()
-        }
-      }
-    }
-    const schedule = () => {
-      if (!timer)
-        timer = setTimeout(() => {
-          timer = undefined
-          void read()
-        }, 160)
-    }
-    const stops = [
-      window.codepulse.onStatus(schedule),
-      window.codepulse.onAmbient(schedule),
-      window.codepulse.onDeviceDisplay(schedule),
-    ]
-    void read()
-    const heartbeat = setInterval(schedule, 30000)
-    return () => {
-      alive = false
-      stops.forEach((stop) => stop())
-      clearInterval(heartbeat)
-      clearTimeout(timer)
-    }
-  }, [active])
-  return { target, error }
-}
+import { useScreenTarget } from '../lib/useScreenTarget.js'
 
 export function ScreenWorkbench({
   copy,
@@ -130,7 +74,7 @@ export function ScreenWorkbench({
     }
   }
   const mode = target?.status.ambient
-    ? '桌边动态'
+    ? '信息推送'
     : target?.config.mode === 'usage'
       ? '用量看板'
       : '工作状态'
@@ -163,7 +107,7 @@ export function ScreenWorkbench({
                 type="button"
                 onClick={() =>
                   void window.codepulse
-                    .openSurface('standard')
+                    .openSurface('standard', 'control')
                     .catch(() => setMessage('标准客户端暂不可用。'))
                 }
               >
@@ -221,7 +165,7 @@ export function ScreenWorkbench({
           <span>{target?.serverAvailable ? '设备服务已开启' : '桌面显示可用'}</span>
         </div>
         {target ? (
-          <DeviceScreenPreview status={target.status} live />
+          <DeviceScreenPreview status={target.status} live fit />
         ) : (
           <p className="product-empty" role="status">
             {error ? '画面暂时不可用，正在等待桌面服务。' : '正在读取当前画面…'}
@@ -249,12 +193,12 @@ export function ScreenWorkbench({
       </section>
       {visited.has('layout') && (
         <section hidden={section !== 'layout'}>
-          <DeviceDisplayPanel active={active && section === 'layout'} />
+          <DeviceDisplayPanel active={active && section === 'layout'} workbench />
         </section>
       )}
       {visited.has('ambient') && (
         <section hidden={section !== 'ambient'}>
-          <AmbientPanel />
+          <AmbientPanel active={active && section === 'ambient'} />
         </section>
       )}
       {visited.has('device') && (

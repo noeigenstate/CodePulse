@@ -25,9 +25,9 @@ try {
     if ($DeviceServer) { $env:CODEPULSE_DEVICE_SERVER_ENABLED = '1' }
     Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
     Remove-Item Env:ELECTRON_RENDERER_URL -ErrorAction SilentlyContinue
-    $desktopProcess = Start-Process -FilePath $electron -ArgumentList ('"' + $desktopApp + '"') -WorkingDirectory $workspace -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logsRoot 'unified-desktop.stdout.log') -RedirectStandardError (Join-Path $logsRoot 'unified-desktop.stderr.log')
+    $desktopProcess = Start-Process -FilePath $electron -ArgumentList ('"' + $desktopApp + '"') -WorkingDirectory $workspace -WindowStyle Normal -PassThru -RedirectStandardOutput (Join-Path $logsRoot 'unified-desktop.stdout.log') -RedirectStandardError (Join-Path $logsRoot 'unified-desktop.stderr.log')
     $desktopProcess.Id | Set-Content -LiteralPath (Join-Path $logsRoot 'unified-desktop.pid')
-    Write-Host "CodePulse started (PID $($desktopProcess.Id)). Use the tray or form selector to open standard, HUD or screen workbench."
+    Write-Host "CodePulse started (PID $($desktopProcess.Id)). Use Control in the client to open the HUD or screen workbench."
 } finally {
     foreach ($name in $variables) { [Environment]::SetEnvironmentVariable($name, $previous[$name], 'Process') }
 }

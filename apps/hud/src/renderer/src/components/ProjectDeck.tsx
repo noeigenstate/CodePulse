@@ -24,6 +24,8 @@ import { useNow } from '../lib/useNow.js'
 import type { HudProjectLayout } from '../lib/dashboardSettings.js'
 
 interface Props {
+  /** Read-only preview must not resize the native HUD. */
+  preview?: boolean
   allToolsHidden: boolean
   copy: UiCopy
   layout: HudProjectLayout
@@ -36,6 +38,7 @@ interface Props {
 
 /** Compact project-first HUD. There are no provider containers or provider-local scroll areas. */
 export function ProjectDeck({
+  preview = false,
   allToolsHidden,
   copy,
   layout,
@@ -52,6 +55,7 @@ export function ProjectDeck({
   const usage = useMemo(() => buildProjectUsageSummaries(panels), [panels])
 
   useLayoutEffect(() => {
+    if (preview) return
     const shell = shellRef.current
     if (!shell) return
 
@@ -89,7 +93,7 @@ export function ProjectDeck({
       window.cancelAnimationFrame(frame)
       observer.disconnect()
     }
-  }, [allToolsHidden, groups, layout, showUsageStrip])
+  }, [allToolsHidden, groups, layout, showUsageStrip, preview])
 
   return (
     <div className="project-deck-shell min-h-0 flex-1" ref={shellRef}>

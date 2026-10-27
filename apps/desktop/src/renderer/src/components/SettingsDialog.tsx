@@ -1,10 +1,13 @@
 import { ProductModuleLinks } from './ProductModuleLinks.js'
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
-import type { SettingsCopy } from '../lib/i18n.js'
+import type { Locale, SettingsCopy } from '../lib/i18n.js'
 import { CLI_TOOL_TYPES, type CliToolType, type ThemePreference } from '../lib/dashboardSettings.js'
 
 interface Props {
+  embedded?: boolean
   copy: SettingsCopy
+  locale?: Locale
+  onLocaleChange?: (locale: Locale) => void
   onClose: () => void
   onThemeChange: (theme: ThemePreference) => void
   onToolVisibilityChange: (tool: CliToolType, visible: boolean) => void
@@ -27,7 +30,10 @@ const FOCUSABLE_SELECTOR =
  * @returns The accessible modal settings dialog.
  */
 export function SettingsDialog({
+  embedded = false,
   copy,
+  locale = 'zh',
+  onLocaleChange,
   onClose,
   onThemeChange,
   onToolVisibilityChange,
@@ -87,6 +93,7 @@ export function SettingsDialog({
   }, [])
 
   useEffect(() => {
+    if (embedded) return
     const previouslyFocused =
       document.activeElement instanceof HTMLElement ? document.activeElement : undefined
     closeButtonRef.current?.focus()
@@ -127,7 +134,7 @@ export function SettingsDialog({
       window.removeEventListener('keydown', onKeyDown)
       previouslyFocused?.focus()
     }
-  }, [])
+  }, [embedded])
 
   /** Close only when the user presses the inert backdrop itself. */
   const closeOnBackdrop = (event: MouseEvent<HTMLDivElement>): void => {
@@ -136,16 +143,16 @@ export function SettingsDialog({
 
   return (
     <div
-      className="settings-backdrop absolute inset-0 z-[60] flex items-center justify-center px-4"
-      onMouseDown={closeOnBackdrop}
+      className={embedded ? 'product-settings-page' : 'settings-backdrop absolute inset-0 z-[60] flex items-center justify-center px-4'}
+      onMouseDown={embedded ? undefined : closeOnBackdrop}
       role="presentation"
     >
       <section
         aria-label={copy.title}
-        aria-modal="true"
-        className="settings-dialog flex max-h-[min(90vh,52rem)] w-full max-w-2xl flex-col"
+        aria-modal={embedded ? undefined : true}
+        className={embedded ? 'settings-dialog settings-embedded flex w-full flex-col' : 'settings-dialog flex max-h-[min(90vh,52rem)] w-full max-w-2xl flex-col'}
         ref={dialogRef}
-        role="dialog"
+        role={embedded ? undefined : 'dialog'}
         tabIndex={-1}
       >
         <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
@@ -153,6 +160,7 @@ export function SettingsDialog({
             <h2 className="text-lg font-semibold text-ink">{copy.title}</h2>
           </div>
           <button
+            hidden={embedded}
             aria-label={copy.close}
             className="settings-close"
             onClick={onClose}
@@ -165,6 +173,34 @@ export function SettingsDialog({
         </div>
 
         <div className="grid min-h-0 gap-6 overflow-y-auto px-5 py-5">
+          {onLocaleChange && (
+            <section>
+              <h3 className="text-sm font-semibold text-ink">
+                {locale === 'zh' ? '界面语言' : 'Language'}
+              </h3>
+              <p className="mt-1.5 text-meta leading-5 text-ink-500">
+                {locale === 'zh' ? '切换桌面端与控制面板显示语言。' : 'Switch the display language for desktop and controls.'}
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  aria-pressed={locale === 'zh'}
+                  className={`theme-option !min-h-0 !flex-row !items-center !justify-center !py-2.5 ${locale === 'zh' ? 'is-active' : ''}`}
+                  onClick={() => onLocaleChange('zh')}
+                  type="button"
+                >
+                  <span>中文 (简体)</span>
+                </button>
+                <button
+                  aria-pressed={locale === 'en'}
+                  className={`theme-option !min-h-0 !flex-row !items-center !justify-center !py-2.5 ${locale === 'en' ? 'is-active' : ''}`}
+                  onClick={() => onLocaleChange('en')}
+                  type="button"
+                >
+                  <span>English</span>
+                </button>
+              </div>
+            </section>
+          )}
           <section>
             <h3 className="text-sm font-semibold text-ink">{copy.theme}</h3>
             <p className="mt-1.5 text-meta leading-5 text-ink-500">{copy.themeAutoHint}</p>
@@ -230,7 +266,7 @@ export function SettingsDialog({
                     : copy.mimoLoggedOut}
               </p>
               <button
-                className="rounded-badge border border-line bg-[#F8FAFC] px-3 py-2 text-[13px] font-semibold text-ink transition hover:bg-[#EEF2F7] active:translate-y-px disabled:opacity-60"
+                className="product-button"
                 disabled={mimoBusy || mimoLoggedIn === undefined}
                 onClick={() => void toggleMimoLogin()}
                 type="button"
@@ -240,7 +276,7 @@ export function SettingsDialog({
             </div>
           </section>
 
-          <ProductModuleLinks onOpen={onClose} />
+          <ProductModuleLinks onOpen={embedded ? undefined : onClose} />
 
           <section>
             <h3 className="text-sm font-semibold text-ink">{copy.updates}</h3>
@@ -252,7 +288,7 @@ export function SettingsDialog({
                 </p>
               </div>
               <button
-                className="rounded-badge border border-line bg-[#F8FAFC] px-3 py-2 text-[13px] font-semibold text-ink transition hover:bg-[#EEF2F7] active:translate-y-px disabled:opacity-60"
+                className="product-button"
                 disabled={updateChecking}
                 onClick={() => void runUpdateCheck()}
                 type="button"

@@ -95,6 +95,19 @@ export function hudWindowBoundsForDisplay(
   }
 }
 
+/** Keep a manually opened HUD inside the invoking client's display, preserving a valid position. */
+export function hudWindowBoundsForReveal(display: HudDisplay, current?: HudRectangle): HudRectangle {
+  const preferred = hudWindowBoundsForDisplay(display, current)
+  const area = normalizedRectangle(display.workArea)
+  if (!current || current.x + current.width <= area.x || current.x >= area.x + area.width ||
+      current.y + current.height <= area.y || current.y >= area.y + area.height) return preferred
+  return {
+    ...preferred,
+    x: clamp(current.x, area.x, area.x + area.width - preferred.width),
+    y: clamp(current.y, area.y, area.y + area.height - preferred.height),
+  }
+}
+
 /**
  * Clamps renderer-measured content height to the usable display lane.
  *

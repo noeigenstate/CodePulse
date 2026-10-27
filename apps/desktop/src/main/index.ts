@@ -10,7 +10,7 @@ import { HudSurface } from './hud-surface.js'
 import { readFileSync, writeFileSync, unlinkSync } from 'node:fs'
 import { homedir, networkInterfaces } from 'node:os'
 import { join } from 'node:path'
-import { app, BrowserWindow, dialog, ipcMain, Menu, powerMonitor, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, powerMonitor, shell, screen, type Rectangle } from 'electron'
 import {
   type Agent,
   type AgentType,
@@ -174,8 +174,35 @@ function hookBinDir(): string {
   return join(app.getAppPath(), '..', '..', 'packages', 'hooks', 'bin')
 }
 
+let consoleBounds: Rectangle | undefined
+let consoleWasMaximized = false
+let desktopIsFocused = false
+function setDesktopFocus(focus: boolean): void {
+  const win = mainWindow
+  if (!win || win.isDestroyed() || desktopIsFocused === focus) return
+  desktopIsFocused = focus
+  if (focus) {
+    consoleBounds = win.getNormalBounds()
+    consoleWasMaximized = win.isMaximized()
+    if (consoleWasMaximized) win.unmaximize()
+    const area = screen.getDisplayMatching(consoleBounds).workArea
+    const width = Math.min(820, area.width), height = Math.min(740, area.height)
+    win.setBounds({ width, height,
+      x: Math.max(area.x, Math.min(consoleBounds.x, area.x + area.width - width)),
+      y: Math.max(area.y, Math.min(consoleBounds.y, area.y + area.height - height)),
+    })
+  } else {
+    if (consoleBounds) win.setBounds(consoleBounds)
+    else win.setSize(1120, 780)
+    if (consoleWasMaximized) win.maximize()
+    consoleBounds = undefined
+    consoleWasMaximized = false
+  }
+}
+
 function createWindow(): void {
   const chrome = windowChromePalette(windowTheme)
+  desktopIsFocused = false
   mainWindow = new BrowserWindow({
     width: 1120,
     height: 780,
@@ -209,6 +236,9 @@ function createWindow(): void {
   })
   mainWindow.on('closed', () => {
     mainWindow = null
+    desktopIsFocused = false
+    consoleBounds = undefined
+    consoleWasMaximized = false
   })
   // A crashed or killed renderer leaves a blank window; reload it instead.
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
@@ -219,6 +249,7 @@ function createWindow(): void {
   })
 
   const devUrl = process.env['ELECTRON_RENDERER_URL']
+  if (productShell?.snapshot().focusMode) setDesktopFocus(true)
   if (devUrl) {
     void mainWindow.loadURL(devUrl)
   } else {
@@ -328,6 +359,7 @@ function trackDeviceView(sender: Electron.WebContents): void {
 
 function registerIpc(): void {
   registerProductIpc(ipcMain, productShell!, screenWorkbench!)
+  ipcMain.handle('codepulse:hud-preview', () => hudSurface?.snapshot() ?? null)
   registerAmbientIpc(ipcMain, ambientRuntime!, () => deviceDisplaySnapshot().status, url => shell.openExternal(url))
   ipcMain.handle('codepulse:get-device-display', (_event, preview: unknown) => deviceDisplaySnapshot(preview))
   ipcMain.handle('codepulse:set-device-display', (_event, input: unknown) => {
@@ -506,6 +538,7 @@ async function bootstrap(): Promise<void> {
   // Both presentations ship with this host, in development and inside app.asar.
   hudSurface = new HudSurface(
     hub, join(__dirname, '../hud'), join(app.getPath('userData'), 'hud-workspaces.json'),
+    () => { if (!shutdownStarted) productShell?.refresh() },
   )
   hudSurface.registerIpc()
   screenWorkbench = new ScreenWorkbenchWindow({
@@ -514,9 +547,12 @@ async function bootstrap(): Promise<void> {
   })
   const shellStore = shellPreferenceStore(join(app.getPath('userData'), 'product-shell.json'))
   productShell = new ProductShell(shellStore.read(), shellStore.write, {
-    hudAvailable: () => Boolean(hudSurface), standard: showWindow, hud: () => hudSurface?.open(),
+    hudAvailable: () => Boolean(hudSurface), hudVisible: () => hudSurface?.isVisible() ?? false,
+    focusMode: setDesktopFocus, standard: showWindow, hud: () => hudSurface?.open(mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : undefined),
     screen: () => screenWorkbench?.open(), hideStandard: () => { standardVisible = false; mainWindow?.hide() }, hideHud: () => hudSurface?.hide(),
-  }, state => { broadcast('codepulse:shell-status', state); tray?.setForm(state.form) })
+    hudSettingsChanged: (settings) => hudSurface?.syncSettings(settings),
+  }, state => { broadcast('codepulse:shell-status', state) })
+  hudSurface.syncSettings(productShell.snapshot().hudSettings)
   ambientRuntime = createAmbientRuntime(app.getPath('userData'), {
     status: () => hub.snapshot(),
     changed: () => {
@@ -594,9 +630,6 @@ async function bootstrap(): Promise<void> {
 
   tray = new TrayController({
     onOpen: () => productShell?.restore(),
-    onOpenStandard: () => productShell?.selectForm('standard'),
-    onOpenScreen: () => productShell?.open('screen'),
-    ...(hudSurface ? { onOpenHud: () => productShell?.selectForm('hud'), onAddHud: () => productShell?.open('hud') } : {}),
     onRestoreConfigsAndQuit: () => {
       void restoreConfigsAndQuit()
     },
@@ -608,7 +641,6 @@ async function bootstrap(): Promise<void> {
   // system, English elsewhere (including the POSIX C locale).
   setLocale(app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en')
 
-  tray.setForm(productShell.snapshot().form)
   productShell.restore()
   // Safety net: rescan after the window is up (covers late-arriving rollouts).
   scheduleFocusSync()

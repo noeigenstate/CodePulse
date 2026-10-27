@@ -533,9 +533,10 @@ body {
   }
 
   .theme-option.is-active {
-    border-color: var(--codex);
+    border-color: var(--ink);
     background: var(--surface-selected);
     color: var(--ink);
+    font-weight: 600;
   }
 
   .theme-swatch {
@@ -549,20 +550,20 @@ body {
 
   .theme-swatch-light {
     background: #ffffff;
-    color: #64748b;
-    box-shadow: inset 0 0 0 1px #e2e8f0;
+    color: #45494f;
+    box-shadow: inset 0 0 0 1px #d8dce0;
   }
 
   .theme-swatch-dark {
-    background: #11151d;
-    color: #d7dce5;
-    box-shadow: inset 0 0 0 1px #384152;
+    background: #24272c;
+    color: #e8eaed;
+    box-shadow: inset 0 0 0 1px #34383e;
   }
 
   .theme-swatch-auto {
-    background: linear-gradient(135deg, #ffffff 0 48%, #11151d 52% 100%);
-    color: #4f83ff;
-    box-shadow: inset 0 0 0 1px #aab6ca;
+    background: linear-gradient(135deg, #ffffff 0 48%, #24272c 52% 100%);
+    color: #45494f;
+    box-shadow: inset 0 0 0 1px #959ba4;
   }
 
   .settings-tool-row {
@@ -597,24 +598,25 @@ body {
     height: 0.99rem;
     width: 0.99rem;
     border-radius: 999px;
-    background: #ffffff;
+    background: var(--surface-solid, #ffffff);
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
     content: '';
     transition: transform 160ms ease;
   }
 
   .settings-switch:checked {
-    background: var(--codex);
+    background: var(--ink);
   }
 
   .settings-switch:checked::after {
     transform: translateX(1rem);
+    background: var(--canvas, #ffffff);
   }
 
   .settings-switch:focus-visible,
   .settings-close:focus-visible,
   .theme-option:focus-visible {
-    outline: 2px solid var(--codex);
+    outline: 2px solid var(--ink-subtle);
     outline-offset: 2px;
   }
 }

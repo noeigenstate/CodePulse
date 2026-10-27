@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { BrowserWindow, ipcMain, screen, type WebContents } from 'electron'
+import { BrowserWindow, ipcMain, screen, type WebContents, type Rectangle } from 'electron'
 import type { StatusHub } from '@codepulse/core'
-import type { Agent, StatusSnapshot } from '@codepulse/shared'
+import type { Agent, HudAppearanceSettings, StatusSnapshot } from '@codepulse/shared'
 import { normalizeWindowTheme, windowChromePalette, type WindowTheme } from './window-chrome.js'
 import { HUD_AGENT_TYPES, HudProjection } from './hud-projection.js'
 import {
@@ -11,7 +11,7 @@ import {
   applyHudWindowTheme,
   hudContentHeightForDisplay,
   hudWindowBoundsForDisplay,
-  selectHudDisplay,
+  hudWindowBoundsForReveal,
 } from './hud-window.js'
 
 /** Hosts the existing HUD build in the same Electron process as the full desktop console. */
@@ -23,11 +23,13 @@ export class HudSurface {
   private theme: WindowTheme = 'light'
   private renderer: string
   private preload: string
+  private latestSettings?: HudAppearanceSettings
 
   constructor(
     private hub: StatusHub,
     root: string,
     workspaceBindingsPath?: string,
+    private visibilityChanged: () => void = () => {},
   ) {
     this.projection = new HudProjection(workspaceBindingsPath, () => {
       console.warn(
@@ -130,16 +132,43 @@ export class HudSurface {
     })
   }
 
-  hide(): void { this.visible = false; this.window?.hide() }
+  isVisible(): boolean { return !!this.window && !this.window.isDestroyed() && this.window.isVisible() && !this.window.isMinimized() }
+  hide(): void { this.visible = false; this.window?.hide(); this.visibilityChanged() }
 
-  open(): void {
+  syncSettings(settings: HudAppearanceSettings): void {
+    this.latestSettings = settings
+    if (this.projection.setRetention(settings.resultRetentionMinutes)) {
+      this.broadcast('codepulse:status', this.hub.snapshot())
+    }
+    const targets = [this.window, this.settings].filter((w) => w && !w.isDestroyed())
+    if (!targets.length) return
+    const payload = JSON.stringify({
+      schemaVersion: 3,
+      ...settings,
+    })
+    const script = `try{window.localStorage.setItem('codepulse:dashboard-settings',${JSON.stringify(payload)});window.dispatchEvent(new StorageEvent('storage',{key:'codepulse:dashboard-settings'}));}catch{}`
+    for (const win of targets) {
+      void win!.webContents.executeJavaScript(script).catch(() => {})
+    }
+  }
+
+  open(anchor?: Rectangle): void {
     this.visible = true
+    // This is an explicit user action in Control, not a passive task notification.
+    const display = anchor ? screen.getDisplayMatching(anchor) : screen.getPrimaryDisplay()
+    const reveal = (window: BrowserWindow) => {
+      if (!this.visible || window.isDestroyed()) return
+      if (window.isMinimized()) window.restore()
+      window.setBounds(hudWindowBoundsForReveal(display, window.getBounds()), false)
+      window.show()
+      window.focus()
+      this.visibilityChanged()
+    }
     if (this.window && !this.window.isDestroyed()) {
-      this.window.showInactive()
+      if (this.latestSettings) this.syncSettings(this.latestSettings)
+      reveal(this.window)
       return
     }
-    const primary = screen.getPrimaryDisplay()
-    const display = selectHudDisplay(screen.getAllDisplays(), primary.id) ?? primary
     const window = new BrowserWindow({
       ...hudWindowBoundsForDisplay(display),
       ...HUD_WINDOW_SHELL_OPTIONS,
@@ -157,12 +186,28 @@ export class HudSurface {
       },
     })
     this.window = window
-    window.once('ready-to-show', () => { if (this.visible) window.showInactive() })
+    this.visibilityChanged()
+    window.webContents.on('did-finish-load', () => {
+      if (this.latestSettings) this.syncSettings(this.latestSettings)
+    })
+    // Show only after the renderer is loaded. Do not report the constructor as a visible HUD.
+    const notifyVisibility = () => this.visibilityChanged()
+    window.on('show', notifyVisibility)
+    window.on('hide', notifyVisibility)
+    window.on('minimize', notifyVisibility)
+    window.on('restore', notifyVisibility)
     window.on('closed', () => {
       this.window = null
+      this.visible = false
+      this.visibilityChanged()
     })
-    void window.loadFile(this.renderer)
-    console.log('[codepulse] HUD surface opened; sharing the desktop StatusHub and device service')
+    void window.loadFile(this.renderer).then(() => {
+      reveal(window)
+      console.log('[codepulse] HUD shown on client display', display.id, window.getBounds())
+    }).catch(error => {
+      console.error('[codepulse] HUD renderer failed to load', error)
+      if (!window.isDestroyed()) window.destroy()
+    })
   }
 
   private openSettings(): void {

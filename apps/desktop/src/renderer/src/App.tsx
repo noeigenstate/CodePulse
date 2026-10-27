@@ -1,4 +1,5 @@
-import { ProductFrame, ProductOverview, useProductNavigation } from './components/ProductFrame.js'
+import { ProductFrame, useProductNavigation } from './components/ProductFrame.js'
+import { ProductControl } from './components/ProductControl.js'
 import { ScreenWorkbench } from './components/ScreenWorkbench.js'
 import { AmbientPanel } from './components/AmbientPanel.js'
 /**
@@ -118,8 +119,8 @@ export function App(): JSX.Element {
   /** 本地开发数据统计后台（设计稿大屏） */
   const product = useProductNavigation()
   const standaloneScreen = new URLSearchParams(window.location.search).get('surface') === 'screen'
-  const [usageTab, setUsageTab] = useState<'balance' | 'history'>('balance')
-  const [settingsOpen, setSettingsOpen] = useState(false)
+
+
   const [dashboardSettings, setDashboardSettings] = useState<DashboardSettings>(() =>
     readDashboardSettings(window.localStorage),
   )
@@ -201,6 +202,11 @@ export function App(): JSX.Element {
   useEffect(() => init(), [init])
   useEffect(() => installPointerEffects(), [])
 
+  const changeLocale = useCallback((next: Locale): void => {
+    setLocale(next)
+    window.localStorage.setItem('codepulse:locale', next)
+  }, [])
+
   const toggleLocale = (): void => {
     setLocale((current) => {
       const next = nextLocale(current)
@@ -251,7 +257,7 @@ export function App(): JSX.Element {
     [updateDashboardSettings],
   )
 
-  const closeSettings = useCallback((): void => setSettingsOpen(false), [])
+
 
   const liveConsole = (
     <LiveConsole
@@ -269,23 +275,50 @@ export function App(): JSX.Element {
   if (standaloneScreen) return <div className="app-shell h-full text-ink"><div className="product-scroll h-full"><ScreenWorkbench copy={copy.settings.deviceProvisioning} standalone /></div></div>
 
   return (
-    <div className="app-shell flex h-full flex-col text-ink">
+    <div className="app-shell native-workstation flex h-full flex-col text-ink">
       {window.codepulse.platform === 'win32' ? <WindowTitleBar /> : null}
-      <ProductFrame view={product.view} navigate={product.navigate} error={product.error} locale={locale} onLocale={toggleLocale} onSettings={() => setSettingsOpen(true)} snapshot={snapshot}>
-        {product.view === 'overview' && <ProductOverview snapshot={snapshot} navigate={product.navigate} locale={locale} />}
-        {product.visited.has('work') && <section className="min-h-0 flex-1 flex flex-col pt-4" hidden={product.view !== 'work'} aria-label={locale === 'zh' ? '工作状态' : 'Work status'}>{liveConsole}</section>}
-        {product.visited.has('usage') && <section className="min-h-0 flex-1 flex flex-col" hidden={product.view !== 'usage'} aria-label={locale === 'zh' ? '用量' : 'Usage'}>
-          <nav className="workspace-tabs mx-6 mt-5" aria-label={locale === 'zh' ? '用量视角' : 'Usage views'}>
-            <button type="button" aria-current={usageTab === 'balance' ? 'page' : undefined} onClick={() => setUsageTab('balance')}>{locale === 'zh' ? '账户额度' : 'Allowances'}</button>
-            <button type="button" aria-current={usageTab === 'history' ? 'page' : undefined} onClick={() => setUsageTab('history')}>{locale === 'zh' ? '历史统计' : 'History'}</button>
-          </nav>
-          <div hidden={usageTab !== 'balance'} className="product-quotas">
-            {panels.length ? panels.map(panel => <section className="agent-panel" key={panel.agentType}><h2>{panel.name}</h2><PanelQuotaMeter agentType={panel.agentType} brand={brandClass(panel.agentType)} meters={panel.quotaMeters} locale={locale} copy={copy} /></section>) : <p className="product-empty">{locale === 'zh' ? '等待账户额度同步。已有用量记录可在「历史统计」查看。' : 'Waiting for account allowances. Existing records are available in History.'}</p>}
-          </div>
-          {usageTab === 'history' && <UsageDashboard locale={locale} copy={copy.usageBoard} onClose={() => setUsageTab('balance')} />}
-        </section>}
-        {product.visited.has('ambient') && <section className="product-scroll" hidden={product.view !== 'ambient'}><AmbientPanel /></section>}
-        {product.visited.has('screen') && <section className="product-scroll" hidden={product.view !== 'screen'}><ScreenWorkbench copy={copy.settings.deviceProvisioning} active={product.view === 'screen'} /></section>}
+      <ProductFrame product={product} locale={locale} onLocale={toggleLocale} snapshot={snapshot}>
+        {product.focusMode && (
+          <section className="product-page product-work" aria-label={locale === 'zh' ? '专注模式' : 'Focus mode'}>
+            <div className="product-desktop-work">
+              <div className="product-live-console">{liveConsole}</div>
+            </div>
+          </section>
+        )}
+        <section className="product-page" hidden={product.focusMode || (product.view !== 'control' && product.view !== 'work')}>
+          <ProductControl
+            product={product}
+            locale={locale}
+            deviceCopy={copy.settings.deviceProvisioning}
+            active={!product.focusMode && (product.view === 'control' || product.view === 'work')}
+            snapshot={snapshot}
+            desktopPreview={liveConsole}
+            usagePreview={
+              <UsageDashboard
+                embedded
+                locale={locale}
+                copy={copy.usageBoard}
+                onClose={() => {}}
+                active={!product.focusMode && (product.view === 'control' || product.view === 'work') && product.target === 'desktop'}
+              />
+            }
+          />
+        </section>
+        {product.visited.has('usage') && (
+          <section className="product-page" hidden={product.focusMode || product.view !== 'usage'} aria-label={locale === 'zh' ? '用量统计' : 'Usage history'}>
+            <UsageDashboard embedded locale={locale} copy={copy.usageBoard} active={!product.focusMode && product.view === 'usage'} onClose={() => void product.navigate('control')} />
+          </section>
+        )}
+        {product.visited.has('ambient') && (
+          <section className="product-scroll" hidden={product.focusMode || product.view !== 'ambient'}>
+            <AmbientPanel active={!product.focusMode && product.view === 'ambient'} />
+          </section>
+        )}
+        {product.visited.has('settings') && (
+          <section className="product-scroll" hidden={product.focusMode || product.view !== 'settings'}>
+            <SettingsDialog embedded copy={copy.settings} locale={locale} onLocaleChange={changeLocale} onClose={() => void product.navigate('control')} onThemeChange={setTheme} onToolVisibilityChange={setToolVisibility} theme={dashboardSettings.theme} visibleTools={dashboardSettings.visibleTools} />
+          </section>
+        )}
       </ProductFrame>
       {showSetupReminder && (
         <AgentSetupReminderModal
@@ -305,16 +338,7 @@ export function App(): JSX.Element {
           update={updateInfo}
         />
       )}
-      {settingsOpen && (
-        <SettingsDialog
-          copy={copy.settings}
-          onClose={closeSettings}
-          onThemeChange={setTheme}
-          onToolVisibilityChange={setToolVisibility}
-          theme={dashboardSettings.theme}
-          visibleTools={dashboardSettings.visibleTools}
-        />
-      )}
+
     </div>
   )
 }
@@ -426,8 +450,8 @@ function LiveConsole({
 
   return (
     <>
-      <div className="min-h-0 flex-1 overflow-hidden px-5 pb-3">
-        <main className="h-full min-w-0 overflow-x-auto overflow-y-hidden pr-1">
+      <div className="min-h-0 flex-1 overflow-hidden px-4 pb-3">
+        <main className="h-full min-w-0 overflow-x-hidden overflow-y-auto pr-1">
           {panels.length === 0 ? (
             <EmptyDashboard allToolsHidden={allToolsHidden} copy={copy} />
           ) : (
@@ -823,12 +847,12 @@ function AgentSetupReminderModal({
 function panelGridClass(count: number): string {
   if (count <= 1) return 'min-w-0 grid-cols-1'
   if (count === 2) {
-    return 'min-w-[56rem] grid-cols-[minmax(27rem,1fr)_minmax(27rem,1fr)]'
+    return 'min-w-0 grid-cols-1 lg:grid-cols-2'
   }
   if (count === 3) {
-    return 'min-w-[84rem] grid-cols-[minmax(26rem,1fr)_minmax(26rem,1fr)_minmax(26rem,1fr)]'
+    return 'min-w-0 grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3'
   }
-  return 'min-w-[112rem] grid-cols-[repeat(4,minmax(26rem,1fr))]'
+  return 'min-w-0 grid-cols-1 lg:grid-cols-2 2xl:grid-cols-4'
 }
 
 /** Renders the appropriate empty state for either inactive or intentionally hidden tools.

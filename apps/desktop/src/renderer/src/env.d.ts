@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import type {
-  ProductView, DesktopForm, ShellSnapshot, WorkbenchWindowState,
+  ProductView, DesktopForm, ShellSnapshot, WorkbenchWindowState, PresentationTarget, DesktopLayout,
+  InkDisplayPlan, HudAppearanceSettings,
   AmbientConfig,
   AmbientSnapshot,
   DeviceStatusV1,
@@ -28,6 +29,14 @@ type WindowTheme = 'light' | 'dark'
 export interface CodePulseApi {
   openSettingsWindow: () => Promise<boolean>
   getShell: () => Promise<ShellSnapshot>
+  setPresentationTarget: (target: PresentationTarget) => Promise<ShellSnapshot>
+  setFocusMode: (focus: boolean) => Promise<ShellSnapshot>
+  setDesktopLayout: (layout: DesktopLayout) => Promise<ShellSnapshot>
+  setInkPlan: (plan: InkDisplayPlan) => Promise<ShellSnapshot>
+  setHudSettings: (patch: Partial<HudAppearanceSettings>) => Promise<ShellSnapshot>
+  setHudVisible: (visible: boolean) => Promise<ShellSnapshot>
+  getHudPreview: () => Promise<StatusSnapshot | null>
+  setHudContentHeight: (height: number) => Promise<boolean>
   navigateProduct: (view: ProductView) => Promise<ShellSnapshot>
   selectDesktopForm: (form: DesktopForm) => Promise<ShellSnapshot>
   openSurface: (surface: 'standard' | 'hud' | 'screen', view?: ProductView) => Promise<ShellSnapshot>

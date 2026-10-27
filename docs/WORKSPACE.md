@@ -45,64 +45,73 @@ the opt-in LAN device service uses 17889. The launcher refuses a conflicting
 listener. Shared state, hooks, collection and device APIs belong to this host;
 themes, layouts and dismissal remain presentation concerns.
 
-## Product navigation and surfaces (2026-10-24)
+## Product navigation and surfaces (2026-10-27)
 
-The standard client has five first-class destinations: **总览 / 工作 / 用量 /
-桌边内容 / 屏幕**. Work retains the existing task panels and acknowledgement
-actions. Usage contains account allowances and the existing historical ledger.
-Desk content contains the X/meme sources, candidates and rules. Screen is the
-workbench for the live target, draft layout, content rules and device connection.
-General settings retain appearance, visible tools, notifications, login and
-updates, with shortcuts to the new workspaces.
+The accepted workstation revision places **控制 / 多媒体玩法** in the main rail,
+with **用量统计 / 设置** at the bottom. Control includes the existing CodePulse
+work panels and live account allowances. Focus mode opens that same work view.
+Usage remains the separate historical token ledger; multimedia retains the
+existing bounded X/meme sources and rules.
 
-The desktop-form selector switches between standard and HUD, hides only the
-other main form and remembers the choice for the next launch. Tray actions can
-also open an additional HUD or the screen workbench without changing that
-startup choice. HUD exposes a direct return to standard and a screen shortcut.
-The workbench is a separate native window with pin, full-screen (Escape exits)
-and focus-display controls. It continues to share the host when the main window
-is hidden or closed. Quitting the tray app still stops the common service.
+Control selects the desktop, HUD or e-paper through three connected cards; it
+has no duplicate target bar. The preview is paired with **更改配置** and
+**立即应用**. The desktop supports work, historical usage or a stacked board;
+HUD exposes its existing appearance options, and e-paper offers the saved
+fixed/cycle content plan. Unsupported content choices remain disabled. Settings
+is global. The consolidated navigation and control options preserve the accepted
+Antigravity revision.
 
-Only the new `userData/product-shell.json` stores the startup form and standard
-client's last destination. Existing database, account credentials, agent hooks,
-read states, desktop/HUD appearance, project order, device configuration and
-ambient settings/history stay at their existing paths. There is no migration
-or reset of those files. Switching windows never acknowledges a task, changes a
-device mode, or starts a second collector/server.
+The device preview stays at 400×300 CSS pixels instead of stretching with the
+window. **2 倍检查** opens an independent 800×600 inspection view of the same
+bitmap; closing it or pressing Escape returns focus to its trigger. It never
+applies device settings. Control has bounded preview/configuration columns and
+a persistent Apply footer. Less-used flags and density samples expand on demand.
+Typical 1000×720, 1120×780, 1366×900 and 1600×1000 windows fit the primary controls
+without page or preview scrolling. Very narrow windows use a stacked layout;
+expanded details and large inspection canvases may scroll within their own areas.
 
-The screen's **当前画面** is the saved target, including an eligible X/meme
-overlay; **显示配置** is a separate layout draft. Apply commits that draft to the
-existing display configuration. Other windows follow saved changes unless they
-have their own unsaved draft, which is retained with a notice. Unvisited device
-connection panels do not start USB scans; scanning is shared across open views,
-and closing one view cannot cancel another view's provisioning operation.
-Hidden screen pages pause live preview reads, preserving their settings drafts.
+**进入专注模式** collapses the standard window to the existing work dashboard.
+**返回控制台** is always available; returning restores the console and its
+unsaved drafts. Focus state, target and desktop layout are stored with navigation
+in `userData/product-shell.json`; legacy overview/screen destinations are
+normalized. Other account, hook, read-state, ordering, device and content data
+remain at their existing paths without reset or bulk migration.
 
-The workbench works without physical hardware. Device discovery, host service
-availability and actual display completion are separate facts: the current
-protocol has no display-completion receipt or sensor telemetry upload, so the
-UI does not claim the physical screen matches the preview. Firmware rendering,
-refresh policy and device protocol are unchanged by this product-shell refactor.
+Selecting the HUD card only selects its preview. **开启 HUD** opens the original
+HUD alongside the standard client; hiding it does not hide the console or change
+the client entry point. Startup and the tray's **打开 CodePulse** always open
+Control, including profiles that previously remembered HUD-only startup. The tray
+has no presentation selectors; HUD and device controls belong in the client.
+The independent screen workbench remains available from the client, with native pin, full-screen (Escape exits) and
+focus-display controls. All windows share one host, StatusHub and saved device
+configuration. Switching views does not acknowledge tasks or apply device drafts.
 
-Product-shell validation on 2026-10-24: 387 HUD tests and 536 unified-host
-tests pass, along with both workspace type checks and desktop builds. A separate
-Electron profile exercised the production renderers, preloads, shell IPC and
-Wasm display: all five destinations, standard/HUD switching, preference
-persistence, independent screen lifetime, native pin state, settings shortcuts,
-cross-window draft retention, project-order isolation and attention routing.
-Opening a view or switching form leaves canonical task state unchanged. The X
-card in this integration test was explicitly labeled fixture content; this run
-does not establish live X account access. Native pinning was intermittently
-rejected by Windows, including in a minimal independent Electron probe; the
-final run applied it successfully, and the UI now reports refusal accurately.
-Test captures and logs are in `.tmpshots/product-shell/` in the HUD checkout.
-The running user instance was not restarted; quit it from the tray and use the
-unified launcher to load the rebuilt application. No firmware was flashed.
+The screen's **当前画面** is the saved target, including an eligible X/meme overlay;
+**显示配置** is a separate draft. **立即应用** saves that draft. Other windows
+follow saved changes unless they have an unsaved draft, which is retained with
+a notice. Unvisited connection panels do not start USB scans; scanning is shared,
+and closing a view cannot cancel another view's provisioning operation. Hidden
+screen pages pause live preview reads and retain their drafts.
+
+The workbench works without physical hardware. Discovery, host availability and
+physical display completion are separate facts: there is no display-completion
+receipt or sensor telemetry upload, so the UI does not claim that the physical
+screen matches the preview. This workstation update changes the desktop shell,
+not the production device renderer, protocol or low-flicker policy.
+
+Validation on 2026-10-27: type checks, 654 regression tests, the full build and
+isolated Electron surface checks passed. The checks cover focus/console return,
+capability availability, HUD coexistence, preview size, independent workbench,
+draft retention, settings shortcuts, attention routing and canonical state
+preservation. The workbench canvas matches the production Wasm pixels. Synthetic
+X content is explicitly labeled as a fixture; this does not verify live X access.
+Actual user visual acceptance and physical device validation remain separate.
+See [UNIFIED-PRODUCT.md](UNIFIED-PRODUCT.md) for the earlier packaging baseline.
 
 ## Device configuration and preview
 
-In 屏幕 → 显示配置, work and usage modes are drafts until
-**Apply configuration** saves them. The device reads the saved configuration.
+In 控制 → 墨水屏, or the independent workbench's 显示配置, work and usage
+modes are drafts until **立即应用** saves them. The device reads the saved configuration.
 The preview shows the latest target picture, not a receipt from the device.
 There is no telemetry upload: temperature, humidity, battery and connection
 appear unknown in the desktop preview when unavailable there.
@@ -159,3 +168,12 @@ repository. Push only when requested; never push changes to upstream by default.
 Native client viewing can acknowledge the matching completed task in the shared
 Hub. See [read-state compatibility and limits](NATIVE-READ-STATE.md) and
 [automatic approval routing](CODEX-APPROVAL-ROUTING.md).
+
+Control card selection paints immediately while its preference is saved. Preview
+reads pause when hidden and coalesce bursts of task updates; content uses its own
+change events. Drafts and the last rendered bitmap remain available on return.
+
+Manually opening HUD places it on the standard client's display and brings it
+forward. A minimized or off-screen HUD is restored into that display's work
+area; a valid dragged position there is retained. The Control state follows
+native window visibility/minimization, not just a window creation request.

@@ -42,8 +42,8 @@ export function SurfaceControls({
         <>
           <button
             type="button"
-            title={zh ? '切换到标准客户端' : 'Switch to standard'}
-            onClick={() => act(() => window.codepulse.selectDesktopForm('standard'))}
+            title={zh ? '打开控制台，保持 HUD' : 'Open console alongside HUD'}
+            onClick={() => act(() => window.codepulse.openSurface('standard', 'control'))}
           >
             {zh ? '标准' : 'App'}
           </button>
@@ -67,20 +67,18 @@ export function SurfaceControls({
           <div
             className="surface-switch"
             role="group"
-            aria-label={zh ? '桌面形态（记住启动偏好）' : 'Desktop form (remembered on launch)'}
+            aria-label={zh ? '打开窗口' : 'Open a window'}
           >
             <button
               type="button"
-              aria-pressed={shell?.form === 'standard'}
-              onClick={() => act(() => window.codepulse.selectDesktopForm('standard'))}
+              onClick={() => act(() => window.codepulse.openSurface('standard', 'control'))}
             >
               {zh ? '标准客户端' : 'Standard'}
             </button>
             <button
               type="button"
               disabled={!shell?.hudAvailable}
-              aria-pressed={shell?.form === 'hud'}
-              onClick={() => act(() => window.codepulse.selectDesktopForm('hud'))}
+              onClick={() => act(() => window.codepulse.openSurface('hud'))}
             >
               HUD
             </button>

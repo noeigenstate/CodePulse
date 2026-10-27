@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type {
-  ProductView, DesktopForm, ShellSnapshot, WorkbenchWindowState,
+  ProductView, DesktopForm, ShellSnapshot, WorkbenchWindowState, PresentationTarget, DesktopLayout,
+  InkDisplayPlan, HudAppearanceSettings,
   AmbientConfig,
   AmbientSnapshot,
   DeviceStatusV1,
@@ -33,6 +34,14 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): Unsubscribe {
 const api = {
   openSettingsWindow: (): Promise<boolean> => ipcRenderer.invoke('codepulse:open-settings-window'),
   getShell: (): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-get'),
+  setPresentationTarget: (target: PresentationTarget): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-target', target),
+  setFocusMode: (focus: boolean): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-focus', focus),
+  setDesktopLayout: (layout: DesktopLayout): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-desktop-layout', layout),
+  setInkPlan: (plan: InkDisplayPlan): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-ink-plan', plan),
+  setHudSettings: (patch: Partial<HudAppearanceSettings>): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-hud-settings', patch),
+  setHudVisible: (visible: boolean): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-hud-visible', visible),
+  getHudPreview: (): Promise<StatusSnapshot | null> => ipcRenderer.invoke('codepulse:hud-preview'),
+  setHudContentHeight: (height: number): Promise<boolean> => ipcRenderer.invoke('codepulse:set-hud-content-height', height),
   navigateProduct: (view: ProductView): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-navigate', view),
   selectDesktopForm: (form: DesktopForm): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-form', form),
   openSurface: (surface: 'standard' | 'hud' | 'screen', view?: ProductView): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-open', surface, view),

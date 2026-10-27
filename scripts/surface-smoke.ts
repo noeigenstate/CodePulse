@@ -1,11 +1,11 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, screen as screenApi } from 'electron'
 import { resolve, join } from 'node:path'
 import { mkdirSync, writeFileSync, readFileSync, appendFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
 import Database from 'better-sqlite3'
 import { createDeviceRenderer, frameToRgba } from '../apps/desktop/src/renderer/src/device-preview/renderer.mjs'
 import { StatusHub } from '@codepulse/core'
-import { DEFAULT_AMBIENT, DEFAULT_DEVICE_DISPLAY, normalizeDeviceDisplay, type DeviceDisplayConfig } from '@codepulse/shared'
+import { DEFAULT_AMBIENT, DEFAULT_DEVICE_DISPLAY, normalizeDeviceDisplay, normalizeShellPreferences, type DeviceDisplayConfig } from '@codepulse/shared'
 import { ProductShell, shellPreferenceStore } from '../apps/desktop/src/main/product-shell.js'
 import { registerProductIpc } from '../apps/desktop/src/main/product-ipc.js'
 import { ScreenWorkbenchWindow } from '../apps/desktop/src/main/screen-workbench-window.js'
@@ -17,6 +17,7 @@ import { createDeviceDisplayProjector } from '../apps/desktop/src/main/device-di
 
 const output = resolve('.tmpshots/surface-smoke', process.env.CODEPULSE_SMOKE_RUN ?? 'local')
 mkdirSync(output,{recursive:true}); app.setPath('userData',join(output,'profile'))
+app.disableHardwareAcceleration() // Isolated software rendering gives fresh hidden-window captures.
 const errors: string[] = [], visible = new Map<number,boolean>()
 const wait = (ms=200) => new Promise(r=>setTimeout(r,ms))
 const deadline = setTimeout(()=>{writeFileSync(join(output,'failure.txt'),'timeout');app.exit(1)},120000)
@@ -24,6 +25,7 @@ app.on('browser-window-created',(_e,win)=>{
   // Exercise real window constructors and renderers without showing test windows.
   win.show=()=>{visible.set(win.id,true)}; win.showInactive=()=>{visible.set(win.id,true)}
   win.hide=()=>{visible.set(win.id,false)}
+  win.isVisible=()=>visible.get(win.id) ?? false
   win.webContents.setBackgroundThrottling(false)
   win.webContents.on('console-message',(_e,level,message)=>{if(level>=3)errors.push(message)})
 })
@@ -36,7 +38,7 @@ async function click(win: BrowserWindow, selector: string) {
   await win.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(selector)}).click()`); await wait()
 }
 async function button(win: BrowserWindow, label: string) {
-  const code=`(()=>{const b=Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()===${JSON.stringify(label)});if(!b)throw Error('Missing button');b.click()})()`
+  const code=`(()=>{const b=Array.from(document.querySelectorAll('button')).find(b=>b.getClientRects().length && !b.disabled && b.textContent.trim()===${JSON.stringify(label)});if(!b)throw Error(${JSON.stringify('Missing button: '+label)});b.click()})()`
   await win.webContents.executeJavaScript(code);await wait()
 }
 app.whenReady().then(async()=>{
@@ -54,14 +56,32 @@ app.whenReady().then(async()=>{
     let main: BrowserWindow | undefined
     const host=resolve(process.env.CODEPULSE_SMOKE_ASSETS ?? 'apps/desktop')
     const broadcast=(channel:string,payload:unknown)=>BrowserWindow.getAllWindows().forEach(w=>w.webContents.send(channel,payload))
-    const hud=new HudSurface(hub,join(host,'out/hud'),join(output,'hud-workspaces.json'));hud.registerIpc()
+    let product: ProductShell
+    const hud=new HudSurface(hub,join(host,'out/hud'),join(output,'hud-workspaces.json'),()=>product?.refresh());hud.registerIpc()
     const screen=new ScreenWorkbenchWindow({preload:join(host,'out/preload/index.js'),renderer:join(host,'out/renderer/index.html'),icon:join(host,'build/icon.png')})
     writeFileSync(join(output,'window-state.log'),'')
     const configure=screen.configure.bind(screen)
     screen.configure=(id,input)=>{const before=screen.state();const result=configure(id,input);appendFileSync(join(output,'window-state.log'),JSON.stringify({id,input,before,result})+'\n');return result}
-    const store=shellPreferenceStore(join(output,'product-shell.json'));store.write({version:1,form:'standard',view:'overview'})
-    const product=new ProductShell(store.read(),store.write,{hudAvailable:()=>true,standard:()=>main?.show(),hud:()=>hud.open(),screen:()=>screen.open(),hideStandard:()=>main?.hide(),hideHud:()=>hud.hide()},s=>broadcast('codepulse:shell-status',s))
-    registerProductIpc(ipcMain,product,screen)
+    const store=shellPreferenceStore(join(output,'product-shell.json'));store.write(normalizeShellPreferences({version:1,form:'standard',view:'overview'}))
+    product=new ProductShell(store.read(),store.write,{hudAvailable:()=>true,hudVisible:()=>hud.isVisible(),standard:()=>main?.show(),hud:()=>hud.open(main?.getBounds()),screen:()=>screen.open(),hideStandard:()=>main?.hide(),hideHud:()=>hud.hide()},s=>broadcast('codepulse:shell-status',s))
+    let targetDelay = 0, failTarget: string | undefined
+    registerProductIpc({ handle(channel, listener) {
+      ipcMain.handle(channel, async (event, ...args) => {
+        if (channel === 'codepulse:shell-target') {
+          if (targetDelay) await wait(targetDelay)
+          if (args[0] === failTarget) throw Error('TEST FIXTURE: preference write failed')
+        }
+        return listener(event, ...args)
+      })
+    } },product,screen)
+    const previewReads: Record<string, number> = {}
+    const measuredIpc = { handle(channel: string, listener: (...args: any[]) => any) {
+      ipcMain.handle(channel, (...args) => {
+        previewReads[channel] = (previewReads[channel] ?? 0) + 1
+        return listener(...args)
+      })
+    } }
+    const readCount = (name: string) => previewReads['codepulse:' + name] ?? 0
     const ambient=new AmbientService({
       config:{...DEFAULT_AMBIENT,enabled:false,xEnabled:true,memeEnabled:false,quietStart:0,quietEnd:0,idleOnly:false},
       status:()=>hub.snapshot(),key:()=> 'fixture-key',save:()=>{},changed:()=>broadcast('codepulse:ambient-status',ambient.snapshot()),
@@ -69,88 +89,225 @@ app.whenReady().then(async()=>{
     })
     const projector=createDeviceDisplayProjector(join(output,'device-order.json'))
     const device=(draft?:DeviceDisplayConfig)=>({config,status:withAmbient(projector(hub.snapshot(),draft??config),draft?undefined:ambient.current()),serverAvailable:false})
-    registerAmbientIpc(ipcMain,{service:ambient,setKey:()=>ambient.snapshot()},()=>device().status,async()=>{})
+    registerAmbientIpc(measuredIpc,{service:ambient,setKey:()=>ambient.snapshot()},()=>device().status,async()=>{})
     const handlers: Record<string, (...args:any[])=>any>={
       'get-status':(event)=>hud.owns(event.sender)?hud.snapshot():hub.snapshot(),'sync-sessions':(event)=>hud.owns(event.sender)?hud.snapshot():hub.snapshot(),
       'detect-agents':()=>[],'get-update':()=>null,'get-version':()=> '1.4.11','get-notifications':()=>false,'set-notifications':(_e,v)=>v,
-      'get-usage':()=>null,'mimo-login-status':()=>false,'set-locale':(_e,v)=>v,'set-window-theme':(_e,v)=>v,
+      'hud-preview':()=>hud.snapshot(),'get-usage':()=>null,'mimo-login-status':()=>false,'set-locale':(_e,v)=>v,'set-window-theme':(_e,v)=>v,
       'get-device-display':(_e,draft)=>device(draft),'set-device-display':(_e,value)=>{config=normalizeDeviceDisplay(value);const next=device();broadcast('codepulse:device-display',next);return next},
       'get-device-provisioning':()=>({serverAvailable:false,scanning:false,devices:[],displays:[],phase:'idle',updatedAt:Date.now()}),
       'start-device-scan':()=>({serverAvailable:false,scanning:false,devices:[],displays:[],phase:'idle',updatedAt:Date.now()}),
       'stop-device-scan':()=>({serverAvailable:false,scanning:false,devices:[],displays:[],phase:'idle',updatedAt:Date.now()}),
       'ack':()=>{throw Error('A presentation action must not acknowledge tasks')},
     }
-    for(const [name,run]of Object.entries(handlers))ipcMain.handle('codepulse:'+name,run)
-    main=new BrowserWindow({show:false,width:1120,height:820,webPreferences:{preload:join(host,'out/preload/index.js'),sandbox:false,contextIsolation:true,nodeIntegration:false,backgroundThrottling:false}})
+    for(const [name,run]of Object.entries(handlers))measuredIpc.handle('codepulse:'+name,run)
+    main=new BrowserWindow({show:false,frame:false,width:1120,height:780,webPreferences:{preload:join(host,'out/preload/index.js'),sandbox:false,contextIsolation:true,nodeIntegration:false,backgroundThrottling:false,offscreen:true}})
     await main.loadFile(join(host,'out/renderer/index.html'));await wait(700);product.restore()
-    await until(()=>main!.webContents.executeJavaScript(`Boolean(document.querySelector('.product-launch-grid'))`),'overview')
-    if(!await main.webContents.executeJavaScript(`document.querySelector('[data-view=overview]').textContent.includes('总览')`)){await click(main,'.product-rail-footer button')}
-    writeFileSync(join(output,'overview.png'),(await main.webContents.capturePage()).toPNG())
-    await click(main,'[data-view=work]');assert.equal(product.snapshot().view,'work')
-    await click(main,'[data-view=usage]');await button(main,'历史统计');assert.ok(await main.webContents.executeJavaScript(`document.body.textContent.includes('暂无可用的历史统计')`))
-    assert.equal(await main.webContents.executeJavaScript(`getComputedStyle(document.querySelector('.product-quotas')).display`),'none')
-    await click(main,'[data-view=ambient]');await click(main,'.ambient-panel input[type=checkbox]');await button(main,'保存设置');await button(main,'检查新内容')
+    await until(()=>main!.webContents.executeJavaScript(`Boolean(document.querySelector('.product-control'))`),'control')
+    assert.ok(await main.webContents.executeJavaScript(`document.querySelector('[data-view=control]').textContent.includes('控制')`),'Chinese fixture locale')
+    assert.equal(product.snapshot().view,'control','legacy overview migrates to control')
+    assert.equal(await main.webContents.executeJavaScript(`Boolean(document.querySelector('.product-topbar'))`),false)
+    await main.webContents.executeJavaScript(`localStorage.setItem('codepulse:dashboard-settings',JSON.stringify({...JSON.parse(localStorage.getItem('codepulse:dashboard-settings')||'{}'),theme:'light'}))`)
+    await main.webContents.reload(); await wait(900)
+    await until(()=>main!.webContents.executeJavaScript(`Boolean(document.querySelector('.product-control'))`),'control reload')
+    const capture=async(name:string)=>{await wait(350);writeFileSync(join(output,name+'.png'),(await main!.webContents.capturePage()).toPNG())}
+    await capture('control-desktop')
+    // Layout changes stay drafts until applied, and survive focus/console transitions.
+    await button(main,'功能平铺');assert.equal(product.snapshot().desktopLayout,'work')
+    await button(main,'进入专注模式')
+    assert.equal(product.snapshot().focusMode,true)
+    assert.equal(await main.webContents.executeJavaScript(`getComputedStyle(document.querySelector('.product-rail')).display`),'none')
+    assert.ok(await main.webContents.executeJavaScript(`document.querySelector('.product-live-console').getClientRects().length > 0`))
+    await capture('focus')
+    await button(main,'返回控制台')
+    assert.equal(product.snapshot().focusMode,false)
+    assert.ok(await main.webContents.executeJavaScript(`document.querySelector('.product-segments [aria-pressed=true]').textContent.includes('功能平铺')`))
+    await button(main,'立即应用');assert.equal(product.snapshot().desktopLayout,'board')
+    assert.ok(await main.webContents.executeJavaScript(`Boolean(document.querySelector('.product-desktop-preview.is-board'))`))
+    await click(main,'[data-view=usage]')
+    assert.ok(await main.webContents.executeJavaScript(`document.body.textContent.includes('暂无可用的历史统计')`))
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.product-targets').length`),0)
+    await click(main,'[data-view=control]');await click(main,'#endpoint-ink')
+    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.product-control .device-preview')?.getAttribute('data-render-state')==='ready'`),'ink draft preview')
+    const previewWidth=await main.webContents.executeJavaScript(`document.querySelector('.product-control .device-preview canvas').getBoundingClientRect().width`)
+    assert.ok(previewWidth>=360,'preview must remain legible at default window size')
+    const layouts: unknown[] = []
+    const geometry = () => main!.webContents.executeJavaScript(`(() => {
+      const control = document.querySelector('.product-control');
+      const stage = document.querySelector('.ink-control-workspace .product-preview-stage');
+      const canvas = stage.querySelector('.device-preview-scroll canvas').getBoundingClientRect();
+      const apply = document.querySelector('.ink-config .product-config-actions button').getBoundingClientRect();
+      return {viewport: [innerWidth,innerHeight], canvas: [canvas.width,canvas.height],
+        canvasBottom: canvas.bottom, applyBottom: apply.bottom, applyTop: apply.top,
+        pageOverflow: control.scrollHeight-control.clientHeight,
+        previewOverflow: stage.scrollHeight-stage.clientHeight,
+        configOverflow: document.querySelector('.ink-config .product-config-scroll').scrollHeight-document.querySelector('.ink-config .product-config-scroll').clientHeight,
+        horizontalOverflow: document.documentElement.scrollWidth-innerWidth};
+    })()`)
+    for (const [width,height] of [[1120,780],[1366,900],[1600,1000],[1000,720]]) {
+      main.setContentSize(width!,height!); await wait(250)
+      const measured = await geometry(); layouts.push(measured)
+      assert.deepEqual(measured.canvas,[400,300],'resizing keeps the exact native preview size')
+      assert.ok(measured.pageOverflow <= 1,JSON.stringify(measured))
+      assert.ok(measured.previewOverflow <= 1,JSON.stringify(measured))
+      if(width! >= 1120) assert.ok(measured.configOverflow <= 1,JSON.stringify(measured))
+      assert.ok(measured.applyBottom <= height! && measured.applyTop >= 0,'apply remains visible')
+      assert.equal(measured.horizontalOverflow,0)
+      await capture('ink-'+width+'x'+height)
+    }
+    main.setContentSize(1120,780); await wait(250)
+    const beforeInspect = JSON.stringify(config)
+    await button(main,'2 倍检查')
+    assert.ok(await main.webContents.executeJavaScript(`Boolean(document.querySelector('.ink-control-workspace dialog[open]'))`))
+    const inspectSize=await main.webContents.executeJavaScript(`(() => { const r=document.querySelector('dialog[open] canvas').getBoundingClientRect(); return [r.width,r.height] })()`)
+    assert.deepEqual(inspectSize,[800,600],'inspection uses a deliberate 2x zoom')
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.ink-control-workspace .device-preview-scroll canvas').toDataURL() === document.querySelector('dialog[open] canvas').toDataURL()`),true,'both views use identical source pixels')
+    await capture('ink-inspector')
+    await button(main,'关闭检查')
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('dialog[open]').length`),0)
+    assert.equal(await main.webContents.executeJavaScript(`document.activeElement?.textContent`),'2 倍检查','inspection restores keyboard focus')
+    assert.equal(JSON.stringify(config),beforeInspect,'inspection never applies device settings')
+    await click(main,'.ink-work-options summary')
+    await click(main,'.product-sample-options summary')
+    await button(main,'9 个任务样例')
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.ink-config .product-config-actions button').disabled`),true,'samples cannot be applied')
+    const expanded=await geometry(); assert.ok(expanded.applyBottom <= 780,'expanded details keep the apply action in view')
+    await capture('ink-dense')
+    await button(main,'2 倍检查'); await capture('ink-dense-inspector')
+    main.webContents.sendInputEvent({type:'keyDown',keyCode:'Escape'})
+    await until(()=>main!.webContents.executeJavaScript(`document.querySelectorAll('dialog[open]').length===0`),'Escape closes the inspection')
+    await button(main,'实时任务')
+    await click(main,'.ink-work-options summary'); await click(main,'.product-sample-options summary')
+    writeFileSync(join(output,'layout.json'),JSON.stringify(layouts,null,2))
+    await capture('control-ink')
+    await button(main,'用量看板');assert.equal(config.mode,'hud')
+    await button(main,'进入专注模式');await button(main,'返回控制台')
+    assert.equal(product.snapshot().target,'ink')
+    assert.ok(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.product-control .ink-config button')).some(b=>b.textContent==='用量看板' && b.getAttribute('aria-pressed')==='true')`))
+    await button(main,'立即应用');assert.equal(config.mode,'usage')
+    await click(main,'#endpoint-hud')
+    await until(()=>main!.webContents.executeJavaScript(`Boolean(document.querySelector('.product-control .hud-preview .project-deck-shell'))`),'real HUD preview')
+    await capture('control-hud')
+    // Only the visible preview consumes status updates. Keep the UI responsive while saving is slow.
+    await wait(400)
+    const inactiveReads = readCount('get-device-display'), ambientReads = readCount('ambient-get')
+    for (let i = 0; i < 40; i++) broadcast('codepulse:status',hub.snapshot())
+    await wait(400)
+    assert.equal(readCount('get-device-display'),inactiveReads,'hidden ink never reads on agent events')
+    assert.equal(readCount('ambient-get'),ambientReads,'agent events do not read content')
+    targetDelay = 650
+    await main.webContents.executeJavaScript("document.querySelector('#endpoint-ink').click()")
+    await wait(100)
+    assert.equal(product.snapshot().target,'hud','fixture save is still pending')
+    assert.equal(await main.webContents.executeJavaScript("document.querySelector('#endpoint-ink').getAttribute('aria-pressed')"),'true','card selection paints before persistence completes')
+    await until(()=>product.snapshot().target==='ink','delayed target saved'); await wait(300)
+    targetDelay = 0
+    const activeReads = readCount('get-device-display'), contentReads = readCount('ambient-get')
+    for (let i = 0; i < 40; i++) broadcast('codepulse:status',hub.snapshot())
+    await wait(400)
+    assert.equal(readCount('get-device-display')-activeReads,1,'burst of agent updates coalesces to one preview read')
+    assert.equal(readCount('ambient-get'),contentReads,'work refresh does not reload X/meme')
+    targetDelay = 500
+    await main.webContents.executeJavaScript("document.querySelector('#endpoint-hud').click()")
+    await wait(30)
+    await main.webContents.executeJavaScript("document.querySelector('#endpoint-desktop').click()")
+    await wait(30)
+    await main.webContents.executeJavaScript("document.querySelector('#endpoint-ink').click()")
+    await wait(100)
+    assert.equal(await main.webContents.executeJavaScript("document.querySelector('#endpoint-ink').getAttribute('aria-pressed')"),'true','last quick click wins immediately')
+    await wait(650)
+    assert.equal(product.snapshot().target,'ink')
+    targetDelay = 0
+    failTarget = 'hud'
+    await click(main,'#endpoint-hud')
+    await until(()=>main!.webContents.executeJavaScript("Boolean(document.querySelector('.product-attention[role=alert]'))"),'failed-save feedback')
+    assert.equal(product.snapshot().target,'ink')
+    assert.equal(await main.webContents.executeJavaScript("document.querySelector('#endpoint-ink').getAttribute('aria-pressed')"),'true','failed save rolls back selection')
+    failTarget = undefined
+    await click(main,'#endpoint-hud')
+    writeFileSync(join(output,'switching.json'),JSON.stringify({immediateSelection:true,rapidSelection:true,rollback:true,hiddenPreviewPaused:true,coalescedReads:true,previewReads},null,2))
+
+    assert.equal(product.snapshot().hudVisible,false,'target selection must not open a window')
+    await button(main,'开启 HUD')
+    await until(()=>BrowserWindow.getAllWindows().some(w=>w.getTitle()==='CodePulse HUD'),'HUD window')
+    const hudWindow=BrowserWindow.getAllWindows().find(w=>w.getTitle()==='CodePulse HUD')!
+    await until(()=>hudWindow.webContents.executeJavaScript(`Boolean(document.querySelector('.surface-controls.is-compact'))`),'HUD controls')
+    assert.equal(visible.get(main.id),true,'desktop and HUD coexist')
+    assert.equal(product.snapshot().hudVisible,true)
+    assert.ok(hudWindow.isVisible(),'open must actually show the native window')
+    // Simulate a stale off-screen/minimized HUD, then explicitly reopen from Control.
+    hudWindow.setBounds({x:50000,y:50000,width:470,height:300})
+    let minimized = true, restored = false, focused = false
+    const originalMinimized = hudWindow.isMinimized.bind(hudWindow), originalRestore = hudWindow.restore.bind(hudWindow), originalFocus = hudWindow.focus.bind(hudWindow)
+    hudWindow.isMinimized=()=>minimized
+    hudWindow.restore=()=>{minimized=false;restored=true}
+    hudWindow.focus=()=>{focused=true}
+    assert.equal(hud.isVisible(),false,'minimized window is not reported as visible')
+    product.setHudVisible(true)
+    assert.equal(restored,true,'explicit open restores minimized HUD')
+    assert.equal(focused,true,'explicit open brings HUD forward')
+    assert.equal(hud.isVisible(),true)
+    const area=screenApi.getDisplayMatching(main.getBounds()).workArea, bounds=hudWindow.getBounds()
+    assert.ok(bounds.x>=area.x && bounds.y>=area.y && bounds.x+bounds.width<=area.x+area.width && bounds.y+bounds.height<=area.y+area.height,'reopen recovers off-screen bounds onto client display')
+    hudWindow.isMinimized=originalMinimized;hudWindow.restore=originalRestore;hudWindow.focus=originalFocus
+    writeFileSync(join(output,'hud-reveal.json'),JSON.stringify({restored,focused,area,bounds,visible:hud.isVisible()},null,2))
+    assert.equal(product.snapshot().form,'standard','opening HUD preserves launch preference')
+    await button(main,'进入专注模式');await button(hudWindow,'标准')
+    assert.equal(product.snapshot().focusMode,false);assert.equal(product.snapshot().view,'control')
+    assert.equal(visible.get(hudWindow.id),true,'HUD return opens console without hiding HUD')
+    writeFileSync(join(output,'hud.png'),(await hudWindow.webContents.capturePage()).toPNG())
+    // Updates keeps the original bounded service; synthetic content never touches live accounts.
+    await click(main,'[data-view=ambient]')
+    assert.equal(product.snapshot().target,'ink')
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.product-targets').length`),0)
+    if (!await main.webContents.executeJavaScript(`document.querySelector('.ambient-configuration > fieldset > .ambient-toggle input').checked`)) await click(main,'.ambient-configuration > fieldset > .ambient-toggle input')
+    await button(main,'立即应用');await button(main,'检查新内容')
     await until(()=>ambient.snapshot().cards.length===1,'content fixture');await button(main,'预览画面')
-    await click(main,'[data-view=screen]');await until(()=>main!.webContents.executeJavaScript(`Boolean(document.querySelector('.screen-live canvas'))`),'live target')
-    assert.ok(await main.webContents.executeJavaScript(`document.querySelector('.screen-context').textContent.includes('桌边动态')`))
-    // Applying the layout uses a separate draft; it cannot replace an active content card.
-    await button(main,'显示配置');await button(main,'用量看板');await button(main,'应用配置');assert.equal(config.mode,'usage')
-    await button(main,'当前画面');assert.ok(device().status.ambient)
-    await button(main,'独立打开 ↗')
+    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .device-preview')?.getAttribute('data-render-state')==='ready'`),'content renderer')
+    await capture('updates')
+    await click(main,'[data-view=settings]');await button(main,'屏幕工作台 ↗')
     await until(()=>BrowserWindow.getAllWindows().some(w=>w.getTitle().includes('屏幕工作台')),'screen window')
     const screenWindow=BrowserWindow.getAllWindows().find(w=>w.getTitle().includes('屏幕工作台'))!
-    await until(()=>screenWindow.webContents.executeJavaScript(`Boolean(document.querySelector('.screen-live canvas'))`),'screen renderer')
     await until(()=>screenWindow.webContents.executeJavaScript(`document.querySelector('.screen-live .device-preview')?.getAttribute('data-render-state')==='ready'`),'real Wasm screen pixels')
-    // Built canvas must be exactly the committed production C/Wasm frame.
-    const render = await createDeviceRenderer(readFileSync('apps/desktop/src/renderer/src/device-preview/renderer.wasm'))
-    const rendered = await screenWindow.webContents.executeJavaScript(`Array.from(document.querySelector('.screen-live canvas').getContext('2d').getImageData(0,0,400,300).data)`)
-    assert.deepEqual(rendered, Array.from(frameToRgba(render(device().status))))
-    await button(screenWindow,'置顶')
-    const nativePinApplied=screen.state().pinned
-    if (!nativePinApplied) assert.ok(await screenWindow.webContents.executeJavaScript(`document.body.textContent.includes('系统未应用置顶设置')`),'report OS limitation without claiming success')
+    const render=await createDeviceRenderer(readFileSync('apps/desktop/src/renderer/src/device-preview/renderer.wasm'))
+    const rendered=await screenWindow.webContents.executeJavaScript(`Array.from(document.querySelector('.screen-live canvas').getContext('2d').getImageData(0,0,400,300).data)`)
+    assert.deepEqual(rendered,Array.from(frameToRgba(render(device().status))))
+    await button(screenWindow,'置顶');const nativePinApplied=screen.state().pinned
+    if(!nativePinApplied) assert.ok(await screenWindow.webContents.executeJavaScript(`document.body.textContent.includes('系统未应用置顶设置')`))
     await assert.rejects(main.webContents.executeJavaScript(`window.codepulse.setWorkbenchWindow({pinned:true})`))
-    // Cross-window update: a clean draft follows, a dirty draft is retained.
     await button(screenWindow,'显示配置');await button(screenWindow,'工作状态')
     await main.webContents.executeJavaScript(`window.codepulse.setDeviceDisplay({...${JSON.stringify(config)},metric:'used'})`);await wait()
     assert.ok(await screenWindow.webContents.executeJavaScript(`document.body.textContent.includes('保留你的未保存修改')`))
     await button(screenWindow,'当前画面');ambient.dismiss();await wait(500)
     assert.ok(await screenWindow.webContents.executeJavaScript(`document.querySelector('.screen-context').textContent.includes('用量看板')`))
     writeFileSync(join(output,'device.json'),JSON.stringify(device().status,null,2))
-    await button(screenWindow,'专注展示');await wait(1500);writeFileSync(join(output,'screen.png'),(await screenWindow.webContents.capturePage()).toPNG());await button(screenWindow,'退出展示')
+    await button(screenWindow,'专注展示');await wait(700);writeFileSync(join(output,'screen.png'),(await screenWindow.webContents.capturePage()).toPNG());await button(screenWindow,'退出展示')
     await new Promise<void>(resolve=>{screenWindow.webContents.once('did-finish-load',()=>resolve());screenWindow.webContents.reload()})
-    await until(()=>screenWindow.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent===${JSON.stringify(nativePinApplied ? '已置顶' : '置顶')})`),'native pin state after renderer reload')
+    await until(()=>screenWindow.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent===${JSON.stringify(nativePinApplied?'已置顶':'置顶')})`),'pin state after reload')
     const savedOrder=JSON.stringify({version:1,workspaceKeys:['f:/example/new-project','f:/example/codepulse']})
     await main.webContents.executeJavaScript(`localStorage.setItem('codepulse:project-order-v1',${JSON.stringify(savedOrder)})`)
     const next=hub.snapshot();next.agents=[...next.agents,{...next.agents[0]!,workspacePath:'F:/example/new-project',externalSessionId:'order-fixture'}]
     screen.broadcast('codepulse:status',next);await wait()
-    assert.equal(await main.webContents.executeJavaScript(`localStorage.getItem('codepulse:project-order-v1')`),savedOrder,'screen must not rewrite standard project ordering')
-    await main.webContents.executeJavaScript(`window.codepulse.selectDesktopForm('hud')`)
-    await until(()=>BrowserWindow.getAllWindows().some(w=>w.getTitle()==='CodePulse HUD'),'HUD window')
-    const hudWindow=BrowserWindow.getAllWindows().find(w=>w.getTitle()==='CodePulse HUD')!
-    await until(()=>hudWindow.webContents.executeJavaScript(`Boolean(document.querySelector('.surface-controls.is-compact'))`),'HUD navigation')
-    assert.equal(visible.get(main.id),false);assert.equal(product.snapshot().form,'hud');assert.equal(store.read().form,'hud')
-    assert.ok(visible.get(screenWindow.id),'independent workbench must remain open')
-    writeFileSync(join(output,'hud.png'),(await hudWindow.webContents.capturePage()).toPNG())
-    await button(hudWindow,'标准');assert.equal(visible.get(main.id),true);assert.equal(visible.get(hudWindow.id),false)
-    await click(main,'[aria-label=设置]');await button(main,'X 与 meme');assert.equal(product.snapshot().view,'ambient')
-    assert.equal(await main.webContents.executeJavaScript(`Boolean(document.querySelector('.settings-close'))`),false,'module shortcut closes settings')
-    await click(main,'[aria-label=设置]');await click(main,'.theme-swatch-dark');await wait(500)
-    // The swatch itself bubbles through its button.
-    await main.webContents.executeJavaScript(`document.querySelector('.settings-close').click()`);await wait()
-    await click(main,'[data-view=overview]');writeFileSync(join(output,'overview-dark.png'),(await main.webContents.capturePage()).toPNG())
-    main.setSize(720,600);await wait(300);writeFileSync(join(output,'compact.png'),(await main.webContents.capturePage()).toPNG())
-    assert.equal(await main.webContents.executeJavaScript(`document.documentElement.scrollWidth <= window.innerWidth`),true)
-    assert.equal(JSON.stringify(hub.snapshot().agents),before,'view actions must preserve canonical task state')
+    assert.equal(await main.webContents.executeJavaScript(`localStorage.getItem('codepulse:project-order-v1')`),savedOrder)
+    await click(main,'[data-view=settings]')
+    assert.equal(await main.webContents.executeJavaScript(`Boolean(document.querySelector('.product-topbar'))`),false)
+    assert.ok(await main.webContents.executeJavaScript(`Boolean(document.querySelector('.settings-embedded'))`))
+    await button(main,'多媒体玩法（X 与 meme）');assert.equal(product.snapshot().view,'ambient')
+    await click(main,'[data-view=settings]');await click(main,'.theme-swatch-dark');await wait(500)
+    await click(main,'[data-view=control]');await capture('control-dark')
+    main.setSize(720,600);await capture('compact')
+    assert.equal(await main.webContents.executeJavaScript(`document.documentElement.scrollWidth<=window.innerWidth`),true)
+    assert.equal(JSON.stringify(hub.snapshot().agents),before,'UI actions preserve canonical task state')
     hub.ingest({id:'shell-attention',source:'codex',eventType:'permission_request',externalSessionId:'shell-ui',workspacePath:'F:/example/codepulse',toolName:'shell',timestamp:Date.now()})
     const attentionState=JSON.stringify(hub.snapshot().agents)
     broadcast('codepulse:status',hub.snapshot());ambient.tick()
-    await until(()=>main!.webContents.executeJavaScript(`Boolean(document.querySelector('.product-attention button'))`),'global work attention')
-    await button(main,'查看工作');assert.equal(product.snapshot().view,'work')
-    assert.equal(JSON.stringify(hub.snapshot().agents),attentionState,'opening attention must not acknowledge the task')
+    await until(()=>main!.webContents.executeJavaScript(`Boolean(document.querySelector('.product-nav-count'))`),'work attention badge')
+    await click(main,'[data-view=control]');assert.equal(product.snapshot().view,'control')
+    assert.equal(JSON.stringify(hub.snapshot().agents),attentionState)
     // The expected unauthorized native-window rejection is visible to Electron's console.
     const unexpected=errors.filter(e=>!e.includes('Only the screen window'))
     assert.deepEqual(unexpected,[])
-    writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,views:5,modeSwitch:true,independentScreen:true,draftPreserved:true,settingsShortcuts:true,globalAttention:true,canonicalStatePreserved:true,nativePinApplied,errors:unexpected},null,2))
+    writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,views:4,focusRoundTrip:true,consolidatedNavigation:true,fixedPixelResize:true,inspectionPixelEquality:true,visibleApply:true,hudCoexistence:true,largePreview:true,independentScreen:true,draftPreserved:true,settingsShortcuts:true,globalAttention:true,canonicalStatePreserved:true,nativePinApplied,errors:unexpected},null,2))
     ambient.stop();BrowserWindow.getAllWindows().forEach(w=>w.destroy());screen.destroy();clearTimeout(deadline);app.exit(0)
   }catch(error){writeFileSync(join(output,'failure.txt'),(error instanceof Error ? error.stack : String(error))+'\n'+JSON.stringify(errors));clearTimeout(deadline);app.exit(1)}
 })

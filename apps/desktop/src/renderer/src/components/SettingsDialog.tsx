@@ -368,6 +368,7 @@ function toolLabel(tool: CliToolType, copy: SettingsCopy): string {
   if (tool === 'claude_code') return copy.claudeCode
   if (tool === 'grok') return copy.grok
   if (tool === 'opencode') return copy.opencode
+  if (tool === 'antigravity') return copy.antigravity
   return copy.kimi
 }
 

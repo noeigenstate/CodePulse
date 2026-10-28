@@ -29,7 +29,7 @@ export function DeviceScreenPreview({ status, sample = false, live = false, fit 
     const key = JSON.stringify(status)
     if (lastFrame.current === key && retry === 0) { setState('ready'); return }
     let alive = true
-    setState('loading')
+    if (!lastFrame.current) setState('loading')
     // Give the selected card a paint before compiling/rasterizing a cold preview.
     const timer = setTimeout(() => { void loadRenderer().then(render => {
       if (!alive) return

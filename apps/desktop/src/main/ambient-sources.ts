@@ -33,7 +33,7 @@ export async function collectX(
     params.set('max_results', '10')
     params.set('sort_order', 'relevancy')
     params.set('start_time', new Date(now - 12 * 3600000).toISOString())
-    params.set('post.fields', 'created_at,public_metrics,possibly_sensitive')
+    params.set('tweet.fields', 'created_at,public_metrics,possibly_sensitive,referenced_tweets')
     params.set('expansions', 'author_id')
     params.set('user.fields', 'username')
     body = object(
@@ -99,7 +99,7 @@ export async function collectMemes(
   now: number,
   request: JsonRequest,
 ): Promise<AmbientCard[]> {
-  const body = object(await request(`https://meme-api.com/gimme/${config.memeCommunity}/5`))
+  const body = object(await request(`https://meme-api.com/gimme/${config.memeCommunity}/20`))
   if (!Array.isArray(body.memes)) throw new Error('meme 来源暂时不可用')
   return list(body.memes).flatMap((raw) => {
     const m = object(raw),
@@ -135,8 +135,9 @@ export async function fetchBytes(
   url: string,
   headers: Record<string, string> = {},
   max = 512000,
+  transport: (url: string, init: RequestInit) => Promise<Response> = fetch,
 ): Promise<Uint8Array> {
-  const response = await fetch(url, {
+  const response = await transport(url, {
     headers: { 'User-Agent': 'CodePulse-Desk/1.0', ...headers },
     redirect: 'error',
     signal: AbortSignal.timeout(12000),
@@ -168,3 +169,40 @@ export async function fetchBytes(
 }
 export const fetchJson: JsonRequest = async (url, headers) =>
   JSON.parse(Buffer.from(await fetchBytes(url, headers)).toString('utf8'))
+
+/** One public page, only current front-page stories with substantial discussion. */
+export async function collectNews(now: number, request: JsonRequest): Promise<AmbientCard[]> {
+  const params = new URLSearchParams({
+    tags: 'front_page',
+    hitsPerPage: '12',
+    numericFilters: `points>=100,created_at_i>${Math.floor(now / 1000) - 86400}`,
+  })
+  const body = object(await request('https://hn.algolia.com/api/v1/search?' + params))
+  if (!Array.isArray(body.hits)) throw new Error('数据源返回格式异常')
+  return list(body.hits).flatMap((raw) => {
+    const h = object(raw),
+      id = String(h.objectID),
+      publishedAt = Number(h.created_at_i) * 1000
+    if (
+      !/^\d+$/.test(id) ||
+      !Number.isFinite(publishedAt) ||
+      publishedAt > now ||
+      score(h.points) < 100
+    )
+      return []
+    const text = cleanText(h.title, 300)
+    if (!text) return []
+    return [
+      {
+        id: 'hn:' + id,
+        kind: 'news' as const,
+        source: 'Hacker News · 热议',
+        text,
+        url: 'https://news.ycombinator.com/item?id=' + id,
+        publishedAt,
+        expiresAt: publishedAt + 86400000,
+        score: score(h.points),
+      },
+    ]
+  })
+}

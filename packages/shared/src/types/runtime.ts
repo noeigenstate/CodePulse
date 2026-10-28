@@ -96,6 +96,8 @@ export type OverallState =
  * 包含各 agent 状态以及推导出的 {@link OverallState}。
  */
 export interface StatusSnapshot {
+  /** Shared presentation order; absent on the raw canonical status endpoint. */
+  workOrder?: import('../presentation/workPresentation.js').WorkPresentationOrder
   /** 提供给托盘的聚合指示。 */
   overall: OverallState
   /** 每个曾上报活动的 agent 各一条。 */

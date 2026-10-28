@@ -20,9 +20,10 @@ export function DeviceScreenPreview({ status, sample = false, live = false }: { 
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
   const [zoom, setZoom] = useState(1)
   const [retry, setRetry] = useState(0)
+  const hasFrame = useRef(false)
   useEffect(() => {
     let alive = true
-    setState('loading')
+    if (!hasFrame.current) setState('loading')
     void loadRenderer().then(render => {
       if (!alive) return
       const context = canvas.current?.getContext('2d')
@@ -30,6 +31,7 @@ export function DeviceScreenPreview({ status, sample = false, live = false }: { 
       const image = context.createImageData(400, 300)
       image.data.set(frameToRgba(render(status)))
       context.putImageData(image, 0, 0)
+      hasFrame.current = true
       setState('ready')
     }).catch(() => { if (alive) setState('error') })
     return () => { alive = false }

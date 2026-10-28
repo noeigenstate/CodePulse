@@ -26,7 +26,13 @@ import { checkMemeImage, packMemeBitmap } from '../apps/desktop/src/main/ambient
 import { registerAmbientIpc } from '../apps/desktop/src/main/ambient-ipc.js'
 
 const noon = new Date(2026, 9, 24, 12).getTime()
-const config = normalizeAmbient({ ...DEFAULT_AMBIENT, enabled: true })
+const config = normalizeAmbient({
+  ...DEFAULT_AMBIENT,
+  enabled: true,
+  conceptsEnabled: false,
+  promptsEnabled: false,
+  newsEnabled: false,
+})
 const snapshot = (state = 'IDLE', unread = false): StatusSnapshot =>
   ({
     overall: 'idle',
@@ -170,8 +176,8 @@ test('X providers request one bounded page, preserve attribution, reject replies
     assert.match(u, /api.x.com\/2\/tweets\/search\/recent/)
     assert.equal(h?.Authorization, 'Bearer bearer')
     assert.equal(
-      new URL(u).searchParams.get('post.fields'),
-      'created_at,public_metrics,possibly_sensitive',
+      new URL(u).searchParams.get('tweet.fields'),
+      'created_at,public_metrics,possibly_sensitive,referenced_tweets',
     )
     return {
       errors: [],
@@ -282,7 +288,10 @@ test('in-flight old configuration cannot reappear after disable', async () => {
   f.service.configure({ ...config, enabled: false })
   resolve({ tweets: [tweet()] })
   await work
-  assert.equal(f.service.snapshot().cards.length, 0)
+  assert.equal(
+    f.service.snapshot().cards.filter((c) => c.kind === 'x' || c.kind === 'meme').length,
+    0,
+  )
   assert.equal(f.service.current(), undefined)
   assert.equal(f.service.snapshot().collecting, false)
 })
@@ -384,8 +393,14 @@ test('failed meme image is removed while healthy X candidates remain available',
   })
   f.service.configure(config)
   await f.service.refresh()
-  assert.equal(f.service.snapshot().cards.length, 1)
-  assert.equal(f.service.snapshot().cards[0]!.kind, 'x')
+  assert.equal(
+    f.service.snapshot().cards.filter((c) => c.kind === 'x' || c.kind === 'meme').length,
+    1,
+  )
+  assert.equal(
+    f.service.snapshot().cards.filter((c) => c.kind === 'x' || c.kind === 'meme')[0]!.kind,
+    'x',
+  )
   assert.equal(f.service.snapshot().sourceStatus.meme, '图片读取失败，稍后重试')
 })
 test('encoded image limits reject huge or malformed images before native decoding', () => {
@@ -427,7 +442,13 @@ test('production IPC previews are local and original-post links cannot be replac
         handlers.set(name, listener)
       },
     },
-    { service: f.service, setKey: () => f.service.snapshot() },
+    {
+      service: f.service,
+      setKey: () => f.service.snapshot(),
+      importImage: () => {
+        throw new Error('Not used')
+      },
+    },
     () => base,
     async (url) => {
       opened.push(url)
@@ -441,4 +462,141 @@ test('production IPC previews are local and original-post links cannot be replac
   await assert.rejects(handlers.get('codepulse:ambient-open')!(undefined, 'https://evil.test/'))
   await handlers.get('codepulse:ambient-open')!(undefined, 'x:123')
   assert.deepEqual(opened, [card().url])
+})
+
+test('manual selection works while auto is off or busy, but shared HUD attention wins', async () => {
+  const f = fixture({ state: 'THINKING' })
+  f.service.configure({ ...config, enabled: false })
+  const local = f.service.addPersonal('note', '今晚读完这一页')
+  const before = structuredClone(f.service.snapshot().config)
+  f.service.showManual(local.id)
+  assert.equal(f.service.current()?.id, local.id)
+  assert.equal(f.service.snapshot().shownToday, 0)
+  assert.deepEqual(f.service.snapshot().config, before)
+  f.service.configure({ ...before, gapMinutes: 120 })
+  assert.equal(
+    f.service.current()?.id,
+    local.id,
+    'automatic preferences do not clear a manual display',
+  )
+  f.service.dismiss()
+  f.service.showManual(local.id)
+  assert.equal(f.service.current()?.id, local.id, 'manual replay ignores automatic dedupe')
+  f.state('WAITING_PERMISSION')
+  assert.throws(() => f.service.showManual(local.id), /先处理 Agent/)
+  assert.equal(f.service.current(), undefined)
+  f.service.tick()
+  f.state('IDLE')
+  assert.equal(
+    f.service.current(),
+    undefined,
+    'dismissed attention overlay does not return unexpectedly',
+  )
+  assert.equal(pauseReason(config, snapshot('ERROR', false), noon), '')
+  assert.equal(pauseReason(config, snapshot('ERROR', true), noon), '先处理 Agent 提醒')
+})
+
+test('explicit display covers unread review without acknowledging it; automatic display still waits', async () => {
+  const f = fixture({ state: 'DONE' })
+  await f.service.refresh()
+  f.service.show()
+  assert.equal(f.service.current(), undefined)
+  const image = f.service.addPersonal('image', 'review-test.png', '00'.repeat(9984))
+  f.service.showManual(image.id)
+  assert.equal(f.service.current()?.manual, true)
+  const source = toDeviceStatusV1(new StatusHub().snapshot())
+  const before = structuredClone(source)
+  const projected = withAmbient(source, f.service.current())
+  assert.equal(projected.ambient?.manual, true)
+  assert.equal(projected.ambient?.imageHex?.length, 19968)
+  assert.deepEqual(source, before, 'display must never acknowledge or rewrite work')
+  assert.equal(pauseReason(config, snapshot('DONE', true), noon), '先处理 Agent 提醒')
+  assert.ok(
+    f.service.snapshot().cards.every((c) => !('manual' in c)),
+    'priority is transient, not library metadata',
+  )
+  assert.equal(deviceCard(image).manual, undefined)
+  assert.notEqual(withAmbient(source, image).revision, projected.revision)
+  for (const state of [
+    'WAITING_PERMISSION',
+    'WAITING_USER_INPUT',
+    'ERROR',
+    'TIMEOUT',
+    'USAGE_LIMITED',
+  ]) {
+    f.state(state)
+    assert.equal(f.service.current(), undefined, `${state} must preempt a manual picture`)
+    assert.throws(() => f.service.showManual(image.id), /先处理 Agent/)
+  }
+})
+
+test('manual cards expire on time and removal clears the live target', () => {
+  const f = fixture()
+  const card = f.service.addPersonal('image', 'test.png', '00'.repeat(9984))
+  f.service.showManual(card.id)
+  f.advance(10 * 60000 + 1)
+  assert.equal(f.service.current(), undefined)
+  f.service.showManual(card.id)
+  f.service.removePersonal(card.id)
+  assert.equal(f.service.current(), undefined)
+  assert.throws(() => f.service.showManual(card.id), /内容已过期/)
+})
+
+test('local library survives restart, stays bounded and never fetches', () => {
+  let saved: AmbientCard[] = []
+  const deps = {
+    config: { enabled: false },
+    status: () => snapshot(),
+    now: () => noon,
+    key: () => '',
+    save: () => {},
+    saveLibrary: (cards: AmbientCard[]) => {
+      saved = cards
+    },
+    request: async () => {
+      throw new Error('Must not fetch')
+    },
+    image: async () => '',
+    changed: () => {},
+  }
+  const s = new AmbientService(deps)
+  for (let n = 0; n < 10; n++) s.addPersonal('note', 'note ' + n)
+  assert.equal(saved.length, 8)
+  const restored = new AmbientService({ ...deps, library: saved })
+  assert.equal(restored.snapshot().cards.filter((c) => c.kind === 'note').length, 8)
+  const concept = restored.snapshot().cards.find((c) => c.kind === 'concept')!
+  restored.showManual(concept.id)
+  assert.equal(restored.current()?.id, concept.id)
+  assert.throws(() => restored.addPersonal('image', 'bad', '00'))
+  assert.throws(() => restored.addPersonal('note', 'x'.repeat(121)))
+  assert.throws(() => restored.addPersonal('note', 123))
+  assert.notEqual(
+    contentKey({ ...card(), kind: 'image', imageHex: '00' }),
+    contentKey({ ...card(), kind: 'image', imageHex: 'ff' }),
+  )
+})
+
+test('plan gates auto content, manual selection remains an explicit temporary override', async () => {
+  let allowed = false
+  const s = new AmbientService({
+    config: { ...config, conceptsEnabled: true, xEnabled: false, memeEnabled: false },
+    status: () => snapshot(),
+    now: () => noon,
+    key: () => '',
+    save: () => {},
+    request: async () => ({}),
+    image: async () => '',
+    changed: () => {},
+    automaticAllowed: () => allowed,
+  })
+  s.show()
+  assert.equal(s.current(), undefined)
+  s.showManual(s.snapshot().cards[0]!.id)
+  assert.ok(s.current())
+  s.dismiss()
+  allowed = true
+  s.show()
+  assert.ok(s.current())
+  allowed = false
+  assert.equal(s.current(), undefined)
 })

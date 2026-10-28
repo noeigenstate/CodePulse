@@ -37,6 +37,7 @@ export async function detectAgents(options: AgentDetectOptions = {}): Promise<Ag
     await detectGrokAgent(options),
     await detectKimiAgent(options),
     await detectOpencodeAgent(options),
+    await detectAntigravityAgent(options),
   ]
 }
 
@@ -504,4 +505,18 @@ function runLocalCommand(
       resolve({ ok: false })
     }
   })
+}
+
+/** CLI probe is read-only. A configured hook still needs its first real callback. */
+export async function detectAntigravityAgent(options: AgentDetectOptions = {}): Promise<Agent> {
+  const env = options.env ?? process.env
+  const runCommand = options.runCommand ?? createLocalCommandRunner(options)
+  const version = await runFirstAvailableCommand(env['ANTIGRAVITY_CLI_PATH'] ? [env['ANTIGRAVITY_CLI_PATH']] : await commandCandidates('antigravity', options), ['--version'], runCommand)
+  const path = env['CODEPULSE_ANTIGRAVITY_HOOKS_FILE'] ?? join(options.homeDir ?? homedir(), '.gemini', 'config', 'hooks.json')
+  let configured = false
+  try {
+    const entry = JSON.parse(await readFile(path, 'utf8'))['codepulse-status']
+    configured = entry?.enabled === true && ['SessionStart', 'PreInvocation', 'PreToolUse', 'PostToolUse', 'Stop'].every(event => JSON.stringify(entry[event] ?? '').includes('antigravity-hook.js'))
+  } catch { /* Missing/malformed configuration is not a working integration. */ }
+  return { id: 'antigravity', type: 'antigravity', name: 'Antigravity', installed: version.ok || configured, configured, version: version.ok ? cleanVersion(version.stdout) : undefined }
 }

@@ -16,7 +16,7 @@ export interface InkDisplayPlan {
 export type HudThemePreference = 'auto' | 'light' | 'dark'
 export type HudAttentionStyle = 'steady' | 'breathe' | 'pulse'
 export type HudLayoutMode = 'grid' | 'list'
-export type HudToolKey = 'codex' | 'claude_code' | 'grok' | 'kimi'
+export type HudToolKey = 'codex' | 'claude_code' | 'grok' | 'kimi' | 'antigravity'
 export interface HudAppearanceSettings {
   theme: HudThemePreference
   hudOpacity: number
@@ -44,6 +44,7 @@ export const DEFAULT_HUD_SETTINGS: HudAppearanceSettings = {
     claude_code: true,
     grok: true,
     kimi: true,
+    antigravity: true,
   },
 }
 export interface ShellPreferences {
@@ -120,6 +121,7 @@ export function normalizeHudSettings(input: unknown): HudAppearanceSettings {
       claude_code: tools.claude_code !== false,
       grok: tools.grok !== false,
       kimi: tools.kimi !== false,
+      antigravity: tools.antigravity !== false,
     },
   }
 }

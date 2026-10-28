@@ -127,6 +127,21 @@
 }
 .ambient-message {
   font-size: 12px;
+  line-height: 1.6;
+  min-height: 3.2em;
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+}
+.ambient-display-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.ambient-display-actions > span {
+  font-size: 11px;
+  color: var(--ink-muted, #666);
 }
 .ambient-health {
   display: flex;
@@ -174,4 +189,77 @@
   .ambient-panel {
     padding: 14px;
   }
+}
+
+.ambient-library-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 20px 0 12px;
+}
+.ambient-library-tabs [aria-pressed='true'] {
+  background: var(--ink, #25282c);
+  color: var(--surface-solid, #fff);
+}
+.ambient-note-editor {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+.ambient-note-editor textarea {
+  grid-column: 1/-1;
+  resize: vertical;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid #8886;
+  border-radius: 6px;
+  padding: 10px;
+}
+.ambient-note-editor small {
+  align-self: center;
+  font-size: 11px;
+  color: var(--ink-muted, #666);
+}
+.ambient-local-options {
+  padding: 10px 0;
+}
+
+.ambient-panel.is-dragging {
+  outline: 2px dashed #718568;
+  outline-offset: 6px;
+}
+.ambient-import-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ambient-import-action span {
+  font-size: 11px;
+  color: var(--ink-muted, #666);
+}
+.ambient-select-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+.ambient-select-card select {
+  flex: 1;
+  min-width: 0;
+}
+.ambient-preview-column > .ambient-library-tabs {
+  margin: 0 0 10px;
+}
+.ambient-panel .device-preview-toolbar {
+  margin-bottom: 8px;
+}
+.ambient-panel .product-preview-label {
+  margin-bottom: 8px;
+}
+
+.ambient-select-card > button {
+  flex-shrink: 0;
+  white-space: nowrap;
 }

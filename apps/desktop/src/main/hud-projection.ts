@@ -1,6 +1,9 @@
+import { readFileSync, writeFileSync, renameSync } from 'node:fs'
 import { buildStatusSnapshot } from '@codepulse/core'
 import {
   TurnState,
+  buildWorkPresentation,
+  type WorkPresentationOrder,
   workspaceKey,
   type AgentRuntimeState,
   type StatusSnapshot,
@@ -8,7 +11,7 @@ import {
 import { HudWorkspaces, hudRowKey, hudWorkspacePath, isHudProjectRoot } from './hud-workspaces.js'
 
 /** HUD 1.4 supports these renderers; newer providers stay visible in the full console. */
-export const HUD_AGENT_TYPES = new Set(['claude_code', 'codex', 'grok', 'kimi'])
+export const HUD_AGENT_TYPES = new Set(['claude_code', 'codex', 'grok', 'kimi', 'antigravity'])
 
 const rowKey = hudRowKey
 
@@ -25,14 +28,20 @@ function activityKey(agent: AgentRuntimeState): string {
   ])
 }
 
-/** Presentation state only. The canonical hub, dashboard and device API are never mutated. */
+/** Shared HUD/e-paper work presentation. Canonical hub rows are never mutated. */
 export class HudProjection {
+  private order: WorkPresentationOrder = { projects: [], tasks: [] }
   private hidden = new Map<string, string>()
   private retentionMinutes = 30
   private workspaces: HudWorkspaces
 
-  constructor(path?: string, onError?: (error: unknown) => void) {
+  constructor(private path?: string, private onError?: (error: unknown) => void) {
     this.workspaces = new HudWorkspaces(path, onError)
+    if (path) try {
+      const saved = JSON.parse(readFileSync(path + '.order.json', 'utf8'))
+      const keys = (value: unknown): string[] => Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string').slice(0, 2048) : []
+      this.order = { projects: keys(saved.projects), tasks: keys(saved.tasks) }
+    } catch { /* First run or malformed presentation preferences. */ }
   }
 
   /** Resolve a displayed project back to canonical sessions, not their tool cwd.
@@ -126,6 +135,15 @@ export class HudProjection {
         return this.shouldRetain(agent, now) ? agent : { ...agent, taskHidden: true }
       })
     for (const key of this.hidden.keys()) if (!retained.has(key)) this.hidden.delete(key)
-    return buildStatusSnapshot(agents, now)
+    const snapshot = buildStatusSnapshot(agents, now)
+    const { order } = buildWorkPresentation({ ...snapshot, workOrder: this.order })
+    if (JSON.stringify(order) !== JSON.stringify(this.order)) {
+      this.order = order
+      if (this.path) try {
+        writeFileSync(this.path + '.order.json.tmp', JSON.stringify(order) + '\n', { mode: 0o600 })
+        renameSync(this.path + '.order.json.tmp', this.path + '.order.json')
+      } catch (error) { this.onError?.(error) }
+    }
+    return { ...snapshot, workOrder: this.order }
   }
 }

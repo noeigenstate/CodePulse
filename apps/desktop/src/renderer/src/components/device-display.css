@@ -10,7 +10,7 @@
 /* Keep the device bitmap at a deliberate integer zoom; resizing only changes its surroundings. */
 .device-preview-scroll { overflow:auto; }
 .device-preview-scale { font-variant-numeric:tabular-nums; color:var(--ink-muted,#666); }
-.device-preview-footnote { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 12px; margin-top:8px; }
+.device-preview-footnote { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:baseline; gap:4px 12px; margin-top:8px; }
 .device-preview-footnote .device-preview-note { margin:0; font-size:11px; }
 .device-preview-info { position:relative; font-size:11px; color:var(--ink-muted,#666); }
 .device-preview-info summary { cursor:pointer; }

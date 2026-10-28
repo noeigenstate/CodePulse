@@ -65,7 +65,7 @@ The device preview stays at 400×300 CSS pixels instead of stretching with the
 window. **2 倍检查** opens an independent 800×600 inspection view of the same
 bitmap; closing it or pressing Escape returns focus to its trigger. It never
 applies device settings. Control has bounded preview/configuration columns and
-a persistent Apply footer. Less-used flags and density samples expand on demand.
+a persistent Apply footer. Less-used flags expand on demand; density sample buttons stay visible.
 Typical 1000×720, 1120×780, 1366×900 and 1600×1000 windows fit the primary controls
 without page or preview scrolling. Very narrow windows use a stacked layout;
 expanded details and large inspection canvases may scroll within their own areas.
@@ -177,3 +177,5 @@ Manually opening HUD places it on the standard client's display and brings it
 forward. A minimized or off-screen HUD is restored into that display's work
 area; a valid dragged position there is retained. The Control state follows
 native window visibility/minimization, not just a window creation request.
+
+See [shared work presentation handoff](WORK-PRESENTATION-HANDOFF.md) and [Antigravity integration](ANTIGRAVITY.md) for the current post-baseline changes and remaining device validation.

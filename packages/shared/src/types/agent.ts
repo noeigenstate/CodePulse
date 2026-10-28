@@ -9,7 +9,7 @@
  *
  * 在整个代码库中用作事件的 `source`，也是定位运行时状态槽位的键。
  */
-export type AgentType = 'codex' | 'claude_code' | 'grok' | 'kimi' | 'opencode'
+export type AgentType = 'codex' | 'claude_code' | 'grok' | 'kimi' | 'opencode' | 'antigravity'
 
 /** Product names shown in the dashboard, tray and setup prompts. */
 export const AGENT_DISPLAY_NAMES: Readonly<Record<AgentType, string>> = {
@@ -18,6 +18,7 @@ export const AGENT_DISPLAY_NAMES: Readonly<Record<AgentType, string>> = {
   grok: 'Grok',
   kimi: 'Kimi Code',
   opencode: 'OpenCode',
+  antigravity: 'Antigravity',
 }
 
 /**

@@ -29,6 +29,7 @@ const HUD_TOOLS: { key: HudToolKey; label: string }[] = [
   { key: 'claude_code', label: 'Claude Code' },
   { key: 'grok', label: 'Grok' },
   { key: 'kimi', label: 'Kimi' },
+  { key: 'antigravity', label: 'Antigravity' },
 ]
 
 const INK_AGENT_NAMES = { codex: 'Codex', claude_code: 'Claude', grok: 'Grok' } as const
@@ -470,7 +471,6 @@ function InkControlWorkspace({
             enabled: enableAmbient,
             displayMinutes: plan.intervalMinutes,
           })
-          .catch(() => {})
       }
       setMessage(zh ? '已保存墨水屏配置' : 'Saved e-paper configuration')
     } catch {
@@ -499,7 +499,7 @@ function InkControlWorkspace({
 
   const statusToRender: DeviceStatusV1 | undefined =
     activePreviewKind === 'ambient'
-      ? ambientPreview ??
+      ? (ambientPreview ? { ...ambientPreview, display: { ...displayDraft, page: 0 } } : undefined) ??
         (workStatus
           ? {
               ...workStatus,
@@ -559,8 +559,8 @@ function InkControlWorkspace({
           )}
 
           {activePreviewKind === 'work' && displayDraft.mode === 'hud' && (
-            <details className="product-sample-options">
-              <summary className="product-sample-label">{zh ? '查看密集任务样例' : 'Dense Task Samples'}</summary>
+            <section className="product-sample-options">
+              <div className="product-sample-label">{zh ? '查看密集任务样例' : 'Dense Task Samples'}</div>
               <div className="product-sample-buttons" role="group" aria-label={zh ? '预览内容' : 'Preview source'}>
                 {(['live', 3, 6, 9] as const).map((source) => (
                   <button
@@ -581,7 +581,7 @@ function InkControlWorkspace({
                     : 'Samples are for checking dense layouts only. Switch back to Live before applying.'}
                 </p>
               )}
-            </details>
+            </section>
           )}
         </section>
 
@@ -750,7 +750,8 @@ function InkControlWorkspace({
             </label>
           </div>
 
-          <label className="product-cycle-row">
+          <label><input type="checkbox" checked={Boolean(displayDraft.inverted)} onChange={(e) => changeDisplay({ inverted: e.target.checked })} /> 黑底白字（固件 0.0.24 起支持）</label>
+              <label className="product-cycle-row">
             <span>{zh ? '额度口径' : 'Quota Metric'}</span>
             <select
               value={displayDraft.metric}

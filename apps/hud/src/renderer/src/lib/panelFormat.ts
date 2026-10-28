@@ -1,10 +1,7 @@
-import type { AgentType, TokenPayload, TokenRateLimitWindow } from '@codepulse/shared'
+import type { TokenPayload } from '@codepulse/shared'
 import type { ContextStatusCopy, PathStatusCopy } from './i18n.js'
 
-/** Claude Code and Kimi expose both five-hour and weekly quota windows. */
-export function showsFiveHourQuota(agentType: AgentType | undefined): boolean {
-  return agentType === 'claude_code' || agentType === 'kimi'
-}
+export { showsFiveHourQuota, visibleRateLimitWindows } from '@codepulse/shared'
 
 export interface ContextWindowStatus {
   usedPercent?: number
@@ -42,37 +39,6 @@ export function formatContextWindowStatus(
     stale,
     compressed,
     text: `${prefix}${leftPercent}% ${copy.left} (${formatContextUsedCount(usedTokens)} ${copy.used} / ${formatContextTotalCount(contextWindow)})`,
-  }
-}
-
-export function visibleRateLimitWindows(
-  token: TokenPayload | undefined,
-  agentType?: AgentType,
-): {
-  fiveHour?: TokenRateLimitWindow
-  sevenDay?: TokenRateLimitWindow
-} {
-  const rateLimits = token?.rateLimits
-  if (!rateLimits) return {}
-
-  const includeFiveHour = showsFiveHourQuota(agentType)
-  const fiveHour = includeFiveHour ? rateLimits.fiveHour : undefined
-  const sevenDay = rateLimits.sevenDay
-  const windows = [fiveHour, sevenDay].filter(Boolean)
-  if (windows.length === 0) return {}
-
-  const hasDisplayableUsage = windows.some((window) => {
-    const pct = normalizedPercent(window?.usedPercent)
-    return (
-      pct !== undefined &&
-      (pct > 0 || window?.resetsAt !== undefined || window?.windowMinutes !== undefined)
-    )
-  })
-  if (!hasDisplayableUsage) return {}
-
-  return {
-    ...(fiveHour ? { fiveHour } : {}),
-    ...(sevenDay ? { sevenDay } : {}),
   }
 }
 

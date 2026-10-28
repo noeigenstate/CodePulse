@@ -1,3 +1,4 @@
+import { buildWorkPresentation } from '@codepulse/shared'
 /**
  * HUD 根组件。布局包含头部、agent 项目卡片与用量摘要，
  * 并驱动高频时钟，使耗时与相对时间保持实时。
@@ -144,7 +145,8 @@ export function App(): JSX.Element {
     () => reconcileTaskOrder(orderedProjects.panels, taskOrder),
     [orderedProjects.panels, taskOrder],
   )
-  const allPanels = legacyView ? orderedProjects.panels : orderedTasks.panels
+  const commonPanels = useMemo(() => snapshot.workOrder ? buildWorkPresentation(snapshot).panels : null, [snapshot])
+  const allPanels = legacyView ? orderedProjects.panels : commonPanels ?? orderedTasks.panels
   const panels = useMemo(
     // Display preferences only filter renderer panels; hook delivery and disk sync keep running.
     () => allPanels.filter((panel) => isHudTool(panel.agentType) && dashboardSettings.visibleTools[panel.agentType]),

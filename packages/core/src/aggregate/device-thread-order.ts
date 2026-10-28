@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { hudProviderRank, isDisplayAgent, workspaceKey, TurnState,
+import { hudProviderRank, isDisplayAgent, workspaceKey,
   type AgentRuntimeState, type DisplayAgentType } from '@codepulse/shared'
 
 export const DEVICE_ORDER_LIMIT = 2048
@@ -14,8 +14,7 @@ export type DeviceThreadSource = AgentRuntimeState & { agentType: DisplayAgentTy
 
 export function isDeviceThreadSource(source: AgentRuntimeState): source is DeviceThreadSource {
   return isDisplayAgent(source.agentType) && !source.taskHidden && Boolean(source.lastEventAt) &&
-    Boolean(source.workspacePath || source.externalSessionId) &&
-    !([TurnState.IDLE, TurnState.CANCELLED, TurnState.DONE].some(s => s === source.state) && !source.unread)
+    Boolean(source.workspacePath || source.externalSessionId)
 }
 
 function hash(value: unknown): string {

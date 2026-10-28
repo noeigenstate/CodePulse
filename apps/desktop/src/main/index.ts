@@ -3,6 +3,7 @@ import { ProductShell, shellPreferenceStore } from './product-shell.js'
 import { registerProductIpc } from './product-ipc.js'
 import { ScreenWorkbenchWindow } from './screen-workbench-window.js'
 import { registerAmbientIpc } from './ambient-ipc.js'
+import { inkAllowsAmbient } from './ambient-plan.js'
 import { createAmbientRuntime } from './ambient-runtime.js'
 import { withAmbient } from './ambient-rules.js'
 import { spawn } from 'node:child_process'
@@ -335,7 +336,9 @@ let deviceProjector: ReturnType<typeof createDeviceDisplayProjector> | undefined
 function projectDeviceDisplay(snapshot: StatusSnapshot, config?: import('@codepulse/shared').DeviceDisplayConfig, includeAmbient = true) {
   deviceProjector ??= createDeviceDisplayProjector(join(app.getPath('userData'), 'device-thread-order.json'),
     () => console.warn('[codepulse] device display order could not be saved; retaining in-memory positions'))
-  return withAmbient(deviceProjector(snapshot, config), includeAmbient ? ambientRuntime?.service.current(snapshot) : undefined)
+  // Both preview and LAN transport consume the same retained, dismissed and ordered HUD source.
+  const work = hudSurface?.snapshot() ?? snapshot
+  return withAmbient(deviceProjector(work, config), includeAmbient ? ambientRuntime?.service.current(work) : undefined)
 }
 
 function deviceDisplaySnapshot(preview?: unknown) {
@@ -539,6 +542,11 @@ async function bootstrap(): Promise<void> {
   hudSurface = new HudSurface(
     hub, join(__dirname, '../hud'), join(app.getPath('userData'), 'hud-workspaces.json'),
     () => { if (!shutdownStarted) productShell?.refresh() },
+    () => {
+      if (shutdownStarted) return
+      deviceServer?.notifyChanged()
+      broadcast('codepulse:device-display', deviceDisplaySnapshot())
+    },
   )
   hudSurface.registerIpc()
   screenWorkbench = new ScreenWorkbenchWindow({
@@ -551,10 +559,11 @@ async function bootstrap(): Promise<void> {
     focusMode: setDesktopFocus, standard: showWindow, hud: () => hudSurface?.open(mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : undefined),
     screen: () => screenWorkbench?.open(), hideStandard: () => { standardVisible = false; mainWindow?.hide() }, hideHud: () => hudSurface?.hide(),
     hudSettingsChanged: (settings) => hudSurface?.syncSettings(settings),
-  }, state => { broadcast('codepulse:shell-status', state) })
+  }, state => { broadcast('codepulse:shell-status', state); ambientRuntime?.service.tick(); deviceServer?.notifyChanged() })
   hudSurface.syncSettings(productShell.snapshot().hudSettings)
   ambientRuntime = createAmbientRuntime(app.getPath('userData'), {
-    status: () => hub.snapshot(),
+    status: () => hudSurface?.snapshot() ?? hub.snapshot(),
+    automaticAllowed: () => inkAllowsAmbient(productShell!.snapshot().inkPlan, Date.now()),
     changed: () => {
       if (ambientRuntime) broadcast('codepulse:ambient-status', ambientRuntime.service.snapshot())
       deviceServer?.notifyChanged()
@@ -565,12 +574,13 @@ async function bootstrap(): Promise<void> {
   registerIpc()
 
   try {
-    // startLocalServer awaits SessionSyncService first disk scan + writes local-auth token.
-    server = await startLocalServer({ hub, mimoCookieProvider: provideMimoCookie })
+    // Binding/authentication must finish before hooks or LAN startup. Historical
+    // hydration continues through Hub events and must not keep the UI/LAN offline.
+    server = await startLocalServer({ hub, mimoCookieProvider: provideMimoCookie, waitForInitialSync: false })
     localServerReady = true
     console.log(`[codepulse] local server listening on ${server.url}`)
     console.log(
-      `[codepulse] session-sync ready: ${hub.snapshot().agents.length} agent slot(s) from disk`,
+      `[codepulse] session-sync loading in background: ${hub.snapshot().agents.length} current agent slot(s)`,
     )
   } catch (err) {
     localServerReady = false

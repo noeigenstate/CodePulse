@@ -231,10 +231,12 @@ test('display agents are grouped by workspace with a shared token', () => {
       .flatMap((group) => group.agents.map((agent) => `${group.workspacePath}:${agent.agentType}`))
       .sort(),
     [
+      'E:/project/a:antigravity',
       'E:/project/a:claude_code',
       'E:/project/a:codex',
       'E:/project/a:grok',
       'E:/project/a:kimi',
+      'E:/project/b:antigravity',
       'E:/project/b:claude_code',
       'E:/project/b:codex',
       'E:/project/b:grok',

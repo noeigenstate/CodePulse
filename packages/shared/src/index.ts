@@ -45,3 +45,11 @@ export * from './presentation-order.js'
 export * from './types/ambient.js'
 
 export * from './types/product-shell.js'
+
+export * from './presentation/displayAgents.js'
+export * from './presentation/hudState.js'
+export * from './presentation/projectDeck.js'
+export * from './presentation/projectOrder.js'
+export * from './presentation/taskOrder.js'
+export * from './presentation/quotaWindows.js'
+export * from './presentation/workPresentation.js'

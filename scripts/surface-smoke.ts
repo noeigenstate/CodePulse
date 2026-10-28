@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, screen as screenApi } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeImage, screen as screenApi } from 'electron'
 import { resolve, join } from 'node:path'
 import { mkdirSync, writeFileSync, readFileSync, appendFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
@@ -10,6 +10,7 @@ import { ProductShell, shellPreferenceStore } from '../apps/desktop/src/main/pro
 import { registerProductIpc } from '../apps/desktop/src/main/product-ipc.js'
 import { ScreenWorkbenchWindow } from '../apps/desktop/src/main/screen-workbench-window.js'
 import { AmbientService } from '../apps/desktop/src/main/ambient-service.js'
+import { createAmbientRuntime } from '../apps/desktop/src/main/ambient-runtime.js'
 import { registerAmbientIpc } from '../apps/desktop/src/main/ambient-ipc.js'
 import { withAmbient } from '../apps/desktop/src/main/ambient-rules.js'
 import { HudSurface } from '../apps/desktop/src/main/hud-surface.js'
@@ -88,8 +89,10 @@ app.whenReady().then(async()=>{
       request:async()=>({tweets:[{id:'12345',author:{userName:'Polymarket'},text:'TEST FIXTURE — this is a screen integration test, not a real news post.',createdAt:new Date().toISOString(),likeCount:9000}]}),image:async()=>'',
     })
     const projector=createDeviceDisplayProjector(join(output,'device-order.json'))
-    const device=(draft?:DeviceDisplayConfig)=>({config,status:withAmbient(projector(hub.snapshot(),draft??config),draft?undefined:ambient.current()),serverAvailable:false})
-    registerAmbientIpc(measuredIpc,{service:ambient,setKey:()=>ambient.snapshot()},()=>device().status,async()=>{})
+    const device=(draft?:DeviceDisplayConfig)=>({config,status:withAmbient(projector(hud.snapshot(),draft??config),draft?undefined:ambient.current()),serverAvailable:false})
+    const imageDir = join(output, 'image-library'); mkdirSync(imageDir, { recursive: true })
+    const imageRuntime = createAmbientRuntime(imageDir, { status: () => hub.snapshot(), changed: () => {} })
+    registerAmbientIpc(measuredIpc,{service:ambient,setKey:()=>ambient.snapshot(),importImage:(bytes,name)=>{const card=imageRuntime.importImage(bytes,name);return ambient.addPersonal('image',card.text,card.imageHex)}},()=>device().status,async()=>{})
     const handlers: Record<string, (...args:any[])=>any>={
       'get-status':(event)=>hud.owns(event.sender)?hud.snapshot():hub.snapshot(),'sync-sessions':(event)=>hud.owns(event.sender)?hud.snapshot():hub.snapshot(),
       'detect-agents':()=>[],'get-update':()=>null,'get-version':()=> '1.4.11','get-notifications':()=>false,'set-notifications':(_e,v)=>v,
@@ -168,7 +171,15 @@ app.whenReady().then(async()=>{
     assert.equal(await main.webContents.executeJavaScript(`document.activeElement?.textContent`),'2 倍检查','inspection restores keyboard focus')
     assert.equal(JSON.stringify(config),beforeInspect,'inspection never applies device settings')
     await click(main,'.ink-work-options summary')
-    await click(main,'.product-sample-options summary')
+    const normalPixels = await main.webContents.executeJavaScript(`Array.from(document.querySelector('.ink-control-workspace .device-preview-scroll canvas').getContext('2d').getImageData(0,0,400,300).data)`)
+    await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ink-config label')).find(l=>l.textContent.includes('黑底白字')).querySelector('input').click()`)
+    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ink-control-workspace .device-preview-scroll canvas').getContext('2d').getImageData(0,0,1,1).data[0]===0`),'inverted draft pixels')
+    const invertedPixels = await main.webContents.executeJavaScript(`Array.from(document.querySelector('.ink-control-workspace .device-preview-scroll canvas').getContext('2d').getImageData(0,0,400,300).data)`)
+    assert.deepEqual(invertedPixels, normalPixels.map((v:number,i:number)=>i%4===3?v:255-v),'style checkbox flips production pixels without saving')
+    await capture('ink-inverted')
+    await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ink-config label')).find(l=>l.textContent.includes('黑底白字')).querySelector('input').click()`)
+    await wait(350)
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.product-sample-options')?.tagName`),'SECTION','density samples never collapse')
     await button(main,'9 个任务样例')
     assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.ink-config .product-config-actions button').disabled`),true,'samples cannot be applied')
     const expanded=await geometry(); assert.ok(expanded.applyBottom <= 780,'expanded details keep the apply action in view')
@@ -177,7 +188,7 @@ app.whenReady().then(async()=>{
     main.webContents.sendInputEvent({type:'keyDown',keyCode:'Escape'})
     await until(()=>main!.webContents.executeJavaScript(`document.querySelectorAll('dialog[open]').length===0`),'Escape closes the inspection')
     await button(main,'实时任务')
-    await click(main,'.ink-work-options summary'); await click(main,'.product-sample-options summary')
+    await click(main,'.ink-work-options summary')
     writeFileSync(join(output,'layout.json'),JSON.stringify(layouts,null,2))
     await capture('control-ink')
     await button(main,'用量看板');assert.equal(config.mode,'hud')
@@ -202,11 +213,18 @@ app.whenReady().then(async()=>{
     assert.equal(await main.webContents.executeJavaScript("document.querySelector('#endpoint-ink').getAttribute('aria-pressed')"),'true','card selection paints before persistence completes')
     await until(()=>product.snapshot().target==='ink','delayed target saved'); await wait(300)
     targetDelay = 0
+    await main.webContents.executeJavaScript(`(() => {
+      const note = document.querySelector('.ink-control-workspace .device-preview-footnote');
+      window.__previewNotes = [note.textContent];
+      window.__previewObserver = new MutationObserver(() => window.__previewNotes.push(note.textContent));
+      window.__previewObserver.observe(note, {subtree:true, childList:true, characterData:true});
+    })()`)
     const activeReads = readCount('get-device-display'), contentReads = readCount('ambient-get')
     for (let i = 0; i < 40; i++) broadcast('codepulse:status',hub.snapshot())
     await wait(400)
     assert.equal(readCount('get-device-display')-activeReads,1,'burst of agent updates coalesces to one preview read')
     assert.equal(readCount('ambient-get'),contentReads,'work refresh does not reload X/meme')
+    assert.ok(await main.webContents.executeJavaScript(`window.__previewObserver.disconnect(); window.__previewNotes.every(note=>!note.includes('正在生成画面'))`),'background frames preserve the preview explanation')
     targetDelay = 500
     await main.webContents.executeJavaScript("document.querySelector('#endpoint-hud').click()")
     await wait(30)
@@ -261,10 +279,39 @@ app.whenReady().then(async()=>{
     assert.equal(product.snapshot().target,'ink')
     assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.product-targets').length`),0)
     if (!await main.webContents.executeJavaScript(`document.querySelector('.ambient-configuration > fieldset > .ambient-toggle input').checked`)) await click(main,'.ambient-configuration > fieldset > .ambient-toggle input')
-    await button(main,'立即应用');await button(main,'检查新内容')
-    await until(()=>ambient.snapshot().cards.length===1,'content fixture');await button(main,'预览画面')
+    await button(main,'保存推送设置');assert.match(await main.webContents.executeJavaScript(`document.querySelector('[data-feedback=settings]').textContent`), /设置已保存/);assert.equal(ambient.current(), undefined, 'saving preferences does not select content');await button(main,'检查新内容')
+    await until(()=>ambient.snapshot().cards.filter(c=>c.kind==='x').length===1,'content fixture');await button(main,'热点与 meme');await button(main,'预览画面')
     await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .device-preview')?.getAttribute('data-render-state')==='ready'`),'content renderer')
     await capture('updates')
+    await button(main, '概念卡'); await button(main, '预览画面')
+    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .device-preview')?.getAttribute('data-render-state')==='ready'`),'concept canvas')
+    await button(main, '显示到屏幕')
+    assert.equal(ambient.current()?.kind, 'concept')
+    assert.equal(ambient.current()?.manual, true)
+    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .product-preview-label').textContent.includes('当前目标画面')`), 'manual display leaves sample mode')
+    assert.match(await main.webContents.executeJavaScript(`document.querySelector('[data-feedback=content]').textContent`), /已设为目标画面/)
+    assert.equal(await main.webContents.executeJavaScript(`(() => {
+      const actions=document.querySelector('.ambient-display-actions');actions.scrollIntoView({block:'end'});
+      const r=document.querySelector('[data-feedback=content]').getBoundingClientRect();
+      return r.top>=0 && r.bottom<=window.innerHeight;
+    })()`), true, 'content result is visible when its display button is visible')
+    await capture('multimedia-concept')
+    await button(main, '思考实验'); await button(main, '预览画面'); await button(main, '显示到屏幕')
+    assert.equal(ambient.current()?.kind, 'prompt')
+    await button(main, '我的图片与便签')
+    await main.webContents.executeJavaScript(`(() => { const t=document.querySelector('#ambient-note');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(t,'TEST NOTE — pause, then choose one useful task.');t.dispatchEvent(new Event('input',{bubbles:true})); })()`)
+    await button(main, '保存并预览')
+    await until(()=>ambient.snapshot().cards.some(c=>c.kind==='note'),'saved local note')
+    await button(main, '显示到屏幕'); assert.equal(ambient.current()?.kind, 'note')
+    await capture('multimedia-note')
+    await button(main, '移除'); assert.equal(ambient.current(), undefined)
+    const imageBytes = Array.from(nativeImage.createFromBitmap(Buffer.alloc(80*120*4, 255), {width:80,height:120}).toPNG())
+    await main.webContents.executeJavaScript(`(() => {const transfer = new DataTransfer();transfer.items.add(new File([new Uint8Array(${JSON.stringify(imageBytes)})], 'TEST-portrait.png', {type:'image/png'}));document.querySelector('.ambient-panel').dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer}));})()`)
+    await until(()=>ambient.current()?.kind==='image','dragged image becomes current target')
+    assert.equal(ambient.current()?.imageHex?.length,19968)
+    await capture('multimedia-image')
+    await button(main, '回到工作画面'); assert.equal(ambient.current(), undefined)
+    await button(main, '热点与 meme')
     await click(main,'[data-view=settings]');await button(main,'屏幕工作台 ↗')
     await until(()=>BrowserWindow.getAllWindows().some(w=>w.getTitle().includes('屏幕工作台')),'screen window')
     const screenWindow=BrowserWindow.getAllWindows().find(w=>w.getTitle().includes('屏幕工作台'))!
@@ -307,7 +354,7 @@ app.whenReady().then(async()=>{
     // The expected unauthorized native-window rejection is visible to Electron's console.
     const unexpected=errors.filter(e=>!e.includes('Only the screen window'))
     assert.deepEqual(unexpected,[])
-    writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,views:4,focusRoundTrip:true,consolidatedNavigation:true,fixedPixelResize:true,inspectionPixelEquality:true,visibleApply:true,hudCoexistence:true,largePreview:true,independentScreen:true,draftPreserved:true,settingsShortcuts:true,globalAttention:true,canonicalStatePreserved:true,nativePinApplied,errors:unexpected},null,2))
+    writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,views:4,focusRoundTrip:true,consolidatedNavigation:true,fixedPixelResize:true,inspectionPixelEquality:true,visibleApply:true,stablePreviewNotes:true,invertedStyle:true,conceptCard:true,thoughtPrompt:true,personalNote:true,imageDrop:true,hudCoexistence:true,largePreview:true,independentScreen:true,draftPreserved:true,settingsShortcuts:true,globalAttention:true,canonicalStatePreserved:true,nativePinApplied,errors:unexpected},null,2))
     ambient.stop();BrowserWindow.getAllWindows().forEach(w=>w.destroy());screen.destroy();clearTimeout(deadline);app.exit(0)
   }catch(error){writeFileSync(join(output,'failure.txt'),(error instanceof Error ? error.stack : String(error))+'\n'+JSON.stringify(errors));clearTimeout(deadline);app.exit(1)}
 })

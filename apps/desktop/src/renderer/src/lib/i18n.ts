@@ -63,6 +63,7 @@ export interface SettingsCopy {
   codex: string
   claudeCode: string
   grok: string
+  antigravity: string
   kimi: string
   opencode: string
   updates: string
@@ -370,6 +371,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
       codex: 'Codex',
       claudeCode: 'Claude Code',
       grok: 'Grok',
+      antigravity: 'Antigravity',
       kimi: 'Kimi Code',
       opencode: 'OpenCode',
       updates: '版本与更新',
@@ -582,6 +584,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
       codex: 'Codex',
       claudeCode: 'Claude Code',
       grok: 'Grok',
+      antigravity: 'Antigravity',
       kimi: 'Kimi Code',
       opencode: 'OpenCode',
       updates: 'Version & updates',

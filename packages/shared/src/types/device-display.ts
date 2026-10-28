@@ -8,13 +8,14 @@ export interface DeviceDisplayConfig {
   metric: 'remaining' | 'used'
   showQuota: boolean
   showEnvironment: boolean
+  inverted?: boolean
   agents: DisplayAgentType[]
   /** Explicit desktop selection; the device never rotates pages automatically. */
   page: number
 }
 export const DEFAULT_DEVICE_DISPLAY: Readonly<DeviceDisplayConfig> = {
   version: 1, mode: 'hud', metric: 'remaining', showQuota: true,
-  showEnvironment: true, agents: ['codex', 'claude_code'], page: 0,
+  showEnvironment: true, inverted: false, agents: ['codex', 'claude_code'], page: 0,
 }
 export interface DeviceThreadV1 {
   id: string
@@ -22,6 +23,11 @@ export interface DeviceThreadV1 {
   title: string
   detail: string
   state: import('./device.js').DeviceAgentState
+  /** Additive shared presentation metadata; old firmware may ignore it. */
+  level?: import('../presentation/hudState.js').HudStateLevel
+  unread?: boolean
+  /** Opaque hash; never contains a workspace path or native conversation id. */
+  groupId?: string
 }
 export interface DeviceDisplaySnapshot {
   config: DeviceDisplayConfig
@@ -36,6 +42,7 @@ export function normalizeDeviceDisplay(value: unknown): DeviceDisplayConfig {
     metric: v.metric === 'used' ? 'used' : 'remaining',
     showQuota: typeof v.showQuota === 'boolean' ? v.showQuota : true,
     showEnvironment: typeof v.showEnvironment === 'boolean' ? v.showEnvironment : true,
+    inverted: v.inverted === true,
     agents: Array.isArray(v.agents)
       ? DISPLAY_AGENT_TYPES.filter(t => (v.agents as unknown[]).includes(t))
       : [...DEFAULT_DEVICE_DISPLAY.agents],

@@ -4,6 +4,9 @@ export interface AmbientConfig {
   enabled: boolean
   xEnabled: boolean
   memeEnabled: boolean
+  conceptsEnabled: boolean
+  promptsEnabled: boolean
+  newsEnabled: boolean
   provider: 'twitterapi' | 'x'
   accounts: string[]
   keywords: string[]
@@ -26,6 +29,9 @@ export const DEFAULT_AMBIENT: AmbientConfig = {
   enabled: false,
   xEnabled: true,
   memeEnabled: true,
+  conceptsEnabled: true,
+  promptsEnabled: false,
+  newsEnabled: false,
   provider: 'twitterapi',
   accounts: ['Polymarket', 'elonmusk', 'OpenAI', 'AnthropicAI', 'GoogleDeepMind'],
   keywords: [],
@@ -45,7 +51,7 @@ export const DEFAULT_AMBIENT: AmbientConfig = {
 }
 export interface AmbientCard {
   id: string
-  kind: 'x' | 'meme'
+  kind: 'x' | 'meme' | 'concept' | 'prompt' | 'note' | 'image' | 'news'
   source: string
   text: string
   url: string
@@ -57,6 +63,8 @@ export interface AmbientCard {
   imageHex?: string
 }
 export interface DeviceAmbientCard {
+  /** Explicit temporary display may cover review notices; action/fault still win. */
+  manual?: boolean
   id: string
   source: string
   text: string
@@ -68,7 +76,7 @@ export interface AmbientSnapshot {
   collecting: boolean
   lastCheckedAt: number
   nextCheckAt: number
-  sourceStatus: { x: string; meme: string }
+  sourceStatus: { x: string; meme: string; news?: string }
   cards: AmbientCard[]
   activeId: string | null
   shownToday: number
@@ -115,6 +123,9 @@ export function normalizeAmbient(value: unknown): AmbientConfig {
     enabled: bool('enabled'),
     xEnabled: bool('xEnabled'),
     memeEnabled: bool('memeEnabled'),
+    conceptsEnabled: bool('conceptsEnabled'),
+    promptsEnabled: bool('promptsEnabled'),
+    newsEnabled: bool('newsEnabled'),
     provider: v.provider === 'x' ? 'x' : 'twitterapi',
     accounts: words('accounts')
       .map((s) => s.replace(/^@/, ''))

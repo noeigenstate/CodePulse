@@ -30,6 +30,7 @@ export class HudSurface {
     root: string,
     workspaceBindingsPath?: string,
     private visibilityChanged: () => void = () => {},
+    private workChanged: () => void = () => {},
   ) {
     this.projection = new HudProjection(workspaceBindingsPath, () => {
       console.warn(
@@ -116,12 +117,13 @@ export class HudSurface {
           this.hub.snapshotForPresentation(), type, workspace, session,
         )
         this.broadcast('codepulse:status', this.hub.snapshot())
+        if (changed) this.workChanged()
         return changed
       },
     )
     ipcMain.handle('codepulse:set-result-retention', (_event, minutes: unknown) => {
       const changed = this.projection.setRetention(minutes)
-      if (changed) this.broadcast('codepulse:status', this.hub.snapshot())
+      if (changed) { this.broadcast('codepulse:status', this.hub.snapshot()); this.workChanged() }
       return changed
     })
     ipcMain.handle('codepulse:set-mute', (_event, value: unknown) => {
@@ -139,6 +141,7 @@ export class HudSurface {
     this.latestSettings = settings
     if (this.projection.setRetention(settings.resultRetentionMinutes)) {
       this.broadcast('codepulse:status', this.hub.snapshot())
+      this.workChanged()
     }
     const targets = [this.window, this.settings].filter((w) => w && !w.isDestroyed())
     if (!targets.length) return

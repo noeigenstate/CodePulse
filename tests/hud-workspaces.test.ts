@@ -125,7 +125,7 @@ test('failed persistence retains in-memory bindings and does not suppress status
     const shown = hud.snapshot(
       snapshot([row('a', 'F:/Beta', { state: TurnState.WAITING_PERMISSION })]),
     )
-    assert.equal(errors, 1)
+    assert.equal(errors, 2) // Workspace binding and common order each report their failed save once.
     assert.equal(shown.agents[0]?.workspacePath, 'F:/Alpha')
     assert.equal(shown.agents[0]?.state, TurnState.WAITING_PERMISSION)
   } finally {

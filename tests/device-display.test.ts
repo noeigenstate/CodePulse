@@ -38,7 +38,7 @@ test('thread projection respects canonical dismissal, provider selection and UTF
   s.agents[2]!.state=TurnState.DONE;s.agents[2]!.unread=true
   s.agents[3]!.workspacePath='/private/'+ '中文字😀'.repeat(30)
   const d=toDeviceStatusV1(s,normalizeDeviceDisplay({}))
-  assert.equal(d.threads?.length,3)
+  assert.equal(d.threads?.length,4) // Read completion stays until the shared presentation deadline.
   for(const t of d.threads??[]) { assert.ok(Buffer.byteLength(t.title)<=96);assert.ok(!t.title.includes('\ufffd')) }
   assert.equal(toDeviceStatusV1(s,normalizeDeviceDisplay({agents:['codex']})).threads?.length,2)
   assert.equal(toDeviceStatusV1(s,normalizeDeviceDisplay({agents:[]})).threads?.length,0)

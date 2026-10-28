@@ -32,7 +32,7 @@ test('dashboard settings default to the light HUD with calm attention and every 
   assert.equal(settings.resultRetentionMinutes, 30)
   assert.deepEqual(
     CLI_TOOL_TYPES.filter((tool) => settings.visibleTools[tool]),
-    ['codex', 'claude_code', 'grok', 'kimi'],
+    ['codex', 'claude_code', 'grok', 'kimi', 'antigravity'],
   )
 })
 
@@ -119,7 +119,7 @@ test('dashboard settings persist changes and apply the selected root theme', () 
     projectLayout: 'list' as const,
     showUsageStrip: false,
     resultRetentionMinutes: 120,
-    visibleTools: { codex: true, claude_code: false, grok: true, kimi: false },
+    visibleTools: { codex: true, claude_code: false, grok: true, kimi: false, antigravity: true },
   }
   writeDashboardSettings(storage, next)
 
@@ -138,7 +138,7 @@ test('dashboard settings persist automatic theme selection', () => {
     projectLayout: 'grid' as const,
     showUsageStrip: true,
     resultRetentionMinutes: 240,
-    visibleTools: { codex: true, claude_code: true, grok: true, kimi: true },
+    visibleTools: { codex: true, claude_code: true, grok: true, kimi: true, antigravity: true },
   }
 
   writeDashboardSettings(storage, next)
@@ -165,7 +165,7 @@ test('dashboard settings retain safe in-memory defaults when storage is unavaila
       projectLayout: 'grid',
       showUsageStrip: true,
       resultRetentionMinutes: 30,
-      visibleTools: { codex: true, claude_code: true, grok: true, kimi: true },
+      visibleTools: { codex: true, claude_code: true, grok: true, kimi: true, antigravity: true },
     }),
   )
 })

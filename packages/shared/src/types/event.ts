@@ -19,6 +19,7 @@ import type { TokenPayload } from './token.js'
 export type AgentEventType =
   | 'session_start'
   | 'prompt_submit'
+  | 'model_start'
   | 'tool_start'
   | 'tool_end'
   | 'permission_request'

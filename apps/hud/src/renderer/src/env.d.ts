@@ -2,6 +2,7 @@
 import type {
   ProductView, DesktopForm, ShellSnapshot, WorkbenchWindowState,
   AmbientConfig,
+  AmbientCard,
   AmbientSnapshot,
   DeviceStatusV1,
   Agent,
@@ -31,6 +32,9 @@ export interface CodePulseApi {
   setWorkbenchWindow: (patch: Partial<WorkbenchWindowState>) => Promise<WorkbenchWindowState>
   onWorkbenchWindow: (cb: (state: WorkbenchWindowState) => void) => Unsubscribe
   onDeviceDisplay: (cb: (snapshot: DeviceDisplaySnapshot) => void) => Unsubscribe
+  importAmbientImage: (bytes: Uint8Array, name: string) => Promise<AmbientCard>
+  addAmbientNote: (text: string) => Promise<AmbientCard>
+  removeAmbient: (id: string) => Promise<AmbientSnapshot>
   getAmbient: () => Promise<AmbientSnapshot>
   setAmbient: (config: AmbientConfig) => Promise<AmbientSnapshot>
   setAmbientKey: (provider: AmbientConfig['provider'], key: string) => Promise<AmbientSnapshot>

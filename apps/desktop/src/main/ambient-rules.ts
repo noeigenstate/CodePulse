@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { needsHudAttention } from '@codepulse/shared'
 import type {
   AmbientCard,
   AmbientConfig,
@@ -24,23 +25,7 @@ export function inQuietHours(config: AmbientConfig, now: number): boolean {
 export function pauseReason(config: AmbientConfig, status: StatusSnapshot, now: number): string {
   if (!config.enabled) return '桌边动态已关闭'
   if (inQuietHours(config, now)) return '安静时段'
-  if (
-    status.agents.some(
-      (a) =>
-        !a.taskHidden &&
-        (a.needPermission ||
-          a.needUserInput ||
-          [
-            'WAITING_PERMISSION',
-            'WAITING_USER_INPUT',
-            'ERROR',
-            'TIMEOUT',
-            'USAGE_LIMITED',
-          ].includes(a.state) ||
-          (a.unread && a.state === 'DONE')),
-    )
-  )
-    return '先处理 Agent 提醒'
+  if (status.agents.some((a) => !a.taskHidden && needsHudAttention(a))) return '先处理 Agent 提醒'
   if (
     config.idleOnly &&
     status.agents.some(
@@ -56,6 +41,10 @@ export function xMinimumLikes(config: AmbientConfig, account: string): number {
 export function qualifies(card: AmbientCard, config: AmbientConfig, now: number): boolean {
   if (!card.text || card.expiresAt <= now || card.publishedAt > now + 300000) return false
   if (config.exclude.some((w) => card.text.toLowerCase().includes(w.toLowerCase()))) return false
+  if (card.kind === 'concept') return config.conceptsEnabled
+  if (card.kind === 'prompt') return config.promptsEnabled
+  if (card.kind === 'news') return config.newsEnabled && card.score >= 100
+  if (card.kind === 'image' || card.kind === 'note') return false // Personal content is manual only.
   if (card.kind === 'meme') return config.memeEnabled && card.score >= config.memeMinUps
   return (
     config.xEnabled &&
@@ -70,6 +59,7 @@ export function contentKey(card: AmbientCard): string {
   return createHash('sha256')
     .update(
       card.kind +
+        (card.imageHex ?? '') +
         ':' +
         card.text
           .toLowerCase()
@@ -79,7 +69,9 @@ export function contentKey(card: AmbientCard): string {
     .digest('hex')
     .slice(0, 24)
 }
-export function deviceCard(card: AmbientCard): DeviceAmbientCard {
+export function deviceCard(
+  card: AmbientCard & Pick<DeviceAmbientCard, 'manual'>,
+): DeviceAmbientCard {
   const utf8 = (s: string, bytes: number) => {
     let out = ''
     for (const c of s) {
@@ -93,12 +85,21 @@ export function deviceCard(card: AmbientCard): DeviceAmbientCard {
   const time = `${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
   return {
     id: createHash('sha256').update(card.id).digest('hex').slice(0, 24),
-    source: utf8(`${card.source} · ${card.kind === 'meme' ? '收于 ' : ''}${time}`, 63),
+    ...(card.manual === true ? { manual: true } : {}),
+    source: utf8(
+      ['x', 'meme', 'news'].includes(card.kind)
+        ? `${card.source} · ${card.kind === 'meme' ? '收于 ' : ''}${time}`
+        : card.source,
+      63,
+    ),
     text: utf8(card.text.replace(/https?:\/\/t\.co\/\S+/g, '[链接]'), 767),
     ...(card.imageHex ? { imageHex: card.imageHex } : {}),
   }
 }
-export function withAmbient(status: DeviceStatusV1, card: AmbientCard | undefined): DeviceStatusV1 {
+export function withAmbient(
+  status: DeviceStatusV1,
+  card: (AmbientCard & Pick<DeviceAmbientCard, 'manual'>) | undefined,
+): DeviceStatusV1 {
   if (!card) return status
   const ambient = deviceCard(card)
   const projected = {

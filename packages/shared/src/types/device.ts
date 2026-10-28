@@ -81,6 +81,8 @@ export interface DeviceAgentStatusV1 {
   needsAttention: boolean
   tokens: DeviceTokenUsageV1
   quotas: DeviceQuotaBucketV1[]
+  /** Shared HUD footer values (used %, null = unavailable); old firmware ignores. */
+  quotaSummary?: { fiveHourUsedPercent: number | null; weeklyUsedPercent: number | null }
   /** 该 Agent 最近一次事件时间（Unix epoch 毫秒）。 */
   updatedAt: number
 }

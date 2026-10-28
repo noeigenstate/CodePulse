@@ -7,6 +7,8 @@ export function createDeviceDisplayProjector(path: string, onError: (error: unkn
   let order = normalizeDeviceThreadOrder(undefined)
   try { order = normalizeDeviceThreadOrder(JSON.parse(readFileSync(path, 'utf8'))) } catch { /* first run / malformed file */ }
   return (snapshot: StatusSnapshot, config?: DeviceDisplayConfig) => {
+    // Unified host supplies the common HUD order; legacy order is only a fallback.
+    if (snapshot.workOrder) return toDeviceStatusV1(snapshot, config)
     // Observe all supported live tasks, even those temporarily unchecked in a preview draft.
     const next = reconcileDeviceThreadOrder(snapshot.agents.filter(isDeviceThreadSource), order)
     if (JSON.stringify(next) !== JSON.stringify(order)) {

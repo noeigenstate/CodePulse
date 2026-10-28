@@ -30,7 +30,7 @@ test('dashboard settings default to automatic theme selection with every CLI pan
   assert.equal(settings.theme, 'auto')
   assert.deepEqual(
     CLI_TOOL_TYPES.filter((tool) => settings.visibleTools[tool]),
-    ['codex', 'claude_code', 'grok', 'kimi', 'opencode'],
+    ['codex', 'claude_code', 'grok', 'kimi', 'antigravity', 'opencode'],
   )
 })
 
@@ -89,11 +89,11 @@ test('dashboard settings persist changes and apply the selected root theme', () 
       codex: true,
       claude_code: false,
       grok: true,
-      kimi: false,
+      kimi: false, antigravity: true,
       opencode: true,
     },
-    panelOrder: ['opencode', 'claude_code', 'codex', 'grok', 'kimi'] as Array<
-      'codex' | 'claude_code' | 'grok' | 'kimi' | 'opencode'
+    panelOrder: ['opencode', 'claude_code', 'codex', 'grok', 'kimi', 'antigravity'] as Array<
+      'codex' | 'claude_code' | 'grok' | 'kimi' | 'opencode' | 'antigravity'
     >,
   }
   writeDashboardSettings(storage, next)
@@ -108,7 +108,7 @@ test('dashboard settings persist automatic theme selection', () => {
   const storage = new MemoryStorage()
   const next = {
     theme: 'auto' as const,
-    visibleTools: { codex: true, claude_code: true, grok: true, kimi: true, opencode: true },
+    visibleTools: { codex: true, claude_code: true, grok: true, kimi: true, antigravity: true, opencode: true },
     panelOrder: [...DEFAULT_PANEL_ORDER],
   }
 
@@ -131,7 +131,7 @@ test('dashboard settings retain safe in-memory defaults when storage is unavaila
   assert.doesNotThrow(() =>
     writeDashboardSettings(unavailableStorage, {
       theme: 'dark',
-      visibleTools: { codex: true, claude_code: true, grok: true, kimi: true, opencode: true },
+      visibleTools: { codex: true, claude_code: true, grok: true, kimi: true, antigravity: true, opencode: true },
       panelOrder: [...DEFAULT_PANEL_ORDER],
     }),
   )
@@ -143,6 +143,7 @@ test('panel order defaults to the historical layout and repairs stored orders', 
     'codex',
     'grok',
     'kimi',
+    'antigravity',
     'opencode',
   ])
   // Unknown and duplicate entries drop; missing tools append in default order.
@@ -152,6 +153,7 @@ test('panel order defaults to the historical layout and repairs stored orders', 
     'claude_code',
     'grok',
     'kimi',
+    'antigravity',
   ])
   assert.deepEqual(normalizePanelOrder('not-an-array'), [...DEFAULT_PANEL_ORDER])
 })
@@ -163,6 +165,7 @@ test('movePanel swaps neighbours and lands on the target slot from either side',
     'claude_code',
     'grok',
     'kimi',
+    'antigravity',
     'opencode',
   ])
   assert.deepEqual(movePanel(order, 'opencode', 'claude_code'), [
@@ -171,11 +174,13 @@ test('movePanel swaps neighbours and lands on the target slot from either side',
     'codex',
     'grok',
     'kimi',
+    'antigravity',
   ])
   assert.deepEqual(movePanel(order, 'claude_code', 'opencode'), [
     'codex',
     'grok',
     'kimi',
+    'antigravity',
     'opencode',
     'claude_code',
   ])

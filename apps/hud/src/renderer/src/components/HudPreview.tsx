@@ -1,7 +1,7 @@
+import { buildWorkPresentation } from '@codepulse/shared'
 import { useMemo, type CSSProperties } from 'react'
 import { DEFAULT_HUD_SETTINGS, type AgentRuntimeState, type HudAppearanceSettings, type HudToolKey, type StatusSnapshot } from '@codepulse/shared'
 import { ProjectDeck } from './ProjectDeck.js'
-import { buildAgentPanels } from '../lib/displayAgents.js'
 import { resolveTheme } from '../lib/dashboardSettings.js'
 import { uiCopy, type Locale } from '../lib/i18n.js'
 import './project-deck-preview.css'
@@ -13,7 +13,7 @@ type PreviewAgent = Omit<AgentRuntimeState, 'agentType'> & { agentType: string }
 type PreviewSnapshot = Omit<StatusSnapshot, 'agents'> & { agents: readonly PreviewAgent[] }
 function supportedAgent(agent: PreviewAgent): agent is AgentRuntimeState & { agentType: HudToolKey } {
   return agent.agentType === 'codex' || agent.agentType === 'claude_code' ||
-    agent.agentType === 'grok' || agent.agentType === 'kimi'
+    agent.agentType === 'grok' || agent.agentType === 'kimi' || agent.agentType === 'antigravity'
 }
 /** Read-only view of the production HUD; no native window, acknowledgement or dismissal. */
 export function HudPreview({
@@ -33,7 +33,7 @@ export function HudPreview({
       ),
     [snapshot.agents, settings.visibleTools],
   )
-  const panels = useMemo(() => buildAgentPanels(visibleAgents, { perTask: true }), [visibleAgents])
+  const panels = useMemo(() => buildWorkPresentation({ ...snapshot, agents: visibleAgents }).panels, [visibleAgents, snapshot.workOrder])
   const allToolsHidden = useMemo(
     () => Object.values(settings.visibleTools).every((visible) => !visible),
     [settings.visibleTools],

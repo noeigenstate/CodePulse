@@ -251,3 +251,28 @@ If-None-Match: W/"v1-5db1f203"
 - v1 后续只会新增可忽略字段，不会改变现有字段含义或单位。
 - 破坏兼容性的字段、枚举或单位变更必须发布新的 `/api/v2/device/status`。
 - token 不应写入日志、URL、崩溃报告或屏幕；建议保存在 ESP32 NVS 中。
+
+## Shared HUD work presentation (additive v1 extension)
+
+The unified host uses the retained HUD projection for both preview and LAN status. Optional thread level/unread/groupId and agent quotaSummary fields carry shared display semantics; legacy fields remain compatible. See [the implementation and firmware acceptance contract](WORK-PRESENTATION-HANDOFF.md). Old firmware ignores these fields; displaying their semantics requires an updated production renderer.
+
+
+### Optional BW inversion (firmware 0.0.24+)
+
+`display.inverted` is an optional boolean, default false. Old devices ignore it;
+new devices reject non-boolean values. It complements the final 400×300 black
+plane after rendering all work, quota and ambient content. The red plane and
+refresh waveforms are unchanged. Both desktop previews use the same C renderer.
+Concept cards, prompts, personal notes and imported images use the existing
+`ambient` extension; images remain 384×208 MSB-first packed black bits (19,968
+hex characters). No new image format or network access is required on the MCU.
+
+### Explicit content display (firmware 0.0.25+)
+
+`ambient.manual` is an optional boolean, default false. True denotes an explicit
+user display action; it permits covering passive `notice` tasks without changing
+any work/read state. `action` and `fault` still preempt it. Automatic content
+continues to yield to notice/action/fault. The flag is transient, never stored in
+the content library, and participates in the response revision. Non-booleans are
+rejected by new firmware. Older firmware ignores it and still suppresses content
+while review notices exist; update firmware to enable the new behavior.

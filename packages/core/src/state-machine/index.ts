@@ -165,6 +165,22 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       if (event.message) next.lastUserPrompt = event.message
       break
 
+    case 'model_start':
+      // Model invocations inside one loop preserve timing/counts; a resumed
+      // completed conversation starts fresh without inventing a user prompt.
+      if (current.terminalAt != null || current.state === TurnState.IDLE) {
+        applyPromptTiming(next, acceptedTurnTiming, event.timestamp)
+        next.toolCallCount = 0
+        next.lastAssistantMessage = undefined
+      }
+      next.state = TurnState.THINKING
+      next.needPermission = false
+      next.needUserInput = false
+      next.unread = false
+      next.terminalAt = undefined
+      next.activity = 'AI 正在生成响应'
+      break
+
     case 'tool_start':
       next.state = TurnState.TOOL_RUNNING
       next.toolName = event.toolName

@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type {
   ProductView, DesktopForm, ShellSnapshot, WorkbenchWindowState,
   AmbientConfig,
+  AmbientCard,
   AmbientSnapshot,
   DeviceStatusV1,
   Agent,
@@ -36,6 +37,9 @@ const api = {
   setWorkbenchWindow: (patch: Partial<WorkbenchWindowState>): Promise<WorkbenchWindowState> => ipcRenderer.invoke('codepulse:workbench-configure', patch),
   onWorkbenchWindow: (cb: (state: WorkbenchWindowState) => void): Unsubscribe => subscribe('codepulse:workbench-window', cb),
   onDeviceDisplay: (cb: (snapshot: DeviceDisplaySnapshot) => void): Unsubscribe => subscribe('codepulse:device-display', cb),
+  importAmbientImage: (bytes: Uint8Array, name: string): Promise<AmbientCard> => ipcRenderer.invoke('codepulse:ambient-import', bytes, name),
+  addAmbientNote: (text: string): Promise<AmbientCard> => ipcRenderer.invoke('codepulse:ambient-note', text),
+  removeAmbient: (id: string): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:ambient-remove', id),
   getAmbient: (): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:ambient-get'),
   setAmbient: (config: AmbientConfig): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:ambient-set', config),
   setAmbientKey: (provider: AmbientConfig['provider'], key: string): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:ambient-key', provider, key),

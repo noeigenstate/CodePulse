@@ -1,12 +1,14 @@
 import {
   normalizeAmbient,
+  hudStateLevel,
   type AmbientCard,
   type AmbientConfig,
   type AmbientSnapshot,
   type StatusSnapshot,
 } from '@codepulse/shared'
 import { contentKey, pauseReason, qualifies, xMinimumLikes } from './ambient-rules.js'
-import { collectMemes, collectX, type JsonRequest } from './ambient-sources.js'
+import { builtinCards, restorePersonalCards, personalCard } from './ambient-library.js'
+import { collectMemes, collectX, collectNews, type JsonRequest } from './ambient-sources.js'
 
 export interface AmbientHistory {
   day: string
@@ -26,6 +28,9 @@ export interface AmbientDependencies {
   request: JsonRequest
   image: (url: string) => Promise<string>
   changed: () => void
+  library?: unknown
+  saveLibrary?: (cards: AmbientCard[]) => void
+  automaticAllowed?: () => boolean
 }
 const day = (now: number) => {
   const d = new Date(now)
@@ -37,15 +42,18 @@ export class AmbientService {
   private cards: AmbientCard[] = []
   private active: AmbientCard | undefined
   private activeUntil = 0
+  private manual = false
+  private personal: AmbientCard[] = []
   private timer?: ReturnType<typeof setInterval>
   private collecting = false
   private lastCheckedAt = 0
   private nextCheckAt = 0
   private generation = 0
   private stopped = false
-  private errors = { x: '尚未检查', meme: '尚未检查' }
+  private errors = { x: '尚未检查', meme: '尚未检查', news: '尚未检查' }
   constructor(private deps: AmbientDependencies) {
     this.config = normalizeAmbient(deps.config)
+    this.personal = restorePersonalCards(deps.library, this.now())
     this.history =
       deps.history &&
       typeof deps.history.day === 'string' &&
@@ -103,7 +111,7 @@ export class AmbientService {
     this.config = config
     this.generation++
     this.cards = []
-    this.active = undefined
+    if (!this.manual) this.active = undefined
     this.nextCheckAt = 0
     this.changed()
     return this.snapshot()
@@ -125,12 +133,14 @@ export class AmbientService {
               ? '今日 X 检查已达上限'
               : this.errors.x,
         meme: !this.config.memeEnabled ? '已关闭' : this.errors.meme,
+        news: !this.config.newsEnabled ? '已关闭' : this.errors.news,
       },
-      cards: this.cards.filter((c) => c.expiresAt > this.now()),
+      cards: this.allCards(),
       activeId: this.current()?.id ?? null,
       shownToday: this.history.shown,
       xRequestsToday: this.history.xRequests ?? 0,
       pausedReason:
+        (this.deps.automaticAllowed?.() === false ? '控制中当前为工作画面；仍可手动展示' : '') ||
         pauseReason(this.config, this.deps.status(), this.now()) ||
         (this.history.shown >= this.config.dailyLimit ? '今日展示已达上限' : '') ||
         (!this.current() &&
@@ -140,13 +150,56 @@ export class AmbientService {
           : ''),
     }
   }
-  current(status = this.deps.status()): AmbientCard | undefined {
+  current(status = this.deps.status()): (AmbientCard & { manual?: true }) | undefined {
     return this.active &&
       this.activeUntil > this.now() &&
       this.active.expiresAt > this.now() &&
-      !pauseReason(this.config, status, this.now())
-      ? this.active
+      !(this.manual ? this.manualPause(status) : pauseReason(this.config, status, this.now())) &&
+      (this.manual || this.deps.automaticAllowed?.() !== false)
+      ? this.manual
+        ? { ...this.active, manual: true }
+        : this.active
       : undefined
+  }
+  private allCards(): AmbientCard[] {
+    return [...this.personal, ...this.cards, ...builtinCards(this.now())].filter(
+      (c) => c.expiresAt > this.now(),
+    )
+  }
+  private manualPause(status = this.deps.status()) {
+    return status.agents.some(
+      (a) => !a.taskHidden && ['action', 'fault'].includes(hudStateLevel(a)),
+    )
+      ? '先处理 Agent 的授权、补充输入或异常提醒'
+      : ''
+  }
+  addPersonal(kind: 'note' | 'image', input: unknown, imageHex?: string) {
+    const card = personalCard(kind, input, this.now(), imageHex)
+    const next = [card, ...this.personal.filter((c) => c.id !== card.id)].slice(0, 8)
+    this.deps.saveLibrary?.(next)
+    this.personal = next
+    this.changed()
+    return card
+  }
+  removePersonal(id: unknown) {
+    const next = this.personal.filter((c) => c.id !== id)
+    this.deps.saveLibrary?.(next)
+    this.personal = next
+    if (this.active?.id === id) this.active = undefined
+    this.changed()
+    return this.snapshot()
+  }
+  /** Explicit display may cover passive review notices, without acknowledging them. */
+  showManual(id: unknown) {
+    const reason = this.manualPause()
+    if (reason) throw new Error(reason + '，处理后可立即展示；现在可以先预览')
+    const card = this.allCards().find((c) => c.id === id)
+    if (!card) throw new Error('内容已过期，请重新选择')
+    this.active = card
+    this.manual = true
+    this.activeUntil = this.now() + this.config.displayMinutes * 60000
+    this.changed()
+    return this.snapshot()
   }
   dismiss() {
     this.active = undefined
@@ -156,12 +209,13 @@ export class AmbientService {
   show(id?: string) {
     this.resetDay()
     if (
+      this.deps.automaticAllowed?.() === false ||
       pauseReason(this.config, this.deps.status(), this.now()) ||
       this.history.shown >= this.config.dailyLimit ||
       this.now() - this.history.lastShown < this.config.gapMinutes * 60000
     )
       return this.snapshot()
-    const available = this.cards.filter(
+    const available = this.allCards().filter(
       (c) =>
         (!id || c.id === id) &&
         qualifies(c, this.config, this.now()) &&
@@ -182,6 +236,7 @@ export class AmbientService {
       return this.snapshot()
     }
     this.active = card
+    this.manual = false
     this.activeUntil = this.now() + this.config.displayMinutes * 60000
     this.changed()
     return this.snapshot()
@@ -202,9 +257,9 @@ export class AmbientService {
     if (this.now() >= this.nextCheckAt) void this.refresh()
     if (!this.active) this.show()
   }
-  async refresh(): Promise<AmbientSnapshot> {
+  async refresh(manual = false): Promise<AmbientSnapshot> {
     if (
-      !this.config.enabled ||
+      (!this.config.enabled && !manual) ||
       this.collecting ||
       this.stopped ||
       this.now() < this.lastCheckedAt + 60000
@@ -240,11 +295,12 @@ export class AmbientService {
           ? collectX(config, this.deps.key(config.provider), now, this.deps.request)
           : Promise.resolve([]),
         config.memeEnabled ? collectMemes(config, now, this.deps.request) : Promise.resolve([]),
+        config.newsEnabled ? collectNews(now, this.deps.request) : Promise.resolve([]),
       ])
       if (generation !== this.generation || this.stopped) return this.snapshot()
       const incoming: AmbientCard[] = []
       for (const [index, result] of results.entries()) {
-        const source = index === 0 ? 'x' : 'meme'
+        const source = index === 0 ? 'x' : index === 1 ? 'meme' : 'news'
         if (source === 'x' && !fetchX) continue
         if (result.status === 'rejected') {
           this.errors[source] =
@@ -299,7 +355,7 @@ export class AmbientService {
       }
       if (imagesPrepared) this.errors.meme = `已准备 ${imagesPrepared} 张图片`
       if (generation === this.generation && !this.stopped)
-        this.cards = candidates.filter((c) => c.kind === 'x' || c.imageHex)
+        this.cards = candidates.filter((c) => c.kind !== 'meme' || c.imageHex)
     } finally {
       this.collecting = false
       if (!this.stopped) this.changed()

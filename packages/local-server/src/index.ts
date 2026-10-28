@@ -48,6 +48,8 @@ export interface LocalServerOptions {
   logger?: boolean
   /** 禁用本机 CLI 会话主动扫描（测试用）。 */
   disableSessionSync?: boolean
+  /** Defaults to waiting for hydration; desktop shells can receive later Hub updates instead. */
+  waitForInitialSync?: boolean
   /** Disables the read-only Codex App Server quota client, primarily for tests. */
   disableCodexAppServer?: boolean
   /** Creates the Codex quota service; tests may inject an in-memory protocol fake. */
@@ -273,7 +275,9 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
     // The hook endpoint is live before disk or child-process hydration starts.
     const codexQuotaStart = codexQuotaService?.start().catch(() => undefined)
     void codexReadState?.start()
-    await sessionSync?.start()
+    const initialSync = sessionSync?.start()
+    if (options.waitForInitialSync !== false) await initialSync
+    else void initialSync?.catch((error) => console.error('[codepulse] initial session scan failed', error))
     // Do not hold desktop startup on an optional CLI protocol. The service has
     // bounded retries and updates Hub asynchronously after the window is ready.
     void codexQuotaStart
@@ -418,6 +422,8 @@ export {
   configureCodexAgent,
   configureGrokAgent,
   configureKimiAgent,
+  configureAntigravityAgent,
+  cleanupAntigravityAgent,
   cleanupAgents,
   cleanupClaudeAgent,
   cleanupCodexAgent,

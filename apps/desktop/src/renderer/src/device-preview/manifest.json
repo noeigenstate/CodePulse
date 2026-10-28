@@ -1,5 +1,5 @@
 {
-  "firmwareVersion": "0.0.21-retained-session",
+  "firmwareVersion": "0.0.25-manual",
   "width": 400,
   "height": 300,
   "sourceHashFormat": "sha256-text-lf",
@@ -12,9 +12,9 @@
     "main/buzzer.h": "55403bf2070716bbf84171b45e0c564bb78dfc6d45b65e1badddf8417f066b53",
     "main/codepulse_client.h": "1d8684cd59307d248a471c5a388162d86440edba9dbd0778a05daa8236dd05de",
     "main/codepulse_discovery.h": "d813fd2ec78270d10d535107790259da260959913027477523b60a221fe09846",
-    "main/codepulse_protocol.c": "2b671fdf41f78d17d2b1f89f063e06bad8cbedcd26bc0d65ddfc8f04739dd531",
+    "main/codepulse_protocol.c": "924f9d5dcfaf0d649411e7b5d05966dcc325b5356800a3ea18c557b0c1198caa",
     "main/codepulse_protocol.h": "64a42f1c5d8bd306925e6f420430952024202a69846f78c92da32457c988b7f4",
-    "main/codepulse_ui.h": "cdcfdde25970a1cb4b1415e7d658d4b2974c0cbc1a46b3c1777c09008f0cb830",
+    "main/codepulse_ui.h": "e4d866c8b152bb3bcb0e2bcb929fcd88d42fcdfc362910f267f76ea885728d37",
     "main/device_config.h": "ddfaebb04eb86cab47184535a9b54ffb1813c4646cc6c250545e954b7aa7647a",
     "main/device_identity.h": "00b0b458894a48080326b4f9d8b529f2fd35de0e883e34b9e491f5193d062251",
     "main/display_font_data.h": "b6e8da7d10b28430e107988fb654a5325a511bc7c74ef6a0968da392dd242216",
@@ -25,7 +25,7 @@
     "main/epd_canvas.h": "c8cf7b36d7545189a7211ad5ef6896cda5f05e57cf52cc2202538b02da698efa",
     "main/epd_quiet.h": "79963d98f2df871bf82b6830ccf3432f3586d648866f3ed99ffbd5d4e486491e",
     "main/epd_ssd1683.h": "b612f719bf9e5a1e495d026c10c9e963b0965f28b6654526f161ae8b651f3f8f",
-    "main/quiet_dashboard.c": "04dd42768ad2086ea80d93a17aecd351284584325fa98e7e4f487bce760a0c75",
+    "main/quiet_dashboard.c": "b461ad1bca180d1b3b9e72713fc36d300679392f9f6ad37c31204634b2c9fb18",
     "main/quiet_dashboard.h": "b95b9f6762f01ad47bcae2d6932ed87879624b2189e11146918f24a3f7ac3a08",
     "main/quiet_lut.h": "5d64b674b61d3bddfa37a9db1e71be793ef10a9251056c6fa74148ef1b57435f",
     "main/quiet_profile.h": "70eca7dd70c80b4406f817f6be6f4040092ebe4f8183161a6714f96cbae9fa48",
@@ -44,5 +44,5 @@
     "tests/vendor/miniz/miniz_tinfl.c": "9b7edc1fab708166e10f5e90a618a91c95a91496c4692e38160fdae810c1149a",
     "tests/vendor/miniz/miniz_tinfl.h": "040aad2d9ca23c487652c150277d950be12e72c5453ae1f7c6713ed2efd16b4e"
   },
-  "wasmSha256": "632360f2bddbdbae9f5db69e7f72ff345093825b896bbeab8e1ddba0afff67ff"
+  "wasmSha256": "ff373f4aa18335332a2b4e3a3f99b90023c16215ffcf6a38bb49c8849ef9c8c4"
 }

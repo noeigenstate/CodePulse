@@ -843,9 +843,12 @@
 .product-control .product-feature-option { padding:8px 10px; margin:6px 0; }
 .product-control .product-feature-option.is-disabled { padding:6px 10px; }
 .product-control .product-feature-option.is-disabled small { display:none; }
-.product-control .product-sample-options { margin-top:10px; padding-top:8px; }
-.product-control .product-sample-label { cursor:pointer; margin-bottom:0; }
-.product-control .product-sample-options[open] .product-sample-label { margin-bottom:8px; }
+.product-control .product-sample-options { margin-top:6px; padding-top:6px; display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.product-control .product-sample-options .product-caption { flex-basis:100%; }
+.product-control .product-sample-buttons { gap:5px; }
+.product-control .product-sample-buttons button { padding:5px 7px; font-size:11px; white-space:nowrap; }
+.product-control .product-sample-label { margin-bottom:0; }
+.product-control .product-sample-options .product-sample-label { margin-bottom:0; white-space:nowrap; }
 .product-control .device-preview-frame { border-radius:6px; box-shadow:none; }
 .ink-work-options { border-top:1px solid var(--line); margin-top:12px; padding-top:10px; }
 .ink-work-options summary { cursor:pointer; font-size:12px; font-weight:500; }

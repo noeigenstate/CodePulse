@@ -1,5 +1,5 @@
 /** Check encoded dimensions before handing untrusted images to the native decoder. */
-export function checkMemeImage(bytes: Uint8Array): void {
+export function checkMemeImage(bytes: Uint8Array, requireWide = true): void {
   const b = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   let width = 0,
     height = 0
@@ -43,7 +43,8 @@ export function checkMemeImage(bytes: Uint8Array): void {
   }
   if (!width || !height || width > 8000 || height > 8000 || width * height > 16000000)
     throw new Error('仅支持尺寸适中的 PNG / JPEG 静态图片')
-  if (width / height < 1 || width / height > 3) throw new Error('图片过长或过窄，不适合墨水屏')
+  if (requireWide && (width / height < 1 || width / height > 3))
+    throw new Error('图片过长或过窄，不适合墨水屏')
 }
 
 /** Electron's little-endian BGRA bitmap -> fixed, centered 384 x 208 ink plane. */

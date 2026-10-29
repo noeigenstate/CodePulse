@@ -8,6 +8,7 @@ import {
 } from '@codepulse/shared'
 import { contentKey, pauseReason, qualifies, xMinimumLikes } from './ambient-rules.js'
 import { builtinCards, restorePersonalCards, personalCard } from './ambient-library.js'
+import { petCards } from './ambient-pet.js'
 import { collectMemes, collectX, collectNews, type JsonRequest } from './ambient-sources.js'
 
 export interface AmbientHistory {
@@ -162,9 +163,13 @@ export class AmbientService {
       : undefined
   }
   private allCards(): AmbientCard[] {
-    return [...this.personal, ...this.cards, ...builtinCards(this.now())].filter(
-      (c) => c.expiresAt > this.now(),
-    )
+    // Pets are always listed for manual display; `qualifies` gates only the automatic showing.
+    return [
+      ...this.personal,
+      ...this.cards,
+      ...petCards(this.deps.status(), this.now()),
+      ...builtinCards(this.now()),
+    ].filter((c) => c.expiresAt > this.now())
   }
   private manualPause(status = this.deps.status()) {
     return status.agents.some(

@@ -32,6 +32,7 @@ const config = normalizeAmbient({
   conceptsEnabled: false,
   promptsEnabled: false,
   newsEnabled: false,
+  petEnabled: false, // These tests exercise the X and meme pipeline; pets have ambient-pet.test.ts.
 })
 const snapshot = (state = 'IDLE', unread = false): StatusSnapshot =>
   ({

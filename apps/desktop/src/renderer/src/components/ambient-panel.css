@@ -263,3 +263,65 @@
   flex-shrink: 0;
   white-space: nowrap;
 }
+
+.ambient-pet-picker {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.ambient-pet-option {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px;
+  text-align: left;
+  border: 1px solid #8886;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.ambient-pet-option canvas {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 384 / 208;
+  background: #fff;
+  border-radius: 4px;
+  border: 1px solid #8884;
+}
+.ambient-pet-option strong {
+  font-size: 13px;
+}
+.ambient-pet-option span {
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: 0.7;
+}
+.ambient-pet-option[aria-checked='true'] {
+  border-color: var(--ink, #25282c);
+  outline: 2px solid var(--ink, #25282c);
+  outline-offset: -2px;
+}
+.ambient-pet-option em {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  font-style: normal;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: var(--ink, #25282c);
+  color: var(--surface-solid, #fff);
+}
+.ambient-pet-option:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+@media (max-width: 720px) {
+  .ambient-pet-picker {
+    grid-template-columns: 1fr;
+  }
+}

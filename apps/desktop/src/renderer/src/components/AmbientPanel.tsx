@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   DEFAULT_AMBIENT,
+  PET_MOOD_LABELS,
+  PET_PROFILES,
   type AmbientCard,
   type AmbientConfig,
   type AmbientSnapshot,
@@ -10,12 +12,42 @@ import { DeviceScreenPreview } from './DeviceScreenPreview.js'
 import './ambient-panel.css'
 import { useScreenTarget } from '../lib/useScreenTarget.js'
 
+const PANEL_RED = [190, 30, 45]
+/** Small look at a pet card's bitmap: black plus red, painted exactly as the device would. */
+function PetThumb({ card }: { card: AmbientCard }): JSX.Element {
+  const canvas = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const context = canvas.current?.getContext('2d')
+    if (!context || !card.imageHex) return
+    const image = context.createImageData(384, 208)
+    image.data.fill(255)
+    const paint = (hex: string, width: number, left: number, top: number, color: number[]) => {
+      for (let i = 0; i < hex.length / 2; i++) {
+        const byte = parseInt(hex.slice(i * 2, i * 2 + 2), 16)
+        if (!byte) continue
+        for (let bit = 0; bit < 8; bit++)
+          if (byte & (0x80 >> bit)) {
+            const n = i * 8 + bit,
+              at = ((top + Math.floor(n / width)) * 384 + left + (n % width)) * 4
+            image.data.set(color, at)
+          }
+      }
+    }
+    paint(card.imageHex, 384, 0, 0, [0, 0, 0, 255])
+    if (card.red) paint(card.red.hex, card.red.w, card.red.x, card.red.y, [...PANEL_RED, 255])
+    context.putImageData(image, 0, 0)
+  }, [card.imageHex, card.red])
+  return <canvas ref={canvas} width={384} height={208} aria-hidden="true" />
+}
+
 export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Element {
   const { target, error: targetError } = useScreenTarget(active)
   const [snapshot, setSnapshot] = useState<AmbientSnapshot>()
   const [draft, setDraft] = useState<AmbientConfig>({ ...DEFAULT_AMBIENT })
   const [key, setKey] = useState('')
-  const [category, setCategory] = useState<'local' | 'concept' | 'prompt' | 'online'>('concept')
+  const [category, setCategory] = useState<'local' | 'concept' | 'prompt' | 'pet' | 'online'>(
+    'concept',
+  )
   const [note, setNote] = useState('')
   const [selectedId, setSelectedId] = useState('')
   const [dragging, setDragging] = useState(false)
@@ -171,7 +203,10 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
           display: target.status.display ? { ...target.status.display, page: 0 } : preview.display,
         }
       : preview
-  const selectedCard = visibleCards.find((c) => c.id === selectedId) ?? visibleCards[0]
+  const selectedCard =
+    category === 'pet'
+      ? (visibleCards.find((c) => c.pet?.id === draft.petId) ?? visibleCards[0])
+      : (visibleCards.find((c) => c.id === selectedId) ?? visibleCards[0])
   const number = (
     name:
       | 'minLikes'
@@ -246,6 +281,7 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
               [
                 ['concept', '概念卡'],
                 ['prompt', '思考实验'],
+                ['pet', '像素宠物'],
                 ['local', '我的图片与便签'],
                 ['online', '热点与 meme'],
               ] as const
@@ -264,7 +300,33 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
               </button>
             ))}
           </div>
-          {selectedCard && (
+          {category === 'pet' && visibleCards.length > 0 && (
+            <div className="ambient-pet-picker" role="radiogroup" aria-label="选择宠物形象">
+              {visibleCards.map((c) => {
+                const chosen = c.pet?.id === selectedCard?.pet?.id
+                return (
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={chosen}
+                    key={c.id}
+                    disabled={busy}
+                    className="ambient-pet-option"
+                    onClick={() => {
+                      if (c.pet) edit('petId', c.pet.id)
+                      void showPreview(c)
+                    }}
+                  >
+                    <PetThumb card={c} />
+                    <strong>{c.pet ? PET_PROFILES[c.pet.id].name : c.source}</strong>
+                    <span>{c.pet ? PET_PROFILES[c.pet.id].trait : ''}</span>
+                    {chosen && <em>已选</em>}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          {category !== 'pet' && selectedCard && (
             <div className="ambient-select-card">
               <select
                 aria-label="选择内容"
@@ -394,6 +456,13 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
                   </span>
                 </div>
                 <p>{card.text}</p>
+                {card.pet && (
+                  <p className="ambient-hint">
+                    此刻心情：{PET_MOOD_LABELS[card.pet.mood].label}（
+                    {PET_MOOD_LABELS[card.pet.mood].hint}）。心情由工作状态和本地时间决定；
+                    屏幕上的红色需要完整刷新，约 16 秒并会闪一下，所以宠物只在展示和退场时刷新两次。
+                  </p>
+                )}
                 <div className="ambient-actions">
                   {card.url && (
                     <button
@@ -468,14 +537,22 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
               <label className="ambient-toggle">
                 <input
                   type="checkbox"
+                  checked={draft.petEnabled}
+                  onChange={(e) => edit('petEnabled', e.target.checked)}
+                />{' '}
+                像素宠物 · {PET_PROFILES[draft.petId].name}（在“像素宠物”页换形象）
+              </label>
+              <label className="ambient-toggle">
+                <input
+                  type="checkbox"
                   checked={draft.newsEnabled}
                   onChange={(e) => edit('newsEnabled', e.target.checked)}
                 />{' '}
                 科技热议 · Hacker News
               </label>
               <p className="ambient-hint">
-                概念与思考卡离线可用，原创短解读配阅读来源。科技热议只选近 24 小时首页中超过 100
-                赞的标题，保留原文，不自动改写为新闻。
+                宠物按心情出场，同一形象同一心情每天最多一次。概念与思考卡离线可用，原创短解读配阅读来源。科技热议只选近
+                24 小时首页中超过 100 赞的标题，保留原文，不自动改写为新闻。
               </p>
             </div>
             <details className="ambient-details">

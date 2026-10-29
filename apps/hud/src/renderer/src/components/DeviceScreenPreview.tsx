@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import type { DeviceStatusV1 } from '@codepulse/shared'
-import { createDeviceRenderer, frameToRgba } from '../device-preview/renderer.mjs'
+import { createDevicePlaneRenderer, planesToRgba } from '../device-preview/renderer.mjs'
 import manifest from '../device-preview/manifest.json'
 
-let renderer: ReturnType<typeof createDeviceRenderer> | undefined
-function loadRenderer(): ReturnType<typeof createDeviceRenderer> {
+let renderer: ReturnType<typeof createDevicePlaneRenderer> | undefined
+function loadRenderer(): ReturnType<typeof createDevicePlaneRenderer> {
   if (!renderer) {
     // Embedded bytes also work in packaged Electron's file:// renderer. The
     // large payload is a lazy chunk and needs no network or file fetch API.
     renderer = import('../device-preview/renderer.b64?raw').then(({ default: encoded }) => {
-      return createDeviceRenderer(Uint8Array.from(atob(encoded), byte => byte.charCodeAt(0)))
+      return createDevicePlaneRenderer(Uint8Array.from(atob(encoded), byte => byte.charCodeAt(0)))
     }).catch(error => { renderer = undefined; throw error })
   }
   return renderer
@@ -29,7 +29,8 @@ export function DeviceScreenPreview({ status, sample = false, live = false }: { 
       const context = canvas.current?.getContext('2d')
       if (!context) throw new Error('Canvas unavailable')
       const image = context.createImageData(400, 300)
-      image.data.set(frameToRgba(render(status)))
+      const { black, red } = render(status)
+      image.data.set(planesToRgba(black, red))
       context.putImageData(image, 0, 0)
       hasFrame.current = true
       setState('ready')

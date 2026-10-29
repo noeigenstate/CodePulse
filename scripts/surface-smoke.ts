@@ -324,6 +324,12 @@ app.whenReady().then(async()=>{
       for(let i=0;i<d.length;i+=4){if(d[i]===190&&d[i+1]===30&&d[i+2]===45)red++;hash=(hash*31+d[i]+d[i+1]*3+d[i+2]*7)>>>0}
       return {red,hash,state:document.querySelector('.ambient-panel .device-preview').getAttribute('data-render-state')}
     })()`) as Promise<{red:number;hash:number;state:string}>
+    // Every pet option must show its name and full one-line character note without truncation.
+    const assertPetTextFits = async (label: string) => {
+      const cells = await main!.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ambient-pet-option')).map(o=>Array.from(o.querySelectorAll('strong,span')).map(e=>({text:e.textContent,scrollWidth:e.scrollWidth,clientWidth:e.clientWidth})))`) as {text:string;scrollWidth:number;clientWidth:number}[][]
+      assert.equal(cells.length,3)
+      for (const row of cells) { assert.equal(row.length,2); for (const e of row) assert.ok(e.text&&e.scrollWidth<=e.clientWidth,label+' text is not truncated: '+JSON.stringify(e)) }
+    }
     const petChecked = () => main!.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ambient-pet-option')).map(b=>b.getAttribute('aria-checked'))`) as Promise<string[]>
     await button(main, '像素宠物')
     assert.deepEqual(await petChecked(), ['true','false','false'], 'first pet is chosen by default')
@@ -351,6 +357,7 @@ app.whenReady().then(async()=>{
     assert.ok(withAmbient(device().status,ambient.current()).ambient?.red, 'device status exposes ambient.red')
     await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .product-preview-label').textContent.includes('当前目标画面')`), 'pet display leaves sample mode')
     await until(async()=>(await petStats()).red>0,'live target shows red')
+    await assertPetTextFits('1120')
     await capture('multimedia-pet')
     // ui-acceptance viewports with a pet chosen; the window goes back to 1120 x 780 afterwards.
     for (const [width,height] of [[1440,900],[1024,768],[390,844]] as const) {
@@ -358,11 +365,13 @@ app.whenReady().then(async()=>{
       const overflow = await main.webContents.executeJavaScript(`document.documentElement.scrollWidth-window.innerWidth`) as number
       if (width>=1024) assert.ok(overflow<=1,'no horizontal page scroll at '+width+': '+overflow)
       assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.ambient-pet-option').length`),3)
+      if (width>=1024) await assertPetTextFits(String(width))
       await capture('multimedia-pet-'+width)
     }
     main.setContentSize(1120,780); await wait(350)
     await click(main,'.ambient-pet-option:nth-child(1)')
     assert.deepEqual(await petChecked(), ['true','false','false'])
+    await assertPetTextFits('1120 first pet chosen')
     await button(main, '回到工作画面'); assert.equal(ambient.current(), undefined)
     await button(main, '热点与 meme')
     await click(main,'[data-view=settings]');await button(main,'屏幕工作台 ↗')

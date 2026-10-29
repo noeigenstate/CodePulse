@@ -5,9 +5,9 @@ export const PET_MOODS = ['idle', 'working', 'hungry', 'happy', 'sleepy'] as con
 export type PetMood = (typeof PET_MOODS)[number]
 /** Names and one-line character notes, shown on the page and on the device card source line. */
 export const PET_PROFILES: Record<PetId, { name: string; trait: string }> = {
-  tuantuan: { name: '团团', trait: '圆滚滚的小猫，嘴硬心软' },
-  yaya: { name: '芽芽', trait: '头顶一棵小苗，叶子会说心情' },
-  fangfang: { name: '方方', trait: '方脑袋小机器人，屏幕上演情绪' },
+  tuantuan: { name: '团团', trait: '嘴硬心软的小猫' },
+  yaya: { name: '芽芽', trait: '叶子会说心情' },
+  fangfang: { name: '方方', trait: '屏幕上演情绪' },
 }
 /** Profile for any value that claims to be a pet id; unknown or missing ids fall back to the first pet. */
 export function petProfile(id: unknown): { name: string; trait: string } {

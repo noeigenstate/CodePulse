@@ -270,13 +270,13 @@
   gap: 8px;
   margin-bottom: 6px;
 }
-/* One slim row per pet, so the preview and its display button sit as high as in other categories. */
+/* Thumbnail on the left; name (and the chosen badge) above the full character note. */
 .ambient-pet-option {
   display: grid;
-  grid-template-columns: 29px auto minmax(0, 1fr) auto;
+  grid-template-columns: 29px minmax(0, 1fr) auto;
   column-gap: 8px;
   align-items: center;
-  padding: 1px 6px;
+  padding: 0 6px;
   text-align: left;
   border: 1px solid #8886;
   border-radius: 8px;
@@ -285,6 +285,8 @@
   cursor: pointer;
 }
 .ambient-pet-option canvas {
+  grid-column: 1;
+  grid-row: 1 / span 2;
   width: 29px;
   height: auto;
   aspect-ratio: 180 / 152;
@@ -293,16 +295,20 @@
   border: 1px solid #8884;
 }
 .ambient-pet-option strong {
+  grid-column: 2;
+  grid-row: 1;
   font-size: 13px;
+  line-height: 1.2;
   white-space: nowrap;
 }
 .ambient-pet-option span {
+  grid-column: 2 / span 2;
+  grid-row: 2;
   min-width: 0;
   font-size: 11px;
+  line-height: 1.2;
   opacity: 0.7;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .ambient-pet-option[aria-checked='true'] {
   border-color: var(--ink, #25282c);
@@ -310,6 +316,8 @@
   outline-offset: -2px;
 }
 .ambient-pet-option em {
+  grid-column: 3;
+  grid-row: 1;
   font-style: normal;
   font-size: 10px;
   padding: 0 6px;
@@ -325,4 +333,8 @@
   .ambient-pet-picker {
     grid-template-columns: 1fr;
   }
+}
+/* Keeps the display button as high as on the other categories despite the two-line options. */
+.ambient-library-tabs + .ambient-pet-picker {
+  margin: -4px 0 4px;
 }

@@ -148,6 +148,12 @@ historical three-minute task-state delay. A running panel operation finishes
 before the device consumes the newest snapshot. Small environmental changes
 do not independently refresh the screen. See [protocol](device-api-v1.md).
 
+The paired 0.0.26 preview keeps active work detail stable while preserving shared
+HUD/task semantics. Device quota/environment pacing and the optional narrow-window
+trial belong to firmware; the preview does not simulate their timing or ghosting.
+See [the 0.0.26 display record](QUIET-DISPLAY-2026-10-28.md) for versions,
+synthetic 400×300 examples and the limits of current physical validation.
+
 The low-flicker prototype remains experimental: rapid consecutive updates can
 leave visible traces. Pixel equivalence and software tests do not establish
 optical quality, panel lifetime or performance across hardware batches.

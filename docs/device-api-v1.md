@@ -276,3 +276,19 @@ continues to yield to notice/action/fault. The flag is transient, never stored i
 the content library, and participates in the response revision. Non-booleans are
 rejected by new firmware. Older firmware ignores it and still suppresses content
 while review notices exist; update firmware to enable the new behavior.
+
+### 0.0.26：设备展示减频与局部窗口候选
+
+仍读取同一 v1 快照，不改变桌面/HUD 的任务、已读、保留或顺序语义。
+设备上的活动子阶段使用稳定的“工作中”和中性说明，原始 thinking/tool_running
+切换不独立驱动。新任务、完成未读、授权/补充输入/异常和解除提醒仍及时显示。
+已知额度采用 120 秒的设备展示节奏；未知转已知和达到限额例外。
+温湿度/电量继续阈值与 15 分钟限制，并避免在工作变化时将辅助区一起带入刷新。
+相同 ambient ID 的有效停留期间冻结页眉和额度；宿主移除 ambient 后正常恢复工作。
+预览仍表示目标像素，不模拟物理延迟或残影。
+
+默认关闭的 `CODEPULSE_QUIET_RECT_TRIAL` 窄窗口实验只改变传输区域，保持所选
+PAIR125/PAIR150 波形及单次驱动。配套固件 `7e3d9e6` 已合入独立固件主线；
+原型已刷入 `0.0.26-region-pair150` 并确认开机联网，实际残影改善仍待实物验收。
+两套桌面预览均为 `0.0.26-paced`，仅表示目标像素；版本对应、软件检查和实测范围见
+[日常低干扰显示记录](QUIET-DISPLAY-2026-10-28.md)。

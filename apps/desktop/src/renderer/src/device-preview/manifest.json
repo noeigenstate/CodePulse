@@ -1,5 +1,5 @@
 {
-  "firmwareVersion": "0.0.25-manual",
+  "firmwareVersion": "0.0.26-paced",
   "width": 400,
   "height": 300,
   "sourceHashFormat": "sha256-text-lf",
@@ -18,14 +18,14 @@
     "main/device_config.h": "ddfaebb04eb86cab47184535a9b54ffb1813c4646cc6c250545e954b7aa7647a",
     "main/device_identity.h": "00b0b458894a48080326b4f9d8b529f2fd35de0e883e34b9e491f5193d062251",
     "main/display_font_data.h": "b6e8da7d10b28430e107988fb654a5325a511bc7c74ef6a0968da392dd242216",
-    "main/display_sync_policy.h": "5a8c62f0aa413492a35982045b0da28a405f8392e20a131cd40883b7f159392c",
+    "main/display_sync_policy.h": "b8629be578b9c751eb8e758e2c018169fc798e647bf990c654cca24647154df3",
     "main/display_text.c": "c5ab50df3f03ffb82cea76407897d8a349b60d269b8d31e1e6c579c9d7c41cb0",
     "main/display_text.h": "993d3c4da4d649eeb7f63d8d559bc2e02e44f9134775e58d5361b7332c931dfe",
     "main/epd_canvas.c": "da62dd241fb59ec4041060a7a490fd357c1093d708cd3701bdf09e2240e96d07",
     "main/epd_canvas.h": "c8cf7b36d7545189a7211ad5ef6896cda5f05e57cf52cc2202538b02da698efa",
-    "main/epd_quiet.h": "79963d98f2df871bf82b6830ccf3432f3586d648866f3ed99ffbd5d4e486491e",
+    "main/epd_quiet.h": "afb6afad3ee3d39846afdc59fc649ccf79dd2b9ab7ec4970b36651b04ef27228",
     "main/epd_ssd1683.h": "b612f719bf9e5a1e495d026c10c9e963b0965f28b6654526f161ae8b651f3f8f",
-    "main/quiet_dashboard.c": "b461ad1bca180d1b3b9e72713fc36d300679392f9f6ad37c31204634b2c9fb18",
+    "main/quiet_dashboard.c": "bacb32fcd051f774a793b3a697f014aee3e9ccc2656ebdaf490d2e7bea0c4cd5",
     "main/quiet_dashboard.h": "b95b9f6762f01ad47bcae2d6932ed87879624b2189e11146918f24a3f7ac3a08",
     "main/quiet_lut.h": "5d64b674b61d3bddfa37a9db1e71be793ef10a9251056c6fa74148ef1b57435f",
     "main/quiet_profile.h": "70eca7dd70c80b4406f817f6be6f4040092ebe4f8183161a6714f96cbae9fa48",
@@ -44,5 +44,5 @@
     "tests/vendor/miniz/miniz_tinfl.c": "9b7edc1fab708166e10f5e90a618a91c95a91496c4692e38160fdae810c1149a",
     "tests/vendor/miniz/miniz_tinfl.h": "040aad2d9ca23c487652c150277d950be12e72c5453ae1f7c6713ed2efd16b4e"
   },
-  "wasmSha256": "ff373f4aa18335332a2b4e3a3f99b90023c16215ffcf6a38bb49c8849ef9c8c4"
+  "wasmSha256": "5d30ff9317eb88d4f04141f1851ed2388d3078f254b1afe002758309101821f1"
 }

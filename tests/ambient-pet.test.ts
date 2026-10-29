@@ -6,7 +6,10 @@ import {
   DEFAULT_AMBIENT,
   PET_IDS,
   PET_MOODS,
+  PET_PROFILES,
   normalizeAmbient,
+  petMoodLabel,
+  petProfile,
   type AmbientCard,
   type AmbientRedPlane,
   type PetId,
@@ -373,4 +376,24 @@ test('PetId and PetMood stay in sync with the art tables', () => {
   const ids: PetId[] = [...PET_IDS]
   const moods: PetMood[] = [...PET_MOODS]
   for (const id of ids) assert.deepEqual(Object.keys(PET_LINES[id]).sort(), [...moods].sort())
+})
+
+test('a host that predates the pet settings, or sends junk, never leaves the page without a pet', () => {
+  // Root cause of the 多媒体玩法 crash: the page indexed PET_PROFILES with an id that was not
+  // there (a config without petId, or an unknown id) and read `.name` of undefined.
+  const legacy = { ...DEFAULT_AMBIENT } as Record<string, unknown>
+  delete legacy.petId
+  delete legacy.petEnabled
+  const config = normalizeAmbient(legacy)
+  assert.equal(config.petId, 'tuantuan')
+  assert.equal(config.petEnabled, true)
+  assert.equal(petProfile(undefined).name, PET_PROFILES.tuantuan.name)
+  assert.equal(petProfile('dragon').name, PET_PROFILES.tuantuan.name)
+  assert.equal(petProfile(null).name, PET_PROFILES.tuantuan.name)
+  assert.equal(petProfile('yaya').name, PET_PROFILES.yaya.name)
+  assert.equal(petProfile('__proto__').name, PET_PROFILES.tuantuan.name)
+  assert.equal(petMoodLabel(undefined).label, petMoodLabel('idle').label)
+  assert.equal(petMoodLabel('hungry').label, '饿了')
+  assert.equal(petMoodLabel('constructor').label, petMoodLabel('idle').label)
+  for (const id of PET_IDS) assert.ok(petProfile(id).name && petProfile(id).trait)
 })

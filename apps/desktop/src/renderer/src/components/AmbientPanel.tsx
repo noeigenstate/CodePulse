@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   DEFAULT_AMBIENT,
-  PET_MOOD_LABELS,
-  PET_PROFILES,
+  petMoodLabel,
+  normalizeAmbient,
+  petProfile,
   type AmbientCard,
   type AmbientConfig,
   type AmbientSnapshot,
@@ -67,8 +68,9 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
       .then((s) => {
         if (alive && !received) {
           setSnapshot(s)
-          savedConfig.current = s.config
-          setDraft(s.config)
+          // A host that predates a setting (or sends an odd value) must not break the page.
+          savedConfig.current = normalizeAmbient(s.config)
+          setDraft(savedConfig.current)
         }
       })
       .catch(() => {
@@ -78,12 +80,13 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
       received = true
       if (!alive) return
       setSnapshot(s)
-      if (JSON.stringify(savedConfig.current) !== JSON.stringify(s.config)) {
+      const incoming = normalizeAmbient(s.config)
+      if (JSON.stringify(savedConfig.current) !== JSON.stringify(incoming)) {
         const dirty =
           savedConfig.current &&
           JSON.stringify(draftRef.current) !== JSON.stringify(savedConfig.current)
-        savedConfig.current = s.config
-        if (!dirty) setDraft(s.config)
+        savedConfig.current = incoming
+        if (!dirty) setDraft(incoming)
         else setMessage('另一窗口已更新设置；这里保留你的未保存修改。')
       }
     })
@@ -281,9 +284,9 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
               [
                 ['concept', '概念卡'],
                 ['prompt', '思考实验'],
-                ['pet', '像素宠物'],
                 ['local', '我的图片与便签'],
                 ['online', '热点与 meme'],
+                ['pet', '像素宠物'],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -318,8 +321,8 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
                     }}
                   >
                     <PetThumb card={c} />
-                    <strong>{c.pet ? PET_PROFILES[c.pet.id].name : c.source}</strong>
-                    <span>{c.pet ? PET_PROFILES[c.pet.id].trait : ''}</span>
+                    <strong>{c.pet ? petProfile(c.pet.id).name : c.source}</strong>
+                    <span>{c.pet ? petProfile(c.pet.id).trait : ''}</span>
                     {chosen && <em>已选</em>}
                   </button>
                 )
@@ -458,8 +461,8 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
                 <p>{card.text}</p>
                 {card.pet && (
                   <p className="ambient-hint">
-                    此刻心情：{PET_MOOD_LABELS[card.pet.mood].label}（
-                    {PET_MOOD_LABELS[card.pet.mood].hint}）。心情由工作状态和本地时间决定；
+                    此刻心情：{petMoodLabel(card.pet.mood).label}（
+                    {petMoodLabel(card.pet.mood).hint}）。心情由工作状态和本地时间决定；
                     屏幕上的红色需要完整刷新，约 16 秒并会闪一下，所以宠物只在展示和退场时刷新两次。
                   </p>
                 )}
@@ -540,7 +543,7 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
                   checked={draft.petEnabled}
                   onChange={(e) => edit('petEnabled', e.target.checked)}
                 />{' '}
-                像素宠物 · {PET_PROFILES[draft.petId].name}（在“像素宠物”页换形象）
+                像素宠物 · {petProfile(draft.petId).name}（在“像素宠物”页换形象）
               </label>
               <label className="ambient-toggle">
                 <input
@@ -750,8 +753,8 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
                         setKey('')
                       }
                       const s = await window.codepulse.setAmbient(draft)
-                      savedConfig.current = s.config
-                      setDraft(s.config)
+                      savedConfig.current = normalizeAmbient(s.config)
+                      setDraft(savedConfig.current)
                       return s
                     },
                     '自动推送设置已保存。展示选中内容请点左侧“显示到屏幕”。',

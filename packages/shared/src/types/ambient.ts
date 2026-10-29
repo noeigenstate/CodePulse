@@ -9,6 +9,10 @@ export const PET_PROFILES: Record<PetId, { name: string; trait: string }> = {
   yaya: { name: '芽芽', trait: '头顶一棵小苗，叶子会说心情' },
   fangfang: { name: '方方', trait: '方脑袋小机器人，屏幕上演情绪' },
 }
+/** Profile for any value that claims to be a pet id; unknown or missing ids fall back to the first pet. */
+export function petProfile(id: unknown): { name: string; trait: string } {
+  return PET_PROFILES[PET_IDS.find((known) => known === id) ?? PET_IDS[0]]
+}
 /** What each mood means, in the order the desktop checks them. */
 export const PET_MOOD_LABELS: Record<PetMood, { label: string; hint: string }> = {
   sleepy: { label: '犯困', hint: '23:00–次日 7:00' },
@@ -28,6 +32,10 @@ export interface AmbientRedPlane {
   w: number
   h: number
   hex: string
+}
+/** Mood text for any value that claims to be a mood; unknown ids read as idle. */
+export function petMoodLabel(mood: unknown): { label: string; hint: string } {
+  return PET_MOOD_LABELS[PET_MOODS.find((known) => known === mood) ?? 'idle']
 }
 export const AMBIENT_RED_MAX_BYTES = 3072
 

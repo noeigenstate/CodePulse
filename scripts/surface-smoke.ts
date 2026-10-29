@@ -311,6 +311,36 @@ app.whenReady().then(async()=>{
     assert.equal(ambient.current()?.imageHex?.length,19968)
     await capture('multimedia-image')
     await button(main, '回到工作画面'); assert.equal(ambient.current(), undefined)
+    // Pixel pets: the page lists three pets, shows red ink in the preview, and displays one on the screen.
+    const petStats = () => main!.webContents.executeJavaScript(`(() => {
+      const canvas=document.querySelector('.ambient-panel .device-preview canvas.device-screen');
+      const d=canvas.getContext('2d').getImageData(0,0,400,300).data;let red=0,hash=0;
+      for(let i=0;i<d.length;i+=4){if(d[i]===190&&d[i+1]===30&&d[i+2]===45)red++;hash=(hash*31+d[i]+d[i+1]*3+d[i+2]*7)>>>0}
+      return {red,hash,state:document.querySelector('.ambient-panel .device-preview').getAttribute('data-render-state')}
+    })()`) as Promise<{red:number;hash:number;state:string}>
+    const petChecked = () => main!.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ambient-pet-option')).map(b=>b.getAttribute('aria-checked'))`) as Promise<string[]>
+    await button(main, '像素宠物')
+    assert.deepEqual(await petChecked(), ['true','false','false'], 'first pet is chosen by default')
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.ambient-pet-option canvas').length`), 3, 'three pet thumbnails')
+    await click(main,'.ambient-pet-option:nth-child(1)')
+    await until(async()=>{const s=await petStats();return s.state==='ready'&&s.red>0},'pet preview draws red pixels')
+    const firstPet = await petStats()
+    assert.ok(firstPet.red>=100, 'preview paints rgb(190,30,45), got '+firstPet.red)
+    await click(main,'.ambient-pet-option:nth-child(2)')
+    assert.deepEqual(await petChecked(), ['false','true','false'], 'selection moves to the second pet')
+    await until(async()=>{const s=await petStats();return s.state==='ready'&&s.hash!==firstPet.hash&&s.red>0},'second pet preview')
+    assert.match(await main.webContents.executeJavaScript(`document.querySelector('.ambient-pet-option[aria-checked=true]').textContent`), /已选/)
+    await button(main, '显示到屏幕')
+    assert.equal(ambient.current()?.kind, 'pet')
+    assert.equal(ambient.current()?.pet?.id, 'yaya')
+    assert.ok(ambient.current()?.red, 'the pet on screen carries a red plane')
+    assert.ok(withAmbient(device().status,ambient.current()).ambient?.red, 'device status exposes ambient.red')
+    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .product-preview-label').textContent.includes('当前目标画面')`), 'pet display leaves sample mode')
+    await until(async()=>(await petStats()).red>0,'live target shows red')
+    await capture('multimedia-pet')
+    await click(main,'.ambient-pet-option:nth-child(1)')
+    assert.deepEqual(await petChecked(), ['true','false','false'])
+    await button(main, '回到工作画面'); assert.equal(ambient.current(), undefined)
     await button(main, '热点与 meme')
     await click(main,'[data-view=settings]');await button(main,'屏幕工作台 ↗')
     await until(()=>BrowserWindow.getAllWindows().some(w=>w.getTitle().includes('屏幕工作台')),'screen window')
@@ -354,7 +384,7 @@ app.whenReady().then(async()=>{
     // The expected unauthorized native-window rejection is visible to Electron's console.
     const unexpected=errors.filter(e=>!e.includes('Only the screen window'))
     assert.deepEqual(unexpected,[])
-    writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,views:4,focusRoundTrip:true,consolidatedNavigation:true,fixedPixelResize:true,inspectionPixelEquality:true,visibleApply:true,stablePreviewNotes:true,invertedStyle:true,conceptCard:true,thoughtPrompt:true,personalNote:true,imageDrop:true,hudCoexistence:true,largePreview:true,independentScreen:true,draftPreserved:true,settingsShortcuts:true,globalAttention:true,canonicalStatePreserved:true,nativePinApplied,errors:unexpected},null,2))
+    writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,views:4,focusRoundTrip:true,consolidatedNavigation:true,fixedPixelResize:true,inspectionPixelEquality:true,visibleApply:true,stablePreviewNotes:true,invertedStyle:true,conceptCard:true,thoughtPrompt:true,personalNote:true,imageDrop:true,pixelPet:true,hudCoexistence:true,largePreview:true,independentScreen:true,draftPreserved:true,settingsShortcuts:true,globalAttention:true,canonicalStatePreserved:true,nativePinApplied,errors:unexpected},null,2))
     ambient.stop();BrowserWindow.getAllWindows().forEach(w=>w.destroy());screen.destroy();clearTimeout(deadline);app.exit(0)
   }catch(error){writeFileSync(join(output,'failure.txt'),(error instanceof Error ? error.stack : String(error))+'\n'+JSON.stringify(errors));clearTimeout(deadline);app.exit(1)}
 })

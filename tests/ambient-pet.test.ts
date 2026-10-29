@@ -397,3 +397,99 @@ test('a host that predates the pet settings, or sends junk, never leaves the pag
   assert.equal(petMoodLabel('constructor').label, petMoodLabel('idle').label)
   for (const id of PET_IDS) assert.ok(petProfile(id).name && petProfile(id).trait)
 })
+test('a pet picked under an old mood still shows: manual display and preview follow the current mood', () => {
+  const f = petService(status())
+  const stale = 'pet:yaya:idle:2026-10-29'
+  assert.ok(f.service.snapshot().cards.some((c) => c.id === stale))
+  // Quota drops under 20% after the page loaded: the idle card id no longer exists.
+  f.set(status(quota(95)))
+  assert.equal(
+    f.service.snapshot().cards.some((c) => c.id === stale),
+    false,
+  )
+  assert.equal(f.service.resolveCard(stale)?.id, 'pet:yaya:hungry:2026-10-29')
+  assert.equal(f.service.resolveCard('pet:fangfang:sleepy:2026-10-29')?.pet?.id, 'fangfang')
+  assert.equal(f.service.resolveCard('pet:dragon:idle:2026-10-29'), undefined)
+  assert.equal(f.service.resolveCard('concept:gone'), undefined)
+  assert.equal(f.service.resolveCard(42), undefined)
+  f.service.showManual(stale)
+  assert.equal(f.service.current()?.id, 'pet:yaya:hungry:2026-10-29')
+  assert.equal(f.service.current()?.manual, true)
+  assert.throws(() => f.service.showManual('pet:dragon:idle:2026-10-29'), /内容已过期/)
+})
+
+const wasmBytes = () =>
+  new Uint8Array(readFileSync('apps/desktop/src/renderer/src/device-preview/renderer.wasm'))
+test('plane renderer falls back to an all-0xFF red plane when the Wasm has no preview_red_frame', async () => {
+  const input = withAmbient(
+    toDeviceStatusV1(new StatusHub().snapshot()),
+    petCards(status(), noon).find((c) => c.pet!.id === 'yaya')!,
+  )
+  const real = WebAssembly.instantiate
+  // Wrap the real module and hide the red export, as an older renderer build would look.
+  ;(WebAssembly as { instantiate: unknown }).instantiate = async (...args: unknown[]) => {
+    // Instantiating a compiled Module resolves to the Instance itself.
+    const instance = await (real as (...a: unknown[]) => Promise<{ exports: object }>)(...args)
+    const exports: Record<string, unknown> = { ...instance.exports }
+    delete exports.preview_red_frame
+    return { exports }
+  }
+  try {
+    const frame = (await desktopPlanes(wasmBytes()))(input)
+    assert.ok(
+      frame.black.some((v) => v !== 0xff),
+      'the picture is still drawn',
+    )
+    assert.equal(frame.red.length, 15000)
+    assert.ok(
+      frame.red.every((v) => v === 0xff),
+      'no red anywhere',
+    )
+    assert.deepEqual(frame.black, (await desktopRenderer(wasmBytes()))(input))
+  } finally {
+    ;(WebAssembly as { instantiate: unknown }).instantiate = real
+  }
+})
+test('red polarity: a real Wasm render clears the red bit and paints rgb(190,30,45) on the pet cheeks', async () => {
+  const exports = WebAssembly.Module.exports(await WebAssembly.compile(wasmBytes()))
+  assert.ok(
+    exports.some((e) => e.name === 'preview_red_frame'),
+    'the checked-in renderer exports the red plane',
+  )
+  const card = petCards(status(), noon).find((c) => c.pet!.id === 'yaya')!
+  const input = withAmbient(toDeviceStatusV1(new StatusHub().snapshot()), card)
+  const { black, red } = (await desktopPlanes(wasmBytes()))(input)
+  const rgba = planesToRgba(black, red)
+  const plane = (bytes: Uint8Array, p: number) => (bytes[p >> 3]! & (0x80 >> (p & 7))) !== 0
+  const ink = bits(card.red!.hex)
+  const shape = bits(card.imageHex!)
+  let redPixels = 0
+  for (let row = 0; row < card.red!.h; row++)
+    for (let col = 0; col < card.red!.w; col++) {
+      // Picture area (0, 0) is screen pixel (8, 60).
+      const p = (60 + card.red!.y + row) * 400 + 8 + card.red!.x + col
+      const wantRed = bitAt(ink, row * card.red!.w + col)
+      if (wantRed) {
+        redPixels++
+        assert.equal(plane(red, p), false, 'red pigment is a cleared bit')
+        assert.equal(plane(black, p), true, 'red sits on paper')
+        assert.deepEqual([...rgba.slice(p * 4, p * 4 + 4)], [190, 30, 45, 255])
+      } else {
+        assert.equal(plane(red, p), true, 'no pigment where the card has none')
+      }
+    }
+  assert.ok(redPixels > 50, 'the cheeks are red')
+  // Everything outside the red rectangle has no pigment, and black ink stays black.
+  let cleared = 0
+  for (let p = 0; p < 400 * 300; p++) if (!plane(red, p)) cleared++
+  assert.equal(cleared, redPixels)
+  let black0 = 0
+  for (let n = 0; n < 384 * 208; n++)
+    if (bitAt(shape, n)) {
+      const p = (60 + Math.floor(n / 384)) * 400 + 8 + (n % 384)
+      assert.equal(plane(black, p), false, 'ink pixel is black')
+      assert.deepEqual([...rgba.slice(p * 4, p * 4 + 4)], [0, 0, 0, 255])
+      black0++
+    }
+  assert.ok(black0 > 800)
+})

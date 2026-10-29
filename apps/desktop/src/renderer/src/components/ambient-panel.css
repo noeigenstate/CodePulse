@@ -268,15 +268,15 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 6px;
 }
+/* One slim row per pet, so the preview and its display button sit as high as in other categories. */
 .ambient-pet-option {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  padding: 8px;
+  display: grid;
+  grid-template-columns: 29px auto minmax(0, 1fr) auto;
+  column-gap: 8px;
+  align-items: center;
+  padding: 1px 6px;
   text-align: left;
   border: 1px solid #8886;
   border-radius: 8px;
@@ -285,20 +285,24 @@
   cursor: pointer;
 }
 .ambient-pet-option canvas {
-  width: 100%;
+  width: 29px;
   height: auto;
-  aspect-ratio: 384 / 208;
+  aspect-ratio: 180 / 152;
   background: #fff;
-  border-radius: 4px;
+  border-radius: 3px;
   border: 1px solid #8884;
 }
 .ambient-pet-option strong {
   font-size: 13px;
+  white-space: nowrap;
 }
 .ambient-pet-option span {
+  min-width: 0;
   font-size: 11px;
-  line-height: 1.5;
   opacity: 0.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ambient-pet-option[aria-checked='true'] {
   border-color: var(--ink, #25282c);
@@ -306,12 +310,9 @@
   outline-offset: -2px;
 }
 .ambient-pet-option em {
-  position: absolute;
-  top: 12px;
-  right: 12px;
   font-style: normal;
-  font-size: 11px;
-  padding: 1px 7px;
+  font-size: 10px;
+  padding: 0 6px;
   border-radius: 10px;
   background: var(--ink, #25282c);
   color: var(--surface-solid, #fff);

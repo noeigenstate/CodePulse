@@ -285,6 +285,12 @@ app.whenReady().then(async()=>{
     await capture('updates')
     await button(main, '概念卡'); await button(main, '预览画面')
     await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .device-preview')?.getAttribute('data-render-state')==='ready'`),'concept canvas')
+    // Reference for the pet page: where the display button sits for a normal category at scroll top.
+    const conceptFirstScreen = await main.webContents.executeJavaScript(`(() => {
+      for(let e=document.querySelector('.ambient-panel');e;e=e.parentElement)e.scrollTop=0;
+      const r=Array.from(document.querySelectorAll('button')).find(b=>b.getClientRects().length&&b.textContent.trim()==='显示到屏幕').getBoundingClientRect();
+      return {top:r.top,bottom:r.bottom,height:window.innerHeight}
+    })()`) as {top:number;bottom:number;height:number}
     await button(main, '显示到屏幕')
     assert.equal(ambient.current()?.kind, 'concept')
     assert.equal(ambient.current()?.manual, true)
@@ -326,6 +332,14 @@ app.whenReady().then(async()=>{
     await until(async()=>{const s=await petStats();return s.state==='ready'&&s.red>0},'pet preview draws red pixels')
     const firstPet = await petStats()
     assert.ok(firstPet.red>=100, 'preview paints rgb(190,30,45), got '+firstPet.red)
+    // The primary action stays on the first screen at the default 1120 x 780 window, like other categories.
+    const firstScreen = await main.webContents.executeJavaScript(`(() => {
+      for(let e=document.querySelector('.ambient-panel');e;e=e.parentElement)e.scrollTop=0;
+      const r=Array.from(document.querySelectorAll('button')).find(b=>b.getClientRects().length&&b.textContent.trim()==='显示到屏幕').getBoundingClientRect();
+      return {top:r.top,bottom:r.bottom,height:window.innerHeight}
+    })()`) as {top:number;bottom:number;height:number}
+    writeFileSync(join(output,'first-screen.json'),JSON.stringify({concept:conceptFirstScreen,pet:firstScreen}))
+    assert.ok(firstScreen.top<=conceptFirstScreen.top+1,'pet page keeps 显示到屏幕 as high as the concept page: '+JSON.stringify({pet:firstScreen,concept:conceptFirstScreen}))
     await click(main,'.ambient-pet-option:nth-child(2)')
     assert.deepEqual(await petChecked(), ['false','true','false'], 'selection moves to the second pet')
     await until(async()=>{const s=await petStats();return s.state==='ready'&&s.hash!==firstPet.hash&&s.red>0},'second pet preview')
@@ -338,6 +352,15 @@ app.whenReady().then(async()=>{
     await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .product-preview-label').textContent.includes('当前目标画面')`), 'pet display leaves sample mode')
     await until(async()=>(await petStats()).red>0,'live target shows red')
     await capture('multimedia-pet')
+    // ui-acceptance viewports with a pet chosen; the window goes back to 1120 x 780 afterwards.
+    for (const [width,height] of [[1440,900],[1024,768],[390,844]] as const) {
+      main.setContentSize(width,height); await wait(450)
+      const overflow = await main.webContents.executeJavaScript(`document.documentElement.scrollWidth-window.innerWidth`) as number
+      if (width>=1024) assert.ok(overflow<=1,'no horizontal page scroll at '+width+': '+overflow)
+      assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.ambient-pet-option').length`),3)
+      await capture('multimedia-pet-'+width)
+    }
+    main.setContentSize(1120,780); await wait(350)
     await click(main,'.ambient-pet-option:nth-child(1)')
     assert.deepEqual(await petChecked(), ['true','false','false'])
     await button(main, '回到工作画面'); assert.equal(ambient.current(), undefined)

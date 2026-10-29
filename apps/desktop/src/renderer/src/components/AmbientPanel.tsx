@@ -10,35 +10,51 @@ import {
   type DeviceStatusV1,
 } from '@codepulse/shared'
 import { DeviceScreenPreview } from './DeviceScreenPreview.js'
+import { planesToRgba } from '../device-preview/renderer.mjs'
 import './ambient-panel.css'
 import { useScreenTarget } from '../lib/useScreenTarget.js'
 
-const PANEL_RED = [190, 30, 45]
-/** Small look at a pet card's bitmap: black plus red, painted exactly as the device would. */
+const PET_CROP = { x: 84, y: 44, w: 180, h: 152 }
+/**
+ * Small look at a pet card's bitmap. It lays the card into the same two planes the device uses
+ * and paints them with the shared preview colours, so black wins over red exactly as on the screen.
+ */
 function PetThumb({ card }: { card: AmbientCard }): JSX.Element {
   const canvas = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
     const context = canvas.current?.getContext('2d')
     if (!context || !card.imageHex) return
-    const image = context.createImageData(384, 208)
-    image.data.fill(255)
-    const paint = (hex: string, width: number, left: number, top: number, color: number[]) => {
+    const black = new Uint8Array(15000).fill(0xff),
+      red = new Uint8Array(15000).fill(0xff)
+    // Picture area origin on the 400 x 300 screen is (8, 60); a set bit is ink, a cleared bit is paint.
+    const lay = (plane: Uint8Array, hex: string, width: number, left: number, top: number) => {
       for (let i = 0; i < hex.length / 2; i++) {
         const byte = parseInt(hex.slice(i * 2, i * 2 + 2), 16)
         if (!byte) continue
         for (let bit = 0; bit < 8; bit++)
           if (byte & (0x80 >> bit)) {
             const n = i * 8 + bit,
-              at = ((top + Math.floor(n / width)) * 384 + left + (n % width)) * 4
-            image.data.set(color, at)
+              pixel = (60 + top + Math.floor(n / width)) * 400 + 8 + left + (n % width)
+            plane[pixel >> 3] = plane[pixel >> 3]! & ~(0x80 >> (pixel & 7))
           }
       }
     }
-    paint(card.imageHex, 384, 0, 0, [0, 0, 0, 255])
-    if (card.red) paint(card.red.hex, card.red.w, card.red.x, card.red.y, [...PANEL_RED, 255])
-    context.putImageData(image, 0, 0)
+    lay(black, card.imageHex, 384, 0, 0)
+    if (card.red) lay(red, card.red.hex, card.red.w, card.red.x, card.red.y)
+    const image = context.createImageData(400, 300)
+    image.data.set(planesToRgba(black, red))
+    // Only the middle of the picture, where every pet stands, so the small thumbnail stays readable.
+    context.putImageData(
+      image,
+      -(8 + PET_CROP.x),
+      -(60 + PET_CROP.y),
+      8 + PET_CROP.x,
+      60 + PET_CROP.y,
+      PET_CROP.w,
+      PET_CROP.h,
+    )
   }, [card.imageHex, card.red])
-  return <canvas ref={canvas} width={384} height={208} aria-hidden="true" />
+  return <canvas ref={canvas} width={PET_CROP.w} height={PET_CROP.h} aria-hidden="true" />
 }
 
 export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Element {
@@ -315,6 +331,7 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
                     key={c.id}
                     disabled={busy}
                     className="ambient-pet-option"
+                    title={c.pet ? petProfile(c.pet.id).trait : undefined}
                     onClick={() => {
                       if (c.pet) edit('petId', c.pet.id)
                       void showPreview(c)
@@ -462,8 +479,12 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
                 {card.pet && (
                   <p className="ambient-hint">
                     此刻心情：{petMoodLabel(card.pet.mood).label}（
-                    {petMoodLabel(card.pet.mood).hint}）。心情由工作状态和本地时间决定；
-                    屏幕上的红色需要完整刷新，约 16 秒并会闪一下，所以宠物只在展示和退场时刷新两次。
+                    {petMoodLabel(card.pet.mood).hint}
+                    ）。心情随工作状态和本地时间变化，选好形象后可随时手动展示。
+                    自动推送只在允许展示的时段出场：安静时段和 Agent
+                    工作时不会推送（可在“展示节奏”里调整），
+                    所以“犯困”“陪你干活”多半只在手动展示时看到。屏幕上的红色需要完整刷新，约 16
+                    秒并会闪一下， 所以宠物只在展示和退场时刷新两次。
                   </p>
                 )}
                 <div className="ambient-actions">
@@ -554,7 +575,7 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
                 科技热议 · Hacker News
               </label>
               <p className="ambient-hint">
-                宠物按心情出场，同一形象同一心情每天最多一次。概念与思考卡离线可用，原创短解读配阅读来源。科技热议只选近
+                宠物按当前心情出场，同一形象同一心情每天最多一次，并遵守下方的展示节奏。概念与思考卡离线可用，原创短解读配阅读来源。科技热议只选近
                 24 小时首页中超过 100 赞的标题，保留原文，不自动改写为新闻。
               </p>
             </div>

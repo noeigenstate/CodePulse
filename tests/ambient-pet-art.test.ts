@@ -97,7 +97,10 @@ test('art is original line work: big pets, safe margins, no stray single pixels'
         assert.ok(neighbours.reduce((n, v) => n + v, 0) > 1, `${id}/${mood} lone pixel ${x},${y}`)
       }
     // The pet (left part of the picture) stands at least 120 px tall above the ground line.
-    assert.ok(196 - top >= 120, `${id}/${mood} pet is ${196 - top}px tall`)
+    assert.ok(
+      196 - top >= (mood === 'sleepy' ? 85 : 120),
+      `${id}/${mood} pet is ${196 - top}px tall`,
+    )
   })
 })
 

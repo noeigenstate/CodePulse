@@ -182,6 +182,24 @@ test('pet cards: one per pet, id carries pet, mood and local date, art matches t
   assert.equal(petCards(status(), at(1))[0]!.id, 'pet:tuantuan:sleepy:2026-10-29')
 })
 
+test('pet cards ask for the pet layout and only a bitmap card passes it on to the device', () => {
+  const cards = petCards(status(), noon)
+  assert.ok(cards.every((c) => c.layout === 'pet'))
+  const card = cards[0]!
+  assert.equal(deviceCard(card).layout, 'pet')
+  assert.equal(deviceCard({ ...card, imageHex: undefined, red: undefined }).layout, undefined)
+  assert.equal(deviceCard({ ...card, layout: undefined }).layout, undefined)
+  assert.equal('layout' in deviceCard({ ...card, kind: 'note', layout: undefined }), false)
+  const base = toDeviceStatusV1(new StatusHub().snapshot())
+  assert.equal(withAmbient(base, card).ambient!.layout, 'pet')
+  assert.notEqual(
+    withAmbient(base, card).revision,
+    withAmbient(base, { ...card, layout: undefined }).revision,
+    'a layout change is a new revision',
+  )
+  assert.notEqual(contentKey(card), contentKey({ ...card, layout: undefined }))
+})
+
 const petCard = (over: Partial<AmbientCard> = {}): AmbientCard => ({
   ...petCards(status(), noon).find((c) => c.pet!.id === 'tuantuan')!,
   ...over,
@@ -420,6 +438,14 @@ test('a pet picked under an old mood still shows: manual display and preview fol
 
 const wasmBytes = () =>
   new Uint8Array(readFileSync('apps/desktop/src/renderer/src/device-preview/renderer.wasm'))
+// Renderers from 0.0.28 lay `layout: "pet"` cards out with the picture at screen row 32 (older: 60).
+const pictureTop = () => {
+  const version = JSON.parse(
+    readFileSync('apps/desktop/src/renderer/src/device-preview/manifest.json', 'utf8'),
+  ).firmwareVersion as string
+  const [, minor = 0, patch = 0] = version.split(/[.-]/).map(Number)
+  return minor > 0 || patch >= 28 ? 32 : 60
+}
 test('plane renderer falls back to an all-0xFF red plane when the Wasm has no preview_red_frame', async () => {
   const input = withAmbient(
     toDeviceStatusV1(new StatusHub().snapshot()),
@@ -466,8 +492,8 @@ test('red polarity: a real Wasm render clears the red bit and paints rgb(190,30,
   let redPixels = 0
   for (let row = 0; row < card.red!.h; row++)
     for (let col = 0; col < card.red!.w; col++) {
-      // Picture area (0, 0) is screen pixel (8, 60).
-      const p = (60 + card.red!.y + row) * 400 + 8 + card.red!.x + col
+      // Picture area (0, 0) is screen pixel (8, pictureTop()).
+      const p = (pictureTop() + card.red!.y + row) * 400 + 8 + card.red!.x + col
       const wantRed = bitAt(ink, row * card.red!.w + col)
       if (wantRed) {
         redPixels++
@@ -486,7 +512,7 @@ test('red polarity: a real Wasm render clears the red bit and paints rgb(190,30,
   let black0 = 0
   for (let n = 0; n < 384 * 208; n++)
     if (bitAt(shape, n)) {
-      const p = (60 + Math.floor(n / 384)) * 400 + 8 + (n % 384)
+      const p = (pictureTop() + Math.floor(n / 384)) * 400 + 8 + (n % 384)
       assert.equal(plane(black, p), false, 'ink pixel is black')
       assert.deepEqual([...rgba.slice(p * 4, p * 4 + 4)], [0, 0, 0, 255])
       black0++

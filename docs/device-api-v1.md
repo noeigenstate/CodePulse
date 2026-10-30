@@ -287,7 +287,7 @@ user is the pixel pet card (`pet:<pet>:<mood>:<YYYY-MM-DD>`); any bitmap card ma
 ```
 
 - Coordinates are in the multimedia picture area (384×208, origin top left); on the
-  device that is screen pixel (8+x, 60+y), the same as `imageHex`.
+  device that is screen pixel (8+x, 60+y), the same as `imageHex` (32+y with the pet layout below).
 - `x` and `w` are multiples of 8, `w ≥ 8`, `h ≥ 1`, `x + w ≤ 384`, `y + h ≤ 208`.
 - `w * h / 8 ≤ 3072` bytes (a 128×128 rectangle is 2048 bytes).
 - `hex` has exactly `w * h / 4` characters, row-major, MSB first, upper or lower
@@ -321,6 +321,20 @@ card keeps a fixed id while shown, so a showing costs one full refresh in and on
 follow the existing automatic-push pacing (interval, daily cap, quiet hours, idle only) and
 manual display, and add no timed refreshes. The mood (sleepy, hungry, working, happy, idle)
 is chosen from live status and local time when the card is built.
+
+### Pet layout (firmware 0.0.28+)
+
+`ambient.layout` is an optional string; the only value is `"pet"`. The desktop sets it on pixel
+pet cards, and only sends it when the card also carries `imageHex`. It is part of the card
+projection, so a change of layout changes the response revision.
+
+- A `"pet"` card with a bitmap is laid out as: picture 384×208 at screen pixel (8, 32) (`red`
+  keeps picture-area coordinates and follows the same origin), a 1 px divider at y=243, `text`
+  in 20px bold on one line (14px if it does not fit in 376 px), then `source` in 12px semibold.
+- A missing, `null`, other-string or non-string `layout`, or a card without `imageHex`, keeps
+  the original layout (picture at (8, 60)). An invalid `layout` never fails the status, like `red`.
+- Older firmware ignores the field and shows the original layout, so no version negotiation is
+  needed.
 
 ### 0.0.26：设备展示减频与局部窗口候选
 

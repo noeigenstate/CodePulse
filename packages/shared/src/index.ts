@@ -44,6 +44,8 @@ export * from './presentation-order.js'
 
 export * from './types/ambient.js'
 
+export * from './device-preview-scale.js'
+
 export * from './types/product-shell.js'
 
 export * from './presentation/displayAgents.js'

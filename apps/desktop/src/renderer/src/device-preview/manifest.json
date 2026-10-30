@@ -15,15 +15,18 @@
     "fonts/sources/noto-native-masks.json": "52939fa3a77b11c2f69d96a35220b4f1b0af564306224dd0d042ca2cbb3d8234",
     "fonts/sources/noto-sources.json": "181ef89e576e861528bc02a3cc44463552e4b3b29abd2edacfe63d185b629859",
     "main/aht20.h": "164c6c73651636ee747952ba12ecd181de74f0b6ea246a074ec9340d6e3d0a2b",
+    "main/audio_board_config.h": "e3aa37e59a1cf443f600c6c21acdb8feed80b06c15c6bfaa64fc855677338ab6",
+    "main/audio_pin_policy.h": "9a5f8ad94b0e5de8ee38d2ac2af6148ba7beb6f911bec64dd310e70ee5876103",
     "main/battery_adc.h": "f96fb32ba818d01d27761fef70a367f8a4efd05b69ad64b6acb78c9c321af9da",
     "main/board_pins.h": "4dad6b29834fdd5ba824ca5af7022e3f8e5b38ae01c898f313ad192981fbdff9",
     "main/board_safety.h": "62170815b80aab016ca98d0c5b3b964b10504caa07cc67eaca68ca7a7a636271",
     "main/buzzer.h": "55403bf2070716bbf84171b45e0c564bb78dfc6d45b65e1badddf8417f066b53",
+    "main/codepulse_audio.h": "91b4bc334b00cbd2d91257509ef69113ad1d6c210c6ae5509fa16f536c5acdad",
     "main/codepulse_client.h": "1d8684cd59307d248a471c5a388162d86440edba9dbd0778a05daa8236dd05de",
     "main/codepulse_discovery.h": "d813fd2ec78270d10d535107790259da260959913027477523b60a221fe09846",
-    "main/codepulse_protocol.c": "cd490b81d981e57d86be487b82f84fadafab03157e68167429f265a2de00e2e4",
+    "main/codepulse_protocol.c": "36ce7b42874157379657309bb1818444b990f351154285436d23ccd6102f04c6",
     "main/codepulse_protocol.h": "64a42f1c5d8bd306925e6f420430952024202a69846f78c92da32457c988b7f4",
-    "main/codepulse_ui.h": "7f61ab61df50f2de4b253d07f6cf81b485469eaa260f74effa728543548f5ef4",
+    "main/codepulse_ui.h": "9d07d209f4c1123a339d9eb110be4e42e3a2396efe215fc1b5980caea3d92acf",
     "main/device_config.h": "ddfaebb04eb86cab47184535a9b54ffb1813c4646cc6c250545e954b7aa7647a",
     "main/device_identity.h": "00b0b458894a48080326b4f9d8b529f2fd35de0e883e34b9e491f5193d062251",
     "main/display_font_data.h": "7affb9849b79589fe8259bf58e8964d818553f39f82ba8a5ffa3dc1f7767fe9f",
@@ -34,7 +37,7 @@
     "main/epd_canvas.h": "c8cf7b36d7545189a7211ad5ef6896cda5f05e57cf52cc2202538b02da698efa",
     "main/epd_quiet.h": "afb6afad3ee3d39846afdc59fc649ccf79dd2b9ab7ec4970b36651b04ef27228",
     "main/epd_ssd1683.h": "b612f719bf9e5a1e495d026c10c9e963b0965f28b6654526f161ae8b651f3f8f",
-    "main/quiet_dashboard.c": "8c4659f59073948fbdb105f465b7767033f304dee8a340dbc88f7abd96fda709",
+    "main/quiet_dashboard.c": "947b8d5f08d34472e693a51bf89cbd74f3cc9a2cae47876efe39a46f2b619c97",
     "main/quiet_dashboard.h": "f8c2e279b91177edc9e5bdf3db30e7125f29fdacf8984c479fd0279fe205c448",
     "main/quiet_lut.h": "5d64b674b61d3bddfa37a9db1e71be793ef10a9251056c6fa74148ef1b57435f",
     "main/quiet_profile.h": "70eca7dd70c80b4406f817f6be6f4040092ebe4f8183161a6714f96cbae9fa48",
@@ -58,5 +61,5 @@
     "tests/vendor/miniz/miniz_tinfl.c": "9b7edc1fab708166e10f5e90a618a91c95a91496c4692e38160fdae810c1149a",
     "tests/vendor/miniz/miniz_tinfl.h": "040aad2d9ca23c487652c150277d950be12e72c5453ae1f7c6713ed2efd16b4e"
   },
-  "wasmSha256": "d8f6c242e7bbf015f6532f3a1ed01b6156a03908b5fb0a3599096b03012a56da"
+  "wasmSha256": "957f5468bcda8e3dca884f0d9aeada4ceaa5b110e859230ed9765ceaba5a17e3"
 }

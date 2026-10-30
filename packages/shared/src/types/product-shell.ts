@@ -1,11 +1,11 @@
 /** Legacy routes remain accepted for saved preferences and older tray links. */
-export const PRODUCT_VIEWS = ['control', 'work', 'usage', 'ambient', 'settings', 'overview', 'screen'] as const
+export const PRODUCT_VIEWS = ['control', 'work', 'usage', 'ambient', 'assistant', 'settings', 'overview', 'screen'] as const
 export type ProductView = (typeof PRODUCT_VIEWS)[number]
 export type DesktopForm = 'standard' | 'hud'
 export type PresentationTarget = 'desktop' | 'hud' | 'ink'
 export type DesktopLayout = 'work' | 'usage' | 'board'
 export type InkDisplayMode = 'single' | 'cycle'
-export type InkFeatureId = 'work' | 'ambient'
+export type InkFeatureId = 'work' | 'ambient' | 'todos'
 export type InkCycleInterval = 10 | 15 | 30
 export interface InkDisplayPlan {
   mode: InkDisplayMode
@@ -73,6 +73,7 @@ export function canonicalProductView(view: ProductView): ProductView {
   return view === 'overview' || view === 'screen' || view === 'work' ? 'control' : view
 }
 export function productTargets(view: ProductView): readonly PresentationTarget[] {
+  if (view === 'assistant') return ['desktop', 'ink']
   if (view === 'usage') return ['desktop']
   if (view === 'ambient') return ['ink']
   if (view === 'settings') return []
@@ -85,9 +86,9 @@ export function targetForProductView(view: ProductView, target: PresentationTarg
 export function normalizeInkPlan(input: unknown): InkDisplayPlan {
   const value = input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
   const mode: InkDisplayMode = value.mode === 'single' ? 'single' : 'cycle'
-  const fixed: InkFeatureId = value.fixed === 'ambient' ? 'ambient' : 'work'
+  const fixed: InkFeatureId = value.fixed === 'ambient' || value.fixed === 'todos' ? value.fixed : 'work'
   const rawItems = Array.isArray(value.items)
-    ? value.items.filter((item): item is InkFeatureId => item === 'work' || item === 'ambient')
+    ? value.items.filter((item): item is InkFeatureId => item === 'work' || item === 'ambient' || item === 'todos')
     : []
   const items: InkFeatureId[] = rawItems.length > 0 ? [...new Set(rawItems)] : ['work', 'ambient']
   const intervalMinutes: InkCycleInterval =

@@ -1,4 +1,4 @@
-/** 独立、只读的局域网设备 HTTP 服务。 */
+/** 局域网设备服务：工作状态只读，可显式注册认证的助手专用操作。 */
 import Fastify, { type FastifyInstance } from 'fastify'
 import {
   DEFAULT_DEVICE_SERVER_HOST,
@@ -44,6 +44,8 @@ export interface DeviceServerConfig {
 
 /** {@link startDeviceServer} 选项。 */
 export interface DeviceServerOptions {
+  /** Optional local assistant endpoints. Omitted hosts retain the read-only contract. */
+  registerAssistantRoutes?: (app: FastifyInstance) => void | Promise<void>
   /** Optional host presentation projection, shared with desktop configuration previews. */
   projectStatus?: (snapshot: StatusSnapshot, config?: DeviceDisplayConfig) => DeviceStatusV1
   getDisplayConfig?: () => DeviceDisplayConfig
@@ -123,6 +125,7 @@ export async function startDeviceServer(options: DeviceServerOptions): Promise<D
 
   const app = Fastify({ logger: options.logger ?? false })
   registerDeviceAuthGuard(app, authToken)
+  if (options.registerAssistantRoutes) await options.registerAssistantRoutes(app)
 
   app.get(DEVICE_HEALTH_PATH, async (_request, reply) => {
     reply.header('x-codepulse-protocol-version', String(DEVICE_PROTOCOL_VERSION))

@@ -900,6 +900,7 @@
 .product-control .product-config h3 { margin:8px 0 5px; }
 .product-control .product-config .product-feature-main { line-height:1.4; }
 .product-control .product-feature-option { padding:7px 9px; }
+.product-control .ink-config .product-feature-option { padding:5px 9px; margin:4px 0; }
 .product-control .product-config .product-cycle-row { padding:5px 8px; margin-top:8px; }
 .product-control .product-config .product-cycle-row select { padding:3px 6px; }
 @media (min-width:900px) and (max-height:740px) {

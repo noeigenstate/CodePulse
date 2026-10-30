@@ -113,6 +113,7 @@ export function deviceCard(
     ),
     text: utf8(card.text.replace(/https?:\/\/t\.co\/\S+/g, '[链接]'), 767),
     ...(card.imageHex ? { imageHex: card.imageHex } : {}),
+    ...(card.items ? { items: card.items.slice(0, 6).map(item => ({ title: utf8(item.title, 159), meta: utf8(item.meta, 47), overdue: item.overdue })) } : {}),
     // Red ink only ever accompanies a bitmap; the card builder guarantees the geometry.
     ...(card.imageHex && card.red ? { red: card.red } : {}),
     // The pet layout only means something for a bitmap; the calendar layout needs its grid.

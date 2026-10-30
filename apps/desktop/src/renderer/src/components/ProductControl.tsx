@@ -33,6 +33,9 @@ const HUD_TOOLS: { key: HudToolKey; label: string }[] = [
 ]
 
 const INK_AGENT_NAMES = { codex: 'Codex', claude_code: 'Claude', grok: 'Grok' } as const
+function inkFeatureLabel(feature: InkFeatureId, zh: boolean): string {
+  return ({work: zh ? '工作' : 'Work', ambient: zh ? '多媒体玩法' : 'Multimedia', todos: zh ? '待办与提醒' : 'Tasks & reminders'})[feature]
+}
 
 const RETENTION_OPTIONS: { value: HudAppearanceSettings['resultRetentionMinutes']; zh: string; en: string }[] = [
   { value: 10, zh: '10 分钟', en: '10m' },
@@ -327,6 +330,7 @@ function InkControlWorkspace({
   const [previewSource, setPreviewSource] = useState<DevicePreviewSource>('live')
   const [ambientSnap, setAmbientSnap] = useState<AmbientSnapshot>()
   const [ambientPreview, setAmbientPreview] = useState<DeviceStatusV1>()
+  const [todoPreview, setTodoPreview] = useState<DeviceStatusV1>()
   const [previewFocus, setPreviewFocus] = useState<InkFeatureId>('work')
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
@@ -415,6 +419,23 @@ function InkControlWorkspace({
     return () => { alive = false; stop() }
   }, [active])
 
+  useEffect(() => {
+    if (!active) return
+    let alive = true, request = 0, key = ''
+    const accept = (snapshot: import('@codepulse/shared').AssistantSnapshot) => {
+      const next = JSON.stringify([snapshot.tasks, snapshot.tasks.filter(t => t.status === 'pending' && t.dueAt !== null && t.dueAt <= Date.now()).map(t => t.id)])
+      if (next === key) return
+      key = next
+      const current = ++request
+      void window.codepulse.previewDeskTasks().then(status => {
+        if (alive && current === request) setTodoPreview(status)
+      }).catch(() => { if (alive && current === request) key = '' })
+    }
+    const stop = window.codepulse.onAssistant(accept)
+    void window.codepulse.getAssistant().then(accept).catch(() => {})
+    return () => { alive = false; stop() }
+  }, [active])
+
   const planDirty = JSON.stringify(plan) !== JSON.stringify(savedPlan)
   const displayDirty =
     Boolean(displaySnap) && JSON.stringify(displayDraft) !== JSON.stringify(displaySnap?.config)
@@ -498,7 +519,9 @@ function InkControlWorkspace({
     displayDraft.mode === 'hud' && densitySample ? densitySample : workStatus
 
   const statusToRender: DeviceStatusV1 | undefined =
-    activePreviewKind === 'ambient'
+    activePreviewKind === 'todos'
+      ? todoPreview ? { ...todoPreview, display: { ...displayDraft, page: 0 } } : undefined
+      : activePreviewKind === 'ambient'
       ? (ambientPreview ? { ...ambientPreview, display: { ...displayDraft, page: 0 } } : undefined) ??
         (workStatus
           ? {
@@ -516,8 +539,8 @@ function InkControlWorkspace({
 
   const summaryText =
     plan.mode === 'single'
-      ? `${zh ? '固定显示' : 'Fixed'} · ${plan.fixed === 'ambient' ? (zh ? '多媒体玩法' : 'Multimedia') : zh ? '工作' : 'Work'}`
-      : `${plan.items.map((i) => (i === 'work' ? (zh ? '工作' : 'Work') : zh ? '多媒体玩法' : 'Multimedia')).join(' → ')} · ${zh ? `每项 ${plan.intervalMinutes} 分钟` : `Every ${plan.intervalMinutes}m`}`
+      ? `${zh ? '固定显示' : 'Fixed'} · ${inkFeatureLabel(plan.fixed, zh)}`
+      : `${plan.items.map((i) => inkFeatureLabel(i, zh)).join(' → ')} · ${zh ? `每项 ${plan.intervalMinutes} 分钟` : `Every ${plan.intervalMinutes}m`}`
 
   return (
     <div className="device-workbench ink-control-workspace" data-connecting={connectOpen && active}>
@@ -527,20 +550,10 @@ function InkControlWorkspace({
             <span>{zh ? '画面预览' : 'Preview'}</span>
             {plan.mode === 'cycle' && plan.items.length > 1 ? (
               <div className="ink-preview-switcher" role="group" aria-label={zh ? '切换预览画面' : 'Switch preview'}>
-                <button
-                  type="button"
-                  aria-pressed={activePreviewKind === 'work'}
-                  onClick={() => setPreviewFocus('work')}
-                >
-                  {zh ? '工作画面' : 'Work'}
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={activePreviewKind === 'ambient'}
-                  onClick={() => setPreviewFocus('ambient')}
-                >
-                  {zh ? '多媒体玩法' : 'Multimedia'}
-                </button>
+                {plan.items.map(kind => <button key={kind} type="button"
+                  aria-pressed={activePreviewKind === kind} onClick={() => setPreviewFocus(kind)}>
+                  {kind === 'work' && zh ? '工作画面' : inkFeatureLabel(kind, zh)}
+                </button>)}
               </div>
             ) : (
               <span>{summaryText}</span>
@@ -551,7 +564,7 @@ function InkControlWorkspace({
             <DeviceScreenPreview
               active={active}
               status={statusToRender}
-              sample={showingSample || (activePreviewKind === 'ambient' && Boolean(ambientPreview))}
+              sample={showingSample || activePreviewKind === 'todos' || (activePreviewKind === 'ambient' && Boolean(ambientPreview))}
               fit
             />
           ) : (
@@ -661,6 +674,16 @@ function InkControlWorkspace({
             >
               {zh ? '配置' : 'Configure'}
             </button>
+          </div>
+
+          <div className={`product-feature-option ${(plan.mode === 'single' ? plan.fixed === 'todos' : plan.items.includes('todos')) ? 'is-selected' : ''}`}>
+            <label className="product-feature-main">
+              <input type={plan.mode === 'cycle' ? 'checkbox' : 'radio'} name="ink-content"
+                checked={plan.mode === 'single' ? plan.fixed === 'todos' : plan.items.includes('todos')}
+                onChange={() => toggleItem('todos')}/>
+              <span><strong>{zh ? '待办与提醒' : 'Tasks & reminders'}</strong><small>{zh ? '本地事项与到期时间' : 'Local tasks and reminder times'}</small></span>
+            </label>
+            <button type="button" className="product-feature-link" onClick={() => void product.navigate('assistant')}>{zh ? '管理' : 'Manage'}</button>
           </div>
 
           <div className="product-feature-option is-disabled">
@@ -848,8 +871,8 @@ export function ProductControl({
   const inkPlan = product.shell.inkPlan ?? DEFAULT_INK_PLAN
   const inkSummary =
     inkPlan.mode === 'single'
-      ? `${inkPlan.fixed === 'ambient' ? (zh ? '多媒体玩法' : 'Multimedia') : zh ? '工作' : 'Work'} · ${zh ? '固定显示' : 'Fixed'}`
-      : `${inkPlan.items.map((i) => (i === 'work' ? (zh ? '工作' : 'Work') : zh ? '多媒体玩法' : 'Multimedia')).join(' / ')} · ${zh ? '轮播' : 'Cycle'}`
+      ? `${inkFeatureLabel(inkPlan.fixed, zh)} · ${zh ? '固定显示' : 'Fixed'}`
+      : `${inkPlan.items.map((i) => inkFeatureLabel(i, zh)).join(' / ')} · ${zh ? '轮播' : 'Cycle'}`
 
   const hudLayoutName =
     product.shell.hudSettings?.projectLayout === 'grid'

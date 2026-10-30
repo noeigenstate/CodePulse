@@ -2,6 +2,7 @@ import { ProductFrame, useProductNavigation } from './components/ProductFrame.js
 import { ProductControl } from './components/ProductControl.js'
 import { ScreenWorkbench } from './components/ScreenWorkbench.js'
 import { AmbientPanel } from './components/AmbientPanel.js'
+import { AssistantPanel } from './components/AssistantPanel.js'
 /**
  * Dashboard 根组件。布局包含头部、agent 卡片网格与通知栏，
  * 并驱动高频时钟，使耗时与相对时间保持实时。
@@ -312,6 +313,11 @@ export function App(): JSX.Element {
         {product.visited.has('ambient') && (
           <section className="product-scroll" hidden={product.focusMode || product.view !== 'ambient'}>
             <AmbientPanel active={!product.focusMode && product.view === 'ambient'} />
+          </section>
+        )}
+        {product.visited.has('assistant') && (
+          <section className="product-scroll" hidden={product.focusMode || product.view !== 'assistant'}>
+            <AssistantPanel active={!product.focusMode && product.view === 'assistant'} />
           </section>
         )}
         {product.visited.has('settings') && (

@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import type { AssistantAudio, AssistantDraft, AssistantSecret, AssistantSettings, AssistantSnapshot, DeskTaskInput } from '@codepulse/shared'
 import type {
   ProductView, DesktopForm, ShellSnapshot, WorkbenchWindowState, PresentationTarget, DesktopLayout,
   InkDisplayPlan, HudAppearanceSettings,
@@ -33,6 +34,23 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): Unsubscribe {
 }
 
 const api = {
+  getAssistant: (): Promise<AssistantSnapshot> => ipcRenderer.invoke('codepulse:assistant-get'),
+  previewDeskTasks: (): Promise<DeviceStatusV1> => ipcRenderer.invoke('codepulse:assistant-preview'),
+  configureAssistant: (settings: AssistantSettings): Promise<AssistantSnapshot> => ipcRenderer.invoke('codepulse:assistant-configure', settings),
+  setAssistantKey: (field: AssistantSecret, value: string): Promise<AssistantSnapshot> => ipcRenderer.invoke('codepulse:assistant-key', field, value),
+  addDeskTask: (input: DeskTaskInput): Promise<AssistantSnapshot> => ipcRenderer.invoke('codepulse:assistant-add', input),
+  updateDeskTask: (id: string, input: DeskTaskInput): Promise<AssistantSnapshot> => ipcRenderer.invoke('codepulse:assistant-update', id, input),
+  completeDeskTask: (id: string): Promise<AssistantSnapshot> => ipcRenderer.invoke('codepulse:assistant-complete', id),
+  cancelDeskTask: (id: string): Promise<AssistantSnapshot> => ipcRenderer.invoke('codepulse:assistant-cancel', id),
+  snoozeDeskTask: (id: string, seconds: number): Promise<AssistantSnapshot> => ipcRenderer.invoke('codepulse:assistant-snooze', id, seconds),
+  forgetDeskMemory: (id: string): Promise<AssistantSnapshot> => ipcRenderer.invoke('codepulse:assistant-forget', id),
+  interpretAssistant: (text: string): Promise<AssistantDraft> => ipcRenderer.invoke('codepulse:assistant-interpret', text),
+  applyAssistantDraft: (id: string): Promise<AssistantSnapshot> => ipcRenderer.invoke('codepulse:assistant-apply', id),
+  listenAssistant: (pcm: Uint8Array): Promise<{text: string; draft: AssistantDraft}> => ipcRenderer.invoke('codepulse:assistant-listen', pcm),
+  speakAssistant: (text: string): Promise<AssistantAudio> => ipcRenderer.invoke('codepulse:assistant-speak', text),
+  showDeskTasksOnInk: (): Promise<AssistantSnapshot> => ipcRenderer.invoke('codepulse:assistant-show-ink'),
+  hideDeskTasksOnInk: (): Promise<AssistantSnapshot> => ipcRenderer.invoke('codepulse:assistant-hide-ink'),
+  onAssistant: (cb: (snapshot: AssistantSnapshot) => void): Unsubscribe => subscribe('codepulse:assistant-status', cb),
   openSettingsWindow: (): Promise<boolean> => ipcRenderer.invoke('codepulse:open-settings-window'),
   getShell: (): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-get'),
   setPresentationTarget: (target: PresentationTarget): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-target', target),

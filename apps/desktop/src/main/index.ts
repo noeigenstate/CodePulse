@@ -1,9 +1,13 @@
 import { DeviceViewLeases } from './device-view-leases.js'
+import { createAssistantRuntime } from './assistant-runtime.js'
+import { registerAssistantIpc } from './assistant-ipc.js'
+import { registerAssistantRoutes } from './assistant-http.js'
+import { selectDeskContent } from './assistant-presentation.js'
 import { ProductShell, shellPreferenceStore } from './product-shell.js'
 import { registerProductIpc } from './product-ipc.js'
 import { ScreenWorkbenchWindow } from './screen-workbench-window.js'
 import { registerAmbientIpc } from './ambient-ipc.js'
-import { inkAllowsAmbient } from './ambient-plan.js'
+import { inkAllowsAmbient, inkFeatureAt } from './ambient-plan.js'
 import { createAmbientRuntime } from './ambient-runtime.js'
 import { withAmbient } from './ambient-rules.js'
 import { spawn } from 'node:child_process'
@@ -11,7 +15,7 @@ import { HudSurface } from './hud-surface.js'
 import { readFileSync, writeFileSync, unlinkSync } from 'node:fs'
 import { homedir, networkInterfaces } from 'node:os'
 import { join } from 'node:path'
-import { app, BrowserWindow, dialog, ipcMain, Menu, powerMonitor, shell, screen, type Rectangle } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, powerMonitor, shell, screen, type Rectangle } from 'electron'
 import {
   type Agent,
   type AgentType,
@@ -83,6 +87,7 @@ const EVENT_PRUNE_INTERVAL_MS = 24 * 60 * 60_000
 const FOCUS_SYNC_DEBOUNCE_MS = 180
 
 let ambientRuntime: ReturnType<typeof createAmbientRuntime> | undefined
+let assistantRuntime: ReturnType<typeof createAssistantRuntime> | undefined
 let standardVisible = false
 let productShell: ProductShell | undefined
 let screenWorkbench: ScreenWorkbenchWindow | undefined
@@ -338,7 +343,7 @@ function projectDeviceDisplay(snapshot: StatusSnapshot, config?: import('@codepu
     () => console.warn('[codepulse] device display order could not be saved; retaining in-memory positions'))
   // Both preview and LAN transport consume the same retained, dismissed and ordered HUD source.
   const work = hudSurface?.snapshot() ?? snapshot
-  return withAmbient(deviceProjector(work, config), includeAmbient ? ambientRuntime?.service.current(work) : undefined)
+  return withAmbient(deviceProjector(work, config), includeAmbient ? selectDeskContent(assistantRuntime?.service.inkCard(work), ambientRuntime?.service.current(work)) : undefined)
 }
 
 function deviceDisplaySnapshot(preview?: unknown) {
@@ -361,9 +366,10 @@ function trackDeviceView(sender: Electron.WebContents): void {
 }
 
 function registerIpc(): void {
+  registerAssistantIpc(ipcMain, () => assistantRuntime, () => deviceDisplaySnapshot().status, () => ambientRuntime?.service.dismiss())
   registerProductIpc(ipcMain, productShell!, screenWorkbench!)
   ipcMain.handle('codepulse:hud-preview', () => hudSurface?.snapshot() ?? null)
-  registerAmbientIpc(ipcMain, ambientRuntime!, () => deviceDisplaySnapshot().status, url => shell.openExternal(url))
+  registerAmbientIpc(ipcMain, ambientRuntime!, () => deviceDisplaySnapshot().status, url => shell.openExternal(url), () => assistantRuntime?.service.clearTemporaryInk())
   ipcMain.handle('codepulse:get-device-display', (_event, preview: unknown) => deviceDisplaySnapshot(preview))
   ipcMain.handle('codepulse:set-device-display', (_event, input: unknown) => {
     writeDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json'), input)
@@ -570,6 +576,29 @@ async function bootstrap(): Promise<void> {
     },
   })
   ambientRuntime.service.start()
+  try {
+    assistantRuntime = createAssistantRuntime(app.getPath('userData'), {
+      automaticAllowed: () => inkFeatureAt(productShell!.snapshot().inkPlan, Date.now()) === 'todos',
+      restoreWork: () => {
+        const plan = productShell!.snapshot().inkPlan
+        if (inkFeatureAt(plan, Date.now()) === 'todos') productShell!.setInkPlan({...plan, mode:'single', fixed:'work'})
+      },
+      changed: () => {
+        if (assistantRuntime) broadcast('codepulse:assistant-status', assistantRuntime.service.snapshot())
+        deviceServer?.notifyChanged()
+      },
+      notify: title => {
+        if (!Notification.isSupported()) return false
+        const notification = new Notification({title:'CodePulse · 待办提醒',body:title,silent:true})
+        notification.on('click', () => { productShell?.navigate('assistant'); showWindow() })
+        notification.show()
+        return true
+      },
+    })
+    assistantRuntime.service.start()
+  } catch {
+    console.error('[codepulse] local assistant storage unavailable; existing work and usage remain available')
+  }
   wireHub()
   registerIpc()
 
@@ -593,6 +622,7 @@ async function bootstrap(): Promise<void> {
     try {
       deviceServer = await startDeviceServer({
         hub,
+        registerAssistantRoutes: assistantRuntime ? app => registerAssistantRoutes(app, assistantRuntime!.service) : undefined,
         projectStatus: projectDeviceDisplay,
         getDisplayConfig: () => readDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json')),
         host: deviceConfig.host,
@@ -752,6 +782,7 @@ function startMaintenanceTimers(): void {
 }
 
 async function shutdownRuntime(): Promise<void> {
+  assistantRuntime?.service.stop()
   screenWorkbench?.destroy()
   ambientRuntime?.service.stop()
   focusSync.cancel()
@@ -775,6 +806,7 @@ async function shutdownRuntime(): Promise<void> {
     ])
   } finally {
     if (timeout) clearTimeout(timeout)
+    assistantRuntime?.close()
   }
 }
 

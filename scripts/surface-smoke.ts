@@ -15,6 +15,12 @@ import { registerAmbientIpc } from '../apps/desktop/src/main/ambient-ipc.js'
 import { withAmbient } from '../apps/desktop/src/main/ambient-rules.js'
 import { HudSurface } from '../apps/desktop/src/main/hud-surface.js'
 import { createDeviceDisplayProjector } from '../apps/desktop/src/main/device-display-projection.js'
+import { AssistantStore } from '../apps/desktop/src/main/assistant-store.js'
+import { AssistantService } from '../apps/desktop/src/main/assistant-service.js'
+import { LumaAssistantProvider } from '../apps/desktop/src/main/assistant-provider.js'
+import { registerAssistantIpc } from '../apps/desktop/src/main/assistant-ipc.js'
+import { inkFeatureAt } from '../apps/desktop/src/main/ambient-plan.js'
+import { selectDeskContent } from '../apps/desktop/src/main/assistant-presentation.js'
 
 const output = resolve('.tmpshots/surface-smoke', process.env.CODEPULSE_SMOKE_RUN ?? 'local')
 mkdirSync(output,{recursive:true}); app.setPath('userData',join(output,'profile'))
@@ -89,10 +95,16 @@ app.whenReady().then(async()=>{
       request:async()=>({tweets:[{id:'12345',author:{userName:'Polymarket'},text:'TEST FIXTURE — this is a screen integration test, not a real news post.',createdAt:new Date().toISOString(),likeCount:9000}]}),image:async()=>'',
     })
     const projector=createDeviceDisplayProjector(join(output,'device-order.json'))
-    const device=(draft?:DeviceDisplayConfig)=>({config,status:withAmbient(projector(hud.snapshot(),draft??config),draft?undefined:ambient.current()),serverAvailable:false})
+    const assistantStore=new AssistantStore(join(output,'assistant.sqlite'))
+    const assistant=new AssistantService({store:assistantStore,keys:()=>({llmKey:'',speechAppKey:'',speechToken:''}),
+      provider:new LumaAssistantProvider(()=>({llmKey:'',speechAppKey:'',speechToken:''}),async()=>{throw Error('No external calls in UI fixtures')}),
+      save:()=>{},changed:()=>broadcast('codepulse:assistant-status',assistant.snapshot()),notify:()=>false,
+      automaticAllowed:()=>inkFeatureAt(product.snapshot().inkPlan,Date.now())==='todos'})
+    const device=(draft?:DeviceDisplayConfig)=>({config,status:withAmbient(projector(hud.snapshot(),draft??config),draft?undefined:selectDeskContent(assistant.inkCard(hud.snapshot()),ambient.current())),serverAvailable:false})
+    registerAssistantIpc(measuredIpc,()=>({service:assistant,setKey:()=>assistant.snapshot(),close:()=>{assistant.stop();assistantStore.close()}}),()=>device().status,()=>ambient.dismiss())
     const imageDir = join(output, 'image-library'); mkdirSync(imageDir, { recursive: true })
     const imageRuntime = createAmbientRuntime(imageDir, { status: () => hub.snapshot(), changed: () => {} })
-    registerAmbientIpc(measuredIpc,{service:ambient,setKey:()=>ambient.snapshot(),importImage:(bytes,name)=>{const card=imageRuntime.importImage(bytes,name);return ambient.addPersonal('image',card.text,card.imageHex)}},()=>device().status,async()=>{})
+    registerAmbientIpc(measuredIpc,{service:ambient,setKey:()=>ambient.snapshot(),importImage:(bytes,name)=>{const card=imageRuntime.importImage(bytes,name);return ambient.addPersonal('image',card.text,card.imageHex)}},()=>device().status,async()=>{},()=>assistant.clearTemporaryInk())
     const handlers: Record<string, (...args:any[])=>any>={
       'get-status':(event)=>hud.owns(event.sender)?hud.snapshot():hub.snapshot(),'sync-sessions':(event)=>hud.owns(event.sender)?hud.snapshot():hub.snapshot(),
       'detect-agents':()=>[],'get-update':()=>null,'get-version':()=> '1.4.11','get-notifications':()=>false,'set-notifications':(_e,v)=>v,
@@ -345,6 +357,31 @@ app.whenReady().then(async()=>{
     main.setSize(720,600);await capture('compact')
     assert.equal(await main.webContents.executeJavaScript(`document.documentElement.scrollWidth<=window.innerWidth`),true)
     assert.equal(JSON.stringify(hub.snapshot().agents),before,'UI actions preserve canonical task state')
+    // Real assistant preload/IPC and an isolated database, without microphones or external calls.
+    main.setSize(1120,780)
+    await click(main,'[data-view=settings]');await click(main,'.theme-swatch-light')
+    await click(main,'[data-view=assistant]')
+    await until(()=>main!.webContents.executeJavaScript(`Boolean(document.querySelector('.desk-task-form'))`),'assistant view')
+    await main.webContents.executeJavaScript(`(() => { const field=document.querySelector('.desk-task-form input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(field,'测试待办 · 离线验证');field.dispatchEvent(new Event('input',{bubbles:true})); })()`)
+    await wait();await button(main,'添加待办')
+    await until(()=>assistantStore.list().length===1,'task form persists')
+    await main.webContents.executeJavaScript(`(() => { const field=document.querySelector('.desk-assistant-prompt');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(field,'10分钟后提醒我喝水');field.dispatchEvent(new Event('input',{bubbles:true})); })()`)
+    await wait();await button(main,'交给助手')
+    await until(()=>main!.webContents.executeJavaScript(`Boolean(document.querySelector('.desk-assistant-draft'))`),'assistant proposal')
+    assert.equal(assistantStore.list().length,1,'AI suggestion does not mutate storage before confirmation')
+    await button(main,'确认执行');await until(()=>assistantStore.list().length===2,'assistant confirmation persists')
+    assert.ok(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.desk-assistant button')).find(b=>b.textContent==='开始录音').disabled`),'microphone is opt-in')
+    await capture('assistant')
+    await click(main,'[data-view=control]');await click(main,'#endpoint-ink');await button(main,'固定显示')
+    const previousPlan=product.snapshot().inkPlan
+    ambient.dismiss()
+    await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ink-config .product-feature-main')).find(label=>label.textContent.includes('待办与提醒')).querySelector('input').click()`)
+    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ink-control-workspace .device-preview').getAttribute('data-render-state')==='ready'`),'production todo preview')
+    assert.deepEqual(product.snapshot().inkPlan,previousPlan,'todo configuration remains a draft')
+    await button(main,'立即应用');assert.equal(product.snapshot().inkPlan.fixed,'todos')
+    assert.equal(device().status.ambient?.items?.length,2,'saved todo plan uses the production checklist')
+    await capture('control-todos')
+    assert.equal(JSON.stringify(hub.snapshot().agents),before,'assistant work never acknowledges programming tasks')
     hub.ingest({id:'shell-attention',source:'codex',eventType:'permission_request',externalSessionId:'shell-ui',workspacePath:'F:/example/codepulse',toolName:'shell',timestamp:Date.now()})
     const attentionState=JSON.stringify(hub.snapshot().agents)
     broadcast('codepulse:status',hub.snapshot());ambient.tick()
@@ -354,7 +391,7 @@ app.whenReady().then(async()=>{
     // The expected unauthorized native-window rejection is visible to Electron's console.
     const unexpected=errors.filter(e=>!e.includes('Only the screen window'))
     assert.deepEqual(unexpected,[])
-    writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,views:4,focusRoundTrip:true,consolidatedNavigation:true,fixedPixelResize:true,inspectionPixelEquality:true,visibleApply:true,stablePreviewNotes:true,invertedStyle:true,conceptCard:true,thoughtPrompt:true,personalNote:true,imageDrop:true,hudCoexistence:true,largePreview:true,independentScreen:true,draftPreserved:true,settingsShortcuts:true,globalAttention:true,canonicalStatePreserved:true,nativePinApplied,errors:unexpected},null,2))
-    ambient.stop();BrowserWindow.getAllWindows().forEach(w=>w.destroy());screen.destroy();clearTimeout(deadline);app.exit(0)
+    writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,views:5,assistantTasks:true,todoPlan:true,focusRoundTrip:true,consolidatedNavigation:true,fixedPixelResize:true,inspectionPixelEquality:true,visibleApply:true,stablePreviewNotes:true,invertedStyle:true,conceptCard:true,thoughtPrompt:true,personalNote:true,imageDrop:true,hudCoexistence:true,largePreview:true,independentScreen:true,draftPreserved:true,settingsShortcuts:true,globalAttention:true,canonicalStatePreserved:true,nativePinApplied,errors:unexpected},null,2))
+    assistant.stop();assistantStore.close();ambient.stop();BrowserWindow.getAllWindows().forEach(w=>w.destroy());screen.destroy();clearTimeout(deadline);app.exit(0)
   }catch(error){writeFileSync(join(output,'failure.txt'),(error instanceof Error ? error.stack : String(error))+'\n'+JSON.stringify(errors));clearTimeout(deadline);app.exit(1)}
 })

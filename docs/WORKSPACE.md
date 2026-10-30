@@ -108,6 +108,28 @@ X content is explicitly labeled as a fixture; this does not verify live X access
 Actual user visual acceptance and physical device validation remain separate.
 See [UNIFIED-PRODUCT.md](UNIFIED-PRODUCT.md) for the earlier packaging baseline.
 
+## Local tasks, reminders and voice (local 0.0.27 candidate)
+
+The **待办与助手** destination adds local todos, scheduled reminders, reviewed AI
+suggestions, scene/memory settings and explicit microphone/speech controls. The
+same Electron main process owns these services; no Python server, cloud gateway
+or additional production port is needed. Existing work/usage databases and
+StatusHub are unchanged. The assistant stores its own `assistant.sqlite` under
+Electron userData. Credentials use the OS encrypted store and are never returned
+to renderers. AI and speech require the user's own configured provider access;
+ordinary todos and explicit numeric relative reminders also work offline.
+
+In **控制 → 墨水屏**, **待办与提醒** participates in the existing fixed/cycle plan.
+The assistant's **显示到墨水屏** is a temporary 15-minute override. A later explicit
+image/note display replaces it; urgent work remains higher priority. Todo pages
+contain at most six rows, use the production C/Wasm renderer, and change only
+with task data or deadline milestones, without a ticking countdown. Audio is
+disabled on old firmware builds; new-board pins and microphone must be verified
+before enabling it. No always-listening or wake-word models are included.
+
+See [LumaDesk integration](LUMADESK-INTEGRATION.md) for provider setup, provenance,
+hardware conflicts, privacy, protocol additions and precise verification limits.
+
 ## Device configuration and preview
 
 In 控制 → 墨水屏, or the independent workbench's 显示配置, work and usage

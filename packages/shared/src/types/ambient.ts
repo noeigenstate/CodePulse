@@ -50,6 +50,8 @@ export const DEFAULT_AMBIENT: AmbientConfig = {
   idleOnly: true,
 }
 export interface AmbientCard {
+  /** Optional production-rendered checklist; old firmware uses the text fallback. */
+  items?: { title: string; meta: string; overdue: boolean }[]
   id: string
   kind: 'x' | 'meme' | 'concept' | 'prompt' | 'note' | 'image' | 'news'
   source: string
@@ -63,6 +65,8 @@ export interface AmbientCard {
   imageHex?: string
 }
 export interface DeviceAmbientCard {
+  /** Up to six rows; absent means the original text/image presentation. */
+  items?: { title: string; meta: string; overdue: boolean }[]
   /** Explicit temporary display may cover review notices; action/fault still win. */
   manual?: boolean
   id: string

@@ -9,6 +9,7 @@ export function registerAmbientIpc(
   runtime: ReturnType<typeof createAmbientRuntime>,
   deviceSnapshot: () => DeviceStatusV1,
   openExternal: (url: string) => Promise<unknown>,
+  onManualShow?: () => void,
 ): void {
   ipc.handle('codepulse:ambient-import', (_event, bytes: unknown, name: unknown) =>
     runtime.importImage(bytes, name),
@@ -27,7 +28,11 @@ export function registerAmbientIpc(
     runtime.setKey(provider, key),
   )
   ipc.handle('codepulse:ambient-refresh', () => runtime.service.refresh(true))
-  ipc.handle('codepulse:ambient-show', (_event, id: string) => runtime.service.showManual(id))
+  ipc.handle('codepulse:ambient-show', (_event, id: string) => {
+    const result=runtime.service.showManual(id)
+    onManualShow?.()
+    return result
+  })
   ipc.handle('codepulse:ambient-dismiss', () => runtime.service.dismiss())
   ipc.handle('codepulse:ambient-preview', (_event, id: string) => {
     const card = runtime.service.snapshot().cards.find((c) => c.id === id)

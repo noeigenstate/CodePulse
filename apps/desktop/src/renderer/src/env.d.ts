@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+import type { AssistantAudio, AssistantDraft, AssistantSecret, AssistantSettings, AssistantSnapshot, DeskTaskInput } from '@codepulse/shared'
 import type {
   ProductView, DesktopForm, ShellSnapshot, WorkbenchWindowState, PresentationTarget, DesktopLayout,
   InkDisplayPlan, HudAppearanceSettings,
@@ -28,6 +29,23 @@ type WindowTheme = 'light' | 'dark'
 
 /** 镜像 src/preload/index.ts 通过 contextBridge 暴露的 API。 */
 export interface CodePulseApi {
+  getAssistant: () => Promise<AssistantSnapshot>
+  previewDeskTasks: () => Promise<DeviceStatusV1>
+  configureAssistant: (settings: AssistantSettings) => Promise<AssistantSnapshot>
+  setAssistantKey: (field: AssistantSecret, value: string) => Promise<AssistantSnapshot>
+  addDeskTask: (input: DeskTaskInput) => Promise<AssistantSnapshot>
+  updateDeskTask: (id: string, input: DeskTaskInput) => Promise<AssistantSnapshot>
+  completeDeskTask: (id: string) => Promise<AssistantSnapshot>
+  cancelDeskTask: (id: string) => Promise<AssistantSnapshot>
+  snoozeDeskTask: (id: string, seconds: number) => Promise<AssistantSnapshot>
+  forgetDeskMemory: (id: string) => Promise<AssistantSnapshot>
+  interpretAssistant: (text: string) => Promise<AssistantDraft>
+  applyAssistantDraft: (id: string) => Promise<AssistantSnapshot>
+  listenAssistant: (pcm: Uint8Array) => Promise<{text:string;draft:AssistantDraft}>
+  speakAssistant: (text: string) => Promise<AssistantAudio>
+  showDeskTasksOnInk: () => Promise<AssistantSnapshot>
+  hideDeskTasksOnInk: () => Promise<AssistantSnapshot>
+  onAssistant: (cb: (snapshot: AssistantSnapshot) => void) => Unsubscribe
   openSettingsWindow: () => Promise<boolean>
   getShell: () => Promise<ShellSnapshot>
   setPresentationTarget: (target: PresentationTarget) => Promise<ShellSnapshot>

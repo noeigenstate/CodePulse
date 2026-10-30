@@ -45,6 +45,7 @@ export * from './presentation-order.js'
 export * from './types/ambient.js'
 
 export * from './types/product-shell.js'
+export * from './types/assistant.js'
 
 export * from './presentation/displayAgents.js'
 export * from './presentation/hudState.js'

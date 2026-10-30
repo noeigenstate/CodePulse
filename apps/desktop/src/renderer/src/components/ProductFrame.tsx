@@ -7,6 +7,7 @@ export const TARGET_NAMES = { desktop: ['桌面端', 'Desktop'], hud: ['HUD', 'H
 export const PRODUCT_NAV: { id: ProductView; label: string; english: string; icon: string }[] = [
   { id: 'control', label: '控制', english: 'Control', icon: 'control' },
   { id: 'ambient', label: '多媒体玩法', english: 'Multimedia', icon: 'ambient' },
+  { id: 'assistant', label: '待办与助手', english: 'Tasks & assistant', icon: 'tasks' },
 ]
 export function ProductIcon({ name }: { name: string }): JSX.Element {
   const paths: Record<string, ReactNode> = {
@@ -17,6 +18,7 @@ export function ProductIcon({ name }: { name: string }): JSX.Element {
     ink: <><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M10 18h4"/></>,
     ambient: <><circle cx="12" cy="12" r="2"/><path d="M6 6a8 8 0 0 0 0 12M18 6a8 8 0 0 1 0 12M3 3a12 12 0 0 0 0 18M21 3a12 12 0 0 1 0 18"/></>,
     usage: <path d="M4 3v17h17M8 16v-5M13 16V7M18 16V4"/>,
+    tasks: <><rect x="5" y="3" width="16" height="18" rx="2"/><path d="m8 9 2 2 4-4M8 16h9"/></>,
     settings: <><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></>,
     focus: <><path d="M8 3v5H3M16 21v-5h5M3 3l5 5M21 21l-5-5"/></>,
     expand: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M13 9l3 3-3 3"/></>,

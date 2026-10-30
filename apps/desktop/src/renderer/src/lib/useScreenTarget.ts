@@ -43,6 +43,7 @@ export function useScreenTarget(active = true) {
     const stops = [
       window.codepulse.onStatus(schedule),
       window.codepulse.onAmbient(schedule),
+      window.codepulse.onAssistant(schedule),
       window.codepulse.onDeviceDisplay(schedule),
     ]
     void read()

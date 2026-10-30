@@ -1,0 +1,268 @@
+.desk-assistant {
+  max-width: 1380px;
+  margin: 0 auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  color: var(--ink, #24282d);
+}
+.desk-assistant-heading,
+.desk-assistant-card-title,
+.desk-task-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.desk-assistant h1 {
+  font-size: 25px;
+  line-height: 1.3;
+  margin: 0 0 8px;
+  font-weight: 650;
+}
+.desk-assistant h2 {
+  font-size: 16px;
+  margin: 0;
+  font-weight: 650;
+}
+.desk-assistant-heading p,
+.desk-assistant-muted,
+.desk-assistant-card-title span,
+.desk-assistant small {
+  color: var(--ink-muted, #7c8490);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.desk-assistant-columns {
+  display: grid;
+  grid-template-columns: minmax(320px, 1.1fr) minmax(320px, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.desk-assistant-card {
+  border: 1px solid var(--line, #d5dae1);
+  border-radius: 14px;
+  background: var(--surface-solid, #fafbfd);
+  padding: 20px;
+  min-width: 0;
+}
+.desk-assistant label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+  margin: 12px 0;
+}
+.desk-assistant input,
+.desk-assistant select,
+.desk-assistant textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  background: var(--surface-muted, #f1f3f5);
+  color: inherit;
+  border: 1px solid var(--line, #d5dae1);
+  border-radius: 8px;
+  padding: 10px;
+  font: inherit;
+  line-height: 1.5;
+}
+.desk-assistant input:focus-visible,
+.desk-assistant textarea:focus-visible,
+.desk-assistant button:focus-visible {
+  outline: 2px solid #738b9d;
+  outline-offset: 2px;
+}
+.desk-assistant textarea {
+  resize: vertical;
+}
+.desk-assistant button {
+  font-size: 12px;
+  color: inherit;
+  background: var(--surface-solid, #fafbfd);
+  border: 1px solid var(--line, #d5dae1);
+  border-radius: 8px;
+  padding: 9px 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.desk-assistant button.primary {
+  background: var(--ink, #282d32);
+  color: var(--canvas, white);
+  border-color: var(--ink, #282d32);
+}
+.desk-assistant button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.desk-assistant-actions,
+.desk-task-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.desk-task-form-row {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+}
+.desk-task-form-row label {
+  flex: 1;
+}
+.desk-task-form-row button {
+  margin-bottom: 12px;
+}
+.desk-task-filters {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid var(--line, #d5dae1);
+  padding-bottom: 12px;
+  margin-top: 18px;
+}
+.desk-task-filters button[aria-pressed='true'] {
+  background: #e4e8ed;
+  border-color: #c2cbd5;
+  color: #202832;
+}
+.desk-task {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line, #d5dae1);
+  overflow-wrap: anywhere;
+}
+.desk-task:last-child {
+  border-bottom: 0;
+}
+.desk-task-title strong {
+  font-size: 15px;
+  line-height: 1.5;
+}
+.desk-task p {
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.desk-task.is-done strong {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+.desk-task-buttons {
+  margin-top: 10px;
+}
+.desk-task-buttons button {
+  font-size: 11px;
+  padding: 5px 8px;
+}
+.desk-assistant-prompt {
+  margin: 10px 0 12px;
+}
+.desk-assistant-draft {
+  margin-top: 20px;
+  border: 1px solid #bcc9c6;
+  background: var(--surface-muted, #f0f4f2);
+  padding: 16px;
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+}
+.desk-assistant-draft p {
+  font-size: 13px;
+  line-height: 1.8;
+}
+.desk-draft-task {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 0;
+}
+.desk-assistant-settings summary,
+.desk-assistant-memories summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+.desk-assistant-memories {
+  margin: 24px 0 12px;
+  border-top: 1px solid var(--line, #d5dae1);
+  padding-top: 16px;
+}
+.desk-assistant-memories > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.desk-assistant-memories p {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.desk-assistant-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: 0 18px;
+  margin-top: 12px;
+}
+.desk-assistant-checks {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.desk-assistant-checks label {
+  flex-direction: row;
+  align-items: center;
+}
+.desk-assistant-checks input {
+  width: auto;
+}
+.desk-assistant-keys {
+  display: flex;
+  gap: 12px;
+  align-items: end;
+  border-top: 1px solid var(--line, #d5dae1);
+  margin-top: 18px;
+  padding-top: 8px;
+}
+.desk-assistant-keys label:nth-child(2) {
+  flex: 1;
+}
+.desk-assistant-keys button {
+  margin-bottom: 12px;
+}
+.desk-assistant-error {
+  color: #a73c38;
+  background: #f8ecea;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+@media (max-width: 1050px) {
+  .desk-assistant-heading {
+    align-items: start;
+    flex-direction: column;
+  }
+  .desk-assistant-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .desk-assistant-settings-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .desk-assistant-keys {
+    flex-wrap: wrap;
+  }
+  .desk-assistant {
+    padding: 18px;
+  }
+}
+@media (max-width: 600px) {
+  .desk-assistant-settings-grid {
+    grid-template-columns: 1fr;
+  }
+  .desk-task-form-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0;
+  }
+  .desk-assistant-card {
+    padding: 15px;
+  }
+}

@@ -1,5 +1,45 @@
 # CodePulse 局域网设备协议 v1
 
+## 助手增量扩展（本地 0.0.27 候选）
+
+标准客户端可在同一个设备服务上注册 `/api/v1/device/assistant/*`。以下端点沿用
+现有 `X-CodePulse-Device-Token` 认证；工作状态接口仍只读，不接受 CLI 事件或
+编程任务确认。未注册助手模块的宿主不提供这些路由。除 `info` 外，还须发送
+`X-CodePulse-Device-Id`（1–64 字符，仅字母、数字、`-`、`_`、`:`）。设备 ID 是
+同一授权下的上下文分区，不是新的认证凭据。不要在 URL 中传令牌。
+
+| 方法与相对路径 | 请求 / 响应 |
+| --- | --- |
+| `GET info` | 语音开关、协议版本和 PCM 规格，不返回凭据或全部待办 |
+| `POST text` | `{text}`，最多 4000 字符 / 16000 字节；返回 `reply`、`draftId`、`needsConfirmation` |
+| `POST voice` | `application/octet-stream`，16 kHz / 单声道 / signed 16-bit LE PCM，0.1–30 秒 / 960000 字节；返回转写和同样的建议字段 |
+| `POST speech` | `{text}`，最多 300 字符 / 3000 字节；返回原始 PCM，不是 WAV/MP3；响应头 `x-codepulse-audio-rate: 16000` |
+| `GET announcement` | `{announcement: null}` 或 `{announcement:{id,text}}`，领取本设备的一条到期播报 |
+| `POST announcement/ack` | `{id}` / 1000 字节上限；播放完成后回执，成功为 `{ok:true}` |
+
+建议不会立即修改待办。设备随后发送“确认”才执行自己的未过期建议；“取消”或新输入
+解除原确认关联。建议十分钟过期；三个及以上动作改到桌面查看确认。桌面与各设备的
+近期对话隔离，仅保留有界内存上下文。播报后十分钟内可按该设备最近提醒提出延后。
+所有动作经过类型、时间、待办修订版本检查和数据库事务；重复确认不重复创建。
+
+语音默认关闭；用户配置的 AI/ASR/TTS 服务由桌面调用，设备不持有供应商密钥。
+识别和生成串行处理；合成同时最多一个请求，超时和容量有界。异常响应只给出简短
+配置/网络错误，不返回上游正文。提醒有安静时段和 30 分钟补报窗口；回执持久化，
+60 秒未确认的领取可以重试。设备应在重复领取同一 ID 时重试回执，不重复播放。
+电脑休眠或退出时不提供服务。LAN 仍是既有 HTTP 配对模式，应在可信局域网内使用。
+
+### 待办页（兼容的可选显示字段）
+
+`ambient.items` 可包含 0–6 行。每行 `{title,meta,overdue}`，`overdue` 为布尔值，
+固件字符串缓冲区分别为 160 和 48 字节（含终止符）；宿主按 UTF-8 边界截断，
+固件拒绝超限字段。禁止与 `ambient.imageHex` 同时使用。宿主继续提供 `ambient.text` 摘要，旧固件忽略
+items 仍能显示文字；新 C/Wasm 渲染器显示复选框、标题、时间和到期标记。
+此扩展不改变 v1 的工作/用量、注意力优先级、黑白翻转或刷新回执语义。
+
+合成 400×300 样例：[空列表](device-preview-v027/todos-0.png)、
+[单项](device-preview-v027/todos-1.png)、[六项](device-preview-v027/todos-6.png)。
+实现与兼容性详见 [整合记录](LUMADESK-INTEGRATION.md)。
+
 ## 设备显示投影
 
 统一宿主为桌面配置预览和 LAN API 提供同一个 projector。每个原生用户任务有

@@ -15,15 +15,27 @@ import './ambient-panel.css'
 import { useScreenTarget } from '../lib/useScreenTarget.js'
 
 const PET_CROP = { x: 4, y: 8, w: 232, h: 196 }
+/** Thumbnail width in CSS px; the canvas itself is sized in device pixels so edges stay smooth. */
+const PET_THUMB_W = 52
+const PET_THUMB_H = (PET_THUMB_W * PET_CROP.h) / PET_CROP.w
 /**
  * Small look at a pet card's bitmap. It lays the card into the same two planes the device uses
  * and paints them with the shared preview colours, so black wins over red exactly as on the screen.
+ * The crop is drawn at native size first and then scaled with smoothing to the target size, so the
+ * 2 to 3 px outlines stay connected instead of turning into dots.
  */
 function PetThumb({ card }: { card: AmbientCard }): JSX.Element {
   const canvas = useRef<HTMLCanvasElement>(null)
+  const [ratio, setRatio] = useState(() => window.devicePixelRatio || 1)
   useEffect(() => {
-    const context = canvas.current?.getContext('2d')
-    if (!context || !card.imageHex) return
+    const update = () => setRatio(window.devicePixelRatio || 1)
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  useEffect(() => {
+    const target = canvas.current
+    const context = target?.getContext('2d')
+    if (!target || !context || !card.imageHex) return
     const black = new Uint8Array(15000).fill(0xff),
       red = new Uint8Array(15000).fill(0xff)
     // Picture area origin on the 400 x 300 screen is (8, 60); a set bit is ink, a cleared bit is paint.
@@ -41,20 +53,33 @@ function PetThumb({ card }: { card: AmbientCard }): JSX.Element {
     }
     lay(black, card.imageHex, 384, 0, 0)
     if (card.red) lay(red, card.red.hex, card.red.w, card.red.x, card.red.y)
-    const image = context.createImageData(400, 300)
-    image.data.set(planesToRgba(black, red))
-    // Only the left of the picture, where every pet stands, so the small thumbnail stays readable.
-    context.putImageData(
-      image,
-      -(8 + PET_CROP.x),
-      -(60 + PET_CROP.y),
-      8 + PET_CROP.x,
-      60 + PET_CROP.y,
-      PET_CROP.w,
-      PET_CROP.h,
-    )
-  }, [card.imageHex, card.red])
-  return <canvas ref={canvas} width={PET_CROP.w} height={PET_CROP.h} aria-hidden="true" />
+    const image = new ImageData(new Uint8ClampedArray(planesToRgba(black, red)), 400, 300)
+    // Native-size crop on an offscreen canvas, so smoothing never blends in the rest of the screen.
+    const crop = document.createElement('canvas')
+    crop.width = PET_CROP.w
+    crop.height = PET_CROP.h
+    crop
+      .getContext('2d')
+      ?.putImageData(
+        image,
+        -(8 + PET_CROP.x),
+        -(60 + PET_CROP.y),
+        8 + PET_CROP.x,
+        60 + PET_CROP.y,
+        PET_CROP.w,
+        PET_CROP.h,
+      )
+    target.width = Math.round(PET_THUMB_W * ratio)
+    target.height = Math.round(PET_THUMB_H * ratio)
+    context.imageSmoothingEnabled = true
+    context.imageSmoothingQuality = 'high'
+    context.fillStyle = '#fff'
+    context.fillRect(0, 0, target.width, target.height)
+    context.drawImage(crop, 0, 0, target.width, target.height)
+  }, [card.imageHex, card.red, ratio])
+  return (
+    <canvas ref={canvas} style={{ width: PET_THUMB_W, height: PET_THUMB_H }} aria-hidden="true" />
+  )
 }
 
 export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Element {

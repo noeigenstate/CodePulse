@@ -32,6 +32,20 @@ export const PET_LINES: Record<PetId, Record<PetMood, string>> = {
     happy: '任务完成，开心指数 100%。',
     sleepy: '进入夜间模式，晚安。',
   },
+  rongrong: {
+    idle: '尾巴摇一摇，心情不错。',
+    working: '我只是路过，没偷看哦。',
+    hungry: '额度见底啦，借我点呗？',
+    happy: '搞定！我早就猜到了。',
+    sleepy: '夜深了，尾巴盖好睡啦。',
+  },
+  lulu: {
+    idle: '吃饱喝足，晒晒太阳。',
+    working: '你忙你的，我在旁边哼哼。',
+    hungry: '肚子咕噜，额度见底了。',
+    happy: '搞定啦！今晚加个餐。',
+    sleepy: '呼噜噜……先睡一会儿。',
+  },
 }
 
 const ACTIVE_WORK: readonly string[] = [

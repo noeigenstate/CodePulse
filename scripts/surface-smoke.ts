@@ -352,7 +352,7 @@ app.whenReady().then(async()=>{
     assert.equal(ambient.current()?.imageHex?.length,19968)
     await capture('multimedia-image')
     await button(main, '回到工作画面'); assert.equal(ambient.current(), undefined)
-    // Pixel pets: the page lists three pets, shows red ink in the preview, and displays one on the screen.
+    // Pixel pets: the page lists five pets, shows red ink in the preview, and displays one on the screen.
     const petStats = () => main!.webContents.executeJavaScript(`(() => {
       const canvas=document.querySelector('.ambient-panel .device-preview canvas.device-screen');
       const d=canvas.getContext('2d').getImageData(0,0,400,300).data;let red=0,hash=0;
@@ -362,13 +362,13 @@ app.whenReady().then(async()=>{
     // Every pet option must show its name and full one-line character note without truncation.
     const assertPetTextFits = async (label: string) => {
       const cells = await main!.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ambient-pet-option')).map(o=>Array.from(o.querySelectorAll('strong,span')).map(e=>({text:e.textContent,scrollWidth:e.scrollWidth,clientWidth:e.clientWidth})))`) as {text:string;scrollWidth:number;clientWidth:number}[][]
-      assert.equal(cells.length,3)
+      assert.equal(cells.length,5)
       for (const row of cells) { assert.equal(row.length,2); for (const e of row) assert.ok(e.text&&e.scrollWidth<=e.clientWidth,label+' text is not truncated: '+JSON.stringify(e)) }
     }
     const petChecked = () => main!.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ambient-pet-option')).map(b=>b.getAttribute('aria-checked'))`) as Promise<string[]>
     await button(main, '像素宠物')
-    assert.deepEqual(await petChecked(), ['true','false','false'], 'first pet is chosen by default')
-    assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.ambient-pet-option canvas').length`), 3, 'three pet thumbnails')
+    assert.deepEqual(await petChecked(), ['true','false','false','false','false'], 'first pet is chosen by default')
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.ambient-pet-option canvas').length`), 5, 'five pet thumbnails')
     await click(main,'.ambient-pet-option:nth-child(1)')
     await until(async()=>{const s=await petStats();return s.state==='ready'&&s.red>0},'pet preview draws red pixels')
     const firstPet = await petStats()
@@ -380,9 +380,10 @@ app.whenReady().then(async()=>{
       return {top:r.top,bottom:r.bottom,height:window.innerHeight}
     })()`) as {top:number;bottom:number;height:number}
     writeFileSync(join(output,'first-screen.json'),JSON.stringify({concept:conceptFirstScreen,pet:firstScreen}))
-    assert.ok(firstScreen.top<=conceptFirstScreen.top+1,'pet page keeps 显示到屏幕 as high as the concept page: '+JSON.stringify({pet:firstScreen,concept:conceptFirstScreen}))
+    // Five pet cards with real thumbnails need a little more height than the one-line concept row.
+    assert.ok(firstScreen.top<=conceptFirstScreen.top+56,'pet page keeps 显示到屏幕 close to the concept page: '+JSON.stringify({pet:firstScreen,concept:conceptFirstScreen}))
     await click(main,'.ambient-pet-option:nth-child(2)')
-    assert.deepEqual(await petChecked(), ['false','true','false'], 'selection moves to the second pet')
+    assert.deepEqual(await petChecked(), ['false','true','false','false','false'], 'selection moves to the second pet')
     await until(async()=>{const s=await petStats();return s.state==='ready'&&s.hash!==firstPet.hash&&s.red>0},'second pet preview')
     assert.match(await main.webContents.executeJavaScript(`document.querySelector('.ambient-pet-option[aria-checked=true]').textContent`), /已选/)
     await button(main, '显示到屏幕')
@@ -399,13 +400,13 @@ app.whenReady().then(async()=>{
       main.setContentSize(width,height); await wait(450)
       const overflow = await main.webContents.executeJavaScript(`document.documentElement.scrollWidth-window.innerWidth`) as number
       if (width>=1024) assert.ok(overflow<=1,'no horizontal page scroll at '+width+': '+overflow)
-      assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.ambient-pet-option').length`),3)
+      assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.ambient-pet-option').length`),5)
       if (width>=1024) await assertPetTextFits(String(width))
       await capture('multimedia-pet-'+width)
     }
     main.setContentSize(1120,780); await wait(350)
     await click(main,'.ambient-pet-option:nth-child(1)')
-    assert.deepEqual(await petChecked(), ['true','false','false'])
+    assert.deepEqual(await petChecked(), ['true','false','false','false','false'])
     await assertPetTextFits('1120 first pet chosen')
     await button(main, '回到工作画面'); assert.equal(ambient.current(), undefined)
     await button(main, '热点与 meme')

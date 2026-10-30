@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { deviceInspectScale, devicePixelRatioLabel, devicePreviewScale, type DeviceStatusV1 } from '@codepulse/shared'
 import { createDevicePlaneRenderer, planesToRgba } from '../device-preview/renderer.mjs'
 import manifest from '../device-preview/manifest.json'
@@ -52,6 +52,33 @@ function useAvailableWidth(scroll: RefObject<HTMLElement>, frame: RefObject<HTML
   return available
 }
 
+/**
+ * Nudge the frame so the canvas starts on a physical pixel. At a fractional phase the 400k-pixel
+ * canvas paints as 400k-1 or 400k+1 pixels wide and 1-pixel strokes turn uneven. Layout units are 1/64 CSS px,
+ * so "on a pixel" means within 0.03 physical pixels.
+ */
+function useWholePixelAlign(canvas: RefObject<HTMLElement>, frame: RefObject<HTMLElement>, scroll: RefObject<HTMLElement>, dpr: number): void {
+  const offset = useRef({ x: 0, y: 0 })
+  const align = () => {
+    const box = frame.current
+    if (!box || !canvas.current) return
+    const rect = canvas.current.getBoundingClientRect()
+    const phase = (value: number) => (value * dpr - Math.round(value * dpr)) / dpr
+    const dx = phase(rect.left), dy = phase(rect.top)
+    if (Math.abs(dx * dpr) < 0.03 && Math.abs(dy * dpr) < 0.03) return
+    offset.current = { x: offset.current.x - dx, y: offset.current.y - dy }
+    box.style.transform = `translate(${offset.current.x}px, ${offset.current.y}px)`
+  }
+  useLayoutEffect(align)
+  useEffect(() => {
+    const element = scroll.current
+    const observer = new ResizeObserver(align)
+    if (element) observer.observe(element)
+    window.addEventListener('resize', align)
+    return () => { observer.disconnect(); window.removeEventListener('resize', align) }
+  }, [scroll, dpr])
+}
+
 export function DeviceScreenPreview({ status, sample = false, live = false }: { status: DeviceStatusV1; sample?: boolean; live?: boolean }): JSX.Element {
   const canvas = useRef<HTMLCanvasElement>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
@@ -62,6 +89,7 @@ export function DeviceScreenPreview({ status, sample = false, live = false }: { 
   const frame = useRef<HTMLDivElement>(null)
   const dpr = useDevicePixelRatio()
   const { width, presenting } = useAvailableWidth(scroll, frame)
+  useWholePixelAlign(canvas, frame, scroll, dpr)
   const scale = zoom === 1 ? devicePreviewScale(dpr, width, presenting) : deviceInspectScale(dpr)
   useEffect(() => {
     let alive = true

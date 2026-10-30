@@ -61,9 +61,13 @@ fixed/cycle content plan. Unsupported content choices remain disabled. Settings
 is global. The consolidated navigation and control options preserve the accepted
 Antigravity revision.
 
-The device preview stays at 400×300 CSS pixels instead of stretching with the
-window. **2 倍检查** opens an independent 800×600 inspection view of the same
-bitmap; closing it or pressing Escape returns focus to its trigger. It never
+The device preview never stretches with the window: each of the 400×300 device
+pixels covers a whole number k of physical screen pixels (nearest to the display
+scale, or the largest that fits, never below 1:1; the toolbar shows 1:k), so at
+150% scaling it is about 533×400 CSS pixels (k=2) or 267×200 (k=1) when space
+is short. **2 倍检查** opens an independent inspection view of the same bitmap
+at no less than 2 physical pixels per device pixel; closing it or pressing
+Escape returns focus to its trigger. It never
 applies device settings. Control has bounded preview/configuration columns and
 a persistent Apply footer. Less-used flags expand on demand; density sample buttons stay visible.
 Typical 1000×720, 1120×780, 1366×900 and 1600×1000 windows fit the primary controls

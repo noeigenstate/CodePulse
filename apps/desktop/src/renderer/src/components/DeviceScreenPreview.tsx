@@ -35,40 +35,94 @@ function useDevicePixelRatio(): number {
 
 const sides = (style: CSSStyleDeclaration, ...names: string[]) => names.reduce((sum, name) => sum + (parseFloat(style.getPropertyValue(name)) || 0), 0)
 
+const STAGE = '.product-preview-stage'
+/** Where the stage's content ends, minus the frame's own height: what the other content costs, in px. */
+const othersHeight = (host: HTMLElement, frame: HTMLElement): number => {
+  const top = host.getBoundingClientRect().top - host.scrollTop
+  return Math.max(0, ...Array.from(host.children, child => child.getBoundingClientRect().bottom)) - top - frame.offsetHeight
+}
+
 /**
  * Room for the canvas: the scroll area's width minus the frame's padding and border and, inside a
  * fixed-height preview stage, the height left before the stage would have to scroll.
+ *
+ * A fresh measurement (width or stage size changed) renders at the preferred scale first; if the stage
+ * then overflows, the height is capped (before paint) and the cost of the other content is remembered.
+ * The cap is only lifted for another look when that cost has shrunk by more than a pixel or the
+ * measurement is renewed; a lift that overflows again re-caps with the new, smaller cost. The cost
+ * can only fall, so the sequence ends, and our own canvas resizing never counts as a change.
+ * Content that grows into an overflow while uncapped just triggers one more render to cap it.
  */
 function useAvailableSize(scroll: RefObject<HTMLElement>, frame: RefObject<HTMLElement>): { width: number; height: number } {
   const [size, setSize] = useState({ width: Infinity, height: Infinity })
   const measured = useRef('')
+  const cappedAt = useRef<number | undefined>(undefined)
   useEffect(() => {
     const element = scroll.current
     if (!element) return
-    const host = element.closest<HTMLElement>('.product-preview-stage')
+    const host = element.closest<HTMLElement>(STAGE)
     const measure = () => {
       const key = `${element.clientWidth}x${host?.clientHeight ?? 0}`
-      if (key === measured.current) return
-      measured.current = key
-      const style = frame.current ? getComputedStyle(frame.current) : undefined
-      const chrome = style ? sides(style, 'padding-left', 'padding-right', 'border-left-width', 'border-right-width') : 0
-      setSize({ width: Math.max(0, element.clientWidth - chrome), height: Infinity })
+      if (key !== measured.current) {
+        measured.current = key
+        cappedAt.current = undefined
+        const style = frame.current ? getComputedStyle(frame.current) : undefined
+        const chrome = style ? sides(style, 'padding-left', 'padding-right', 'border-left-width', 'border-right-width') : 0
+        setSize({ width: Math.max(0, element.clientWidth - chrome), height: Infinity })
+      } else if (host && frame.current && cappedAt.current !== undefined && othersHeight(host, frame.current) < cappedAt.current - 1) {
+        cappedAt.current = undefined
+        setSize(current => ({ ...current, height: Infinity }))
+      } else if (host && cappedAt.current === undefined && host.scrollHeight - host.clientHeight > 1) {
+        setSize(current => ({ ...current })) // content grew: render again so the layout effect can cap
+      }
     }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(element)
-    if (host) observer.observe(host)
-    return () => { observer.disconnect(); measured.current = '' }
+    const mutations = new MutationObserver(measure)
+    if (host) {
+      observer.observe(host)
+      mutations.observe(host, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['class', 'style', 'hidden'] })
+    }
+    return () => { observer.disconnect(); mutations.disconnect(); measured.current = '' }
   }, [scroll, frame])
-  // A fresh measurement renders at the preferred scale first; if the stage then overflows, cap the height.
   useLayoutEffect(() => {
-    const host = scroll.current?.closest<HTMLElement>('.product-preview-stage')
+    const host = scroll.current?.closest<HTMLElement>(STAGE)
     const element = frame.current
     if (!host || !element || size.height !== Infinity) return
     const overflow = host.scrollHeight - host.clientHeight
-    if (overflow > 1) setSize({ ...size, height: Math.max(0, element.offsetHeight - overflow - sides(getComputedStyle(element), 'padding-top', 'padding-bottom', 'border-top-width', 'border-bottom-width')) })
+    if (overflow <= 1) return
+    cappedAt.current = othersHeight(host, element)
+    setSize({ ...size, height: Math.max(0, element.offsetHeight - overflow - sides(getComputedStyle(element), 'padding-top', 'padding-bottom', 'border-top-width', 'border-bottom-width')) })
   })
   return size
+}
+
+/**
+ * Nudge the frame so the canvas starts on a physical pixel. At a fractional phase the 400k-pixel
+ * canvas paints as 400k-1 or 400k+1 pixels wide and 1-pixel strokes turn uneven. Layout units are 1/64 CSS px,
+ * so "on a pixel" means within 0.03 physical pixels.
+ */
+function useWholePixelAlign(canvas: RefObject<HTMLElement>, frame: RefObject<HTMLElement>, scroll: RefObject<HTMLElement>, dpr: number): void {
+  const offset = useRef({ x: 0, y: 0 })
+  const align = () => {
+    const box = frame.current
+    if (!box || !canvas.current) return
+    const rect = canvas.current.getBoundingClientRect()
+    const phase = (value: number) => (value * dpr - Math.round(value * dpr)) / dpr
+    const dx = phase(rect.left), dy = phase(rect.top)
+    if (Math.abs(dx * dpr) < 0.03 && Math.abs(dy * dpr) < 0.03) return
+    offset.current = { x: offset.current.x - dx, y: offset.current.y - dy }
+    box.style.transform = `translate(${offset.current.x}px, ${offset.current.y}px)`
+  }
+  useLayoutEffect(align)
+  useEffect(() => {
+    const element = scroll.current
+    const observer = new ResizeObserver(align)
+    if (element) observer.observe(element)
+    window.addEventListener('resize', align)
+    return () => { observer.disconnect(); window.removeEventListener('resize', align) }
+  }, [scroll, dpr])
 }
 
 export function DeviceScreenPreview({ status, sample = false, live = false, fit = false, active = true }: { status: DeviceStatusV1; active?: boolean; sample?: boolean; live?: boolean; fit?: boolean }): JSX.Element {
@@ -86,6 +140,7 @@ export function DeviceScreenPreview({ status, sample = false, live = false, fit 
   const available = useAvailableSize(scroll, frame)
   const scale = devicePreviewScale(dpr, available.width, false, available.height)
   const inspectScale = deviceInspectScale(dpr)
+  useWholePixelAlign(canvas, frame, scroll, dpr)
   useEffect(() => {
     if (!active) return
     const key = JSON.stringify(status)

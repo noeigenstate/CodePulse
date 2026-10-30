@@ -199,6 +199,22 @@ test('pet cards ask for the pet layout and only a bitmap card passes it on to th
   )
   assert.notEqual(contentKey(card), contentKey({ ...card, layout: undefined }))
 })
+test('device ambient id follows the picture, so a changed layout or bitmap is redrawn', () => {
+  const card = petCards(status(), noon)[0]!
+  const id = (c: AmbientCard) => deviceCard(c).id
+  assert.match(id(card), /^[0-9a-f]{24}$/)
+  assert.equal(id(card), id({ ...card }), 'identical card, stable id')
+  assert.notEqual(id(card), id({ ...card, layout: undefined }), 'layout only')
+  const flipped = card.imageHex!.slice(0, -1) + (card.imageHex!.endsWith('0') ? '1' : '0')
+  assert.notEqual(id(card), id({ ...card, imageHex: flipped }), 'bitmap only')
+  const red = card.red!
+  const redFlipped = red.hex.slice(0, -1) + (red.hex.endsWith('0') ? '1' : '0')
+  assert.notEqual(id(card), id({ ...card, red: { ...red, hex: redFlipped } }), 'red only')
+  assert.notEqual(id(card), id({ ...card, red: undefined }), 'red removed')
+  // Cards without a bitmap keep the plain hash of the card id.
+  const note: AmbientCard = { ...card, imageHex: undefined, red: undefined, layout: undefined }
+  assert.equal(id(note), id({ ...note, layout: 'pet' }))
+})
 
 const petCard = (over: Partial<AmbientCard> = {}): AmbientCard => ({
   ...petCards(status(), noon).find((c) => c.pet!.id === 'tuantuan')!,

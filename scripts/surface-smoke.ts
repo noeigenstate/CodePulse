@@ -43,11 +43,15 @@ async function button(win: BrowserWindow, label: string) {
   await win.webContents.executeJavaScript(code);await wait()
 }
 // A device pixel must cover a whole number (>= minK) of physical pixels, or 1px strokes blur unevenly.
-function assertWholePixels([width,height]: number[], dpr: number, minK: number, message: string) {
+// The canvas must also start on a physical pixel (layout units are 1/64 css px, so allow 0.03), or it paints 400k+-1 wide.
+function assertWholePixels([width,height]: number[], dpr: number, minK: number, message: string, [left,top]: number[] = []) {
   const k = width!*dpr/400
   assert.ok(Math.abs(k-Math.round(k))<0.01 && Math.round(k)>=minK, `${message}: ${width}x${height} css at dpr ${dpr}`)
   assert.ok(Math.abs(height!*dpr-300*Math.round(k))<0.01, `${message}: height ${height} css at dpr ${dpr}`)
+  for (const edge of [left,top]) if (edge !== undefined) assert.ok(Math.abs(edge*dpr-Math.round(edge*dpr))<0.03, `${message}: canvas origin ${left},${top} css at dpr ${dpr}`)
 }
+// k of a measured canvas, for the readability checks.
+const pixelRatio = ([width]: number[], dpr: number) => Math.round(width!*dpr/400)
 app.whenReady().then(async()=>{
   try {
     // This harness never calls bootstrap/startLocalServer or modifies real hooks.
@@ -139,24 +143,25 @@ app.whenReady().then(async()=>{
     await click(main,'[data-view=control]');await click(main,'#endpoint-ink')
     await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.product-control .device-preview')?.getAttribute('data-render-state')==='ready'`),'ink draft preview')
     const previewWidth=await main.webContents.executeJavaScript(`document.querySelector('.product-control .device-preview canvas').getBoundingClientRect().width`)
-    assert.ok(previewWidth>=200,'preview must remain legible at default window size')
+    assert.ok(previewWidth>0,'preview is shown at default window size')
     const layouts: unknown[] = []
     const geometry = () => main!.webContents.executeJavaScript(`(() => {
       const control = document.querySelector('.product-control');
       const stage = document.querySelector('.ink-control-workspace .product-preview-stage');
       const canvas = stage.querySelector('.device-preview-scroll canvas').getBoundingClientRect();
       const apply = document.querySelector('.ink-config .product-config-actions button').getBoundingClientRect();
-      return {viewport: [innerWidth,innerHeight], dpr: devicePixelRatio, canvas: [canvas.width,canvas.height],
+      return {viewport: [innerWidth,innerHeight], dpr: devicePixelRatio, canvas: [canvas.width,canvas.height], origin: [canvas.left,canvas.top],
         canvasBottom: canvas.bottom, applyBottom: apply.bottom, applyTop: apply.top,
         pageOverflow: control.scrollHeight-control.clientHeight,
         previewOverflow: stage.scrollHeight-stage.clientHeight,
         configOverflow: document.querySelector('.ink-config .product-config-scroll').scrollHeight-document.querySelector('.ink-config .product-config-scroll').clientHeight,
         horizontalOverflow: document.documentElement.scrollWidth-innerWidth};
     })()`)
-    for (const [width,height] of [[1120,780],[1366,900],[1600,1000],[1000,720]]) {
+    for (const [width,height] of [[1120,780],[1366,900],[1440,900],[1600,1000],[1000,720]]) {
       main.setContentSize(width!,height!); await wait(250)
       const measured = await geometry(); layouts.push(measured)
-      assertWholePixels(measured.canvas as number[],measured.dpr as number,1,'resizing keeps whole physical pixels per device pixel')
+      assertWholePixels(measured.canvas as number[],measured.dpr as number,1,'resizing keeps whole physical pixels per device pixel',measured.origin as number[])
+      if(width===1440) assert.equal(pixelRatio(measured.canvas as number[],measured.dpr as number),Math.max(1,Math.round(measured.dpr as number)),'1440x900 reaches the preferred 1:k scale')
       assert.ok(measured.pageOverflow <= 1,JSON.stringify(measured))
       assert.ok(measured.previewOverflow <= 1,JSON.stringify(measured))
       if(width! >= 1120) assert.ok(measured.configOverflow <= 1,JSON.stringify(measured))
@@ -164,11 +169,29 @@ app.whenReady().then(async()=>{
       assert.equal(measured.horizontalOverflow,0)
       await capture('ink-'+width+'x'+height)
     }
-    main.setContentSize(1120,780)
+    main.setContentSize(1120,780); await wait(250)
+    {
+      // A capped preview must grow again once the stage has room, and re-cap when the content returns.
+      const scale = async () => { const m = await geometry(); return {k: pixelRatio(m.canvas as number[],m.dpr as number), m} }
+      const before = await scale(), preferred = Math.max(1,Math.round(before.m.dpr as number))
+      const toggle = (display: string) => main!.webContents.executeJavaScript(`document.querySelectorAll('.ink-control-workspace .device-preview-toolbar,.ink-control-workspace .device-preview-footnote').forEach(e=>e.style.display=${JSON.stringify(display)})`)
+      await toggle('none'); await wait(300)
+      const roomy = await scale()
+      assert.ok(roomy.k >= before.k && (before.k >= preferred || roomy.k > before.k),'cap lifts when the stage has room: '+JSON.stringify([before.k,roomy.k]))
+      assert.ok((roomy.m.previewOverflow as number) <= 1,JSON.stringify(roomy.m))
+      await toggle(''); await wait(300)
+      const back = await scale()
+      assert.equal(back.k,before.k,'cap returns with the content')
+      assert.ok((back.m.previewOverflow as number) <= 1,JSON.stringify(back.m))
+    }
     for (const zoom of [1.25,1.5,2,1]) {
       main.webContents.setZoomFactor(zoom); await wait(300)
       const measured = await geometry(); layouts.push(measured)
-      assertWholePixels(measured.canvas as number[],measured.dpr as number,1,`zoom ${zoom} keeps whole physical pixels`)
+      assertWholePixels(measured.canvas as number[],measured.dpr as number,1,`zoom ${zoom} keeps whole physical pixels`,measured.origin as number[])
+      assert.equal(measured.horizontalOverflow,0,JSON.stringify(measured))
+      assert.ok(measured.previewOverflow <= 1,JSON.stringify(measured))
+      // Below 900 CSS px the control page stacks and scrolls as a whole, by design.
+      if ((measured.viewport as number[])[0]! >= 900) assert.ok(measured.pageOverflow <= 1,JSON.stringify(measured))
     }
     await wait(250)
     const beforeInspect = JSON.stringify(config)

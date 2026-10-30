@@ -326,7 +326,11 @@ is chosen from live status and local time when the card is built.
 
 `ambient.layout` is an optional string; the only value is `"pet"`. The desktop sets it on pixel
 pet cards, and only sends it when the card also carries `imageHex`. It is part of the card
-projection, so a change of layout changes the response revision.
+projection, so a change of layout changes the response revision. The firmware redraws a card only
+when `ambient.id` changes, so for bitmap cards the desktop derives the id (still 24 hex characters)
+from the card id together with the layout, `imageHex` and `red`: the same card with another
+layout or picture is a new id, an identical one keeps its id. Cards without a bitmap keep the
+plain hash of the card id.
 
 - A `"pet"` card with a bitmap is laid out as: picture 384×208 at screen pixel (8, 32) (`red`
   keeps picture-area coordinates and follows the same origin), a 1 px divider at y=243, `text`

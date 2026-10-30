@@ -137,7 +137,7 @@ function assertValidRed(red: AmbientRedPlane, imageHex: string) {
   assert.ok(redPixels > 0, 'rectangle holds red ink')
 }
 test('every pet in every mood is a valid 384x208 bitmap with a legal, tight red rectangle', () => {
-  assert.deepEqual([...PET_IDS], ['tuantuan', 'yaya', 'fangfang'])
+  assert.deepEqual([...PET_IDS], ['tuantuan', 'yaya', 'fangfang', 'rongrong', 'lulu'])
   const seen = new Set<string>()
   for (const id of PET_IDS)
     for (const mood of PET_MOODS) {
@@ -313,7 +313,7 @@ function petService(initial: StatusSnapshot, overrides = {}) {
 test('service lists all pets, pushes only the chosen one and freezes the shown card', () => {
   const f = petService(status())
   const pets = () => f.service.snapshot().cards.filter((c) => c.kind === 'pet')
-  assert.equal(pets().length, 3)
+  assert.equal(pets().length, 5)
   f.service.show('pet:yaya:idle:2026-10-29')
   assert.equal(f.service.current(), undefined, 'a pet that is not chosen is never pushed')
   f.service.show()

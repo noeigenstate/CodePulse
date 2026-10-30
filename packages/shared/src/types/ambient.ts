@@ -1,5 +1,5 @@
 /** Pixel pets drawn for the multimedia area. Names and art live in the desktop main process. */
-export const PET_IDS = ['tuantuan', 'yaya', 'fangfang'] as const
+export const PET_IDS = ['tuantuan', 'yaya', 'fangfang', 'rongrong', 'lulu'] as const
 export type PetId = (typeof PET_IDS)[number]
 export const PET_MOODS = ['idle', 'working', 'hungry', 'happy', 'sleepy'] as const
 export type PetMood = (typeof PET_MOODS)[number]
@@ -8,6 +8,8 @@ export const PET_PROFILES: Record<PetId, { name: string; trait: string }> = {
   tuantuan: { name: '团团', trait: '嘴硬心软的小猫' },
   yaya: { name: '芽芽', trait: '叶子会说心情' },
   fangfang: { name: '方方', trait: '屏幕上演情绪' },
+  rongrong: { name: '绒绒', trait: '尾巴会摇的机灵鬼' },
+  lulu: { name: '噜噜', trait: '爱吃爱睡的小胖猪' },
 }
 /** Profile for any value that claims to be a pet id; unknown or missing ids fall back to the first pet. */
 export function petProfile(id: unknown): { name: string; trait: string } {

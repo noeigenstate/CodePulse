@@ -316,7 +316,9 @@ interface FaceOpts {
   paper: Color
   /** Robot eyes are white with a black pupil; the others are black with white highlights. */
   robot?: boolean
-  mouth: 'cat' | 'smile'
+  mouth: 'cat' | 'smile' | 'smirk' | 'none'
+  /** Mouth row relative to the eyes. */
+  mouthDy?: number
   /** Draw the focus brows in the working mood (off when glasses are in the way). */
   brows?: boolean
   /** Looking direction in px (positive = right). */
@@ -366,7 +368,8 @@ function face(c: Canvas, mood: PetMood, o: FaceOpts) {
     else c.outlined(t, 2.5)
   }
   const mx = cx,
-    my = y + 23
+    my = y + (o.mouthDy ?? 23)
+  if (o.mouth === 'none' && (mood === 'idle' || mood === 'working')) return
   if (mood === 'happy') {
     c.fill(intersect(ellipse(mx, my - 4, 14, 15), below(my - 4)), ink)
     c.fill(intersect(ellipse(mx, my + 8, 7, 5), below(my + 4)), RED)
@@ -376,6 +379,9 @@ function face(c: Canvas, mood: PetMood, o: FaceOpts) {
   else if (o.mouth === 'cat') {
     stroke(quad([mx, my - 7], [mx - 2, my + 5], [mx - 13, my + 1], 12), 2.5)
     stroke(quad([mx, my - 7], [mx + 2, my + 5], [mx + 13, my + 1], 12), 2.5)
+  } else if (o.mouth === 'smirk') {
+    stroke(quad([mx, my - 6], [mx - 3, my + 4], [mx - 12, my + 1], 10), 2.5)
+    stroke(quad([mx, my - 6], [mx + 4, my + 8], [mx + 15, my - 3], 10), 2.5)
   } else stroke(quad([mx - 8, my - 1], [mx, my + 9], [mx + 8, my - 1], 12))
 }
 
@@ -419,11 +425,14 @@ function arms(
 }
 
 /** Feet: two little nubs. */
-const feet = (c: Canvas, base: number, dx: number) => {
+const feet = (c: Canvas, base: number, dx: number, dark = false) => {
   for (const sx of [-1, 1]) {
     const x = PET_X + sx * dx
-    c.outlined(ellipse(x, base - 9, 21, 9))
-    for (const t of [-5, 6]) c.line(pl(x + t, base - 9, x + t, base - 3), 2)
+    if (dark) c.fill(ellipse(x, base - 9, 21, 9), INK)
+    else {
+      c.outlined(ellipse(x, base - 9, 21, 9))
+      for (const t of [-5, 6]) c.line(pl(x + t, base - 9, x + t, base - 3), 2)
+    }
   }
 }
 
@@ -431,64 +440,218 @@ const TILT = {
   tuantuan: { idle: 6, working: 5, hungry: -6, happy: -4, sleepy: -9 },
   yaya: { idle: -5, working: 6, hungry: 5, happy: 4, sleepy: 8 },
   fangfang: { idle: 5, working: 4, hungry: -7, happy: -5, sleepy: -9 },
-} satisfies Record<string, Record<PetMood, number>>
+  rongrong: { idle: -6, working: 5, hungry: -5, happy: 5, sleepy: -8 },
+  lulu: { idle: 4, working: 5, hungry: -5, happy: -4, sleepy: 7 },
+} satisfies Record<PetId, Record<PetMood, number>>
 
 const GAZE: Record<PetMood, number> = { idle: 4, working: 4, hungry: 3, happy: 0, sleepy: 0 }
 
-/** 团团: a round mochi of a cat with a cocked head, one floppy ear and a curly tail. */
-function drawCat(c: Canvas, mood: PetMood, base: number, ox: number) {
-  const cx = PET_X
-  const sleepy = mood === 'sleepy'
-  const rx = sleepy ? 84 : 80,
-    ry = sleepy ? 58 : 74
-  const cy = base - ry + 8,
-    top = cy - ry
-  const tilt = TILT.tuantuan[mood]
-  const P = (dx: number, dy: number): Pt => [cx + dx, base + dy]
-  const W = (dx: number, dy: number) => rot(cx, base, tilt, P(dx, dy))
-  const tube = (pts: Pt[], w: number, tip = 0) => {
-    const sp = spline(pts)
-    c.line(sp, w).line(sp, w - 6, PAPER)
-    if (tip) c.line(sp.slice(-tip), w)
-  }
-  // Curly tail behind the body: up when awake, limp when hungry.
-  const tails: Record<PetMood, Pt[]> = {
-    idle: [P(66, -40), P(98, -56), P(116, -88), P(108, -116), P(92, -118)],
-    working: [P(66, -40), P(98, -48), P(116, -72), P(108, -96), P(94, -94)],
-    hungry: [P(70, -40), P(86, -30), P(88, -14), P(82, -6)],
-    happy: [P(66, -44), P(96, -64), P(108, -100), P(98, -128), P(108, -142)],
-    sleepy: [P(76, -12), P(100, -8), P(118, -14), P(116, -28), P(104, -30)],
-  }
-  tube(tails[mood], 16, mood === 'hungry' ? 0 : 18)
-  const body = subtract(ellipse(cx, cy, rx, ry), below(base))
-  // Ears: round-tipped triangles; they flop outwards when the cat is sad or sleepy.
-  const flop: Record<PetMood, [number, number]> = {
+/** A fluffy tapered tail: discs along a spline with a scalloped radius (t0..t1 picks a stretch). */
+function fluff(pts: readonly Pt[], r: number, t0 = 0, t1 = 1): Shape {
+  const sp = spline(pts, 8)
+  const discs = sp
+    .map((p, i) => ({ p, t: i / (sp.length - 1) }))
+    .filter(({ t }) => t >= t0 && t <= t1)
+    .map(({ p, t }) =>
+      circle(p[0], p[1], r * (0.4 + 0.6 * Math.sin(Math.PI * t ** 0.75)) + 2.2 * Math.sin(t * 44)),
+    )
+  return union(...discs)
+}
+
+/** A small spiral tail curl centred on (x, y). */
+const curl = (x: number, y: number, r: number): Pt[] =>
+  Array.from({ length: 40 }, (_, i) => {
+    const a = -2.2 + (i / 39) * 2.3 * Math.PI,
+      d = r * (1 - 0.62 * (i / 39))
+    return [x + d * Math.cos(a), y + d * Math.sin(a)] as Pt
+  })
+
+/** What makes the furry pets differ: ears, tail, head decoration, mouth. */
+interface Critter {
+  id: PetId
+  rx: number
+  ry: number
+  /** Ear triangle for one side before it flops; `top` is the head top row. */
+  ear(sx: number, top: number): Pt[]
+  earGrow: number
+  /** Ear flop (degrees outwards, negative = raised) for the left and the right ear. */
+  flop: Record<PetMood, [number, number]>
+  /** Extra parts of the head silhouette (cheek tufts). */
+  extra?(cy: number, rx: number): Shape[]
+  /** Tail behind the body. */
+  tail(c: Canvas, mood: PetMood, P: (dx: number, dy: number) => Pt): void
+  /** Tail laid over the front of a sleeping pet. */
+  blanket?(c: Canvas, P: (dx: number, dy: number) => Pt): void
+  /** Whiskers, nose, snout: drawn on the head after the face. */
+  decor(c: Canvas, mood: PetMood, ey: number, rx: number): void
+  mouth: FaceOpts['mouth']
+  mouthDy?: number
+  darkFeet?: boolean
+  cheekDx?: number
+}
+
+const CX = PET_X
+const tube = (c: Canvas, pts: Pt[], w: number, tip = 0) => {
+  const sp = spline(pts)
+  c.line(sp, w).line(sp, w - 6, PAPER)
+  if (tip) c.line(sp.slice(-tip), w)
+}
+
+const CAT: Critter = {
+  id: 'tuantuan',
+  rx: 80,
+  ry: 74,
+  ear: (sx, top) => pl(CX + sx * 70, top + 52, CX + sx * 52, top - 4, CX + sx * 18, top + 18),
+  earGrow: 5,
+  flop: {
     idle: [20, 0],
     working: [0, 0],
     hungry: [26, 22],
     happy: [0, -6],
     sleepy: [30, 22],
-  }
+  },
+  tail(c, mood, P) {
+    // Curly tail: up when awake, limp when hungry, resting on the floor when asleep.
+    const tails: Record<PetMood, Pt[]> = {
+      idle: [P(66, -40), P(98, -56), P(116, -88), P(108, -116), P(92, -118)],
+      working: [P(66, -40), P(98, -48), P(116, -72), P(108, -96), P(94, -94)],
+      hungry: [P(70, -40), P(86, -30), P(88, -14), P(82, -6)],
+      happy: [P(66, -44), P(96, -64), P(108, -100), P(98, -128), P(108, -142)],
+      sleepy: [P(76, -12), P(100, -8), P(118, -14), P(116, -28), P(104, -30)],
+    }
+    tube(c, tails[mood], 16, mood === 'hungry' ? 0 : 18)
+  },
+  decor(c, _mood, ey, rx) {
+    for (const sx of [-1, 1]) {
+      c.line(pl(CX + sx * (rx - 6), ey + 6, CX + sx * (rx + 14), ey + 1), 2)
+      c.line(pl(CX + sx * (rx - 6), ey + 16, CX + sx * (rx + 14), ey + 20), 2)
+    }
+    c.fill(ellipse(CX, ey + 14, 5, 3.5), INK)
+  },
+  mouth: 'cat',
+}
+
+const FOX: Critter = {
+  id: 'rongrong',
+  rx: 78,
+  ry: 70,
+  ear: (sx, top) => pl(CX + sx * 66, top + 58, CX + sx * 50, top - 24, CX + sx * 12, top + 24),
+  earGrow: 4,
+  flop: {
+    idle: [-4, 6],
+    working: [-6, -6],
+    hungry: [28, 28],
+    happy: [-8, -8],
+    sleepy: [20, 22],
+  },
+  // Spiky cheek fur on both sides of the head.
+  extra: (cy, rx) =>
+    [-1, 1].flatMap((sx) =>
+      [-4, 18].map((dy) =>
+        grow(
+          poly(
+            pl(
+              CX + sx * (rx - 10),
+              cy + dy,
+              CX + sx * (rx + 14),
+              cy + dy + 15,
+              CX + sx * (rx - 8),
+              cy + dy + 24,
+            ),
+          ),
+          2.5,
+        ),
+      ),
+    ),
+  tail(c, mood, P) {
+    const tails: Record<PetMood, Pt[]> = {
+      idle: [P(50, -44), P(80, -66), P(100, -98), P(108, -134)],
+      working: [P(50, -44), P(78, -58), P(98, -82), P(106, -112)],
+      hungry: [P(60, -40), P(90, -26), P(108, -14), P(104, -6)],
+      happy: [P(48, -54), P(76, -76), P(96, -108), P(102, -142)],
+      sleepy: [],
+    }
+    if (mood === 'sleepy') return
+    const pts = tails[mood]
+    const r = mood === 'hungry' ? 14 : 27
+    c.outlined(fluff(pts, r))
+    if (mood !== 'hungry') c.fill(fluff(pts, r, 0.8), INK)
+    c.line(spline(pts, 8).slice(9, 24), 2) // a fur line down the middle
+  },
+  // A big fluffy tail laid across the sleeper like a blanket.
+  blanket(c, P) {
+    const pts: Pt[] = [P(100, -22), P(52, -14), P(0, -17), P(-44, -24)]
+    c.outlined(fluff(pts, 16))
+  },
+  decor(c, mood, ey) {
+    c.fill(ellipse(CX, ey + 13, 5.5, 4), INK)
+    // A sly raised brow.
+    if (mood === 'idle') c.line(pl(CX + 28, ey - 21, CX + 48, ey - 27), 3)
+  },
+  mouth: 'smile',
+  darkFeet: true,
+}
+
+const PIG: Critter = {
+  id: 'lulu',
+  rx: 82,
+  ry: 72,
+  ear: (sx, top) => pl(CX + sx * 38, top + 26, CX + sx * 60, top + 8, CX + sx * 76, top + 40),
+  earGrow: 12,
+  flop: {
+    idle: [10, -22],
+    working: [0, 0],
+    hungry: [26, 26],
+    happy: [-22, -22],
+    sleepy: [22, 22],
+  },
+  tail(c, mood, P) {
+    const y = { idle: -74, working: -70, hungry: -64, happy: -98, sleepy: -30 }[mood]
+    c.line(curl(CX + 90, P(0, y)[1], 15), 5)
+  },
+  decor(c, mood, ey) {
+    // Round snout with two nostrils.
+    c.outlined(ellipse(CX, ey + 17, 23, 16), 3)
+    for (const sx of [-1, 1]) c.fill(ellipse(CX + sx * 8, ey + 17, 3.6, 5.5), INK)
+    if (mood === 'sleepy') snot(c, CX + 31, ey + 14)
+  },
+  mouth: 'none',
+  mouthDy: 41,
+  cheekDx: 60,
+}
+
+/** The furry, tilting, big-eyed pets: a round body with ears, a tail, arms and feet. */
+function drawCritter(c: Canvas, mood: PetMood, base: number, ox: number, k: Critter) {
+  const cx = CX
+  const sleepy = mood === 'sleepy'
+  const rx = sleepy ? k.rx + 4 : k.rx,
+    ry = sleepy ? k.ry - 16 : k.ry
+  const cy = base - ry + 8,
+    top = cy - ry
+  const tilt = TILT[k.id][mood]
+  const P = (dx: number, dy: number): Pt => [cx + dx, base + dy]
+  const W = (dx: number, dy: number) => rot(cx, base, tilt, P(dx, dy))
+  k.tail(c, mood, P)
+  const body = subtract(ellipse(cx, cy, rx, ry), below(base))
   const ears = [-1, 1].map((sx) => {
-    const lean = flop[mood][sx < 0 ? 0 : 1]
+    const lean = k.flop[mood][sx < 0 ? 0 : 1]
     const piv: Pt = [cx + sx * 56, top + 44]
-    return pl(cx + sx * 70, top + 52, cx + sx * 52, top - 4, cx + sx * 18, top + 18).map((p) =>
-      rot(piv[0], piv[1], sx * lean, p),
-    )
+    return k.ear(sx, top).map((p) => rot(piv[0], piv[1], sx * lean, p))
   })
   const ey = cy + 4
   c.xform(cx, base, tilt, 0, 0, () => {
-    c.silhouette([body, ...ears.map((e) => grow(poly(e), 5))])
+    c.silhouette([
+      body,
+      ...ears.map((e) => grow(poly(e), k.earGrow)),
+      ...(k.extra?.(cy, rx) ?? []).map((t) => subtract(t, below(base - 12))),
+    ])
     for (const e of ears) {
+      // Black inner ear, kept clear of the head outline.
       const q: Pt = [(e[0]![0] + e[1]![0] + e[2]![0]) / 3, (e[0]![1] + e[1]![1] + e[2]![1]) / 3]
       const inner = e.map(
         (p) => [q[0] + (p[0] - q[0]) * 0.55, q[1] + (p[1] - q[1]) * 0.55 - 4] as Pt,
       )
       c.fill(subtract(grow(poly(inner), 1), grow(body, 5)), INK)
-    }
-    for (const sx of [-1, 1]) {
-      c.line(pl(cx + sx * (rx - 6), ey + 6, cx + sx * (rx + 14), ey + 1), 2)
-      c.line(pl(cx + sx * (rx - 6), ey + 16, cx + sx * (rx + 14), ey + 20), 2)
     }
     face(c, mood, {
       cx,
@@ -496,20 +659,22 @@ function drawCat(c: Canvas, mood: PetMood, base: number, ox: number) {
       dx: 38,
       ink: INK,
       paper: PAPER,
-      mouth: 'cat',
+      mouth: k.mouth,
+      mouthDy: k.mouthDy,
       gaze: GAZE[mood],
     })
-    c.fill(ellipse(cx, ey + 14, 5, 3.5), INK)
-    cheeks(c, cx, ey + 21, 60)
-    if (sleepy) snot(c, cx + 25, ey + 17)
+    k.decor(c, mood, ey, rx)
+    cheeks(c, cx, ey + 21, k.cheekDx ?? 60)
+    if (sleepy && k.id === 'tuantuan') snot(c, cx + 25, ey + 17)
   })
   if (sleepy) {
-    // Paws tucked under the chin.
-    for (const sx of [-1, 1]) c.outlined(ellipse(cx + sx * 30, base - 9, 22, 9))
+    // Paws tucked under the chin, or the tail laid over them.
+    if (k.blanket) k.blanket(c, P)
+    else for (const sx of [-1, 1]) c.outlined(ellipse(cx + sx * 30, base - 9, 22, 9))
     return
   }
   arms(c, mood, (sx, high) => W(sx * (rx - 4), high ? -66 : -26), ox, 15)
-  feet(c, base, 44)
+  feet(c, base, 44, k.darkFeet)
 }
 
 /** 芽芽: a round dumpling whose two leaves talk. */
@@ -634,12 +799,20 @@ function drawRobot(c: Canvas, mood: PetMood, base: number, ox: number) {
 }
 
 const PETS: Record<PetId, (c: Canvas, mood: PetMood, base: number, ox: number) => void> = {
-  tuantuan: drawCat,
+  tuantuan: (c, mood, base, ox) => drawCritter(c, mood, base, ox, CAT),
+  rongrong: (c, mood, base, ox) => drawCritter(c, mood, base, ox, FOX),
+  lulu: (c, mood, base, ox) => drawCritter(c, mood, base, ox, PIG),
   yaya: drawSprout,
   fangfang: drawRobot,
 }
 /** The robot reaches less far, so its props sit a little closer. */
-const PROP_SHIFT: Record<PetId, number> = { tuantuan: 0, yaya: 0, fangfang: -24 }
+const PROP_SHIFT: Record<PetId, number> = {
+  tuantuan: 0,
+  yaya: 0,
+  fangfang: -24,
+  rongrong: 0,
+  lulu: 0,
+}
 
 // ------------------------------------------------------------------- props
 const zee = (c: Canvas, x: number, y: number, s: number) =>
@@ -651,6 +824,8 @@ function growl(c: Canvas, x: number, y: number) {
 }
 
 function drawProps(c: Canvas, mood: PetMood, ox: number) {
+  const hd = ox < 0 ? 0 : 8 // the robot's lamp is high up: keep its red compact
+  const hx = ox < 0 ? -14 : 0
   const px = PET_X - ox // the pet's own column, whatever the props are shifted by
   if (mood === 'idle') {
     // A toy ball the pet is about to bat, and rolling marks.
@@ -686,7 +861,7 @@ function drawProps(c: Canvas, mood: PetMood, ox: number) {
     zee(c, 272, 58, 18)
     zee(c, 300, 28, 24)
   } else if (mood === 'happy') {
-    c.fill(heart(250, 92, 34), RED).fill(heart(280, 118, 18), RED)
+    c.fill(heart(262 + hx, 92 + hd, 34), RED).fill(heart(292 + hx, 118 + hd, 18), RED)
     for (const [x, y, r] of [
       [322, 56, 14],
       [338, 130, 16],
@@ -738,6 +913,21 @@ export interface PetArt {
   red?: AmbientRedPlane
 }
 
+/** Wipes black pixels with no black neighbour at all; they would not survive on e-paper. */
+function despeckle(c: Canvas): Canvas {
+  const at = (x: number, y: number) =>
+    x < 0 || y < 0 || x >= WIDTH || y >= HEIGHT ? 0 : c.px[y * WIDTH + x]
+  for (let y = 0; y < HEIGHT; y++)
+    for (let x = 0; x < WIDTH; x++) {
+      if (at(x, y) !== INK) continue
+      let n = 0
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && at(x + dx, y + dy) === INK) n++
+      if (n === 0) c.px[y * WIDTH + x] = PAPER
+    }
+  return c
+}
+
 const cache = new Map<string, PetArt>()
 
 /** Render one pet in one mood. Results are cached because the art never changes at run time. */
@@ -751,7 +941,7 @@ export function renderPetArt(id: PetId, mood: PetMood): PetArt {
   canvas.xform(0, 0, 0, ox, 0, () => drawProps(canvas, mood, ox))
   // A happy pet is in mid-jump, feet off the ground.
   PETS[id](canvas, mood, mood === 'happy' ? GROUND - 18 : GROUND, ox)
-  const art = pack(canvas)
+  const art = pack(despeckle(canvas))
   cache.set(key, art)
   return art
 }

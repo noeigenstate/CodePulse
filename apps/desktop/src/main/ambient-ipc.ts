@@ -35,7 +35,7 @@ export function registerAmbientIpc(
   })
   ipc.handle('codepulse:ambient-dismiss', () => runtime.service.dismiss())
   ipc.handle('codepulse:ambient-preview', (_event, id: string) => {
-    const card = runtime.service.snapshot().cards.find((c) => c.id === id)
+    const card = runtime.service.resolveCard(id)
     if (!card) throw new Error('Content expired')
     const base = deviceSnapshot()
     // An explicit local layout preview never acknowledges or rewrites live work.

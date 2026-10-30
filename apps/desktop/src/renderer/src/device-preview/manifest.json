@@ -1,5 +1,5 @@
 {
-  "firmwareVersion": "0.0.27-todos",
+  "firmwareVersion": "0.0.28-desk",
   "width": 400,
   "height": 300,
   "sourceHashFormat": "sha256-text-lf",
@@ -15,9 +15,9 @@
     "main/codepulse_audio.h": "91b4bc334b00cbd2d91257509ef69113ad1d6c210c6ae5509fa16f536c5acdad",
     "main/codepulse_client.h": "1d8684cd59307d248a471c5a388162d86440edba9dbd0778a05daa8236dd05de",
     "main/codepulse_discovery.h": "d813fd2ec78270d10d535107790259da260959913027477523b60a221fe09846",
-    "main/codepulse_protocol.c": "4e329d9dc55df94d2069113896d56999bbf93aca92764bbaf2544264385d9394",
+    "main/codepulse_protocol.c": "6c8a51b662b482c2d0acddac82994c0ef59695e36ca5add2892b8c53bb017c3a",
     "main/codepulse_protocol.h": "64a42f1c5d8bd306925e6f420430952024202a69846f78c92da32457c988b7f4",
-    "main/codepulse_ui.h": "a5ac2ace1cb6b20fac6289720b7c2034263a7068bee7a7f169ac8e212467e01d",
+    "main/codepulse_ui.h": "bd60f4de24a9f5f8c3df112970df87e44f0052a0a5d5d8fd0d5f5f159523beed",
     "main/device_config.h": "ddfaebb04eb86cab47184535a9b54ffb1813c4646cc6c250545e954b7aa7647a",
     "main/device_identity.h": "00b0b458894a48080326b4f9d8b529f2fd35de0e883e34b9e491f5193d062251",
     "main/display_font_data.h": "b6e8da7d10b28430e107988fb654a5325a511bc7c74ef6a0968da392dd242216",
@@ -28,8 +28,8 @@
     "main/epd_canvas.h": "c8cf7b36d7545189a7211ad5ef6896cda5f05e57cf52cc2202538b02da698efa",
     "main/epd_quiet.h": "afb6afad3ee3d39846afdc59fc649ccf79dd2b9ab7ec4970b36651b04ef27228",
     "main/epd_ssd1683.h": "b612f719bf9e5a1e495d026c10c9e963b0965f28b6654526f161ae8b651f3f8f",
-    "main/quiet_dashboard.c": "3ebf69e3cb8ea43f55654780d155a9ebadadf1ac16f214222c832648bbcf5d81",
-    "main/quiet_dashboard.h": "b95b9f6762f01ad47bcae2d6932ed87879624b2189e11146918f24a3f7ac3a08",
+    "main/quiet_dashboard.c": "03d7be81aa0aa4aa8eadd9c8a4eef7fff0124e03759a0ce272574f4cae7d80df",
+    "main/quiet_dashboard.h": "f8c2e279b91177edc9e5bdf3db30e7125f29fdacf8984c479fd0279fe205c448",
     "main/quiet_lut.h": "5d64b674b61d3bddfa37a9db1e71be793ef10a9251056c6fa74148ef1b57435f",
     "main/quiet_profile.h": "70eca7dd70c80b4406f817f6be6f4040092ebe4f8183161a6714f96cbae9fa48",
     "main/usb_provisioning.h": "96a5be267b10f2e88253191c98141a4a91dfdda78937f87255b187359a2d8646",
@@ -39,13 +39,13 @@
     "managed_components/espressif__cjson/cJSON/cJSON_Utils.h": "1050a7cce8ffe352c509e0c1faad505b9b8a09cac3a1c45c544447868e05f3b5",
     "preview/include/driver/gpio.h": "b86d51679b20d8ac751d20620a7c2e0f1c5b1b5be6079ac61d54492a8140cc20",
     "preview/include/esp_err.h": "5fbf457052380bcb74d27614af81f72963aa8514f5fbcb37a7540474f29005ec",
-    "preview/renderer.c": "8fa34f0fa2457ddb918da614a7b1b84180b0c15dcd41d43e0dd7b283ab4d11df",
-    "scripts/build-preview.py": "f3bae65edfb254f036079784c4ba5c0eee342918b891632f17466b961424e6d9",
+    "preview/renderer.c": "bddba8944ff1cecc63670ff67dd93f09d4f9d274313b1b5611468e9d250d7e0c",
+    "scripts/build-preview.py": "4110f869148cdbff26854592da64a9551acf2d56ec92461e70246461ba98c759",
     "tests/vendor/miniz/miniz.h": "e3b8d7f2443a67afea58e0aa733a949bc722f9d926b97feb19e4dd3101a9ea2f",
     "tests/vendor/miniz/miniz_common.h": "8b60e76e726dfcf41a338c3a4c54c70038041a21e6314aa54fd3b7f729ea3412",
     "tests/vendor/miniz/miniz_export.h": "195259dc89fb3f83a96426a90ee03dc45acef113150cd3475ea9cfbf1f7784f3",
     "tests/vendor/miniz/miniz_tinfl.c": "9b7edc1fab708166e10f5e90a618a91c95a91496c4692e38160fdae810c1149a",
     "tests/vendor/miniz/miniz_tinfl.h": "040aad2d9ca23c487652c150277d950be12e72c5453ae1f7c6713ed2efd16b4e"
   },
-  "wasmSha256": "45c92871d302ee2cec952a20eab83f48199470992bb73a7c8726b293684802d1"
+  "wasmSha256": "39b766afd283fc9ae07219041ce913a1d7ec8017bcd8ebaa4097d697d2a9922c"
 }

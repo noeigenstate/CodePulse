@@ -263,3 +263,78 @@
   flex-shrink: 0;
   white-space: nowrap;
 }
+
+.ambient-pet-picker {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 6px;
+}
+/* Thumbnail on the left; name (and the chosen badge) above the full character note. */
+.ambient-pet-option {
+  display: grid;
+  grid-template-columns: 29px minmax(0, 1fr) auto;
+  column-gap: 8px;
+  align-items: center;
+  padding: 0 6px;
+  text-align: left;
+  border: 1px solid #8886;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.ambient-pet-option canvas {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  width: 29px;
+  height: auto;
+  aspect-ratio: 180 / 152;
+  background: #fff;
+  border-radius: 3px;
+  border: 1px solid #8884;
+}
+.ambient-pet-option strong {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 13px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.ambient-pet-option span {
+  grid-column: 2 / span 2;
+  grid-row: 2;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.2;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+.ambient-pet-option[aria-checked='true'] {
+  border-color: var(--ink, #25282c);
+  outline: 2px solid var(--ink, #25282c);
+  outline-offset: -2px;
+}
+.ambient-pet-option em {
+  grid-column: 3;
+  grid-row: 1;
+  font-style: normal;
+  font-size: 10px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--ink, #25282c);
+  color: var(--surface-solid, #fff);
+}
+.ambient-pet-option:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+@media (max-width: 720px) {
+  .ambient-pet-picker {
+    grid-template-columns: 1fr;
+  }
+}
+/* Keeps the display button as high as on the other categories despite the two-line options. */
+.ambient-library-tabs + .ambient-pet-picker {
+  margin: -4px 0 4px;
+}

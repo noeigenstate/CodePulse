@@ -317,6 +317,51 @@ the content library, and participates in the response revision. Non-booleans are
 rejected by new firmware. Older firmware ignores it and still suppresses content
 while review notices exist; update firmware to enable the new behavior.
 
+### Red ink for ambient images (firmware 0.0.27+)
+
+`ambient.red` is an optional object that adds red to an ambient bitmap. The first
+user is the pixel pet card (`pet:<pet>:<mood>:<YYYY-MM-DD>`); any bitmap card may use it.
+
+```json
+"red": { "x": 128, "y": 40, "w": 128, "h": 128, "hex": "…" }
+```
+
+- Coordinates are in the multimedia picture area (384×208, origin top left); on the
+  device that is screen pixel (8+x, 60+y), the same as `imageHex`.
+- `x` and `w` are multiples of 8, `w ≥ 8`, `h ≥ 1`, `x + w ≤ 384`, `y + h ≤ 208`.
+- `w * h / 8 ≤ 3072` bytes (a 128×128 rectangle is 2048 bytes).
+- `hex` has exactly `w * h / 4` characters, row-major, MSB first, upper or lower
+  case. A set bit is red pigment (as in `imageHex`, 1 means ink).
+- Only a card that also carries `imageHex` may carry `red`.
+- Where black and red are both 1 the pixel is black. The desktop never produces
+  overlap; firmware still gives black priority.
+- An invalid `red` (out of bounds, wrong length, no `imageHex`, wrong type) makes the
+  firmware drop only `red` and show the card in black and white. The status must not
+  fail to parse because of it, so a new optional field can never take a device offline.
+  This is deliberately unlike `imageHex`, which still fails strictly.
+- Older firmware ignores the unknown `red` field and shows the black part only.
+
+Firmware behaviour. The ambient renderer draws the black image first, then paints red
+where the red bit is 1 and the black bit is 0. With `display.inverted` only the
+black/white pixels invert; red stays red and never produces a black-and-red-both-clear
+encoding. A frame that has red, or follows a frame that had red, and whose picture
+changed is shown with a full three-colour refresh (`epd_ssd1683_refresh`, real red
+plane, about 16 s with visible flashing); log tag `red_full`, distinct from the boot
+`clean_baseline`. Other changes keep the low-flicker PAIR partial refresh, which needs
+the red plane to be all 0xFF. Cooldown: when less than 120 s have passed since the last
+runtime full refresh, *entering* a red frame (previous frame had no red) draws red pixels
+as black through the partial refresh; *leaving or replacing* a red frame always does a full
+refresh regardless of the cooldown, because partial refresh cannot clear red. A refresh
+failure follows the existing policy (mark faulted, power down safely). PAIR waveforms,
+LUTs, boot clear, keys and power flow are unchanged.
+
+Desktop side. `withAmbient` keeps the whole status within the MCU's 32,000 byte limit by
+dropping `red` first (black-only still shows the picture) and only then the bitmap. A pet
+card keeps a fixed id while shown, so a showing costs one full refresh in and one out; pets
+follow the existing automatic-push pacing (interval, daily cap, quiet hours, idle only) and
+manual display, and add no timed refreshes. The mood (sleepy, hungry, working, happy, idle)
+is chosen from live status and local time when the card is built.
+
 ### 0.0.26：设备展示减频与局部窗口候选
 
 仍读取同一 v1 快照，不改变桌面/HUD 的任务、已读、保留或顺序语义。

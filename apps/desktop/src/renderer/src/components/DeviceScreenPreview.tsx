@@ -1,15 +1,15 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { DeviceStatusV1 } from '@codepulse/shared'
-import { createDeviceRenderer, frameToRgba } from '../device-preview/renderer.mjs'
+import { createDevicePlaneRenderer, planesToRgba } from '../device-preview/renderer.mjs'
 import manifest from '../device-preview/manifest.json'
 
-let renderer: ReturnType<typeof createDeviceRenderer> | undefined
-function loadRenderer(): ReturnType<typeof createDeviceRenderer> {
+let renderer: ReturnType<typeof createDevicePlaneRenderer> | undefined
+function loadRenderer(): ReturnType<typeof createDevicePlaneRenderer> {
   if (!renderer) {
     // Embedded bytes also work in packaged Electron's file:// renderer. The
     // large payload is a lazy chunk and needs no network or file fetch API.
     renderer = import('../device-preview/renderer.b64?raw').then(({ default: encoded }) => {
-      return createDeviceRenderer(Uint8Array.from(atob(encoded), byte => byte.charCodeAt(0)))
+      return createDevicePlaneRenderer(Uint8Array.from(atob(encoded), byte => byte.charCodeAt(0)))
     }).catch(error => { renderer = undefined; throw error })
   }
   return renderer
@@ -33,7 +33,8 @@ export function DeviceScreenPreview({ status, sample = false, live = false, fit 
     // Give the selected card a paint before compiling/rasterizing a cold preview.
     const timer = setTimeout(() => { void loadRenderer().then(render => {
       if (!alive) return
-      const pixels = frameToRgba(render(status))
+      const { black, red } = render(status)
+      const pixels = planesToRgba(black, red)
       for (const target of [canvas.current, enlargedCanvas.current]) {
         const context = target?.getContext('2d')
         if (!context) throw new Error('Canvas unavailable')

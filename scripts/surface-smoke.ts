@@ -297,6 +297,12 @@ app.whenReady().then(async()=>{
     await capture('updates')
     await button(main, '概念卡'); await button(main, '预览画面')
     await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .device-preview')?.getAttribute('data-render-state')==='ready'`),'concept canvas')
+    // Reference for the pet page: where the display button sits for a normal category at scroll top.
+    const conceptFirstScreen = await main.webContents.executeJavaScript(`(() => {
+      for(let e=document.querySelector('.ambient-panel');e;e=e.parentElement)e.scrollTop=0;
+      const r=Array.from(document.querySelectorAll('button')).find(b=>b.getClientRects().length&&b.textContent.trim()==='显示到屏幕').getBoundingClientRect();
+      return {top:r.top,bottom:r.bottom,height:window.innerHeight}
+    })()`) as {top:number;bottom:number;height:number}
     await button(main, '显示到屏幕')
     assert.equal(ambient.current()?.kind, 'concept')
     assert.equal(ambient.current()?.manual, true)
@@ -322,6 +328,62 @@ app.whenReady().then(async()=>{
     await until(()=>ambient.current()?.kind==='image','dragged image becomes current target')
     assert.equal(ambient.current()?.imageHex?.length,19968)
     await capture('multimedia-image')
+    await button(main, '回到工作画面'); assert.equal(ambient.current(), undefined)
+    // Pixel pets: the page lists three pets, shows red ink in the preview, and displays one on the screen.
+    const petStats = () => main!.webContents.executeJavaScript(`(() => {
+      const canvas=document.querySelector('.ambient-panel .device-preview canvas.device-screen');
+      const d=canvas.getContext('2d').getImageData(0,0,400,300).data;let red=0,hash=0;
+      for(let i=0;i<d.length;i+=4){if(d[i]===190&&d[i+1]===30&&d[i+2]===45)red++;hash=(hash*31+d[i]+d[i+1]*3+d[i+2]*7)>>>0}
+      return {red,hash,state:document.querySelector('.ambient-panel .device-preview').getAttribute('data-render-state')}
+    })()`) as Promise<{red:number;hash:number;state:string}>
+    // Every pet option must show its name and full one-line character note without truncation.
+    const assertPetTextFits = async (label: string) => {
+      const cells = await main!.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ambient-pet-option')).map(o=>Array.from(o.querySelectorAll('strong,span')).map(e=>({text:e.textContent,scrollWidth:e.scrollWidth,clientWidth:e.clientWidth})))`) as {text:string;scrollWidth:number;clientWidth:number}[][]
+      assert.equal(cells.length,3)
+      for (const row of cells) { assert.equal(row.length,2); for (const e of row) assert.ok(e.text&&e.scrollWidth<=e.clientWidth,label+' text is not truncated: '+JSON.stringify(e)) }
+    }
+    const petChecked = () => main!.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ambient-pet-option')).map(b=>b.getAttribute('aria-checked'))`) as Promise<string[]>
+    await button(main, '像素宠物')
+    assert.deepEqual(await petChecked(), ['true','false','false'], 'first pet is chosen by default')
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.ambient-pet-option canvas').length`), 3, 'three pet thumbnails')
+    await click(main,'.ambient-pet-option:nth-child(1)')
+    await until(async()=>{const s=await petStats();return s.state==='ready'&&s.red>0},'pet preview draws red pixels')
+    const firstPet = await petStats()
+    assert.ok(firstPet.red>=100, 'preview paints rgb(190,30,45), got '+firstPet.red)
+    // The primary action stays on the first screen at the default 1120 x 780 window, like other categories.
+    const firstScreen = await main.webContents.executeJavaScript(`(() => {
+      for(let e=document.querySelector('.ambient-panel');e;e=e.parentElement)e.scrollTop=0;
+      const r=Array.from(document.querySelectorAll('button')).find(b=>b.getClientRects().length&&b.textContent.trim()==='显示到屏幕').getBoundingClientRect();
+      return {top:r.top,bottom:r.bottom,height:window.innerHeight}
+    })()`) as {top:number;bottom:number;height:number}
+    writeFileSync(join(output,'first-screen.json'),JSON.stringify({concept:conceptFirstScreen,pet:firstScreen}))
+    assert.ok(firstScreen.top<=conceptFirstScreen.top+1,'pet page keeps 显示到屏幕 as high as the concept page: '+JSON.stringify({pet:firstScreen,concept:conceptFirstScreen}))
+    await click(main,'.ambient-pet-option:nth-child(2)')
+    assert.deepEqual(await petChecked(), ['false','true','false'], 'selection moves to the second pet')
+    await until(async()=>{const s=await petStats();return s.state==='ready'&&s.hash!==firstPet.hash&&s.red>0},'second pet preview')
+    assert.match(await main.webContents.executeJavaScript(`document.querySelector('.ambient-pet-option[aria-checked=true]').textContent`), /已选/)
+    await button(main, '显示到屏幕')
+    assert.equal(ambient.current()?.kind, 'pet')
+    assert.equal(ambient.current()?.pet?.id, 'yaya')
+    assert.ok(ambient.current()?.red, 'the pet on screen carries a red plane')
+    assert.ok(withAmbient(device().status,ambient.current()).ambient?.red, 'device status exposes ambient.red')
+    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .product-preview-label').textContent.includes('当前目标画面')`), 'pet display leaves sample mode')
+    await until(async()=>(await petStats()).red>0,'live target shows red')
+    await assertPetTextFits('1120')
+    await capture('multimedia-pet')
+    // ui-acceptance viewports with a pet chosen; the window goes back to 1120 x 780 afterwards.
+    for (const [width,height] of [[1440,900],[1024,768],[390,844]] as const) {
+      main.setContentSize(width,height); await wait(450)
+      const overflow = await main.webContents.executeJavaScript(`document.documentElement.scrollWidth-window.innerWidth`) as number
+      if (width>=1024) assert.ok(overflow<=1,'no horizontal page scroll at '+width+': '+overflow)
+      assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.ambient-pet-option').length`),3)
+      if (width>=1024) await assertPetTextFits(String(width))
+      await capture('multimedia-pet-'+width)
+    }
+    main.setContentSize(1120,780); await wait(350)
+    await click(main,'.ambient-pet-option:nth-child(1)')
+    assert.deepEqual(await petChecked(), ['true','false','false'])
+    await assertPetTextFits('1120 first pet chosen')
     await button(main, '回到工作画面'); assert.equal(ambient.current(), undefined)
     await button(main, '热点与 meme')
     await click(main,'[data-view=settings]');await button(main,'屏幕工作台 ↗')
@@ -391,7 +453,7 @@ app.whenReady().then(async()=>{
     // The expected unauthorized native-window rejection is visible to Electron's console.
     const unexpected=errors.filter(e=>!e.includes('Only the screen window'))
     assert.deepEqual(unexpected,[])
-    writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,views:5,assistantTasks:true,todoPlan:true,focusRoundTrip:true,consolidatedNavigation:true,fixedPixelResize:true,inspectionPixelEquality:true,visibleApply:true,stablePreviewNotes:true,invertedStyle:true,conceptCard:true,thoughtPrompt:true,personalNote:true,imageDrop:true,hudCoexistence:true,largePreview:true,independentScreen:true,draftPreserved:true,settingsShortcuts:true,globalAttention:true,canonicalStatePreserved:true,nativePinApplied,errors:unexpected},null,2))
+    writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,views:5,assistantTasks:true,todoPlan:true,focusRoundTrip:true,consolidatedNavigation:true,fixedPixelResize:true,inspectionPixelEquality:true,visibleApply:true,stablePreviewNotes:true,invertedStyle:true,conceptCard:true,thoughtPrompt:true,personalNote:true,imageDrop:true,pixelPet:true,hudCoexistence:true,largePreview:true,independentScreen:true,draftPreserved:true,settingsShortcuts:true,globalAttention:true,canonicalStatePreserved:true,nativePinApplied,errors:unexpected},null,2))
     assistant.stop();assistantStore.close();ambient.stop();BrowserWindow.getAllWindows().forEach(w=>w.destroy());screen.destroy();clearTimeout(deadline);app.exit(0)
   }catch(error){writeFileSync(join(output,'failure.txt'),(error instanceof Error ? error.stack : String(error))+'\n'+JSON.stringify(errors));clearTimeout(deadline);app.exit(1)}
 })

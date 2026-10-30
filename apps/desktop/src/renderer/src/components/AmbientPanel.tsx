@@ -1,21 +1,70 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   DEFAULT_AMBIENT,
+  petMoodLabel,
+  normalizeAmbient,
+  petProfile,
   type AmbientCard,
   type AmbientConfig,
   type AmbientSnapshot,
   type DeviceStatusV1,
 } from '@codepulse/shared'
 import { DeviceScreenPreview } from './DeviceScreenPreview.js'
+import { planesToRgba } from '../device-preview/renderer.mjs'
 import './ambient-panel.css'
 import { useScreenTarget } from '../lib/useScreenTarget.js'
+
+const PET_CROP = { x: 84, y: 44, w: 180, h: 152 }
+/**
+ * Small look at a pet card's bitmap. It lays the card into the same two planes the device uses
+ * and paints them with the shared preview colours, so black wins over red exactly as on the screen.
+ */
+function PetThumb({ card }: { card: AmbientCard }): JSX.Element {
+  const canvas = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const context = canvas.current?.getContext('2d')
+    if (!context || !card.imageHex) return
+    const black = new Uint8Array(15000).fill(0xff),
+      red = new Uint8Array(15000).fill(0xff)
+    // Picture area origin on the 400 x 300 screen is (8, 60); a set bit is ink, a cleared bit is paint.
+    const lay = (plane: Uint8Array, hex: string, width: number, left: number, top: number) => {
+      for (let i = 0; i < hex.length / 2; i++) {
+        const byte = parseInt(hex.slice(i * 2, i * 2 + 2), 16)
+        if (!byte) continue
+        for (let bit = 0; bit < 8; bit++)
+          if (byte & (0x80 >> bit)) {
+            const n = i * 8 + bit,
+              pixel = (60 + top + Math.floor(n / width)) * 400 + 8 + left + (n % width)
+            plane[pixel >> 3] = plane[pixel >> 3]! & ~(0x80 >> (pixel & 7))
+          }
+      }
+    }
+    lay(black, card.imageHex, 384, 0, 0)
+    if (card.red) lay(red, card.red.hex, card.red.w, card.red.x, card.red.y)
+    const image = context.createImageData(400, 300)
+    image.data.set(planesToRgba(black, red))
+    // Only the middle of the picture, where every pet stands, so the small thumbnail stays readable.
+    context.putImageData(
+      image,
+      -(8 + PET_CROP.x),
+      -(60 + PET_CROP.y),
+      8 + PET_CROP.x,
+      60 + PET_CROP.y,
+      PET_CROP.w,
+      PET_CROP.h,
+    )
+  }, [card.imageHex, card.red])
+  return <canvas ref={canvas} width={PET_CROP.w} height={PET_CROP.h} aria-hidden="true" />
+}
 
 export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Element {
   const { target, error: targetError } = useScreenTarget(active)
   const [snapshot, setSnapshot] = useState<AmbientSnapshot>()
   const [draft, setDraft] = useState<AmbientConfig>({ ...DEFAULT_AMBIENT })
   const [key, setKey] = useState('')
-  const [category, setCategory] = useState<'local' | 'concept' | 'prompt' | 'online'>('concept')
+  const [category, setCategory] = useState<'local' | 'concept' | 'prompt' | 'pet' | 'online'>(
+    'concept',
+  )
   const [note, setNote] = useState('')
   const [selectedId, setSelectedId] = useState('')
   const [dragging, setDragging] = useState(false)
@@ -35,8 +84,9 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
       .then((s) => {
         if (alive && !received) {
           setSnapshot(s)
-          savedConfig.current = s.config
-          setDraft(s.config)
+          // A host that predates a setting (or sends an odd value) must not break the page.
+          savedConfig.current = normalizeAmbient(s.config)
+          setDraft(savedConfig.current)
         }
       })
       .catch(() => {
@@ -46,12 +96,13 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
       received = true
       if (!alive) return
       setSnapshot(s)
-      if (JSON.stringify(savedConfig.current) !== JSON.stringify(s.config)) {
+      const incoming = normalizeAmbient(s.config)
+      if (JSON.stringify(savedConfig.current) !== JSON.stringify(incoming)) {
         const dirty =
           savedConfig.current &&
           JSON.stringify(draftRef.current) !== JSON.stringify(savedConfig.current)
-        savedConfig.current = s.config
-        if (!dirty) setDraft(s.config)
+        savedConfig.current = incoming
+        if (!dirty) setDraft(incoming)
         else setMessage('另一窗口已更新设置；这里保留你的未保存修改。')
       }
     })
@@ -171,7 +222,10 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
           display: target.status.display ? { ...target.status.display, page: 0 } : preview.display,
         }
       : preview
-  const selectedCard = visibleCards.find((c) => c.id === selectedId) ?? visibleCards[0]
+  const selectedCard =
+    category === 'pet'
+      ? (visibleCards.find((c) => c.pet?.id === draft.petId) ?? visibleCards[0])
+      : (visibleCards.find((c) => c.id === selectedId) ?? visibleCards[0])
   const number = (
     name:
       | 'minLikes'
@@ -248,6 +302,7 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
                 ['prompt', '思考实验'],
                 ['local', '我的图片与便签'],
                 ['online', '热点与 meme'],
+                ['pet', '像素宠物'],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -264,7 +319,34 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
               </button>
             ))}
           </div>
-          {selectedCard && (
+          {category === 'pet' && visibleCards.length > 0 && (
+            <div className="ambient-pet-picker" role="radiogroup" aria-label="选择宠物形象">
+              {visibleCards.map((c) => {
+                const chosen = c.pet?.id === selectedCard?.pet?.id
+                return (
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={chosen}
+                    key={c.id}
+                    disabled={busy}
+                    className="ambient-pet-option"
+                    title={c.pet ? petProfile(c.pet.id).trait : undefined}
+                    onClick={() => {
+                      if (c.pet) edit('petId', c.pet.id)
+                      void showPreview(c)
+                    }}
+                  >
+                    <PetThumb card={c} />
+                    <strong>{c.pet ? petProfile(c.pet.id).name : c.source}</strong>
+                    <span>{c.pet ? petProfile(c.pet.id).trait : ''}</span>
+                    {chosen && <em>已选</em>}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          {category !== 'pet' && selectedCard && (
             <div className="ambient-select-card">
               <select
                 aria-label="选择内容"
@@ -394,6 +476,17 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
                   </span>
                 </div>
                 <p>{card.text}</p>
+                {card.pet && (
+                  <p className="ambient-hint">
+                    此刻心情：{petMoodLabel(card.pet.mood).label}（
+                    {petMoodLabel(card.pet.mood).hint}
+                    ）。心情随工作状态和本地时间变化，选好形象后可随时手动展示。
+                    自动推送只在允许展示的时段出场：安静时段和 Agent
+                    工作时不会推送（可在“展示节奏”里调整），
+                    所以“犯困”“陪你干活”多半只在手动展示时看到。屏幕上的红色需要完整刷新，约 16
+                    秒并会闪一下， 所以宠物只在展示和退场时刷新两次。
+                  </p>
+                )}
                 <div className="ambient-actions">
                   {card.url && (
                     <button
@@ -468,14 +561,22 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
               <label className="ambient-toggle">
                 <input
                   type="checkbox"
+                  checked={draft.petEnabled}
+                  onChange={(e) => edit('petEnabled', e.target.checked)}
+                />{' '}
+                像素宠物 · {petProfile(draft.petId).name}（在“像素宠物”页换形象）
+              </label>
+              <label className="ambient-toggle">
+                <input
+                  type="checkbox"
                   checked={draft.newsEnabled}
                   onChange={(e) => edit('newsEnabled', e.target.checked)}
                 />{' '}
                 科技热议 · Hacker News
               </label>
               <p className="ambient-hint">
-                概念与思考卡离线可用，原创短解读配阅读来源。科技热议只选近 24 小时首页中超过 100
-                赞的标题，保留原文，不自动改写为新闻。
+                宠物按当前心情出场，同一形象同一心情每天最多一次，并遵守下方的展示节奏。概念与思考卡离线可用，原创短解读配阅读来源。科技热议只选近
+                24 小时首页中超过 100 赞的标题，保留原文，不自动改写为新闻。
               </p>
             </div>
             <details className="ambient-details">
@@ -673,8 +774,8 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
                         setKey('')
                       }
                       const s = await window.codepulse.setAmbient(draft)
-                      savedConfig.current = s.config
-                      setDraft(s.config)
+                      savedConfig.current = normalizeAmbient(s.config)
+                      setDraft(savedConfig.current)
                       return s
                     },
                     '自动推送设置已保存。展示选中内容请点左侧“显示到屏幕”。',

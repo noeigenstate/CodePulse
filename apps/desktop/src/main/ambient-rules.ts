@@ -44,6 +44,7 @@ export function qualifies(card: AmbientCard, config: AmbientConfig, now: number)
   if (card.kind === 'concept') return config.conceptsEnabled
   if (card.kind === 'prompt') return config.promptsEnabled
   if (card.kind === 'news') return config.newsEnabled && card.score >= 100
+  if (card.kind === 'pet') return config.petEnabled && card.pet?.id === config.petId
   if (card.kind === 'image' || card.kind === 'note') return false // Personal content is manual only.
   if (card.kind === 'meme') return config.memeEnabled && card.score >= config.memeMinUps
   return (
@@ -60,6 +61,11 @@ export function contentKey(card: AmbientCard): string {
     .update(
       card.kind +
         (card.imageHex ?? '') +
+        (card.red
+          ? `${card.red.x},${card.red.y},${card.red.w}x${card.red.h}:${card.red.hex}`
+          : '') +
+        // A pet looks the same every day; its id carries the date so it can come back tomorrow.
+        (card.kind === 'pet' ? card.id : '') +
         ':' +
         card.text
           .toLowerCase()
@@ -95,6 +101,8 @@ export function deviceCard(
     text: utf8(card.text.replace(/https?:\/\/t\.co\/\S+/g, '[链接]'), 767),
     ...(card.imageHex ? { imageHex: card.imageHex } : {}),
     ...(card.items ? { items: card.items.slice(0, 6).map(item => ({ title: utf8(item.title, 159), meta: utf8(item.meta, 47), overdue: item.overdue })) } : {}),
+    // Red ink only ever accompanies a bitmap; the card builder guarantees the geometry.
+    ...(card.imageHex && card.red ? { red: card.red } : {}),
   }
 }
 export function withAmbient(
@@ -102,16 +110,25 @@ export function withAmbient(
   card: (AmbientCard & Pick<DeviceAmbientCard, 'manual'>) | undefined,
 ): DeviceStatusV1 {
   if (!card) return status
-  const ambient = deviceCard(card)
-  const projected = {
+  const project = (ambient: DeviceAmbientCard): DeviceStatusV1 => ({
     ...status,
     ambient,
     revision: createHash('sha256')
       .update(status.revision + JSON.stringify(ambient))
       .digest('hex')
       .slice(0, 24),
+  })
+  // The MCU's bounded HTTP reader is 32 KiB. A very large quota snapshot may leave no room for
+  // the optional red plane: drop it first (black-only still shows the picture), and only if the
+  // bitmap itself does not fit preserve the plain work status.
+  const fits = (projected: DeviceStatusV1) => Buffer.byteLength(JSON.stringify(projected)) <= 32000
+  const ambient = deviceCard(card)
+  const full = project(ambient)
+  if (fits(full)) return full
+  if (ambient.red) {
+    const { red: _red, ...blackOnly } = ambient
+    const black = project(blackOnly)
+    if (fits(black)) return black
   }
-  // The MCU's bounded HTTP reader is 32 KiB. Preserve work status if a very
-  // large quota snapshot leaves insufficient room for an optional bitmap.
-  return Buffer.byteLength(JSON.stringify(projected)) <= 32000 ? projected : status
+  return status
 }

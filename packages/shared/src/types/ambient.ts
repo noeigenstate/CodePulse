@@ -1,3 +1,44 @@
+/** Pixel pets drawn for the multimedia area. Names and art live in the desktop main process. */
+export const PET_IDS = ['tuantuan', 'yaya', 'fangfang'] as const
+export type PetId = (typeof PET_IDS)[number]
+export const PET_MOODS = ['idle', 'working', 'hungry', 'happy', 'sleepy'] as const
+export type PetMood = (typeof PET_MOODS)[number]
+/** Names and one-line character notes, shown on the page and on the device card source line. */
+export const PET_PROFILES: Record<PetId, { name: string; trait: string }> = {
+  tuantuan: { name: '团团', trait: '嘴硬心软的小猫' },
+  yaya: { name: '芽芽', trait: '叶子会说心情' },
+  fangfang: { name: '方方', trait: '屏幕上演情绪' },
+}
+/** Profile for any value that claims to be a pet id; unknown or missing ids fall back to the first pet. */
+export function petProfile(id: unknown): { name: string; trait: string } {
+  return PET_PROFILES[PET_IDS.find((known) => known === id) ?? PET_IDS[0]]
+}
+/** What each mood means, in the order the desktop checks them. */
+export const PET_MOOD_LABELS: Record<PetMood, { label: string; hint: string }> = {
+  sleepy: { label: '犯困', hint: '23:00–次日 7:00' },
+  hungry: { label: '饿了', hint: '任一额度剩余 20% 以下' },
+  working: { label: '陪你干活', hint: 'Agent 正在工作' },
+  happy: { label: '开心', hint: '2 小时内刚完成任务' },
+  idle: { label: '悠闲', hint: '其余时候' },
+}
+/**
+ * Red ink for a multimedia bitmap, in the 384 x 208 picture-area coordinates.
+ * `x` and `w` are multiples of 8, `w * h / 8 <= 3072`, and `hex` holds exactly `w * h / 4`
+ * characters (row-major, MSB first, 1 = red). It never overlaps `imageHex`'s black.
+ */
+export interface AmbientRedPlane {
+  x: number
+  y: number
+  w: number
+  h: number
+  hex: string
+}
+/** Mood text for any value that claims to be a mood; unknown ids read as idle. */
+export function petMoodLabel(mood: unknown): { label: string; hint: string } {
+  return PET_MOOD_LABELS[PET_MOODS.find((known) => known === mood) ?? 'idle']
+}
+export const AMBIENT_RED_MAX_BYTES = 3072
+
 /** Optional, low-priority desk content. Credentials never cross back to the renderer. */
 export interface AmbientConfig {
   version: 1
@@ -7,6 +48,8 @@ export interface AmbientConfig {
   conceptsEnabled: boolean
   promptsEnabled: boolean
   newsEnabled: boolean
+  petEnabled: boolean
+  petId: PetId
   provider: 'twitterapi' | 'x'
   accounts: string[]
   keywords: string[]
@@ -32,6 +75,8 @@ export const DEFAULT_AMBIENT: AmbientConfig = {
   conceptsEnabled: true,
   promptsEnabled: false,
   newsEnabled: false,
+  petEnabled: true,
+  petId: PET_IDS[0],
   provider: 'twitterapi',
   accounts: ['Polymarket', 'elonmusk', 'OpenAI', 'AnthropicAI', 'GoogleDeepMind'],
   keywords: [],
@@ -53,7 +98,7 @@ export interface AmbientCard {
   /** Optional production-rendered checklist; old firmware uses the text fallback. */
   items?: { title: string; meta: string; overdue: boolean }[]
   id: string
-  kind: 'x' | 'meme' | 'concept' | 'prompt' | 'note' | 'image' | 'news'
+  kind: 'x' | 'meme' | 'concept' | 'prompt' | 'note' | 'image' | 'news' | 'pet'
   source: string
   text: string
   url: string
@@ -63,6 +108,10 @@ export interface AmbientCard {
   imageUrl?: string
   /** 384 x 208, row-major, MSB first; 1 = black. No external image requests on device. */
   imageHex?: string
+  /** Red ink on top of `imageHex`; only cards with a bitmap may carry it. */
+  red?: AmbientRedPlane
+  /** Pet cards only: which pet this is and the mood it was drawn for. */
+  pet?: { id: PetId; mood: PetMood }
 }
 export interface DeviceAmbientCard {
   /** Up to six rows; absent means the original text/image presentation. */
@@ -73,6 +122,8 @@ export interface DeviceAmbientCard {
   source: string
   text: string
   imageHex?: string
+  /** Optional; devices drop it (and show black only) if it is invalid. */
+  red?: AmbientRedPlane
 }
 export interface AmbientSnapshot {
   config: AmbientConfig
@@ -130,6 +181,8 @@ export function normalizeAmbient(value: unknown): AmbientConfig {
     conceptsEnabled: bool('conceptsEnabled'),
     promptsEnabled: bool('promptsEnabled'),
     newsEnabled: bool('newsEnabled'),
+    petEnabled: bool('petEnabled'),
+    petId: PET_IDS.find((id) => id === v.petId) ?? DEFAULT_AMBIENT.petId,
     provider: v.provider === 'x' ? 'x' : 'twitterapi',
     accounts: words('accounts')
       .map((s) => s.replace(/^@/, ''))

@@ -8,6 +8,7 @@ import {
 } from '@codepulse/shared'
 import { contentKey, pauseReason, qualifies, xMinimumLikes } from './ambient-rules.js'
 import { builtinCards, restorePersonalCards, personalCard } from './ambient-library.js'
+import { petCards } from './ambient-pet.js'
 import { collectMemes, collectX, collectNews, type JsonRequest } from './ambient-sources.js'
 
 export interface AmbientHistory {
@@ -162,9 +163,13 @@ export class AmbientService {
       : undefined
   }
   private allCards(): AmbientCard[] {
-    return [...this.personal, ...this.cards, ...builtinCards(this.now())].filter(
-      (c) => c.expiresAt > this.now(),
-    )
+    // Pets are always listed for manual display; `qualifies` gates only the automatic showing.
+    return [
+      ...this.personal,
+      ...this.cards,
+      ...petCards(this.deps.status(), this.now()),
+      ...builtinCards(this.now()),
+    ].filter((c) => c.expiresAt > this.now())
   }
   private manualPause(status = this.deps.status()) {
     return status.agents.some(
@@ -189,11 +194,21 @@ export class AmbientService {
     this.changed()
     return this.snapshot()
   }
+  /**
+   * Find a card by id. Pet ids carry the mood, which can change while a page is open (quota,
+   * work, or the clock), so a pet id that no longer exists resolves to that pet's current card.
+   */
+  resolveCard(id: unknown, cards = this.allCards()): AmbientCard | undefined {
+    const exact = cards.find((c) => c.id === id)
+    if (exact || typeof id !== 'string') return exact
+    const pet = /^pet:([a-z]+):/.exec(id)?.[1]
+    return pet ? cards.find((c) => c.pet?.id === pet) : undefined
+  }
   /** Explicit display may cover passive review notices, without acknowledging them. */
   showManual(id: unknown) {
     const reason = this.manualPause()
     if (reason) throw new Error(reason + '，处理后可立即展示；现在可以先预览')
-    const card = this.allCards().find((c) => c.id === id)
+    const card = this.resolveCard(id)
     if (!card) throw new Error('内容已过期，请重新选择')
     this.active = card
     this.manual = true

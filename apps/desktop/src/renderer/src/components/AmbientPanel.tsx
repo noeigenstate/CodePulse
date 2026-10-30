@@ -14,7 +14,7 @@ import { planesToRgba } from '../device-preview/renderer.mjs'
 import './ambient-panel.css'
 import { useScreenTarget } from '../lib/useScreenTarget.js'
 
-const PET_CROP = { x: 84, y: 44, w: 180, h: 152 }
+const PET_CROP = { x: 4, y: 8, w: 232, h: 196 }
 /**
  * Small look at a pet card's bitmap. It lays the card into the same two planes the device uses
  * and paints them with the shared preview colours, so black wins over red exactly as on the screen.
@@ -43,7 +43,7 @@ function PetThumb({ card }: { card: AmbientCard }): JSX.Element {
     if (card.red) lay(red, card.red.hex, card.red.w, card.red.x, card.red.y)
     const image = context.createImageData(400, 300)
     image.data.set(planesToRgba(black, red))
-    // Only the middle of the picture, where every pet stands, so the small thumbnail stays readable.
+    // Only the left of the picture, where every pet stands, so the small thumbnail stays readable.
     context.putImageData(
       image,
       -(8 + PET_CROP.x),

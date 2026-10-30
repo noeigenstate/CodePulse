@@ -330,7 +330,7 @@ projection, so a change of layout changes the response revision.
 
 - A `"pet"` card with a bitmap is laid out as: picture 384×208 at screen pixel (8, 32) (`red`
   keeps picture-area coordinates and follows the same origin), a 1 px divider at y=243, `text`
-  in 20px bold on one line (14px if it does not fit in 376 px), then `source` in 12px semibold.
+  in 20px bold on one line (12px if it does not fit in 376 px), then `source` in 12px.
 - A missing, `null`, other-string or non-string `layout`, or a card without `imageHex`, keeps
   the original layout (picture at (8, 60)). An invalid `layout` never fails the status, like `red`.
 - Older firmware ignores the field and shows the original layout, so no version negotiation is

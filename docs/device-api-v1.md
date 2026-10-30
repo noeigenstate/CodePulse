@@ -370,6 +370,9 @@ plain hash of the card id.
   UTF-8 (four Han characters are 12 bytes), chosen by priority:
   statutory or traditional festival, then solar term, then the lunar day (the 1st of a lunar month
   shows the month name such as "十月" or "闰六月").
+  The device font keeps native 12 px glyphs only for the characters the desktop calendar module
+  can emit (every label, header and weekday from 1900 to 2100); any other character is drawn with
+  the 14 px body glyph. When the module's names change, the firmware character set is regenerated.
 - `flags[i]` is a bit set for day i+1: `1` red date number (Saturday, Sunday or an official day off;
   a make-up workday is not red even on a weekend), `2` red small text (festival or solar term),
   `4` official day off (the firmware shows it only through the red date number and draws no

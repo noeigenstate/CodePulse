@@ -59,6 +59,8 @@ files:
 extraResources:
   - from: src/renderer/src/device-preview/THIRD-PARTY-NOTICES.txt
     to: licenses/device-preview.txt
+  - from: src/main/calendar/THIRD-PARTY-NOTICES.txt
+    to: licenses/calendar.txt
   - from: ../../packages/hooks
     to: codepulse-hooks
     filter:

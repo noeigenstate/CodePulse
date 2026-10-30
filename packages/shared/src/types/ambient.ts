@@ -41,6 +41,34 @@ export function petMoodLabel(mood: unknown): { label: string; hint: string } {
 }
 export const AMBIENT_RED_MAX_BYTES = 3072
 
+/**
+ * Month calendar for the device (firmware 0.0.29+). `first` is Monday-based (0 = Monday) and
+ * `today` is 0 when today is not in `month`. `labels` and `flags` both hold one entry per day:
+ * flag 1 red date number, 2 red small text, 4 official day off, 8 make-up workday (4 and 8 are
+ * mutually exclusive). Labels are at most four Han characters.
+ */
+export interface DeviceCalendar {
+  year: number
+  month: number
+  today: number
+  first: number
+  days: number
+  lunar: string
+  week: number
+  labels: string[]
+  flags: number[]
+}
+/** Where the next official holiday is, computed by the desktop from the holiday table in use. */
+export interface CalendarNextHoliday {
+  name: string
+  /** Local date of the first day off, YYYY-MM-DD. */
+  date: string
+  /** Days from today to that date; 0 when today is the first day off. */
+  inDays: number
+  /** Today already falls inside the break. */
+  ongoing: boolean
+}
+
 /** Optional, low-priority desk content. Credentials never cross back to the renderer. */
 export interface AmbientConfig {
   version: 1
@@ -52,6 +80,7 @@ export interface AmbientConfig {
   newsEnabled: boolean
   petEnabled: boolean
   petId: PetId
+  calendarEnabled: boolean
   provider: 'twitterapi' | 'x'
   accounts: string[]
   keywords: string[]
@@ -79,6 +108,7 @@ export const DEFAULT_AMBIENT: AmbientConfig = {
   newsEnabled: false,
   petEnabled: true,
   petId: PET_IDS[0],
+  calendarEnabled: true,
   provider: 'twitterapi',
   accounts: ['Polymarket', 'elonmusk', 'OpenAI', 'AnthropicAI', 'GoogleDeepMind'],
   keywords: [],
@@ -98,7 +128,7 @@ export const DEFAULT_AMBIENT: AmbientConfig = {
 }
 export interface AmbientCard {
   id: string
-  kind: 'x' | 'meme' | 'concept' | 'prompt' | 'note' | 'image' | 'news' | 'pet'
+  kind: 'x' | 'meme' | 'concept' | 'prompt' | 'note' | 'image' | 'news' | 'pet' | 'calendar'
   source: string
   text: string
   url: string
@@ -110,10 +140,12 @@ export interface AmbientCard {
   imageHex?: string
   /** Red ink on top of `imageHex`; only cards with a bitmap may carry it. */
   red?: AmbientRedPlane
-  /** Screen layout for a bitmap card; only pet cards use `'pet'` (larger picture, 20px line). */
-  layout?: 'pet'
+  /** Screen layout: `'pet'` for a bitmap card (larger picture, 20px line), `'calendar'` with `calendar`. */
+  layout?: 'pet' | 'calendar'
   /** Pet cards only: which pet this is and the mood it was drawn for. */
   pet?: { id: PetId; mood: PetMood }
+  /** Calendar cards only: the month grid the device draws (no bitmap). */
+  calendar?: DeviceCalendar
 }
 export interface DeviceAmbientCard {
   /** Explicit temporary display may cover review notices; action/fault still win. */
@@ -124,8 +156,10 @@ export interface DeviceAmbientCard {
   imageHex?: string
   /** Optional; devices drop it (and show black only) if it is invalid. */
   red?: AmbientRedPlane
-  /** Optional, only with `imageHex`; firmware older than 0.0.28 ignores it. */
-  layout?: 'pet'
+  /** `'pet'` needs `imageHex` (firmware 0.0.28+); `'calendar'` needs `calendar` (0.0.29+). Older firmware ignores both. */
+  layout?: 'pet' | 'calendar'
+  /** Optional; firmware drops an invalid one and shows `text` as a plain card. */
+  calendar?: DeviceCalendar
 }
 export interface AmbientSnapshot {
   config: AmbientConfig
@@ -134,6 +168,8 @@ export interface AmbientSnapshot {
   lastCheckedAt: number
   nextCheckAt: number
   sourceStatus: { x: string; meme: string; news?: string }
+  /** Next official holiday from the holiday table in use; absent when none is known. */
+  calendarNext?: CalendarNextHoliday
   cards: AmbientCard[]
   activeId: string | null
   shownToday: number
@@ -185,6 +221,7 @@ export function normalizeAmbient(value: unknown): AmbientConfig {
     newsEnabled: bool('newsEnabled'),
     petEnabled: bool('petEnabled'),
     petId: PET_IDS.find((id) => id === v.petId) ?? DEFAULT_AMBIENT.petId,
+    calendarEnabled: bool('calendarEnabled'),
     provider: v.provider === 'x' ? 'x' : 'twitterapi',
     accounts: words('accounts')
       .map((s) => s.replace(/^@/, ''))

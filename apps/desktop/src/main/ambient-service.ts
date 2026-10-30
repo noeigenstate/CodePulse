@@ -6,6 +6,7 @@ import {
   type AmbientSnapshot,
   type StatusSnapshot,
 } from '@codepulse/shared'
+import { HolidayStore, type HolidayCache } from './ambient-calendar.js'
 import { contentKey, pauseReason, qualifies, xMinimumLikes } from './ambient-rules.js'
 import { builtinCards, restorePersonalCards, personalCard } from './ambient-library.js'
 import { petCards } from './ambient-pet.js'
@@ -31,6 +32,9 @@ export interface AmbientDependencies {
   changed: () => void
   library?: unknown
   saveLibrary?: (cards: AmbientCard[]) => void
+  /** Cached remote holiday years (see HolidayStore); absent or invalid means built-in data only. */
+  holidayCache?: unknown
+  saveHolidayCache?: (cache: HolidayCache) => void
   automaticAllowed?: () => boolean
 }
 const day = (now: number) => {
@@ -45,6 +49,7 @@ export class AmbientService {
   private activeUntil = 0
   private manual = false
   private personal: AmbientCard[] = []
+  private holidays: HolidayStore
   private timer?: ReturnType<typeof setInterval>
   private collecting = false
   private lastCheckedAt = 0
@@ -55,6 +60,7 @@ export class AmbientService {
   constructor(private deps: AmbientDependencies) {
     this.config = normalizeAmbient(deps.config)
     this.personal = restorePersonalCards(deps.library, this.now())
+    this.holidays = new HolidayStore(deps.holidayCache, deps.saveHolidayCache)
     this.history =
       deps.history &&
       typeof deps.history.day === 'string' &&
@@ -137,6 +143,7 @@ export class AmbientService {
         news: !this.config.newsEnabled ? '已关闭' : this.errors.news,
       },
       cards: this.allCards(),
+      ...this.calendarNext(),
       activeId: this.current()?.id ?? null,
       shownToday: this.history.shown,
       xRequestsToday: this.history.xRequests ?? 0,
@@ -163,13 +170,40 @@ export class AmbientService {
       : undefined
   }
   private allCards(): AmbientCard[] {
-    // Pets are always listed for manual display; `qualifies` gates only the automatic showing.
+    // Pets and the calendar are always listed for manual display; `qualifies` gates only the
+    // automatic showing. The calendar comes first so a day's first colour card is the date.
     return [
       ...this.personal,
       ...this.cards,
+      ...this.calendarCards(),
       ...petCards(this.deps.status(), this.now()),
       ...builtinCards(this.now()),
     ].filter((c) => c.expiresAt > this.now())
+  }
+  private calendarCards(): AmbientCard[] {
+    try {
+      return [this.holidays.card(this.now())]
+    } catch {
+      return [] // A clock outside 1900-2100 must not take the whole page down.
+    }
+  }
+  private calendarNext() {
+    try {
+      const next = this.holidays.next(this.now())
+      return next ? { calendarNext: next } : {}
+    } catch {
+      return {}
+    }
+  }
+  /** Once a day per year, from the first tick; failures are silent and the built-in table stays. */
+  private syncHolidays() {
+    if (!this.config.calendarEnabled) return
+    void this.holidays
+      .sync(this.now(), this.deps.request, () => !this.stopped)
+      .then((changed) => {
+        if (changed && !this.stopped) this.changed()
+      })
+      .catch(() => undefined)
   }
   private manualPause(status = this.deps.status()) {
     return status.agents.some(
@@ -196,11 +230,13 @@ export class AmbientService {
   }
   /**
    * Find a card by id. Pet ids carry the mood, which can change while a page is open (quota,
-   * work, or the clock), so a pet id that no longer exists resolves to that pet's current card.
+   * work, or the clock), so a pet id that no longer exists resolves to that pet's current card;
+   * a calendar id from yesterday resolves to today's calendar.
    */
   resolveCard(id: unknown, cards = this.allCards()): AmbientCard | undefined {
     const exact = cards.find((c) => c.id === id)
     if (exact || typeof id !== 'string') return exact
+    if (id.startsWith('calendar:')) return cards.find((c) => c.kind === 'calendar')
     const pet = /^pet:([a-z]+):/.exec(id)?.[1]
     return pet ? cards.find((c) => c.pet?.id === pet) : undefined
   }
@@ -259,6 +295,7 @@ export class AmbientService {
   tick() {
     if (this.stopped) return
     this.resetDay()
+    this.syncHolidays()
     if (this.active && !this.current()) {
       this.active = undefined
       this.changed()

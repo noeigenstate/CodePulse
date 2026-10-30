@@ -33,6 +33,7 @@ const config = normalizeAmbient({
   promptsEnabled: false,
   newsEnabled: false,
   petEnabled: false, // These tests exercise the X and meme pipeline; pets have ambient-pet.test.ts.
+  calendarEnabled: false, // The calendar card and its holiday fetch have ambient-calendar.test.ts.
 })
 const snapshot = (state = 'IDLE', unread = false): StatusSnapshot =>
   ({

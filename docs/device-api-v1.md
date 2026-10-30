@@ -340,6 +340,60 @@ plain hash of the card id.
 - Older firmware ignores the field and shows the original layout, so no version negotiation is
   needed.
 
+### Calendar layout (firmware 0.0.29+)
+
+`ambient.layout` also accepts `"calendar"`, which draws a month grid from the optional
+`ambient.calendar` object. The desktop sends one such card per local day (`calendar:YYYY-MM-DD`,
+`source` "日历"); it has no `imageHex` and no `red`.
+
+```json
+"ambient": {
+  "id": "…24 hex…",
+  "source": "日历",
+  "text": "10月30日 周五 · 农历九月廿一 · 第44周",
+  "layout": "calendar",
+  "calendar": {
+    "year": 2026, "month": 10, "today": 30, "first": 3, "days": 31,
+    "lunar": "丙午年 九月廿一", "week": 44,
+    "labels": ["国庆节", "廿一", "…"],
+    "flags": [13, 0, "…"]
+  }
+}
+```
+
+- `year` 1900–2100; `month` 1–12; `days` 28–31 and equal to the number of days of that month;
+  `first` 0–6 is the weekday of the 1st (0 = Monday, weeks start on Monday); `today` 0–31 (0 = today
+  is not in this month); `week` 1–53 is the ISO week of today (of the 1st when `today` is 0).
+- `lunar` is the header subtitle: the stem-branch year and today's lunar date, for example
+  "丙午年 九月廿一" or "丙午年 闰六月初三"; at most 32 UTF-8 bytes.
+- `labels[i]` is the small text under day i+1, at most four Han characters, chosen by priority:
+  statutory or traditional festival, then solar term, then the lunar day (the 1st of a lunar month
+  shows the month name such as "十月" or "闰六月").
+- `flags[i]` is a bit set for day i+1: `1` red date number (Saturday, Sunday or an official day off;
+  a make-up workday is not red even on a weekend), `2` red small text (festival or solar term),
+  `4` official day off ("休"), `8` make-up workday ("班"). `4` and `8` never occur together.
+- `labels` and `flags` both have exactly `days` entries.
+- An invalid `calendar` is dropped by the firmware, which then shows `text` as a plain text card; like
+  `red`, it must never make the status fail to parse. Firmware older than 0.0.29 ignores `layout`
+  and `calendar` and always shows `text` that way.
+
+Desktop side. The card id changes every day, so the screen takes at most one three-colour full
+refresh in and one out per day; there is no timed refresh. The projection id (24 hex characters) is
+derived from the card id and the `calendar` JSON, so a holiday update that changes the grid is a new
+id and identical content keeps its id; the object is part of the response revision. Within the
+32,000 byte limit `withAmbient` drops the whole `layout`/`calendar` pair first, keeping the
+one-line text under a new id, and only if even that does not fit keeps the plain work status. The
+card follows the automatic-push pacing (interval, daily cap, quiet hours, idle only), can be shown by
+hand, and is switched by the `calendarEnabled` setting (default true).
+
+Holiday data. The grid marks statutory days off and make-up workdays from a table that is built in
+for 2025 and 2026. While the calendar is enabled the desktop fetches
+`https://cdn.jsdelivr.net/gh/NateScarlet/holiday-cn@master/<year>.json` for the current year, and
+from November for the next year, at most once per year per day (a failed attempt counts). A file is
+used only if it parses as holiday-cn, declares the requested year and has at least one day; it then
+replaces the built-in table for that year (other years are added) and is cached in the user data
+directory as `calendar-holidays.json`. Any failure is silent and leaves the previous table.
+
 ### 0.0.26：设备展示减频与局部窗口候选
 
 仍读取同一 v1 快照，不改变桌面/HUD 的任务、已读、保留或顺序语义。

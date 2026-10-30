@@ -7,12 +7,19 @@ import {
   type AmbientCard,
   type AmbientConfig,
   type AmbientSnapshot,
+  type CalendarNextHoliday,
   type DeviceStatusV1,
 } from '@codepulse/shared'
 import { DeviceScreenPreview } from './DeviceScreenPreview.js'
 import { planesToRgba } from '../device-preview/renderer.mjs'
 import './ambient-panel.css'
 import { useScreenTarget } from '../lib/useScreenTarget.js'
+
+/** Tail of the calendar info line: the break going on, or how far away the next one is. */
+function nextHolidayText(next: CalendarNextHoliday | undefined): string {
+  if (!next) return ''
+  return next.ongoing ? ` · ${next.name}假期中` : ` · 距 ${next.name} 还有 ${next.inDays} 天`
+}
 
 const PET_CROP = { x: 4, y: 8, w: 232, h: 196 }
 /** Thumbnail width in CSS px; the canvas itself is sized in device pixels so edges stay smooth. */
@@ -87,9 +94,9 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
   const [snapshot, setSnapshot] = useState<AmbientSnapshot>()
   const [draft, setDraft] = useState<AmbientConfig>({ ...DEFAULT_AMBIENT })
   const [key, setKey] = useState('')
-  const [category, setCategory] = useState<'local' | 'concept' | 'prompt' | 'pet' | 'online'>(
-    'concept',
-  )
+  const [category, setCategory] = useState<
+    'local' | 'concept' | 'prompt' | 'pet' | 'calendar' | 'online'
+  >('concept')
   const [note, setNote] = useState('')
   const [selectedId, setSelectedId] = useState('')
   const [dragging, setDragging] = useState(false)
@@ -328,6 +335,7 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
                 ['local', '我的图片与便签'],
                 ['online', '热点与 meme'],
                 ['pet', '像素宠物'],
+                ['calendar', '日历'],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -338,6 +346,12 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
                   setCategory(id)
                   setSelectedId('')
                   setPreview(undefined)
+                  // One card a day, so the page opens on it, like picking a pet does.
+                  const today =
+                    id === 'calendar'
+                      ? snapshot?.cards.find((c) => c.kind === 'calendar')
+                      : undefined
+                  if (today) void showPreview(today)
                 }}
               >
                 {label}
@@ -371,7 +385,7 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
               })}
             </div>
           )}
-          {category !== 'pet' && selectedCard && (
+          {category !== 'pet' && category !== 'calendar' && selectedCard && (
             <div className="ambient-select-card">
               <select
                 aria-label="选择内容"
@@ -500,7 +514,16 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
                     })}
                   </span>
                 </div>
-                <p>{card.text}</p>
+                <p>
+                  {card.text}
+                  {card.calendar && nextHolidayText(snapshot?.calendarNext)}
+                </p>
+                {card.calendar && (
+                  <p className="ambient-hint">
+                    月历需要固件 0.0.29
+                    以上，旧固件只显示一行文字。每天最多出现一次，红色需要完整刷新，约 16 秒。
+                  </p>
+                )}
                 {card.pet && (
                   <p className="ambient-hint">
                     此刻心情：{petMoodLabel(card.pet.mood).label}（
@@ -594,11 +617,22 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
               <label className="ambient-toggle">
                 <input
                   type="checkbox"
+                  checked={draft.calendarEnabled}
+                  onChange={(e) => edit('calendarEnabled', e.target.checked)}
+                />{' '}
+                日历 · 农历与节假日
+              </label>
+              <label className="ambient-toggle">
+                <input
+                  type="checkbox"
                   checked={draft.newsEnabled}
                   onChange={(e) => edit('newsEnabled', e.target.checked)}
                 />{' '}
                 科技热议 · Hacker News
               </label>
+              <p className="ambient-hint">
+                日历：每天最多出现一次。假日数据：内置 2025–2026，联网自动更新。
+              </p>
               <p className="ambient-hint">
                 宠物按当前心情出场，同一形象同一心情每天最多一次，并遵守下方的展示节奏。概念与思考卡离线可用，原创短解读配阅读来源。科技热议只选近
                 24 小时首页中超过 100 赞的标题，保留原文，不自动改写为新闻。

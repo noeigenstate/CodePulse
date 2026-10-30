@@ -307,6 +307,7 @@ function petService(initial: StatusSnapshot, overrides = {}) {
       conceptsEnabled: false,
       xEnabled: false,
       memeEnabled: false,
+      calendarEnabled: false, // ambient-calendar.test.ts covers the calendar card.
     },
     now: () => now,
     status: () => current,

@@ -24,6 +24,7 @@ export function createAmbientRuntime(
   }
   const saved = read(path)
   const libraryPath = join(directory, 'ambient-library.json')
+  const holidaysPath = join(directory, 'calendar-holidays.json')
   const keys: Partial<Record<AmbientConfig['provider'], string>> = {}
   if (safeStorage.isEncryptionAvailable())
     for (const provider of ['x', 'twitterapi'] as const) {
@@ -47,6 +48,8 @@ export function createAmbientRuntime(
     save: (config, history) => write(path, { config, history }),
     library: read(libraryPath).cards,
     saveLibrary: (cards) => write(libraryPath, { cards }),
+    holidayCache: read(holidaysPath),
+    saveHolidayCache: (cache) => write(holidaysPath, cache),
     request: async (url, headers) =>
       JSON.parse(
         Buffer.from(await fetchBytes(url, headers, 512000, net.fetch.bind(net))).toString('utf8'),

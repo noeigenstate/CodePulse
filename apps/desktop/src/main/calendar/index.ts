@@ -1,3 +1,4 @@
+import type { DeviceCalendar } from '@codepulse/shared'
 import { civilDate, dateKey, DAY_MS, monthDays } from './civil.js'
 import { BUILTIN_HOLIDAYS, type HolidayTable } from './holidays.js'
 import { lunarDate, type LunarDate } from './lunar.js'
@@ -13,20 +14,8 @@ export {
 export type { Holiday, HolidayTable } from './holidays.js'
 export { lunarDate } from './lunar.js'
 export type { LunarDate } from './lunar.js'
+export type { DeviceCalendar }
 export { solarTerm } from './solar-terms.js'
-
-/** Firmware calendar payload. first is Monday-based; today=0 is reserved for another month. */
-export interface DeviceCalendar {
-  year: number
-  month: number
-  today: number
-  first: number
-  days: number
-  lunar: string
-  week: number
-  labels: string[]
-  flags: number[]
-}
 
 const SOLAR_FESTIVALS: Readonly<Record<string, string>> = {
   '1-1': '元旦',

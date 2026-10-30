@@ -94,7 +94,7 @@ app.whenReady().then(async()=>{
     } }
     const readCount = (name: string) => previewReads['codepulse:' + name] ?? 0
     const ambient=new AmbientService({
-      config:{...DEFAULT_AMBIENT,enabled:false,xEnabled:true,memeEnabled:false,quietStart:0,quietEnd:0,idleOnly:false},
+      config:{...DEFAULT_AMBIENT,enabled:false,xEnabled:true,memeEnabled:false,calendarEnabled:false,quietStart:0,quietEnd:0,idleOnly:false},
       status:()=>hub.snapshot(),key:()=> 'fixture-key',save:()=>{},changed:()=>broadcast('codepulse:ambient-status',ambient.snapshot()),
       request:async()=>({tweets:[{id:'12345',author:{userName:'Polymarket'},text:'TEST FIXTURE — this is a screen integration test, not a real news post.',createdAt:new Date().toISOString(),likeCount:9000}]}),image:async()=>'',
     })
@@ -409,6 +409,34 @@ app.whenReady().then(async()=>{
     assert.deepEqual(await petChecked(), ['true','false','false','false','false'])
     await assertPetTextFits('1120 first pet chosen')
     await button(main, '回到工作画面'); assert.equal(ambient.current(), undefined)
+    // Calendar: the last category opens on today's card, with its info line, firmware note and settings toggle.
+    assert.deepEqual(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ambient-library-tabs button')).map(b=>b.textContent.trim())`), ['概念卡','思考实验','我的图片与便签','热点与 meme','像素宠物','日历'], 'category order')
+    await button(main, '日历')
+    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .product-preview-label')?.textContent.includes('内容示例') && document.querySelector('.ambient-panel .device-preview')?.getAttribute('data-render-state')==='ready'`),'calendar preview')
+    const calendarPage = await main.webContents.executeJavaScript(`(() => ({
+      tabs:Array.from(document.querySelectorAll('.ambient-library-tabs button')).map(b=>b.getAttribute('aria-pressed')),
+      info:document.querySelector('.ambient-card p')?.textContent??'',
+      hint:document.querySelector('.ambient-card .ambient-hint')?.textContent??'',
+      picker:Boolean(document.querySelector('.ambient-pet-picker, .ambient-select-card')),
+      toggle:Array.from(document.querySelectorAll('.ambient-toggle')).some(l=>l.textContent.includes('日历 · 农历与节假日')),
+      note:document.querySelector('.ambient-local-options')?.textContent.includes('内置 2025–2026，联网自动更新')
+    }))()`) as {tabs:string[];info:string;hint:string;picker:boolean;toggle:boolean;note:boolean}
+    assert.equal(calendarPage.tabs.at(-1),'true','calendar tab is selected'); assert.equal(calendarPage.picker,false,'one card a day needs no picker')
+    assert.match(calendarPage.info,/^\d+月\d+日 周[一二三四五六日] · 农历.+ · 第\d+周/,'info line: date, lunar, week'); assert.match(calendarPage.hint,/固件 0\.0\.29/)
+    assert.ok(calendarPage.toggle,'settings checkbox'); assert.ok(calendarPage.note,'settings note about holiday data')
+    await button(main, '显示到屏幕')
+    assert.equal(ambient.current()?.kind, 'calendar'); assert.equal(ambient.current()?.manual, true)
+    assert.equal(withAmbient(device().status,ambient.current()).ambient?.layout,'calendar'); assert.ok(withAmbient(device().status,ambient.current()).ambient?.calendar,'device status exposes ambient.calendar')
+    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .product-preview-label').textContent.includes('当前目标画面')`), 'calendar display leaves sample mode')
+    await capture('multimedia-calendar')
+    for (const [width,height] of [[1440,900],[1024,768]] as const) {
+      main.setContentSize(width,height); await wait(450)
+      const overflow = await main.webContents.executeJavaScript(`document.documentElement.scrollWidth-window.innerWidth`) as number
+      assert.ok(overflow<=1,'no horizontal page scroll on the calendar page at '+width+': '+overflow)
+      await capture('multimedia-calendar-'+width)
+    }
+    main.setContentSize(1120,780); await wait(350)
+    await button(main, '回到工作画面'); assert.equal(ambient.current(), undefined)
     await button(main, '热点与 meme')
     await click(main,'[data-view=settings]');await button(main,'屏幕工作台 ↗')
     await until(()=>BrowserWindow.getAllWindows().some(w=>w.getTitle().includes('屏幕工作台')),'screen window')
@@ -452,7 +480,7 @@ app.whenReady().then(async()=>{
     // The expected unauthorized native-window rejection is visible to Electron's console.
     const unexpected=errors.filter(e=>!e.includes('Only the screen window'))
     assert.deepEqual(unexpected,[])
-    writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,views:4,focusRoundTrip:true,consolidatedNavigation:true,fixedPixelResize:true,inspectionPixelEquality:true,visibleApply:true,stablePreviewNotes:true,invertedStyle:true,conceptCard:true,thoughtPrompt:true,personalNote:true,imageDrop:true,pixelPet:true,hudCoexistence:true,largePreview:true,independentScreen:true,draftPreserved:true,settingsShortcuts:true,globalAttention:true,canonicalStatePreserved:true,nativePinApplied,errors:unexpected},null,2))
+    writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,views:4,focusRoundTrip:true,consolidatedNavigation:true,fixedPixelResize:true,inspectionPixelEquality:true,visibleApply:true,stablePreviewNotes:true,invertedStyle:true,conceptCard:true,thoughtPrompt:true,personalNote:true,imageDrop:true,pixelPet:true,calendar:true,hudCoexistence:true,largePreview:true,independentScreen:true,draftPreserved:true,settingsShortcuts:true,globalAttention:true,canonicalStatePreserved:true,nativePinApplied,errors:unexpected},null,2))
     ambient.stop();BrowserWindow.getAllWindows().forEach(w=>w.destroy());screen.destroy();clearTimeout(deadline);app.exit(0)
   }catch(error){writeFileSync(join(output,'failure.txt'),(error instanceof Error ? error.stack : String(error))+'\n'+JSON.stringify(errors));clearTimeout(deadline);app.exit(1)}
 })

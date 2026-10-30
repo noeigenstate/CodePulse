@@ -108,6 +108,8 @@ export interface AmbientCard {
   imageHex?: string
   /** Red ink on top of `imageHex`; only cards with a bitmap may carry it. */
   red?: AmbientRedPlane
+  /** Screen layout for a bitmap card; only pet cards use `'pet'` (larger picture, 20px line). */
+  layout?: 'pet'
   /** Pet cards only: which pet this is and the mood it was drawn for. */
   pet?: { id: PetId; mood: PetMood }
 }
@@ -120,6 +122,8 @@ export interface DeviceAmbientCard {
   imageHex?: string
   /** Optional; devices drop it (and show black only) if it is invalid. */
   red?: AmbientRedPlane
+  /** Optional, only with `imageHex`; firmware older than 0.0.28 ignores it. */
+  layout?: 'pet'
 }
 export interface AmbientSnapshot {
   config: AmbientConfig

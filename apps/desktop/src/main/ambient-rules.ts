@@ -64,6 +64,7 @@ export function contentKey(card: AmbientCard): string {
         (card.red
           ? `${card.red.x},${card.red.y},${card.red.w}x${card.red.h}:${card.red.hex}`
           : '') +
+        (card.layout ?? '') +
         // A pet looks the same every day; its id carries the date so it can come back tomorrow.
         (card.kind === 'pet' ? card.id : '') +
         ':' +
@@ -102,6 +103,8 @@ export function deviceCard(
     ...(card.imageHex ? { imageHex: card.imageHex } : {}),
     // Red ink only ever accompanies a bitmap; the card builder guarantees the geometry.
     ...(card.imageHex && card.red ? { red: card.red } : {}),
+    // The layout only means something for a bitmap.
+    ...(card.imageHex && card.layout ? { layout: card.layout } : {}),
   }
 }
 export function withAmbient(

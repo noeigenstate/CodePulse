@@ -240,14 +240,8 @@
   display: none;
 }
 .screen-workbench.is-presenting .device-preview-scroll {
-  justify-content: center;
-}
-.screen-workbench.is-presenting .device-preview-frame {
-  width: min(100%, calc((100vh - 250px) * 1.333333)) !important;
-}
-.screen-workbench.is-presenting canvas.device-screen {
-  width: 100% !important;
-  height: auto !important;
+  max-width: calc((100vh - 250px) * 1.333333);
+  margin-inline: auto;
 }
 .screen-workbench.is-presenting .screen-live {
   padding: 16px;

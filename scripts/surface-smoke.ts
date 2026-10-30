@@ -42,6 +42,12 @@ async function button(win: BrowserWindow, label: string) {
   const code=`(()=>{const b=Array.from(document.querySelectorAll('button')).find(b=>b.getClientRects().length && !b.disabled && b.textContent.trim()===${JSON.stringify(label)});if(!b)throw Error(${JSON.stringify('Missing button: '+label)});b.click()})()`
   await win.webContents.executeJavaScript(code);await wait()
 }
+// A device pixel must cover a whole number (>= minK) of physical pixels, or 1px strokes blur unevenly.
+function assertWholePixels([width,height]: number[], dpr: number, minK: number, message: string) {
+  const k = width!*dpr/400
+  assert.ok(Math.abs(k-Math.round(k))<0.01 && Math.round(k)>=minK, `${message}: ${width}x${height} css at dpr ${dpr}`)
+  assert.ok(Math.abs(height!*dpr-300*Math.round(k))<0.01, `${message}: height ${height} css at dpr ${dpr}`)
+}
 app.whenReady().then(async()=>{
   try {
     // This harness never calls bootstrap/startLocalServer or modifies real hooks.
@@ -133,14 +139,14 @@ app.whenReady().then(async()=>{
     await click(main,'[data-view=control]');await click(main,'#endpoint-ink')
     await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.product-control .device-preview')?.getAttribute('data-render-state')==='ready'`),'ink draft preview')
     const previewWidth=await main.webContents.executeJavaScript(`document.querySelector('.product-control .device-preview canvas').getBoundingClientRect().width`)
-    assert.ok(previewWidth>=360,'preview must remain legible at default window size')
+    assert.ok(previewWidth>=200,'preview must remain legible at default window size')
     const layouts: unknown[] = []
     const geometry = () => main!.webContents.executeJavaScript(`(() => {
       const control = document.querySelector('.product-control');
       const stage = document.querySelector('.ink-control-workspace .product-preview-stage');
       const canvas = stage.querySelector('.device-preview-scroll canvas').getBoundingClientRect();
       const apply = document.querySelector('.ink-config .product-config-actions button').getBoundingClientRect();
-      return {viewport: [innerWidth,innerHeight], canvas: [canvas.width,canvas.height],
+      return {viewport: [innerWidth,innerHeight], dpr: devicePixelRatio, canvas: [canvas.width,canvas.height],
         canvasBottom: canvas.bottom, applyBottom: apply.bottom, applyTop: apply.top,
         pageOverflow: control.scrollHeight-control.clientHeight,
         previewOverflow: stage.scrollHeight-stage.clientHeight,
@@ -150,7 +156,7 @@ app.whenReady().then(async()=>{
     for (const [width,height] of [[1120,780],[1366,900],[1600,1000],[1000,720]]) {
       main.setContentSize(width!,height!); await wait(250)
       const measured = await geometry(); layouts.push(measured)
-      assert.deepEqual(measured.canvas,[400,300],'resizing keeps the exact native preview size')
+      assertWholePixels(measured.canvas as number[],measured.dpr as number,1,'resizing keeps whole physical pixels per device pixel')
       assert.ok(measured.pageOverflow <= 1,JSON.stringify(measured))
       assert.ok(measured.previewOverflow <= 1,JSON.stringify(measured))
       if(width! >= 1120) assert.ok(measured.configOverflow <= 1,JSON.stringify(measured))
@@ -158,12 +164,18 @@ app.whenReady().then(async()=>{
       assert.equal(measured.horizontalOverflow,0)
       await capture('ink-'+width+'x'+height)
     }
-    main.setContentSize(1120,780); await wait(250)
+    main.setContentSize(1120,780)
+    for (const zoom of [1.25,1.5,2,1]) {
+      main.webContents.setZoomFactor(zoom); await wait(300)
+      const measured = await geometry(); layouts.push(measured)
+      assertWholePixels(measured.canvas as number[],measured.dpr as number,1,`zoom ${zoom} keeps whole physical pixels`)
+    }
+    await wait(250)
     const beforeInspect = JSON.stringify(config)
     await button(main,'2 倍检查')
     assert.ok(await main.webContents.executeJavaScript(`Boolean(document.querySelector('.ink-control-workspace dialog[open]'))`))
     const inspectSize=await main.webContents.executeJavaScript(`(() => { const r=document.querySelector('dialog[open] canvas').getBoundingClientRect(); return [r.width,r.height] })()`)
-    assert.deepEqual(inspectSize,[800,600],'inspection uses a deliberate 2x zoom')
+    assertWholePixels(inspectSize,await main.webContents.executeJavaScript('devicePixelRatio'),2,'inspection uses a deliberate whole-pixel zoom of at least 2x')
     assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.ink-control-workspace .device-preview-scroll canvas').toDataURL() === document.querySelector('dialog[open] canvas').toDataURL()`),true,'both views use identical source pixels')
     await capture('ink-inspector')
     await button(main,'关闭检查')

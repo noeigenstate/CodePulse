@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import type { DeviceStatusV1 } from '@codepulse/shared'
+import { useEffect, useRef, useState, type RefObject } from 'react'
+import { deviceInspectScale, devicePixelRatioLabel, devicePreviewScale, type DeviceStatusV1 } from '@codepulse/shared'
 import { createDevicePlaneRenderer, planesToRgba } from '../device-preview/renderer.mjs'
 import manifest from '../device-preview/manifest.json'
 
@@ -15,12 +15,54 @@ function loadRenderer(): ReturnType<typeof createDevicePlaneRenderer> {
   return renderer
 }
 
+/** Device pixel ratio of the window the preview is on; follows zoom and moves between monitors. */
+function useDevicePixelRatio(): number {
+  const [dpr, setDpr] = useState(() => window.devicePixelRatio || 1)
+  useEffect(() => {
+    let query: MediaQueryList | undefined
+    const update = () => {
+      query?.removeEventListener('change', update)
+      setDpr(window.devicePixelRatio || 1)
+      query = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
+      query.addEventListener('change', update)
+    }
+    update()
+    window.addEventListener('resize', update)
+    return () => { query?.removeEventListener('change', update); window.removeEventListener('resize', update) }
+  }, [])
+  return dpr
+}
+
+/** Width the canvas may use (the scroll area minus the frame's padding and border), and whether the workbench is presenting. */
+function useAvailableWidth(scroll: RefObject<HTMLElement>, frame: RefObject<HTMLElement>): { width: number; presenting: boolean } {
+  const [available, setAvailable] = useState({ width: Infinity, presenting: false })
+  useEffect(() => {
+    const element = scroll.current
+    if (!element) return
+    const measure = () => {
+      const style = frame.current ? getComputedStyle(frame.current) : undefined
+      const chrome = style ? parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth) : 0
+      setAvailable({ width: Math.max(0, element.clientWidth - (chrome || 0)), presenting: Boolean(element.closest('.is-presenting')) })
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [scroll, frame])
+  return available
+}
+
 export function DeviceScreenPreview({ status, sample = false, live = false }: { status: DeviceStatusV1; sample?: boolean; live?: boolean }): JSX.Element {
   const canvas = useRef<HTMLCanvasElement>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
   const [zoom, setZoom] = useState(1)
   const [retry, setRetry] = useState(0)
   const hasFrame = useRef(false)
+  const scroll = useRef<HTMLDivElement>(null)
+  const frame = useRef<HTMLDivElement>(null)
+  const dpr = useDevicePixelRatio()
+  const { width, presenting } = useAvailableWidth(scroll, frame)
+  const scale = zoom === 1 ? devicePreviewScale(dpr, width, presenting) : deviceInspectScale(dpr)
   useEffect(() => {
     let alive = true
     if (!hasFrame.current) setState('loading')
@@ -40,11 +82,11 @@ export function DeviceScreenPreview({ status, sample = false, live = false }: { 
   const description = status.ambient ? `桌边动态，${status.ambient.source}：${status.ambient.text}` : status.display?.mode === 'usage'
     ? `用量看板，${status.display.agents.length} 个账号`
     : `HUD 工作，${status.threads?.length ?? 0} 个线程。${(status.threads ?? []).map(t => t.title).join('；')}`
-  return <div className="device-preview" data-render-state={state}>
-    <div className="device-preview-toolbar"><span>{live ? '当前目标画面' : status.ambient ? '内容预览' : sample ? '样例画面' : '最新任务画面'} · 400 × 300</span><div>{[1, 2].map(value => <button key={value} type="button" aria-pressed={zoom === value} onClick={() => setZoom(value)}>{value === 1 ? '实际像素' : '2 倍检查'}</button>)}</div></div>
-    <div className="device-preview-scroll" aria-busy={state === 'loading'}>
-      <div className="device-preview-frame" style={{ width: 400 * zoom + 24 }}>
-        <canvas ref={canvas} width={400} height={300} className="device-screen" style={{ width: 400 * zoom, height: 300 * zoom, visibility: state === 'error' ? 'hidden' : 'visible' }} role="img" aria-label={description}>{description}</canvas>
+  return <div className="device-preview" data-render-state={state} data-pixel-ratio={scale.k}>
+    <div className="device-preview-toolbar"><span>{live ? '当前目标画面' : status.ambient ? '内容预览' : sample ? '样例画面' : '最新任务画面'} · 400 × 300 · {devicePixelRatioLabel(scale.k)}</span><div>{[1, 2].map(value => <button key={value} type="button" aria-pressed={zoom === value} onClick={() => setZoom(value)}>{value === 1 ? '实际像素' : '2 倍检查'}</button>)}</div></div>
+    <div ref={scroll} className="device-preview-scroll" aria-busy={state === 'loading'}>
+      <div ref={frame} className="device-preview-frame" style={{ width: scale.cssWidth }}>
+        <canvas ref={canvas} width={400} height={300} className="device-screen" style={{ width: scale.cssWidth, height: scale.cssHeight, visibility: state === 'error' ? 'hidden' : 'visible' }} role="img" aria-label={description}>{description}</canvas>
       </div>
     </div>
     <div className="device-preview-note" aria-live="polite">{state === 'error' ? <><span>预览暂时无法生成。</span><button type="button" onClick={() => setRetry(n => n + 1)}>重试预览</button></> : state === 'loading' ? '正在生成画面…' : live ? '随工作状态与展示规则自动更新。' : sample ? '仅在桌面演示，不会更改设备内容或配置。' : `画面版本 ${manifest.firmwareVersion} · 调整后即时预览，点击「应用配置」才保存。`}</div>

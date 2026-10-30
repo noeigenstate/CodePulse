@@ -3,8 +3,8 @@
 .device-preview-toolbar { display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px; }
 .device-preview-toolbar button,.device-preview-note button { padding:4px 8px;border:1px solid var(--line,#ccc);border-radius:4px;margin-left:6px; }
 .device-preview-scroll { overflow-x:auto;margin-top:10px; }
-.device-preview-frame { box-sizing:content-box;width:400px;margin:0 auto;background:#e4dfcc;padding:10px;border-radius:8px; }
-.device-screen { display:block;width:400px;height:300px;flex:none;background:#fff;image-rendering:pixelated;max-width:none; }
+.device-preview-frame { box-sizing:content-box;margin:0 auto;background:#e4dfcc;padding:10px;border-radius:8px; }
+.device-screen { display:block;flex:none;background:#fff;image-rendering:pixelated;max-width:none; }
 .device-preview-note { display:flex;align-items:center;flex-wrap:wrap;gap:4px;font-size:12px;line-height:1.6;margin-top:8px;color:var(--ink-500,#666); }
 
 /* Keep the device bitmap at a deliberate integer zoom; resizing only changes its surroundings. */
@@ -22,5 +22,4 @@
 .device-preview-inspector h2 { margin:0; font-size:16px; font-weight:650; }
 .device-preview-inspector header p,.device-inspector-caption { margin:4px 0 0; font-size:11px; color:var(--ink-muted,#666); }
 .device-inspector-viewport { min-height:0; overflow:auto; border:1px solid var(--line,#ccc); background:#fff; }
-.device-inspector-viewport .device-screen { width:800px; height:600px; }
 .device-inspector-caption { flex:none; }

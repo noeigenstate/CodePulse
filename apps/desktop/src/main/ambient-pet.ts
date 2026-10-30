@@ -117,6 +117,7 @@ export function petCards(status: StatusSnapshot, now: number): AmbientCard[] {
       score: 0,
       imageHex: art.imageHex,
       ...(art.red ? { red: art.red } : {}),
+      layout: 'pet',
       pet: { id, mood },
     }
   })

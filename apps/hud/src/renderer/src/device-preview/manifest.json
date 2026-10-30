@@ -34,7 +34,7 @@
     "main/epd_canvas.h": "c8cf7b36d7545189a7211ad5ef6896cda5f05e57cf52cc2202538b02da698efa",
     "main/epd_quiet.h": "afb6afad3ee3d39846afdc59fc649ccf79dd2b9ab7ec4970b36651b04ef27228",
     "main/epd_ssd1683.h": "b612f719bf9e5a1e495d026c10c9e963b0965f28b6654526f161ae8b651f3f8f",
-    "main/quiet_dashboard.c": "2e40115a3e192b4ad439714eb037455c145ca7c9fb906073ece65b61b062fd3e",
+    "main/quiet_dashboard.c": "8c4659f59073948fbdb105f465b7767033f304dee8a340dbc88f7abd96fda709",
     "main/quiet_dashboard.h": "f8c2e279b91177edc9e5bdf3db30e7125f29fdacf8984c479fd0279fe205c448",
     "main/quiet_lut.h": "5d64b674b61d3bddfa37a9db1e71be793ef10a9251056c6fa74148ef1b57435f",
     "main/quiet_profile.h": "70eca7dd70c80b4406f817f6be6f4040092ebe4f8183161a6714f96cbae9fa48",
@@ -46,16 +46,17 @@
     "preview/include/driver/gpio.h": "b86d51679b20d8ac751d20620a7c2e0f1c5b1b5be6079ac61d54492a8140cc20",
     "preview/include/esp_err.h": "5fbf457052380bcb74d27614af81f72963aa8514f5fbcb37a7540474f29005ec",
     "preview/renderer.c": "bddba8944ff1cecc63670ff67dd93f09d4f9d274313b1b5611468e9d250d7e0c",
-    "scripts/build-preview.py": "01fd906305ceba944a6a908803c51d14624592fd71ebac1f42c8d260eb3100dd",
+    "scripts/build-preview.py": "0e622e14e9a424d6b9cbc883f725239d34c4dc2e218dbbc0141cdbde223242bb",
     "scripts/generate-calendar-font-charset.mjs": "cffe42f8880cac9ed16f7cd60a8f129c6dd21667bf6a0f5a10f6849b6b88e0c9",
     "scripts/generate-display-font.py": "2f5f9d617a4087372b8d9771be96c914b269e8291dbcc36d9b9cd2e9f9f7db0e",
     "scripts/generate-hierarchy-font.py": "954df792d6d05cc365b1f60a9a01074f4a519f72b2246c5748bd7dfb7954c1f4",
     "scripts/generate-native-font-masks.py": "a94a035e2373e3a5e28fa71231116aa5a91dd222bd923c0eb6e4d386464a4eb8",
+    "tests/vendor/miniz/LICENSE": "6f20fa7672b00e2e975c291df737cf227addf3ad32e36fef3fe0f416e4664d3d",
     "tests/vendor/miniz/miniz.h": "e3b8d7f2443a67afea58e0aa733a949bc722f9d926b97feb19e4dd3101a9ea2f",
     "tests/vendor/miniz/miniz_common.h": "8b60e76e726dfcf41a338c3a4c54c70038041a21e6314aa54fd3b7f729ea3412",
     "tests/vendor/miniz/miniz_export.h": "195259dc89fb3f83a96426a90ee03dc45acef113150cd3475ea9cfbf1f7784f3",
     "tests/vendor/miniz/miniz_tinfl.c": "9b7edc1fab708166e10f5e90a618a91c95a91496c4692e38160fdae810c1149a",
     "tests/vendor/miniz/miniz_tinfl.h": "040aad2d9ca23c487652c150277d950be12e72c5453ae1f7c6713ed2efd16b4e"
   },
-  "wasmSha256": "c0aa8d5d59bc5532daaadaba0729f4ef72e8e9e9458d6929eaf15dbdd3435e7a"
+  "wasmSha256": "d8f6c242e7bbf015f6532f3a1ed01b6156a03908b5fb0a3599096b03012a56da"
 }

@@ -7,6 +7,10 @@ $ErrorActionPreference = 'Stop'
 $workspace = Split-Path $PSScriptRoot -Parent
 $firmwareRoot = (Resolve-Path -LiteralPath $Firmware).Path
 $output = Join-Path $workspace '.tmpshots/device-preview-build'
+# Never ship leftovers from an earlier build; the compiler cache stays.
+foreach ($name in @('renderer.wasm', 'renderer.b64', 'manifest.json', 'THIRD-PARTY-FONTS.txt')) {
+    Remove-Item -LiteralPath (Join-Path $output $name) -Force -ErrorAction SilentlyContinue
+}
 & $Python (Join-Path $firmwareRoot 'scripts/build-preview.py') --zig $Zig --output $output
 if ($LASTEXITCODE -ne 0) { throw 'Device renderer compilation failed; assets were not updated.' }
 $notices = Join-Path $output 'THIRD-PARTY-FONTS.txt'

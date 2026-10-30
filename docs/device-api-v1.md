@@ -355,8 +355,8 @@ plain hash of the card id.
   "calendar": {
     "year": 2026, "month": 10, "today": 30, "first": 3, "days": 31,
     "lunar": "丙午年 九月廿一", "week": 44,
-    "labels": ["国庆节", "廿一", "…"],
-    "flags": [13, 0, "…"]
+    "labels": ["国庆节", "廿二", "廿三", "…"],
+    "flags": [7, 5, 5, "…"]
   }
 }
 ```
@@ -366,12 +366,16 @@ plain hash of the card id.
   is not in this month); `week` 1–53 is the ISO week of today (of the 1st when `today` is 0).
 - `lunar` is the header subtitle: the stem-branch year and today's lunar date, for example
   "丙午年 九月廿一" or "丙午年 闰六月初三"; at most 32 UTF-8 bytes.
-- `labels[i]` is the small text under day i+1, at most four Han characters, chosen by priority:
+- `labels[i]` is the small text under day i+1, at most four code points and at most 16 bytes of
+  UTF-8 (four Han characters are 12 bytes), chosen by priority:
   statutory or traditional festival, then solar term, then the lunar day (the 1st of a lunar month
   shows the month name such as "十月" or "闰六月").
 - `flags[i]` is a bit set for day i+1: `1` red date number (Saturday, Sunday or an official day off;
   a make-up workday is not red even on a weekend), `2` red small text (festival or solar term),
-  `4` official day off ("休"), `8` make-up workday ("班"). `4` and `8` never occur together.
+  `4` official day off (the firmware shows it only through the red date number and draws no
+  badge), `8` make-up workday ("班"). `4` and `8` never occur together; an official day off always
+  also carries `1`. In the example, 1 October is a day off with a festival name (`1|2|4` = 7) and
+  2 October is a day off with its lunar day (`1|4` = 5).
 - `labels` and `flags` both have exactly `days` entries.
 - An invalid `calendar` is dropped by the firmware, which then shows `text` as a plain text card; like
   `red`, it must never make the status fail to parse. Firmware older than 0.0.29 ignores `layout`
@@ -389,8 +393,11 @@ hand, and is switched by the `calendarEnabled` setting (default true).
 Holiday data. The grid marks statutory days off and make-up workdays from a table that is built in
 for 2025 and 2026. While the calendar is enabled the desktop fetches
 `https://cdn.jsdelivr.net/gh/NateScarlet/holiday-cn@master/<year>.json` for the current year, and
-from November for the next year, at most once per year per day (a failed attempt counts). A file is
-used only if it parses as holiday-cn, declares the requested year and has at least one day; it then
+from October for the next year (the announcement usually comes in early November; a miss only costs
+that day's attempt), at most once per year per day (a failed attempt counts). A file is
+used only if it parses as holiday-cn, declares the requested year and has at least one day of that
+year; dates may also fall in 20–31 December before it or 1–10 January after it (a New Year break
+can cross the year, e.g. `2023.json` lists 2022-12-31) and are filed under their own date. It then
 replaces the built-in table for that year (other years are added) and is cached in the user data
 directory as `calendar-holidays.json`. Any failure is silent and leaves the previous table.
 

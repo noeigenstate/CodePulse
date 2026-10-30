@@ -21,10 +21,13 @@ const dayNumber = (key: string) => {
   return Date.UTC(y!, m! - 1, d!) / 86400000
 }
 
-/** The year being used, plus next year from November on (when the State Council announces it). */
+/**
+ * The year being used, plus next year from October on. The State Council usually announces it in
+ * early November; asking earlier is harmless, a miss only costs that day's one attempt.
+ */
 export function holidayYears(now: number): number[] {
   const d = new Date(now)
-  return d.getMonth() >= 10 ? [d.getFullYear(), d.getFullYear() + 1] : [d.getFullYear()]
+  return d.getMonth() >= 9 ? [d.getFullYear(), d.getFullYear() + 1] : [d.getFullYear()]
 }
 
 /**
@@ -33,9 +36,12 @@ export function holidayYears(now: number): number[] {
  */
 export function parseRemoteYear(year: number, input: unknown): HolidayTable | undefined {
   try {
-    const table = parseHolidayCn(input)
+    const value: unknown = typeof input === 'string' ? JSON.parse(input) : input
+    if ((value as { year?: unknown } | null)?.year !== year) return undefined
+    const table = parseHolidayCn(value)
     const keys = Object.keys(table)
-    return keys.length && keys.every((k) => k.startsWith(`${year}-`)) ? table : undefined
+    // A file must carry days of its own year; one that only holds spill-over dates is not that year.
+    return keys.some((k) => k.startsWith(`${year}-`)) ? table : undefined
   } catch {
     return undefined
   }
@@ -135,7 +141,7 @@ export class HolidayStore {
       /* The cache is an optimisation; keep running from memory. */
     }
   }
-  /** Fetch this year (and next from November) once per day each. Resolves true if the table changed. */
+  /** Fetch this year (and next from October) once per day each. Resolves true if the table changed. */
   async sync(
     now: number,
     request: JsonRequest,

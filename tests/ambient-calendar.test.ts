@@ -293,6 +293,18 @@ test('holidays: only a valid, non-empty file for the requested year is accepted'
   assert.ok(parseRemoteYear(2026, good))
   assert.ok(parseRemoteYear(2026, { ...good, $schema: 'x', papers: [] }), 'extra keys are fine')
   assert.equal(parseRemoteYear(2027, good), undefined, 'wrong year')
+  // A file that crosses the new year is still that year's file; spill-over days alone are not.
+  const crossing = cn(2023, [
+    { name: '元旦', date: '2022-12-31', isOffDay: true },
+    { name: '元旦', date: '2023-01-01', isOffDay: true },
+  ])
+  assert.equal(parseRemoteYear(2023, crossing)?.['2022-12-31']?.isOffDay, true)
+  assert.equal(
+    parseRemoteYear(2023, cn(2023, [crossing.days[0]!])),
+    undefined,
+    'only spill-over days',
+  )
+  assert.equal(parseRemoteYear(2022, crossing), undefined, 'wrong year for that file')
   assert.equal(parseRemoteYear(2026, cn(2026, [])), undefined, 'empty days')
   for (const bad of [
     null,
@@ -311,8 +323,9 @@ test('holidays: only a valid, non-empty file for the requested year is accepted'
     assert.equal(parseRemoteYear(2026, bad), undefined)
 })
 
-test('holidays: this year is fetched, next year only from November', () => {
-  assert.deepEqual(holidayYears(at(2026, 10, 31)), [2026])
+test('holidays: this year is fetched, next year from October', () => {
+  assert.deepEqual(holidayYears(at(2026, 9, 30)), [2026])
+  assert.deepEqual(holidayYears(at(2026, 10, 1, 0)), [2026, 2027])
   assert.deepEqual(holidayYears(at(2026, 11, 1, 0)), [2026, 2027])
   assert.deepEqual(holidayYears(at(2026, 12, 31)), [2026, 2027])
   assert.equal(
@@ -326,13 +339,21 @@ test('holidays: the service fetches once per year per day, merges and caches the
     { name: '测试假日', date: '2026-10-30', isOffDay: true },
     { name: '测试假日', date: '2026-10-31', isOffDay: false },
   ])
-  const f = calendarService({ respond: () => remote })
+  const next = cn(2027, [
+    { name: '元旦', date: '2026-12-31', isOffDay: true },
+    { name: '元旦', date: '2027-01-01', isOffDay: true },
+  ])
+  const f = calendarService({ respond: (url) => (url === holidayUrl(2027) ? next : remote) })
   assert.equal(f.calendar().calendar?.flags[0]! & 4, 4, 'built-in National Day before the fetch')
   assert.equal(f.service.snapshot().calendarNext, undefined)
   f.service.tick()
   f.service.tick() // The 15 second ticker must not refetch.
   await flush()
-  assert.deepEqual(f.requests, [holidayUrl(2026)])
+  assert.deepEqual(
+    f.requests,
+    [holidayUrl(2026), holidayUrl(2027)],
+    'next year is tried from October',
+  )
   const calendar = f.calendar().calendar!
   assert.equal(calendar.flags[29]! & 4, 4, 'the remote day off')
   assert.equal(calendar.flags[30]! & 8, 8, 'the remote make-up day')
@@ -346,18 +367,21 @@ test('holidays: the service fetches once per year per day, merges and caches the
   assert.ok(f.changes() > 0, 'the page is told about new data')
   const cache = f.saved.at(-1)!
   assert.equal(cache.version, 1)
-  assert.deepEqual(Object.keys(cache.years), ['2026'])
+  assert.deepEqual(Object.keys(cache.years), ['2026', '2027'])
   assert.deepEqual(cache.years['2026']!.days.length, 2)
-  assert.equal(cache.attempts['2026'], '2026-10-30')
-  // The next day it is tried again; in November next year joins.
+  assert.deepEqual(cache.attempts, { 2026: '2026-10-30', 2027: '2026-10-30' })
+  // The next day each year is tried again.
   f.advance(24 * 3600000)
   f.service.tick()
   await flush()
-  assert.deepEqual(f.requests, [holidayUrl(2026), holidayUrl(2026)])
-  f.advance(2 * 24 * 3600000)
-  f.service.tick()
-  await flush()
   assert.deepEqual(f.requests.slice(2), [holidayUrl(2026), holidayUrl(2027)])
+  // A spill-over day is filed under its own date: the 2027 file also marks 2026-12-31.
+  f.advance(61 * 24 * 3600000) // 2026-12-31
+  assert.equal(
+    f.calendar().calendar!.flags[30]! & 4,
+    4,
+    '2026-12-31 is a day off from the 2027 file',
+  )
 })
 
 test("holidays: failures are silent, still count as the day's attempt, and keep the built-in table", async () => {
@@ -377,12 +401,12 @@ test("holidays: failures are silent, still count as the day's attempt, and keep 
     assert.deepEqual(f.saved.at(-1)?.years, {})
     f.service.tick()
     await flush()
-    assert.equal(f.requests.length, 1, 'one attempt per day')
+    assert.equal(f.requests.length, 2, 'one attempt per year per day')
   }
   const offline = calendarService() // The request rejects.
   offline.service.tick()
   await flush()
-  assert.equal(offline.requests.length, 1)
+  assert.equal(offline.requests.length, 2)
   assert.ok(offline.calendar().calendar!.flags[0]! & 4, 'built-in National Day')
   const thrown = calendarService({
     respond: () => {
@@ -391,7 +415,7 @@ test("holidays: failures are silent, still count as the day's attempt, and keep 
   })
   thrown.service.tick()
   await flush()
-  assert.equal(thrown.requests.length, 1)
+  assert.equal(thrown.requests.length, 2)
 })
 
 test('holidays: the cache is used offline, validated on load and pruned by year', async () => {
@@ -407,11 +431,11 @@ test('holidays: the cache is used offline, validated on load and pruned by year'
   assert.equal(f.calendar().calendar?.flags[0]! & 4, 0)
   f.service.tick() // attempts['2026'] is yesterday, so one fetch which fails
   await flush()
-  assert.equal(f.requests.length, 1)
+  assert.equal(f.requests.length, 2)
   assert.equal(f.calendar().calendar?.flags[29]! & 4, 4, 'a failed refresh keeps the cache')
   const saved = f.saved.at(-1)!
   assert.deepEqual(Object.keys(saved.years), ['2026'], 'invalid and past years are dropped')
-  assert.deepEqual(Object.keys(saved.attempts), ['2026'])
+  assert.deepEqual(Object.keys(saved.attempts), ['2026', '2027'])
   // Junk caches are the same as no cache.
   for (const junk of [
     undefined,

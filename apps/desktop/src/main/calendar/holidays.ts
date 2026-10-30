@@ -8,7 +8,11 @@ export interface Holiday {
 /** Only announced exceptions to the ordinary workweek. Names never become cell labels. */
 export type HolidayTable = Readonly<Record<string, Holiday>>
 
-/** Accept a holiday-cn object or its JSON text; reject the whole update on invalid input. */
+/**
+ * Accept a holiday-cn object or its JSON text; reject the whole update on invalid input. Dates
+ * belong to the declared year, plus 20-31 December before it and 1-10 January after it; each entry
+ * is keyed by its own date, so a merge files it under the year it falls in.
+ */
 export function parseHolidayCn(input: unknown): HolidayTable {
   const value: unknown = typeof input === 'string' ? JSON.parse(input) : input
   if (!value || typeof value !== 'object') throw new TypeError('Expected a holiday-cn object')
@@ -24,15 +28,16 @@ export function parseHolidayCn(input: unknown): HolidayTable {
       throw new TypeError('Holiday entries require a name and boolean isOffDay')
     const match = typeof date === 'string' && /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
     if (!match) throw new TypeError('Holiday date must be YYYY-MM-DD')
-    const month = Number(match[2]),
+    const dateYear = Number(match[1]),
+      month = Number(match[2]),
       day = Number(match[3])
-    if (
-      Number(match[1]) !== year ||
-      month < 1 ||
-      month > 12 ||
-      day < 1 ||
-      day > monthDays(year as number, month)
-    )
+    // holiday-cn files hold the breaks announced for their year, so a New Year break can reach back
+    // to late December (2023.json lists 2022-12-31) and a Spring Festival one forward into January.
+    const inYear =
+      dateYear === year ||
+      (dateYear === (year as number) - 1 && month === 12 && day >= 20) ||
+      (dateYear === (year as number) + 1 && month === 1 && day <= 10)
+    if (!inYear || month < 1 || month > 12 || day < 1 || day > monthDays(dateYear, month))
       throw new RangeError(`Holiday date is outside the declared year: ${date}`)
     if (Object.hasOwn(table, date as string)) throw new TypeError(`Duplicate holiday date: ${date}`)
     table[date as string] = Object.freeze({ name: name.trim(), isOffDay })

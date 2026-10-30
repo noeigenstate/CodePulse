@@ -113,7 +113,11 @@ function useWholePixelAlign(canvas: RefObject<HTMLElement>, frame: RefObject<HTM
     const dx = phase(rect.left), dy = phase(rect.top)
     if (Math.abs(dx * dpr) < 0.03 && Math.abs(dy * dpr) < 0.03) return
     offset.current = { x: offset.current.x - dx, y: offset.current.y - dy }
-    box.style.transform = `translate(${offset.current.x}px, ${offset.current.y}px)`
+    // A layout offset, not a transform: layout snaps the canvas to whole physical pixels, while a
+    // fractional transform is applied after snapping and resamples every edge row and column.
+    box.style.position = 'relative'
+    box.style.left = `${offset.current.x}px`
+    box.style.top = `${offset.current.y}px`
   }
   useLayoutEffect(align)
   useEffect(() => {

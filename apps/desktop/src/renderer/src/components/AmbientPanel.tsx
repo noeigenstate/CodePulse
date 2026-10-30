@@ -17,19 +17,54 @@ import { useScreenTarget } from '../lib/useScreenTarget.js'
 
 /** Tail of the calendar info line: the break going on, or how far away the next one is. */
 function nextHolidayText(next: CalendarNextHoliday | undefined): string {
-  if (!next) return ''
+  if (!next) return ' · 暂无下一个假日数据'
   return next.ongoing ? ` · ${next.name}假期中` : ` · 距 ${next.name} 还有 ${next.inDays} 天`
 }
 
 const PET_CROP = { x: 4, y: 8, w: 232, h: 196 }
+/**
+ * The picture-area crop of a 400 x 300 frame with each ink pixel (not white) also painted on its
+ * paper neighbours. Red goes first so black wins where the two meet, as on the screen.
+ */
+function thickenInk(frame: ImageData, crop: typeof PET_CROP): ImageData {
+  const left = 8 + crop.x,
+    top = 60 + crop.y
+  const source = new Uint8ClampedArray(crop.w * crop.h * 4)
+  for (let y = 0; y < crop.h; y++)
+    source.set(
+      frame.data.subarray(((top + y) * 400 + left) * 4, ((top + y) * 400 + left + crop.w) * 4),
+      y * crop.w * 4,
+    )
+  const out = new Uint8ClampedArray(source)
+  const isInk = (i: number) => source[i] !== 255 || source[i + 1] !== 255 || source[i + 2] !== 255
+  const isBlack = (i: number) => source[i] === 0 && source[i + 1] === 0 && source[i + 2] === 0
+  for (const black of [false, true])
+    for (let y = 0; y < crop.h; y++)
+      for (let x = 0; x < crop.w; x++) {
+        const i = (y * crop.w + x) * 4
+        if (!isInk(i) || isBlack(i) !== black) continue
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = x + dx,
+              ny = y + dy
+            if (nx < 0 || ny < 0 || nx >= crop.w || ny >= crop.h) continue
+            const j = (ny * crop.w + nx) * 4
+            if (isInk(j)) continue
+            if (!black && (out[j] !== 255 || out[j + 1] !== 255 || out[j + 2] !== 255)) continue
+            out.set(source.subarray(i, i + 4), j)
+          }
+      }
+  return new ImageData(out, crop.w, crop.h)
+}
 /** Thumbnail width in CSS px; the canvas itself is sized in device pixels so edges stay smooth. */
-const PET_THUMB_W = 52
+const PET_THUMB_W = 64
 const PET_THUMB_H = (PET_THUMB_W * PET_CROP.h) / PET_CROP.w
 /**
  * Small look at a pet card's bitmap. It lays the card into the same two planes the device uses
  * and paints them with the shared preview colours, so black wins over red exactly as on the screen.
- * The crop is drawn at native size first and then scaled with smoothing to the target size, so the
- * 2 to 3 px outlines stay connected instead of turning into dots.
+ * The crop is cut at native size, every ink pixel is grown by one pixel (black over red, never over
+ * paper that another colour owns), and only then is it scaled with smoothing to the target size:
+ * the 2 to 3 px outlines would otherwise average with the paper and break into dashes.
  */
 function PetThumb({ card }: { card: AmbientCard }): JSX.Element {
   const canvas = useRef<HTMLCanvasElement>(null)
@@ -65,17 +100,7 @@ function PetThumb({ card }: { card: AmbientCard }): JSX.Element {
     const crop = document.createElement('canvas')
     crop.width = PET_CROP.w
     crop.height = PET_CROP.h
-    crop
-      .getContext('2d')
-      ?.putImageData(
-        image,
-        -(8 + PET_CROP.x),
-        -(60 + PET_CROP.y),
-        8 + PET_CROP.x,
-        60 + PET_CROP.y,
-        PET_CROP.w,
-        PET_CROP.h,
-      )
+    crop.getContext('2d')?.putImageData(thickenInk(image, PET_CROP), 0, 0)
     target.width = Math.round(PET_THUMB_W * ratio)
     target.height = Math.round(PET_THUMB_H * ratio)
     context.imageSmoothingEnabled = true
@@ -407,6 +432,15 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
               </button>
             </div>
           )}
+          {category === 'calendar' && selectedCard?.calendar && (
+            <div className="ambient-calendar-info" role="status">
+              <p>
+                {selectedCard.text}
+                {nextHolidayText(snapshot?.calendarNext)}
+              </p>
+              <small>月历需要固件 0.0.29 以上，旧固件只显示一行文字</small>
+            </div>
+          )}
           <section className="product-preview-stage">
             <div className="product-preview-label">
               <span>{preview ? '内容示例' : '当前目标画面'}</span>
@@ -514,14 +548,10 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
                     })}
                   </span>
                 </div>
-                <p>
-                  {card.text}
-                  {card.calendar && nextHolidayText(snapshot?.calendarNext)}
-                </p>
+                <p>{card.text}</p>
                 {card.calendar && (
                   <p className="ambient-hint">
-                    月历需要固件 0.0.29
-                    以上，旧固件只显示一行文字。每天最多出现一次，红色需要完整刷新，约 16 秒。
+                    每天最多出现一次，红色需要完整刷新，约 16 秒，所以进出各刷新一次。
                   </p>
                 )}
                 {card.pet && (

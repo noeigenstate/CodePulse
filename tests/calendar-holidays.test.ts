@@ -98,3 +98,40 @@ test('calendar holidays: reject malformed updates atomically, including duplicat
     assert.throws(() => parseHolidayCn(input))
   assert.equal(Object.keys(BUILTIN_HOLIDAYS).length, 72)
 })
+
+test('calendar holidays: a break may cross the new year, but only by days of the neighbouring year', () => {
+  const day = (date: string, isOffDay = true) => ({ name: '元旦', date, isOffDay })
+  const table = parseHolidayCn({
+    year: 2023,
+    days: [
+      day('2022-12-20'),
+      day('2022-12-31'),
+      day('2023-01-01'),
+      day('2023-01-02'),
+      day('2024-01-01'),
+      day('2024-01-10', false),
+    ],
+  })
+  assert.deepEqual(Object.keys(table).sort(), [
+    '2022-12-20',
+    '2022-12-31',
+    '2023-01-01',
+    '2023-01-02',
+    '2024-01-01',
+    '2024-01-10',
+  ])
+  assert.equal(table['2022-12-31']?.isOffDay, true, 'keyed by its own date')
+  assert.equal(table['2024-01-10']?.isOffDay, false)
+  for (const date of [
+    '2022-12-19',
+    '2022-11-30',
+    '2022-06-01',
+    '2024-01-11',
+    '2024-02-01',
+    '2021-12-31',
+    '2025-01-01',
+    '2022-12-32',
+    '2022-02-30',
+  ])
+    assert.throws(() => parseHolidayCn({ year: 2023, days: [day(date)] }), date)
+})

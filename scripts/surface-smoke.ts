@@ -124,6 +124,23 @@ app.whenReady().then(async()=>{
     await main.webContents.reload(); await wait(900)
     await until(()=>main!.webContents.executeJavaScript(`Boolean(document.querySelector('.product-control'))`),'control reload')
     const capture=async(name:string)=>{await wait(350);writeFileSync(join(output,name+'.png'),(await main!.webContents.capturePage()).toPNG())}
+    // Every physical pixel under the preview canvas, edges included, must be paper, ink or red:
+    // a fractional canvas size or phase resamples the last row/column into blends like #E1AFB1.
+    const assertCanvasPure=async(label:string,selector='.ambient-panel .device-preview canvas.device-screen')=>{
+      await main!.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center',inline:'center'})`);await wait(400)
+      const box=await main!.webContents.executeJavaScript(`(()=>{const c=document.querySelector(${JSON.stringify(selector)});c.scrollIntoView({block:'center',inline:'center'});const r=c.getBoundingClientRect();return {x:r.left,y:r.top,w:r.width,h:r.height,dpr:window.devicePixelRatio}})()`) as {x:number;y:number;w:number;h:number;dpr:number}
+      const image=await main!.webContents.capturePage(), size=image.getSize(), bitmap=image.toBitmap()
+      const left=Math.round(box.x*box.dpr), top=Math.round(box.y*box.dpr), width=Math.round(box.w*box.dpr), height=Math.round(box.h*box.dpr)
+      assert.ok(left>=0&&top>=0&&left+width<=size.width&&top+height<=size.height,label+': canvas is inside the capture '+JSON.stringify({box,size}))
+      const colours=new Map<string,number>(), bad=new Map<string,string>()
+      for(let y=top;y<top+height;y++)for(let x=left;x<left+width;x++){
+        const i=(y*size.width+x)*4, key=[bitmap[i+2],bitmap[i+1],bitmap[i]].map(v=>v!.toString(16).padStart(2,'0')).join('')
+        colours.set(key,(colours.get(key)??0)+1)
+        if(!['ffffff','000000','be1e2d'].includes(key)&&bad.size<6)bad.set(key,`${x-left},${y-top}`)
+      }
+      if(bad.size)writeFileSync(join(output,'canvas-edge-'+label.replace(/\W+/g,'-')+'.png'),image.toPNG())
+      assert.equal(bad.size,0,label+': canvas pixels outside {white, black, red} at dpr '+box.dpr+' css '+box.w+'x'+box.h+' (first at x,y): '+JSON.stringify([...bad])+' box '+JSON.stringify({left,top,width,height,size}))
+    }
     await capture('control-desktop')
     // Layout changes stay drafts until applied, and survive focus/console transitions.
     await button(main,'功能平铺');assert.equal(product.snapshot().desktopLayout,'work')
@@ -395,6 +412,7 @@ app.whenReady().then(async()=>{
     await until(async()=>(await petStats()).red>0,'live target shows red')
     await assertPetTextFits('1120')
     await capture('multimedia-pet')
+    await assertCanvasPure('pet 1120')
     // ui-acceptance viewports with a pet chosen; the window goes back to 1120 x 780 afterwards.
     for (const [width,height] of [[1440,900],[1024,768],[390,844]] as const) {
       main.setContentSize(width,height); await wait(450)
@@ -402,6 +420,7 @@ app.whenReady().then(async()=>{
       if (width>=1024) assert.ok(overflow<=1,'no horizontal page scroll at '+width+': '+overflow)
       assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.ambient-pet-option').length`),5)
       if (width>=1024) await assertPetTextFits(String(width))
+      if (width>=1024) await assertCanvasPure('pet '+width)
       await capture('multimedia-pet-'+width)
     }
     main.setContentSize(1120,780); await wait(350)
@@ -415,24 +434,29 @@ app.whenReady().then(async()=>{
     await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .product-preview-label')?.textContent.includes('内容示例') && document.querySelector('.ambient-panel .device-preview')?.getAttribute('data-render-state')==='ready'`),'calendar preview')
     const calendarPage = await main.webContents.executeJavaScript(`(() => ({
       tabs:Array.from(document.querySelectorAll('.ambient-library-tabs button')).map(b=>b.getAttribute('aria-pressed')),
-      info:document.querySelector('.ambient-card p')?.textContent??'',
-      hint:document.querySelector('.ambient-card .ambient-hint')?.textContent??'',
+      info:document.querySelector('.ambient-calendar-info p')?.textContent??'',
+      infoBox:(()=>{for(let e=document.querySelector('.ambient-panel');e;e=e.parentElement)e.scrollTop=0;const r=document.querySelector('.ambient-calendar-info')?.getBoundingClientRect();return r?{top:r.top,bottom:r.bottom,height:window.innerHeight}:null})(),
+      hint:document.querySelector('.ambient-calendar-info small')?.textContent??'',
       picker:Boolean(document.querySelector('.ambient-pet-picker, .ambient-select-card')),
       toggle:Array.from(document.querySelectorAll('.ambient-toggle')).some(l=>l.textContent.includes('日历 · 农历与节假日')),
       note:document.querySelector('.ambient-local-options')?.textContent.includes('内置 2025–2026，联网自动更新')
-    }))()`) as {tabs:string[];info:string;hint:string;picker:boolean;toggle:boolean;note:boolean}
+    }))()`) as {tabs:string[];info:string;infoBox:{top:number;bottom:number;height:number}|null;hint:string;picker:boolean;toggle:boolean;note:boolean}
     assert.equal(calendarPage.tabs.at(-1),'true','calendar tab is selected'); assert.equal(calendarPage.picker,false,'one card a day needs no picker')
     assert.match(calendarPage.info,/^\d+月\d+日 周[一二三四五六日] · 农历.+ · 第\d+周/,'info line: date, lunar, week'); assert.match(calendarPage.hint,/固件 0\.0\.29/)
+    assert.match(calendarPage.info,/(假期中|距 .+ 还有 \d+ 天|暂无下一个假日数据)$/,'info line ends with the next holiday or says there is none')
+    assert.ok(calendarPage.infoBox&&calendarPage.infoBox.top>=0&&calendarPage.infoBox.bottom<=calendarPage.infoBox.height,'calendar info is on the first screen at 1120x780: '+JSON.stringify(calendarPage.infoBox))
     assert.ok(calendarPage.toggle,'settings checkbox'); assert.ok(calendarPage.note,'settings note about holiday data')
     await button(main, '显示到屏幕')
     assert.equal(ambient.current()?.kind, 'calendar'); assert.equal(ambient.current()?.manual, true)
     assert.equal(withAmbient(device().status,ambient.current()).ambient?.layout,'calendar'); assert.ok(withAmbient(device().status,ambient.current()).ambient?.calendar,'device status exposes ambient.calendar')
     await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .product-preview-label').textContent.includes('当前目标画面')`), 'calendar display leaves sample mode')
     await capture('multimedia-calendar')
+    await assertCanvasPure('calendar 1120')
     for (const [width,height] of [[1440,900],[1024,768]] as const) {
       main.setContentSize(width,height); await wait(450)
       const overflow = await main.webContents.executeJavaScript(`document.documentElement.scrollWidth-window.innerWidth`) as number
       assert.ok(overflow<=1,'no horizontal page scroll on the calendar page at '+width+': '+overflow)
+      await assertCanvasPure('calendar '+width)
       await capture('multimedia-calendar-'+width)
     }
     main.setContentSize(1120,780); await wait(350)

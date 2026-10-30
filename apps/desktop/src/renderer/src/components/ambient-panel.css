@@ -287,7 +287,7 @@
   cursor: pointer;
 }
 .ambient-pet-option canvas {
-  width: 52px;
+  width: 64px;
   height: auto;
   aspect-ratio: 232 / 196;
   background: #fff;
@@ -342,4 +342,19 @@
 /* Keeps the display button as high as on the other categories despite the two-line options. */
 .ambient-library-tabs + .ambient-pet-picker {
   margin: -4px 0 4px;
+}
+.ambient-calendar-info {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 8px;
+}
+.ambient-calendar-info p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.ambient-calendar-info small {
+  font-size: 11px;
+  opacity: 0.6;
 }

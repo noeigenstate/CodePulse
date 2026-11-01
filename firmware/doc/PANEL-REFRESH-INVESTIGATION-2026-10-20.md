@@ -155,7 +155,7 @@ OLD 缓存固定为干净 OTP 基准；A、B 各更新一次，不再从成像�
 
 ### 2026-10-21：quiet-probe2 已刷入并进入 READY2
 
-用户确认从关机状态持续按住功能/电源键后，COM6 / ESP32-S3 / a4:cb:8f:c3:a6:98 写入 0.0.4-quiet-probe2 应用 397,408 字节至 0x10000，写后哈希校验通过。未写 bootloader、分区表或 NVS，结束停留 bootloader。镜像 SHA-256 AA3991CBC5FF2895B46E54AD20D72CEAEF7AC60B5160E69ACA35F0E83CB72653。
+用户确认从关机状态持续按住功能/电源键后，COM6 / ESP32-S3 / [device identifier omitted] 写入 0.0.4-quiet-probe2 应用 397,408 字节至 0x10000，写后哈希校验通过。未写 bootloader、分区表或 NVS，结束停留 bootloader。镜像 SHA-256 AA3991CBC5FF2895B46E54AD20D72CEAEF7AC60B5160E69ACA35F0E83CB72653。
 
 用户随后正常掉电开机，14:18:24（北京时间）通过供电长按判定，14:18:25 松开按钮后进入 READY2；用户确认指示灯保持亮。开机未刷新，当前设备已为 quiet-probe2，替代前文待刷入状态。现安排首次手动 OTP 基准，A/B 两行 3、4 为黑块，1、2 为白色；基准与后续 A/B 尚无实测结果，不得宣称成像通过。
 
@@ -205,7 +205,7 @@ COM6 可见；当前设备仍为 quiet-probe2 对照图，文字版尚未刷入�
 
 ### 2026-10-21：文字往返版已刷入，待正常启动
 
-用户确认从关机状态持续按住功能/电源键后，已向 COM6 / ESP32-S3 / a4:cb:8f:c3:a6:98 写入 0.0.5-text-probe 应用 397,488 字节至 0x10000，esptool 写后哈希校验通过。镜像 SHA-256 9D75AF95288BBAE075FB1F053AB85560CC76B91A2D74723BF0CBAEA42656655C。未写 bootloader、分区表或 NVS，结束停留 bootloader，不自动复位。
+用户确认从关机状态持续按住功能/电源键后，已向 COM6 / ESP32-S3 / [device identifier omitted] 写入 0.0.5-text-probe 应用 397,488 字节至 0x10000，esptool 写后哈希校验通过。镜像 SHA-256 9D75AF95288BBAE075FB1F053AB85560CC76B91A2D74723BF0CBAEA42656655C。未写 bootloader、分区表或 NVS，结束停留 bootloader，不自动复位。
 
 当前已替换 quiet-probe2，等待用户掉电后长按正常开机和 TEXT READY。开机不会刷新；文字基准和四次往返尚未执行，不提前认定效果。15:06:43（北京时间）启动 COM6 被动日志，DTR/RTS=false，无发送指令或复位。刷写日志 CodePulse/.tmpshots/text-probe-flash-2026-10-21.log；运行日志 text-probe-runtime-2026-10-21.log。
 
@@ -242,7 +242,7 @@ COM6 可见；当前设备仍为 quiet-probe2 对照图，文字版尚未刷入�
 
 ### 2026-10-21：文字擦除对照版已刷入并进入 TIMING READY
 
-用户确认持续按住功能/电源键后，15:54:57（北京时间）向 COM6 / ESP32-S3 / a4:cb:8f:c3:a6:98 完成 0.0.6-text-timing 应用写入，397,648 字节，地址 0x10000，写后哈希校验通过。SHA-256 F0B8F08CD80983FB12CC447C26717C26217F7D34D1F245FB5CB35FD490E6FDE7。未写 bootloader、分区表或 NVS；刷完保持 bootloader，没有自动复位。
+用户确认持续按住功能/电源键后，15:54:57（北京时间）向 COM6 / ESP32-S3 / [device identifier omitted] 完成 0.0.6-text-timing 应用写入，397,648 字节，地址 0x10000，写后哈希校验通过。SHA-256 F0B8F08CD80983FB12CC447C26717C26217F7D34D1F245FB5CB35FD490E6FDE7。未写 bootloader、分区表或 NVS；刷完保持 bootloader，没有自动复位。
 
 15:55:25 启动 COM6 被动监听，不发送命令，DTR/RTS=false。用户随后完全掉电并正常长按启动，15:56:03 通过供电长按判定，15:56:04 松开后进入 TIMING READY；用户确认灯亮且松开后保持。开机未触发刷新。
 
@@ -292,7 +292,7 @@ COM6 可见；当前设备仍为 quiet-probe2 对照图，文字版尚未刷入�
 
 ### 2026-10-21：0.0.7 已刷入、正常开机且清洁基准通过
 
-用户确认从关机状态持续按住功能/电源键后，16:13:20（北京时间）COM6 / ESP32-S3 / a4:cb:8f:c3:a6:98 写入 0.0.7-text-timing2 应用完成；397,664 字节，0x10000，写后哈希校验通过。SHA-256 DFAB4EF6C27839098EDE9022F09889A8BEFFAF7E596EEA5EAB8AD8FD6599CA43。未写 bootloader、分区表或 NVS，刷完保持 bootloader，无自动复位。
+用户确认从关机状态持续按住功能/电源键后，16:13:20（北京时间）COM6 / ESP32-S3 / [device identifier omitted] 写入 0.0.7-text-timing2 应用完成；397,664 字节，0x10000，写后哈希校验通过。SHA-256 DFAB4EF6C27839098EDE9022F09889A8BEFFAF7E596EEA5EAB8AD8FD6599CA43。未写 bootloader、分区表或 NVS，刷完保持 bootloader，无自动复位。
 
 16:13:42 开始 COM6 被动监听，DTR/RTS=false，不发送命令。用户随后正常掉电开机，16:14:06 通过长按供电判定并在松开后进入 TIMING2 READY，用户确认灯保持亮；开机未刷新。
 
@@ -323,7 +323,7 @@ COM6 可见；当前设备仍为 quiet-probe2 对照图，文字版尚未刷入�
 
 ### 2026-10-21：固定 PAIR125 往返版已刷入并进入 CYCLE READY
 
-用户确认从关机状态持续按住功能/电源键后，2026-10-21T16:26:47+08:00 向 COM6 / a4:cb:8f:c3:a6:98 完成 0.0.8-text-cycle 应用写入：397,568 字节，地址 0x10000，写后哈希校验通过。应用 SHA-256 `D325A9EC0E0C5E06D30A50354F420F5938F227B6D14BF810D313875F2F00E02B`。未写 bootloader、分区表或 NVS，刷完保持 bootloader，没有自动复位。
+用户确认从关机状态持续按住功能/电源键后，2026-10-21T16:26:47+08:00 向 COM6 / [device identifier omitted] 完成 0.0.8-text-cycle 应用写入：397,568 字节，地址 0x10000，写后哈希校验通过。应用 SHA-256 `D325A9EC0E0C5E06D30A50354F420F5938F227B6D14BF810D313875F2F00E02B`。未写 bootloader、分区表或 NVS，刷完保持 bootloader，没有自动复位。
 
 16:29:42 启动被动串口监听，不发送命令且 DTR/RTS=false。用户完全掉电并重新长按启动，16:30:09 通过供电长按判定、松开并进入 CYCLE READY；用户确认指示灯松开后保持。开机没有刷新，尚未进行本轮差分。
 

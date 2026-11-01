@@ -39,7 +39,7 @@ Board schematics, BOM PDFs/spreadsheets, photographs and enclosure files are lef
 for the hardware contributor's separately reviewed upload under `hardware/`.
 
 Adaptations are limited to in-repository preview-loader paths, toolchain override
-handling, portable documentation, ignore rules and the disabled legacy 0.0.9
+handling, portable/anonymized technical documentation, ignore rules and the disabled legacy 0.0.9
 private-package flash helper. Original font and linked-code notices are preserved.
 No `.gitmodules` entry or Git link is used; cloning CodePulse is sufficient.
 
@@ -115,3 +115,7 @@ checks. That local test process alone used a NetworkServiceSandbox workaround
 already required on this machine; production settings/outputs were untouched.
 GitHub runs the committed harness with its normal flags, independently of this
 local workaround. Local type checks passed after the fixture edit.
+
+Dated experiment notes retain technical outcomes, but physical MAC identifiers
+and observed LAN addresses are omitted. The original private lab records remain
+local; source drivers, fixtures and font/preview bytes are unchanged.

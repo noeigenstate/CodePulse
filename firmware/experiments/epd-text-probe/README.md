@@ -95,7 +95,7 @@ COM6 可见；当前设备仍为 quiet-probe2 对照图，文字版尚未刷入�
 
 ### 2026-10-21：文字往返版已刷入，待正常启动
 
-用户确认从关机状态持续按住功能/电源键后，已向 COM6 / ESP32-S3 / a4:cb:8f:c3:a6:98 写入 0.0.5-text-probe 应用 397,488 字节至 0x10000，esptool 写后哈希校验通过。镜像 SHA-256 9D75AF95288BBAE075FB1F053AB85560CC76B91A2D74723BF0CBAEA42656655C。未写 bootloader、分区表或 NVS，结束停留 bootloader，不自动复位。
+用户确认从关机状态持续按住功能/电源键后，已向 COM6 / ESP32-S3 / [device identifier omitted] 写入 0.0.5-text-probe 应用 397,488 字节至 0x10000，esptool 写后哈希校验通过。镜像 SHA-256 9D75AF95288BBAE075FB1F053AB85560CC76B91A2D74723BF0CBAEA42656655C。未写 bootloader、分区表或 NVS，结束停留 bootloader，不自动复位。
 
 当前已替换 quiet-probe2，等待用户掉电后长按正常开机和 TEXT READY。开机不会刷新；文字基准和四次往返尚未执行，不提前认定效果。15:06:43（北京时间）启动 COM6 被动日志，DTR/RTS=false，无发送指令或复位。刷写日志 CodePulse/.tmpshots/text-probe-flash-2026-10-21.log；运行日志 text-probe-runtime-2026-10-21.log。
 

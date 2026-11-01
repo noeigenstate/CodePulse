@@ -121,7 +121,8 @@
     },
     "experiments/epd-text-probe/README.md": {
       "sourceSha256": "bc3c8de7dd029af8da58e36f6c5b3c6099070d00c68964214c879da64cea1986",
-      "importSha256": "bc3c8de7dd029af8da58e36f6c5b3c6099070d00c68964214c879da64cea1986"
+      "importSha256": "65d5a252a22923b2311f0dc78e02cfee347a4407a6275088be3ff9a1d2c20f30",
+      "adapted": true
     },
     "experiments/epd-text-probe/flash-probe.ps1": {
       "sourceSha256": "d5937c9209d18fb1f1bc79bc78670d8524ef59888a03148496192e15eb23dcf1",
@@ -153,7 +154,8 @@
     },
     "experiments/epd-text-timing-probe/README.md": {
       "sourceSha256": "9dfd54fcecf6a41a80bd15601f5b208ebd40bd4eab664a2edda33dad21d5d25a",
-      "importSha256": "9dfd54fcecf6a41a80bd15601f5b208ebd40bd4eab664a2edda33dad21d5d25a"
+      "importSha256": "360b739ede7cc1e28c1ec685b81496ecec76fdab19627c72ad1ad127ba104a8a",
+      "adapted": true
     },
     "experiments/epd-text-timing-probe/driver_timing.inc": {
       "sourceSha256": "d62d29f7b0638834ba5a12de80d03589571940fe950903672a12d491ce51e4fb",
@@ -197,7 +199,7 @@
     },
     "experiments/epd-waveform-probe/README.md": {
       "sourceSha256": "55eefa3f9d3f813fc1b949d6bac89dc10e62eb194433753754fbae2cecb376de",
-      "importSha256": "53740097fde9d39be2d1f682fafb7f7159116db5b7774cd54e3394f41d084358",
+      "importSha256": "d1e0a476839a1d10ae7699a8646a5b51438ef00b2aa5ad7c37e39c6ad284dfae",
       "adapted": true
     },
     "experiments/epd-waveform-probe/driver_waveform.inc": {
@@ -1044,12 +1046,12 @@
     },
     "doc/QUIET-WIFI-2026-10-21.md": {
       "sourceSha256": "5670df8efe6f6f71617b32178f2f62cbaa0b33957b1a91a487a1c6e6680891a1",
-      "importSha256": "63505bbd4930a222ef9942d95acbc640b0278644e73c005c877ad31487755e48",
+      "importSha256": "7ca842443f2d3d89f5b9a92e99a793f5df31acc6686d35bc7acb9eed4b7555cb",
       "adapted": true
     },
     "doc/PANEL-REFRESH-INVESTIGATION-2026-10-20.md": {
       "sourceSha256": "75e52cd2e8540d0766bb71212ff3f6aa0af0d8e219412d1e0af0e6b260264309",
-      "importSha256": "a90014fb0f00a9ba5092597e76c6d45d1a229f613432c6d49e4eac41b5e9ee51",
+      "importSha256": "2e5ea8139f4cd9c7d25b96b283271a6bf5ace5c445db42f69a8a0d66331f790f",
       "adapted": true
     },
     "doc/assistant-v027/todos-0.png": {

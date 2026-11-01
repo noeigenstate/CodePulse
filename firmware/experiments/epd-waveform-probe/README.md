@@ -96,7 +96,7 @@ Copy-Item '..\firmware\sdkconfig' '.tmpshots\waveform-probe-sdkconfig'
 
 ### 2026-10-21：v2 已刷入，待正常启动
 
-用户确认 USB 接好并持续按住功能/电源键后，COM6 上 ESP32-S3 / MAC a4:cb:8f:c3:a6:98 已识别。`0.0.3-waveform-probe2` 应用 396,768 字节写入 0x10000，esptool 写后哈希校验通过，停留 bootloader 未自动复位，未写 bootloader、分区表或 NVS。日志 `.tmpshots/waveform-probe2-flash-2026-10-21.log`。已启动不复位的被动日志，等待用户掉电后正常开机；ZERO 和 HALF 尚未执行。本记录更新前文“尚未刷入”状态。
+用户确认 USB 接好并持续按住功能/电源键后，COM6 上 ESP32-S3 / MAC [device identifier omitted] 已识别。`0.0.3-waveform-probe2` 应用 396,768 字节写入 0x10000，esptool 写后哈希校验通过，停留 bootloader 未自动复位，未写 bootloader、分区表或 NVS。日志 `.tmpshots/waveform-probe2-flash-2026-10-21.log`。已启动不复位的被动日志，等待用户掉电后正常开机；ZERO 和 HALF 尚未执行。本记录更新前文“尚未刷入”状态。
 
 ### 2026-10-21：ZERO 已触发，HALF 待实测
 

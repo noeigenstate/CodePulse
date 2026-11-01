@@ -1,69 +1,52 @@
 <div align="center">
 
+<img src="./apps/desktop/src/renderer/src/assets/codepulse-icon.svg" alt="CodePulse logo" width="120" />
+
 # CodePulse / 码脉
 
-**AI 编程代理在做什么，屏幕上和桌面上都能一眼看清。**
+**开源墨水屏桌面终端，一眼看清 AI 编程代理在做什么。**
 
-面向 Claude Code、Codex CLI、OpenCode、Grok 与 Kimi Code 的本地状态中心，包含桌面控制台、悬浮 HUD 和开源墨水屏终端。
+它放在桌上，显示 Claude Code、Codex 和 Grok 正在工作、在等你处理还是已经完成，不用再反复切回终端。给它供数据的桌面应用也能单独使用。
 
-[![version](https://img.shields.io/badge/version-v1.4.11-brightgreen)](https://github.com/noeigenstate/CodePulse/releases/latest)
+[![open hardware](https://img.shields.io/badge/hardware-open%20source-0b7a68)](#-硬件)
+[![MCU](https://img.shields.io/badge/MCU-ESP32--S3-2f6fec)](#-硬件)
+[![version](https://img.shields.io/badge/desktop-v1.4.11-brightgreen)](https://github.com/noeigenstate/CodePulse/releases/latest)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#-下载)
-[![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
-[![open hardware](https://img.shields.io/badge/hardware-open%20source-3ee6c9)](#-开源硬件)
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
 [English](./README.md) · [简体中文](./README.zh-CN.md)
 
-**[⬇ 下载](https://github.com/noeigenstate/CodePulse/releases/latest)** · [开源硬件](#-开源硬件) · [从源码构建](#-开发)
+**[🛠 自己做一台](#-自己做一台)** · [📟 硬件](#-硬件) · [💻 桌面应用](#-桌面应用)
 
-<img src="./docs/screenshots/demo-zh.gif" alt="Claude Code 任务完成后弹出桌面通知、托盘图标变绿；另一个会话请求授权时托盘变黄" width="920" />
+<img src="./docs/hardware/codepulse-hardware.webp" alt="硬件展示：标注芯片的主板 3D 渲染、4 层板布局、原理图和墨水屏画面" width="920" />
+
+<sub>▶ <a href="./docs/hardware/codepulse-hardware.mp4">观看高清视频（MP4，28 秒）</a></sub>
 
 </div>
 
-## ✨ 亮点
+## ✨ 为什么要一块桌面屏
 
 <table>
 <tr>
-<td width="33%" valign="top">🚦 <b>统一状态机</b><br/>运行中、等你处理、已完成、出错或卡住，所有代理都用同一套状态。</td>
-<td width="33%" valign="top">🔔 <b>该提醒才提醒</b><br/>彩色托盘图标常驻；任务完成或疑似卡住时，可选弹出桌面通知。</td>
-<td width="33%" valign="top">🎟️ <b>额度与上下文</b><br/>Claude 5 小时和每周额度、Codex 每周额度，以及每个会话剩余的上下文。</td>
+<td width="33%" valign="top">👀 <b>一直在视线里</b><br/>墨水屏断电也保留画面，像纸一样好读，没有背光刺眼。</td>
+<td width="33%" valign="top">🚦 <b>状态一眼看清</b><br/>Claude Code、Codex 和 Grok 在工作、等你处理还是已完成，以及剩余额度。</td>
+<td width="33%" valign="top">📋 <b>不止看状态</b><br/>待办和提醒、室内温湿度、电池电量。</td>
 </tr>
 <tr>
-<td valign="top">📈 <b>用量与费用</b><br/>从各 CLI 自己的日志读取精确 Token，按官方 API 价格折算。</td>
-<td valign="top">🖥️ <b>三个界面，一个宿主</b><br/>桌面控制台、HUD 和墨水屏共用同一份实时数据。</td>
-<td valign="top">🔒 <b>默认本地</b><br/>服务只监听本机回环地址，提示词只存简短摘要。除非使用助手的 AI 或语音功能，数据不会离开本机。</td>
+<td valign="top">🔋 <b>为桌面设计</b><br/>USB-C 供电，锂电池充电，一键开关机。</td>
+<td valign="top">🔓 <b>从头到尾开源</b><br/>Gerber、原理图、3D 模型、固件源码和桌面应用都在这个仓库里。</td>
+<td valign="top">🔒 <b>只在局域网内</b><br/>屏幕通过局域网从你的电脑读取状态，使用独立 token，不经过云端。</td>
 </tr>
 </table>
 
-## 🖥️ 界面
+## 📟 硬件
 
-| 界面             | 作用                                                             |
-| ---------------- | ---------------------------------------------------------------- |
-| **桌面控制台**   | 控制、多媒体、用量统计和设置都在一个窗口里，专注模式只保留看板。 |
-| **HUD**          | 置顶的小型悬浮窗，任务卡片顺序固定，可直接标记已读。             |
-| **墨水屏工作台** | 逐像素预览 400×300 设备画面，并保存墨水屏要显示的内容。          |
-| **待办与助手**   | 本地待办和提醒，也可以显示到墨水屏上。                           |
-
-## 📈 用量统计
-
-<p align="center"><img src="./docs/screenshots/usage-zh.png" alt="用量统计：折算费用、Token 构成、各工具卡片与费用趋势" width="760" /></p>
-
-从各 CLI 自己的日志读取精确 Token，按官方 API 价格折算，可按工具、项目和模型查看。订阅套餐不按 Token 计费，这里的费用是按 API 价格折算的参考值。<sub>图中为示例数据。</sub>
-
-## 📟 开源硬件
-
-<div align="center">
-<img src="./docs/hardware/codepulse-hardware.webp" alt="硬件展示：标注芯片的主板 3D 渲染、4 层板布局、原理图和墨水屏画面" width="920" />
-<br/>
-<sub>▶ <a href="./docs/hardware/codepulse-hardware.mp4">观看高清视频（MP4，28 秒）</a></sub>
-</div>
-
-CodePulse 墨水屏终端是一台基于 ESP32-S3 的桌面设备，不用切换窗口就能看到 Claude Code、Codex 和 Grok 的状态。它用嘉立创 EDA 专业版设计，导出文件在 [`hardware/main-board/v3`](./hardware/main-board/v3)。这块音频板还没有经过实机验证，下单前请先看[修订说明](./hardware/main-board/v3/README.md)。
+> V3 主板新增了喇叭和麦克风，还没有经过实机验证。下单前请先看[修订说明](./hardware/main-board/v3/README.md)。
 
 <table>
 <tr>
-<td width="50%" align="center"><img src="./hardware/main-board/v3/exports/3D_主板_2026-10-31.png" alt="主板 3D 渲染图" /></td>
-<td width="50%" align="center"><img src="./hardware/main-board/v3/exports/PCB_主板_2026-10-31.png" alt="主板 PCB 布局图" /></td>
+<td width="50%" align="center"><img src="./docs/hardware/board-3d.png" alt="主板 3D 渲染图" height="420" /></td>
+<td width="50%" align="center"><img src="./docs/hardware/board-layout.png" alt="主板 PCB 布局图" height="420" /></td>
 </tr>
 <tr>
 <td align="center"><b>3D 渲染</b></td>
@@ -78,7 +61,7 @@ CodePulse 墨水屏终端是一台基于 ESP32-S3 的桌面设备，不用切换
 | **音频**   | MAX98357A I²S 功放，MSM261 PDM 麦克风                        |
 | **传感器** | AHT20 温湿度传感器                                           |
 | **电源**   | USB-C 供电，BQ24075 锂电池充电与电源路径管理，按键开关机     |
-| **板子**   | 4 层板，45.3 × 77.0 mm                                       |
+| **板子**   | 4 层板，45.3 × 77.0 mm，嘉立创 EDA 专业版设计                |
 
 | 文件                                                                                              | 用途                       |
 | ------------------------------------------------------------------------------------------------- | -------------------------- |
@@ -86,13 +69,48 @@ CodePulse 墨水屏终端是一台基于 ESP32-S3 的桌面设备，不用切换
 | [`SCH_电路原理图_2026-10-31.pdf`](./hardware/main-board/v3/exports/SCH_电路原理图_2026-10-31.pdf) | 电路原理图，共 4 页        |
 | [`3D_主板_2026-10-31.step`](./hardware/main-board/v3/exports/3D_主板_2026-10-31.step)             | 3D 模型，用于设计外壳      |
 
-固件源码在 [`firmware/`](./firmware/README.md)，使用 ESP-IDF 6.0.1 构建。配对墨水屏时，打开 **控制**，在墨水屏卡片上点 **连接设备**，用 USB 连接设备并填写 Wi-Fi，之后设备通过[局域网设备 API](docs/device-api-v1.md) 读取状态。这个 API 默认关闭，配对前先开启：
-
-```bash
-CODEPULSE_DEVICE_SERVER_ENABLED=1 pnpm dev
-```
-
 <p align="center"><img src="./img/CodePulseDeck.png" alt="墨水屏终端外观概念图" width="720" /><br/><sub>外观概念图</sub></p>
+
+## 🛠 自己做一台
+
+1. **打板。** 把 Gerber 压缩包上传到板厂，选择 4 层板。
+2. **刷固件。** 按[固件说明](./firmware/README.md)操作，使用 ESP-IDF 6.0.1。默认构建针对早期的 Board1，音频关闭。
+3. **开启设备 API 运行桌面应用。** v1.4.11 安装包还没有配对界面，需要从源码运行：
+
+   ```bash
+   pnpm install
+   CODEPULSE_DEVICE_SERVER_ENABLED=1 pnpm dev
+   ```
+
+4. **配对。** 打开 **控制**，在墨水屏卡片上点 **连接设备**，用 USB 连接设备并填写 Wi-Fi，之后设备通过[局域网设备 API](docs/device-api-v1.md) 读取状态。
+
+## 💻 桌面应用
+
+桌面应用从代理的 hook 和日志收集状态，再提供给墨水屏。没有硬件也一样好用：
+
+- 🚦 **统一状态机。** 所有代理都用同一套状态：运行中、等你处理、已完成、出错或卡住。
+- 🔔 **该提醒才提醒。** 彩色托盘图标常驻；任务完成或疑似卡住时，可选弹出桌面通知。
+- 🎟️ **额度与上下文。** Claude 5 小时和每周额度、Codex 每周额度，以及每个会话剩余的上下文。
+- 📈 **用量与费用。** 从各 CLI 自己的日志读取精确 Token，按官方 API 价格折算。
+- 🔒 **默认本地。** 只监听本机回环地址，除非使用助手的 AI 或语音功能，数据不会离开本机。
+
+<p align="center"><img src="./docs/screenshots/demo-zh.gif" alt="Claude Code 任务完成后弹出桌面通知、托盘图标变绿；另一个会话请求授权时托盘变黄" width="920" /></p>
+
+| 界面             | 作用                                                             |
+| ---------------- | ---------------------------------------------------------------- |
+| **桌面控制台**   | 控制、多媒体、用量统计和设置都在一个窗口里，专注模式只保留看板。 |
+| **HUD**          | 置顶的小型悬浮窗，任务卡片顺序固定，可直接标记已读。             |
+| **墨水屏工作台** | 逐像素预览 400×300 设备画面，并保存墨水屏要显示的内容。          |
+| **待办与助手**   | 本地待办和提醒，也可以显示到墨水屏上。                           |
+
+<details>
+<summary><b>用量统计</b></summary>
+
+<p align="center"><img src="./docs/screenshots/usage-zh.png" alt="用量统计：折算费用、Token 构成、各工具卡片与费用趋势" width="760" /></p>
+
+从各 CLI 自己的日志读取精确 Token，按官方 API 价格折算，可按工具、项目和模型查看。订阅套餐不按 Token 计费，这里的费用是按 API 价格折算的参考值。<sub>图中为示例数据。</sub>
+
+</details>
 
 ## ⬇ 下载
 
@@ -240,7 +258,7 @@ API 只监听 `127.0.0.1:17888`。设置 `CODEPULSE_URL` 可以让 hook 指向�
   - macOS：`~/Library/Application Support/CodePulse/codepulse.sqlite`
   - Linux：`~/.config/CodePulse/codepulse.sqlite`
 
-## 🛠 开发
+## 🔧 开发
 
 需要 Node.js 20 及以上和 pnpm 9 及以上。
 

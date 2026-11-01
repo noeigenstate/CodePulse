@@ -1,74 +1,54 @@
 <div align="center">
 
+<img src="./apps/desktop/src/renderer/src/assets/codepulse-icon.svg" alt="CodePulse logo" width="120" />
+
 # CodePulse
 
-**See what your AI coding agents are doing, on your screen and on your desk.**
+**An open-source e-paper display that shows what your AI coding agents are doing.**
 
-A local status hub for Claude Code, Codex CLI, OpenCode, Grok and Kimi Code.
-It has a desktop console, a floating HUD and an open-source e-paper display.
+It sits on your desk and shows whether Claude Code, Codex and Grok are working, waiting for you or
+done, so you stop checking the terminal. The desktop app that feeds it also works on its own.
 
-[![version](https://img.shields.io/badge/version-v1.4.11-brightgreen)](https://github.com/noeigenstate/CodePulse/releases/latest)
+[![open hardware](https://img.shields.io/badge/hardware-open%20source-0b7a68)](#-the-hardware)
+[![MCU](https://img.shields.io/badge/MCU-ESP32--S3-2f6fec)](#-the-hardware)
+[![version](https://img.shields.io/badge/desktop-v1.4.11-brightgreen)](https://github.com/noeigenstate/CodePulse/releases/latest)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#-download)
-[![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
-[![open hardware](https://img.shields.io/badge/hardware-open%20source-3ee6c9)](#-open-hardware)
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
 [English](./README.md) · [简体中文](./README.zh-CN.md)
 
-**[⬇ Download](https://github.com/noeigenstate/CodePulse/releases/latest)** · [Open hardware](#-open-hardware) · [Build from source](#-development)
+**[🛠 Build your own](#-build-your-own)** · [📟 Hardware](#-the-hardware) · [💻 Desktop app](#-the-desktop-app)
 
-<img src="./docs/screenshots/demo.gif" alt="A Claude Code turn finishes, a desktop notification pops up and the tray icon turns green; another session asks for permission and the tray turns yellow" width="920" />
+<img src="./docs/hardware/codepulse-hardware.webp" alt="Hardware tour: the 3D board render with labeled chips, the 4-layer layout, the schematic pages and the e-paper screen" width="920" />
+
+<sub>▶ <a href="./docs/hardware/codepulse-hardware.mp4">Watch the HD video (MP4, 28 s)</a></sub>
 
 </div>
 
-## ✨ Highlights
+## ✨ Why a desk display
 
 <table>
 <tr>
-<td width="33%" valign="top">🚦 <b>One state machine</b><br/>Running, waiting for you, done, error or stuck. Every agent reports the same states.</td>
-<td width="33%" valign="top">🔔 <b>Notified, not nagged</b><br/>A color-coded tray icon, plus optional toasts when a turn finishes or looks stuck.</td>
-<td width="33%" valign="top">🎟️ <b>Quota and context</b><br/>Claude 5-hour and weekly limits, Codex weekly quota, and the context left in each session.</td>
+<td width="33%" valign="top">👀 <b>Always in view</b><br/>E-paper keeps the last screen without power and reads like paper, with no backlight.</td>
+<td width="33%" valign="top">🚦 <b>Status at a glance</b><br/>Working, waiting for you or done, for Claude Code, Codex and Grok, with their remaining quota.</td>
+<td width="33%" valign="top">📋 <b>More than status</b><br/>Todos and reminders, room temperature and humidity, and battery level.</td>
 </tr>
 <tr>
-<td valign="top">📈 <b>Usage and cost</b><br/>Exact tokens from each CLI's own logs, priced at official API rates.</td>
-<td valign="top">🖥️ <b>Three surfaces, one host</b><br/>The desktop console, the HUD and the e-paper display share the same live data.</td>
-<td valign="top">🔒 <b>Local by default</b><br/>The server listens on loopback only and keeps prompts as short previews. Nothing leaves your machine unless you use the assistant's AI or speech.</td>
+<td valign="top">🔋 <b>Made for a desk</b><br/>USB-C, Li-ion battery charging and one-button power on and off.</td>
+<td valign="top">🔓 <b>Open end to end</b><br/>Gerber, schematic, 3D model, firmware source and the desktop app all live in this repo.</td>
+<td valign="top">🔒 <b>Stays on your network</b><br/>The display reads from your desktop over the LAN with its own token. No cloud involved.</td>
 </tr>
 </table>
 
-## 🖥️ Surfaces
+## 📟 The hardware
 
-| Surface                 | What it does                                                                                |
-| ----------------------- | ------------------------------------------------------------------------------------------- |
-| **Desktop console**     | Control, multimedia, usage and settings in one window. Focus mode keeps only the dashboard. |
-| **HUD**                 | A compact floating window with task cards in a stable order and read controls.              |
-| **E-paper workbench**   | Previews the 400×300 device screen pixel for pixel and saves what the display shows.        |
-| **Tasks and assistant** | Local todos and reminders that can also appear on the e-paper display.                      |
-
-## 📈 Usage
-
-<p align="center"><img src="./docs/screenshots/usage.png" alt="Usage page: cost, token mix, per-tool cards and cost trend" width="760" /></p>
-
-Exact tokens from each CLI's own logs, priced at official API rates, by tool, project and model.
-Read it as what the API would have charged. <sub>Sample data shown.</sub>
-
-## 📟 Open hardware
-
-<div align="center">
-<img src="./docs/hardware/codepulse-hardware.webp" alt="Hardware tour: the 3D board render with labeled chips, the 4-layer layout, the schematic pages and the e-paper screen" width="920" />
-<br/>
-<sub>▶ <a href="./docs/hardware/codepulse-hardware.mp4">Watch the HD video (MP4, 28 s)</a></sub>
-</div>
-
-The CodePulse e-paper display is an ESP32-S3 desk device that shows Claude Code, Codex and Grok at a
-glance, without switching windows. It was designed in EasyEDA Pro, and the board exports are in
-[`hardware/main-board/v3`](./hardware/main-board/v3). This audio board has not been verified on
-hardware yet, so read the [revision notes](./hardware/main-board/v3/README.md) before you order it.
+> Board v3 adds the speaker and microphone and has not been verified on hardware yet. Read the
+> [revision notes](./hardware/main-board/v3/README.md) before you order it.
 
 <table>
 <tr>
-<td width="50%" align="center"><img src="./hardware/main-board/v3/exports/3D_主板_2026-10-31.png" alt="3D render of the main board" /></td>
-<td width="50%" align="center"><img src="./hardware/main-board/v3/exports/PCB_主板_2026-10-31.png" alt="PCB layout of the main board" /></td>
+<td width="50%" align="center"><img src="./docs/hardware/board-3d.png" alt="3D render of the main board" height="420" /></td>
+<td width="50%" align="center"><img src="./docs/hardware/board-layout.png" alt="PCB layout of the main board" height="420" /></td>
 </tr>
 <tr>
 <td align="center"><b>3D render</b></td>
@@ -83,7 +63,7 @@ hardware yet, so read the [revision notes](./hardware/main-board/v3/README.md) b
 | **Audio**      | MAX98357A I²S amplifier and MSM261 PDM microphone                  |
 | **Sensor**     | AHT20 temperature and humidity                                     |
 | **Power**      | USB-C, BQ24075 Li-ion power-path charging and a soft power button  |
-| **Board**      | 4 layers, 45.3 × 77.0 mm                                           |
+| **Board**      | 4 layers, 45.3 × 77.0 mm, designed in EasyEDA Pro                  |
 
 | File                                                                                              | Use                                   |
 | ------------------------------------------------------------------------------------------------- | ------------------------------------- |
@@ -91,20 +71,58 @@ hardware yet, so read the [revision notes](./hardware/main-board/v3/README.md) b
 | [`SCH_电路原理图_2026-10-31.pdf`](./hardware/main-board/v3/exports/SCH_电路原理图_2026-10-31.pdf) | Schematic, 4 pages                    |
 | [`3D_主板_2026-10-31.step`](./hardware/main-board/v3/exports/3D_主板_2026-10-31.step)             | 3D model for enclosure design         |
 
-The firmware source is in [`firmware/`](./firmware/README.md) and builds with ESP-IDF 6.0.1. To pair a display, open **Control**, choose
-**Connect Device** on the e-paper card, plug the display in over USB and enter your Wi-Fi details.
-It then reads status from the [LAN device API](docs/device-api-v1.md), which is off by default.
-Turn it on before pairing:
-
-```bash
-CODEPULSE_DEVICE_SERVER_ENABLED=1 pnpm dev
-```
-
 <p align="center"><img src="./img/CodePulseDeck.png" alt="Enclosure concept for the e-paper display" width="720" /><br/><sub>Enclosure concept</sub></p>
+
+## 🛠 Build your own
+
+1. **Order the board.** Upload the Gerber zip to a PCB fab and choose 4 layers.
+2. **Flash the firmware.** Follow the [firmware guide](./firmware/README.md), which uses ESP-IDF 6.0.1.
+   The default build targets the earlier Board1 with audio off.
+3. **Run the desktop app with the device API on.** The pairing screen is not in the v1.4.11 installers
+   yet, so run it from source:
+
+   ```bash
+   pnpm install
+   CODEPULSE_DEVICE_SERVER_ENABLED=1 pnpm dev
+   ```
+
+4. **Pair the display.** Open **Control**, choose **Connect Device** on the e-paper card, plug the
+   display in over USB and enter your Wi-Fi details. It then reads status from the
+   [LAN device API](docs/device-api-v1.md).
+
+## 💻 The desktop app
+
+The desktop app collects status from your agents' hooks and logs and serves it to the display. It
+is just as useful without the hardware:
+
+- 🚦 **One state machine.** Every agent reports the same states: running, waiting, done, error or stuck.
+- 🔔 **Notified, not nagged.** A color-coded tray icon, plus optional toasts when a turn finishes or looks stuck.
+- 🎟️ **Quota and context.** Claude 5-hour and weekly limits, Codex weekly quota and the context left in each session.
+- 📈 **Usage and cost.** Exact tokens from each CLI's own logs, priced at official API rates.
+- 🔒 **Local by default.** Loopback only, and nothing leaves your machine unless you use the assistant's AI or speech.
+
+<p align="center"><img src="./docs/screenshots/demo.gif" alt="A Claude Code turn finishes, a desktop notification pops up and the tray icon turns green; another session asks for permission and the tray turns yellow" width="920" /></p>
+
+| Surface                 | What it does                                                                                |
+| ----------------------- | ------------------------------------------------------------------------------------------- |
+| **Desktop console**     | Control, multimedia, usage and settings in one window. Focus mode keeps only the dashboard. |
+| **HUD**                 | A compact floating window with task cards in a stable order and read controls.              |
+| **E-paper workbench**   | Previews the 400×300 device screen pixel for pixel and saves what the display shows.        |
+| **Tasks and assistant** | Local todos and reminders that can also appear on the e-paper display.                      |
+
+<details>
+<summary><b>Usage page</b></summary>
+
+<p align="center"><img src="./docs/screenshots/usage.png" alt="Usage page: cost, token mix, per-tool cards and cost trend" width="760" /></p>
+
+Exact tokens from each CLI's own logs, priced at official API rates, by tool, project and model.
+Read it as what the API would have charged. <sub>Sample data shown.</sub>
+
+</details>
 
 ## ⬇ Download
 
-Get the installer for your system from [GitHub Releases](https://github.com/noeigenstate/CodePulse/releases/latest).
+Get the desktop installer for your system from [GitHub Releases](https://github.com/noeigenstate/CodePulse/releases/latest).
 
 | System              | File                                                          |
 | ------------------- | ------------------------------------------------------------- |
@@ -256,7 +274,7 @@ token and shares only project basenames. See [LAN device protocol v1](docs/devic
   - macOS: `~/Library/Application Support/CodePulse/codepulse.sqlite`
   - Linux: `~/.config/CodePulse/codepulse.sqlite`
 
-## 🛠 Development
+## 🔧 Development
 
 You need Node.js 20 or later and pnpm 9 or later.
 

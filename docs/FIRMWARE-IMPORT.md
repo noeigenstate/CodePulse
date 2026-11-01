@@ -92,8 +92,26 @@ Checks run from the new in-repository firmware path:
   links and the publication allowlist pass. No new secret/private-host finding,
   ignored import file, nested Git metadata or hardware design is included.
 
-No Electron/SQLite dependency was rebuilt, production client restarted, full
-UI suite rerun, hardware accessed or firmware flashed in this migration. The
+No Electron/SQLite dependency was rebuilt, production client restarted, hardware
+accessed or firmware flashed in this migration. The isolated UI follow-up is
+described below. The
 new GitHub firmware workflow is checked as configuration here; its remote run
 is a separate result. Full new-board audio compilation/physical sound is not
 claimed by the legacy audio-off host checks.
+
+## Remote CI follow-up
+
+The first public firmware workflow passed its source/font/calendar job and all
+three ESP-IDF profiles (default, region/PAIR150 and non-driving audio). The
+existing desktop workflow also passed types, regression tests and builds on
+Windows and Linux. Its Windows surface fixture initially assumed a Chinese OS;
+GitHub's English runner failed the explicit Chinese-label assertion. The fixture
+now seeds Chinese in its disposable profile before checking Chinese labels. This
+does not change production locale behavior, app settings or the imported firmware.
+
+The corrected fixture also passed a local English-locale isolated surface run,
+including tasks, images, pets, calendar, HUD coexistence and canonical-state
+checks. That local test process alone used a NetworkServiceSandbox workaround
+already required on this machine; production settings/outputs were untouched.
+GitHub runs the committed harness with its normal flags, independently of this
+local workaround. Local type checks passed after the fixture edit.

@@ -129,6 +129,11 @@ app.whenReady().then(async()=>{
     main=new BrowserWindow({show:false,frame:false,width:1120,height:780,webPreferences:{preload:join(host,'out/preload/index.js'),sandbox:false,contextIsolation:true,nodeIntegration:false,backgroundThrottling:false,offscreen:true}})
     await main.loadFile(join(host,'out/renderer/index.html'));await wait(700);product.restore()
     await until(()=>main!.webContents.executeJavaScript(`Boolean(document.querySelector('.product-control'))`),'control')
+    // Text-based fixtures explicitly choose Chinese; CI may run an English OS.
+    // This writes only the disposable profile, never the user's saved language.
+    await main.webContents.executeJavaScript(`localStorage.setItem('codepulse:locale','zh')`)
+    await main.loadFile(join(host,'out/renderer/index.html'))
+    await until(()=>main!.webContents.executeJavaScript(`Boolean(document.querySelector('.product-control'))`),'Chinese control reload')
     assert.ok(await main.webContents.executeJavaScript(`document.querySelector('[data-view=control]').textContent.includes('控制')`),'Chinese fixture locale')
     assert.equal(product.snapshot().view,'control','legacy overview migrates to control')
     assert.equal(await main.webContents.executeJavaScript(`Boolean(document.querySelector('.product-topbar'))`),false)

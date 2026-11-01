@@ -27,6 +27,16 @@ description: Use when adding or updating images, animations or videos for README
    scene from computed styles (spacing on the 2–64 scale, at most 3 weights, second font size at most 0.8× the largest,
    few radii) and have another model accept sample frames before the full render.
 
+Make one video per language: English is the default file (`name.mp4`, used by README.md) and Chinese adds `-zh`
+(used by README.zh-CN.md). Keep every caption in one text table in the page and pick it with `?lang=zh`. The
+English version must contain no Chinese:
+
+- Device screens: the firmware UI is Chinese, so draw English mockups in the same 1-bit style (render at 2x, then
+  threshold to 400×300) and label them "English UI mockups". Never present a mockup as a firmware render.
+- Schematics: get each Chinese text box with `pdftotext -bbox`, cover it with its English translation at the same
+  position (PDF points × dpi / 72), cover the vector EasyEDA logo by hand, and add a "labels translated" note.
+- Board silkscreen is part of the design: change it in EDA rather than painting over the render.
+
 Put generated media in `docs/hardware/` or `docs/screenshots/`, and keep design exports under `hardware/<board>/<revision>/exports/`.
 
 ## Look

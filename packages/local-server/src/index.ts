@@ -19,6 +19,7 @@ import { registerEventRoutes } from './routes/events.js'
 import { registerStatusRoutes } from './routes/status.js'
 import { QuotaRefreshWatcher } from './quota-watcher.js'
 import { SessionSyncService } from './session-sync.js'
+import { CodexReadStateSync } from './codex-read-state.js'
 import type { MimoCookieProvider } from './mimo-quota.js'
 import {
   CodexAppServerQuotaService,
@@ -47,6 +48,8 @@ export interface LocalServerOptions {
   logger?: boolean
   /** 禁用本机 CLI 会话主动扫描（测试用）。 */
   disableSessionSync?: boolean
+  /** Defaults to waiting for hydration; desktop shells can receive later Hub updates instead. */
+  waitForInitialSync?: boolean
   /** Disables the read-only Codex App Server quota client, primarily for tests. */
   disableCodexAppServer?: boolean
   /** Creates the Codex quota service; tests may inject an in-memory protocol fake. */
@@ -187,6 +190,10 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
         },
       })
 
+  const codexReadState = options.disableSessionSync
+    ? undefined
+    : new CodexReadStateSync({ hub: options.hub })
+
   /**
    * Establishes an account boundary before any later rollout read can publish.
    *
@@ -267,11 +274,15 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
     await app.listen({ host, port })
     // The hook endpoint is live before disk or child-process hydration starts.
     const codexQuotaStart = codexQuotaService?.start().catch(() => undefined)
-    await sessionSync?.start()
+    void codexReadState?.start()
+    const initialSync = sessionSync?.start()
+    if (options.waitForInitialSync !== false) await initialSync
+    else void initialSync?.catch((error) => console.error('[codepulse] initial session scan failed', error))
     // Do not hold desktop startup on an optional CLI protocol. The service has
     // bounded retries and updates Hub asynchronously after the window is ready.
     void codexQuotaStart
   } catch (err) {
+    codexReadState?.stop()
     sessionSync?.stop()
     codexQuotaService?.stop()
     quotaWatcher.stop()
@@ -296,6 +307,7 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
       await sessionSync?.syncNow(['opencode'])
     },
     close: async () => {
+      codexReadState?.stop()
       sessionSync?.stop()
       codexQuotaService?.stop()
       quotaWatcher.stop()
@@ -410,6 +422,8 @@ export {
   configureCodexAgent,
   configureGrokAgent,
   configureKimiAgent,
+  configureAntigravityAgent,
+  cleanupAntigravityAgent,
   cleanupAgents,
   cleanupClaudeAgent,
   cleanupCodexAgent,

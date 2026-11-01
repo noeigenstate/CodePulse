@@ -19,6 +19,7 @@ files:
   - out/main/**
   - out/preload/**
   - out/renderer/**
+  - out/hud/**
   - build/icon.png
   - package.json
   # Keep installers lean — native sqlite + serialport remain under node_modules.
@@ -56,6 +57,12 @@ files:
   # them leaves the installer's SQLite dead (live UI works, analytics empty).
   - '!**/node_modules/**/{prebuild-install,node-abi,napi-build-utils,tar-fs,tar-stream,rc,tunnel-agent,expand-template,github-from-package,simple-get,simple-concat,pump,bl,fs-constants,inherits,string_decoder,util-deprecate,buffer,base64-js,ieee754,minimist,deep-extend,ini,strip-json-comments,mkdirp-classic,chownr,detect-libc}/**'
 extraResources:
+  - from: THIRD-PARTY-NOTICES-ASSISTANT.txt
+    to: licenses/assistant.txt
+  - from: src/renderer/src/device-preview/THIRD-PARTY-NOTICES.txt
+    to: licenses/device-preview.txt
+  - from: src/main/calendar/THIRD-PARTY-NOTICES.txt
+    to: licenses/calendar.txt
   - from: ../../packages/hooks
     to: codepulse-hooks
     filter:
@@ -72,6 +79,8 @@ win:
   target:
     - nsis
 mac:
+  extendInfo:
+    NSMicrophoneUsageDescription: CodePulse 仅在你主动开始录音时使用麦克风，将语音转为文字和待办。
   icon: build/icon.png
   # Separate installers per CPU (NOT universal):
   #   CodePulse_<version>_mac-arm64.dmg  → Apple Silicon

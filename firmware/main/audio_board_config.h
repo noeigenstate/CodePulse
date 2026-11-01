@@ -1,0 +1,32 @@
+#pragma once
+
+/* Never borrow the LumaDesk/Ding pin map: it conflicts with every EPD signal. */
+#ifndef CODEPULSE_AUDIO_BCLK
+#define CODEPULSE_AUDIO_BCLK -1
+#endif
+#ifndef CODEPULSE_AUDIO_WS
+#define CODEPULSE_AUDIO_WS -1
+#endif
+#ifndef CODEPULSE_AUDIO_DOUT
+#define CODEPULSE_AUDIO_DOUT -1
+#endif
+#ifndef CODEPULSE_AUDIO_AMP_EN
+#define CODEPULSE_AUDIO_AMP_EN -1
+#endif
+#ifndef CODEPULSE_AUDIO_MIC_CLK
+#define CODEPULSE_AUDIO_MIC_CLK -1
+#endif
+#ifndef CODEPULSE_AUDIO_MIC_DATA
+#define CODEPULSE_AUDIO_MIC_DATA -1
+#endif
+#ifndef CODEPULSE_AUDIO_TALK_BUTTON
+#define CODEPULSE_AUDIO_TALK_BUTTON -1
+#endif
+#ifndef CODEPULSE_AUDIO_INPUT_ENABLED
+#define CODEPULSE_AUDIO_INPUT_ENABLED 0
+#endif
+#ifndef CODEPULSE_AUDIO_AMP_ACTIVE_HIGH
+#define CODEPULSE_AUDIO_AMP_ACTIVE_HIGH 1
+#endif
+#define CODEPULSE_AUDIO_RATE 16000
+#define CODEPULSE_AUDIO_MAX_SECONDS 25

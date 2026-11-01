@@ -32,6 +32,7 @@ test('Codex detection still probes the Windows cmd shim first', async () => {
   const commands: string[] = []
   await detectCodexAgent({
     platform: 'win32',
+    env: {},
     runCommand: async (command) => {
       commands.push(command)
       return { ok: true, stdout: 'codex-cli 1.2.3' }

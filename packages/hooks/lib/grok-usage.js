@@ -485,6 +485,8 @@ async function readBillingQuota(grokHome) {
       stringValue(config.currentPeriod?.end) ??
       stringValue(config.current_period?.end)
     const resetsAt = periodEnd ? Math.floor(Date.parse(periodEnd) / 1000) : undefined
+    // Closed billing periods in local logs do not describe current credits.
+    if (resetsAt != null && Number.isFinite(resetsAt) && resetsAt * 1000 <= Date.now()) return {}
     const periodType =
       stringValue(config.currentPeriod?.type) ?? stringValue(config.current_period?.type)
     const windowMinutes =

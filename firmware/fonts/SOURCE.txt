@@ -1,0 +1,233 @@
+Current revision: 0.0.29-calendar / Scheme C native Noto MONO (2026-10-30)
+- Noto Sans Bold 2.008: native, hinted MONO at 12/14/16/20/24/40px.
+- Noto Sans SC Regular 2.004: native MONO at 12/14/16px; mathematical
+  minus U+2212 in the special strikes also uses native Noto SC at that size.
+- Regular body: SC14 + Latin16. Titles/pet captions: SC16 + Latin20.
+- Calendar labels/lunar: native SC12 + Latin12 for the closed calendar
+  vocabulary, with complete body14 (SC14 + Latin16) fallback. Dates: Latin24,
+  Latin20 in six rows; date-only long-label circles may select a smaller
+  native strike to preserve every white pixel. Quota numbers: Latin40.
+- All 14 semantic faces cover all 7,752 project codepoints through two shared
+  full text tables (SC14/16) plus native sparse overrides. The 207-codepoint
+  calendar12 override includes all 99 desktop calendar characters, seven
+  approved stress characters, and the overlapping Latin12 repertoire.
+  The other 7,545 micro codepoints use the unchanged body14 masks/metrics.
+  Full Latin16/20 masks already reside in the full text tables; duplicate
+  unreferenced sparse tables are omitted. No kerning or synthetic bold is used.
+- Reproduce the closed vocabulary from the read-only desktop module:
+  node scripts/generate-calendar-font-charset.mjs --module <calendar directory>
+  Add --check to verify it. calendar-charset.json records LF source hashes,
+  all 95 emitted labels, lunar characters and explicit stress additions.
+  It enumerates every day of 1900-2100 (73,414 days / 2,412 months).
+  The checked-in vocabulary keeps atlas rebuilding stdlib-only and offline.
+- Only 34 legacy control/unassigned codepoints use the retained Unifont
+  masks. No ordinary CJK text uses Unifont or Fusion Pixel in this revision.
+- Source masks: noto-native-masks.json/.bin.gz. Source rasterization:
+  FreeType 2.13.2 / freetype-py 2.5.1, FT_LOAD_RENDER | FT_LOAD_TARGET_MONO |
+  FT_LOAD_MONOCHROME | FT_LOAD_NO_BITMAP. Not grayscale thresholding,
+  interpolation, or runtime enlargement. Runtime scaled API is retained
+  only for legacy probe compatibility and is not called by current pages.
+- Regenerate masks (extra source-stage tools): python -B
+  scripts/generate-native-font-masks.py --freetype-path <freetype-py-2.5.1>
+- Regenerate atlas with stdlib only: python -S scripts/generate-display-font.py --write-source
+- Active atlas: native-hierarchy.json/.bin.gz and main/display_font_data.h.
+  Compact 8-byte records: u24 bitmap offset, u8 integer advance, i8 left/top,
+  u8 width/height; bitmap rows remain original MSB-first masks. Delta24
+  offsets are losslessly decoded once after zlib expansion. Compressed
+  atlas: 309408 bytes; raw/PSRAM: 578597 bytes. Before vocabulary sharing:
+  417743 compressed / 809324 expanded; 0.0.28: 395971 / 1086869 bytes.
+- Old pixel-hierarchy/noto-hierarchy inputs are retained as historical
+  research material, not embedded by the active generator.
+- Public distribution notice: scripts/build-preview.py emits
+  THIRD-PARTY-FONTS.txt with all actual embedded families and full license
+  originals, without firmware source or private filesystem paths.
+
+Noto Sans Bold 2.008
+Copyright 2015-2021 Google LLC. All Rights Reserved.
+Source: https://raw.githubusercontent.com/notofonts/noto-fonts/main/hinted/ttf/NotoSans/NotoSans-Bold.ttf
+Source SHA256: c976e4b1b99edc88775377fcc21692ca4bfa46b6d6ca6522bfda505b28ff9d6a
+Verbatim license: fonts/licenses/NotoSans-2.008-OFL.txt SHA256 0dab92d0544f7b233403f14b84a663bdbfa746982eda629e7f4f9ffe1b036feb
+
+Noto Sans SC Regular 2.004
+© 2014-2021 Adobe (http://www.adobe.com/).
+Source: https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf
+Source SHA256: faa6c9df652116dde789d351359f3d7e5d2285a2b2a1f04a2d7244df706d5ea9
+Verbatim license: fonts/licenses/NotoSansSC-2.004-OFL.txt SHA256 6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2
+
+GNU Unifont (legacy control-code compatibility glyphs) 18.0.01
+Copyright (C) 1998-2026 Roman Czyborra, Paul Hardy, Qianqian Fang, Andrew Miller, Johnnie Weaver, David Corbett, Ælla Chiana Moskopp, Rebecca Bettencourt, Minseo Lee, Ho-Seok Ee, et al. License: SIL Open Font License version 1.1 and GPLv2+: GNU GPL version 2 or later <http://gnu.org/licenses/gpl.html> with the GNU Font Embedding Exception.
+Source: https://www.unifoundry.com/pub/unifont/unifont-18.0.01/font-builds/unifont-18.0.01.bdf.gz
+Source SHA256: 2989e0211030d8219fd931aba599fc95c86bc327ce1423848ef949783b208257
+Verbatim license: fonts/licenses/unifont-18.0.01-LICENSE.txt SHA256 1e74cb82bf476843e97c2596297b04219b1a7e51f7238944a8c031cb9401fa87
+Verbatim license: fonts/licenses/unifont-18.0.01-OFL-1.1.txt SHA256 869692af094c57fb7258c57fe26820c759319603321d0ffeb278de3651763ded
+
+Earlier implementation records below are historical and superseded.
+
+Current candidate: 0.0.29-calendar / CodePulse Pixel (2026-10-30)
+- TITLE / DENSE_TITLE / USAGE_TITLE: native Unifont 16px.
+- BODY / BADGE / NUMBER / SMALL_BOLD / META / BRAND / STATE / SUMMARY:
+  native Fusion Pixel proportional 12px, plus 254 retained Noto 12px/500 glyphs.
+- USAGE_NUMBER: full Unifont 16px, enlarged by runtime integer nearest-neighbor
+  drawing (2x quota/date; 3x dates only where a four-row month has room).
+- All 12 semantic faces cover the same 7,752 codepoints. Native bearings are
+  retained; advances are integer pixels. No kerning, antialiasing, synthetic
+  bold, font installation, FreeType or Pillow is required to regenerate.
+- python scripts/generate-display-font.py --write-source regenerates the
+  pixel-hierarchy.json/.bin.gz provenance cache and main/display_font_data.h.
+- Packed font: 244697 compressed bytes; 552677 expanded PSRAM bytes.
+- Binary source hashes and verbatim license paths are also recorded in
+  sources/pixel-sources.json. The BDF COPYRIGHT properties are retained.
+- CodePulse Pixel is the local composite name. Original upstream names below
+  identify unchanged source files; the chosen font license is SIL OFL 1.1.
+
+unifont 18.0.01
+Upstream: https://www.unifoundry.com/pub/unifont/unifont-18.0.01/font-builds/unifont-18.0.01.bdf.gz
+Downloaded archive SHA256: 2989e0211030d8219fd931aba599fc95c86bc327ce1423848ef949783b208257
+Stored source: fonts/sources/unifont-18.0.01.bdf.gz
+Stored source SHA256: 2989e0211030d8219fd931aba599fc95c86bc327ce1423848ef949783b208257
+Original BDF SHA256: 8c3c5ce5fb524eec5bacbc91b5ddfde81641e2cfc015521e95107b77570368e3
+Verbatim license: fonts/licenses/unifont-18.0.01-LICENSE.txt SHA256 1e74cb82bf476843e97c2596297b04219b1a7e51f7238944a8c031cb9401fa87
+Verbatim license: fonts/licenses/unifont-18.0.01-OFL-1.1.txt SHA256 869692af094c57fb7258c57fe26820c759319603321d0ffeb278de3651763ded
+
+fusion 2026.10.25
+Upstream: https://github.com/TakWolf/fusion-pixel-font/releases/download/2026.10.25/fusion-pixel-font-12px-proportional-bdf-v2026.10.25.zip
+Downloaded archive SHA256: 23165113b96091b95983635cd6baecd86a6113399a72be6dcaf1445bc1f86b94
+Stored source: fonts/sources/fusion-pixel-12px-proportional-2026.10.25.bdf.gz
+Stored source SHA256: 7fa678ba5ad903bee6c31534acf1ec2f801f4e09f0001fe46b60a940529ac40b
+Original BDF SHA256: 06362b84fb05d06c2c5802e303ca65cdcd8a35849c954e29abceab3c6cf10e56
+Verbatim license: fonts/licenses/fusion-2026.10.25-OFL.txt SHA256 bc518cf64b8032c07690f33cc270c35c179255a6ac8efa7c165ebae7e8f76a63
+Verbatim license: fonts/licenses/fusion-2026.10.25-LICENSES--ark-pixel--OFL.txt SHA256 3ab41567e68e3988ba1ef16dd2644eca95ca5648ea12e7d46e6287fc0bbe5aee
+Verbatim license: fonts/licenses/fusion-2026.10.25-LICENSES--cubic-11--OFL.txt SHA256 2b6e5938e5cffa0b9e183bd05f8c363e174e7ebed1a0556e2855fd1707fa2188
+Verbatim license: fonts/licenses/fusion-2026.10.25-LICENSES--galmuri--LICENSE.txt SHA256 86a3ee9495f942f0243f18c103da9faca27adb88142613edb8bb852e56c892c1
+
+Noto fallback: unchanged sources/noto-hierarchy.bin.gz + .json.
+Original font SHA256: a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da
+Retained atlas SHA256: 17f70d8e319efda3a84ef8c1befd1f0004e8cd131cbe31a33d4ce9ce74213a82
+Noto copyright / OFL original: fonts/LICENSE.txt. Only the 254 missing
+Fusion codepoints use its original 12px masks; advances are rounded
+to integer pixels without changing any mask or bearing.
+
+Historical records follow; their previous face mappings are superseded.
+
+Current production hierarchy (0.0.17):
+- One Noto Sans SC family in three sizes: 20px/700 titles; 14px/500/600
+  state and quota; 12px/500/600/700 metadata, toolbar, compact summary.
+- Direct monochrome FreeType masks, original bearings and fractional
+  advances, baseline-aligned runs; no dilation, scaling or temporal noise.
+- Full 7,752-codepoint repertoire for arbitrary titles and body text.
+  Fixed UI weights keep ASCII plus status/summary vocabulary and U+FFFD.
+- Packed source: sources/noto-hierarchy.bin.gz + noto-hierarchy.json;
+  the metadata pins font/atlas SHA256 and source metrics. Source font SHA256:
+  a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da
+- Derivation: Pillow 12.3.0 / RAQM, mode 1, no ligatures. The original Noto
+  OFL attribution/license below remains applicable to this derived subset.
+- 395971 compressed bytes in flash; 1086869 expanded bytes in PSRAM.
+- Regenerate checked-in atlas with scripts/generate-display-font.py
+  (Python stdlib only). To rebuild source masks, run generate-hierarchy-font.py
+  --source <pinned NotoSansSC.ttf> with Pillow 12.3.0 / RAQM.
+- Native C and desktop Wasm consume this same atlas and drawing source.
+
+The following records describe superseded revisions and their retained sources.
+
+Current update (0.0.16): HUD titles now use Noto Sans SC 20px / 700 for
+both Latin and Chinese, with one shared baseline. Latin advances come from
+the face metrics; CJK advances remain 22px. The 16px native body, metadata,
+status, brand, quota digits and large native-bold usage headings are unchanged.
+Title BDF SHA256: 8e6676e0aceb41a8789866b9f87db746064465ee288821e57a49f5c7d0692bae
+Atlas: 394197 compressed bytes; 2627928 bytes expanded.
+The earlier composite-font attribution and revision history follow.
+
+CodePulse body/title bitmap composite — SIL OFL 1.1
+
+Current title hierarchy (0.0.15):
+- Chinese body remains the accepted native ZhengGeDianHei 16px bitmap,
+  fixed 16px advance. Status labels, metadata, brand and quota digit pixels
+  remain unchanged. A sparse status face avoids duplicating a full CJK atlas.
+- HUD titles use a separate 20px/700 Chinese bold mask, fixed 22px advance
+  with side space. Latin titles use native Terminus 10x20 bold. Both wide and
+  dense title line boxes are 24px; dense cards reserve two lines for titles.
+- Usage account names use native Terminus 16x32 bold (36px padded line box).
+  Its Latin capital ink is 20px tall, distinct from the 16px body grid.
+- Chinese TITLE is deliberately a separate larger bold face, not the
+  native body font enlarged or dilated. It is generated from Noto Sans SC
+  at 20px, weight 700, threshold 128, with whole glyph ink retained.
+- generate-title-font.py uses Pillow 12.3.0 and the pinned upstream Noto
+  source below. Build/regeneration of the atlas itself only needs Python's
+  standard library plus the checked-in BDF sources.
+- Atlas: 391090 compressed bytes in flash; 2627928 bytes in PSRAM.
+
+Title source: https://github.com/google/fonts/tree/main/ofl/notosanssc
+https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf
+Noto source SHA256: a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da
+Copyright 2014-2021 Adobe (http://www.adobe.com/), Reserved Font Name Source.
+Noto license/attribution is retained in fonts/LICENSE.txt.
+The derived face is named CodePulse-Headline20.
+
+Current pinned source SHA256 values (decompressed files):
+ZhengGeDianHei-16.bdf  3a212ba548894f5339046dcbbdf622832ba515e9a3a17a1a1bb563326017b55a
+terminus-ter-u12n.bdf  9e942cad8173fddf34fc8a784e9ec6d2d4cfb8b82363faf65f43b236fe2f5a99
+terminus-ter-u16n.bdf  5197662b22bf9f3e68d4af9f969a7fefa3edae40dd82ae969a147381130fb4ae
+terminus-ter-u16b.bdf  92861fecd6f94c5ecc764fc43df5a69eb000ae13a75f652c6525db0495274f0a
+terminus-ter-u18b.bdf  9b0e1f02cc7668f3bd70a2d3c59de207985608b0ca4de5b87b8ef5904c998113
+terminus-ter-u20b.bdf  3051598391e5f7f59f09dc5aa26a97700fcbbe57ac315495878c52fc74aba500
+unifont-fallback.hex  fd03e9067a1beac619b3f197d0141fadb6b335c9fa28bed314a642f65d220733
+title20.bdf  fef2ede41c10a79155e13d7223cf194ea6352cd8d1ea7fdd5a0fe5f5db16d0ab
+terminus-ter-u32b.bdf  f6295e92ebbf95afbb6274f4621608d255c1287ec90d3fefbc50f077bf09dab4
+
+Historical body-font source record (0.0.14; unchanged source attribution):
+
+CodePulse Pixel16 — native bitmap composite/subset, SIL OFL 1.1
+
+Chinese: 正格点黑 16 / ZhengGeDianHei-16, Version 1.0
+Copyright 2026 yzdnn; Copyright 2020 The DotGothic16 Project Authors.
+https://github.com/yzdnn/ZhengGeDianHei-16
+https://raw.githubusercontent.com/yzdnn/ZhengGeDianHei-16/main/Sources/ZhengGeDianHei-16.bdf
+Upstream BDF stored unmodified inside sources/ZhengGeDianHei-16.bdf.gz.
+License and attribution: licenses/ZhengGeDianHei-OFL.txt.
+
+Latin, metadata and quota digits: Terminus Font 4.49.1
+Copyright (C) 2020 Dimitar Toshkov Zhekov.
+https://terminus-font.sourceforge.net/
+Archive obtained from the MacPorts source mirror:
+https://distfiles.macports.org/terminus-font/terminus-font-4.49.1.tar.gz
+Archive SHA256: d961c1b781627bf417f9b340693d64fc219e0113ad3a3af1a3424c7aa373ef79
+Selected BDF files stored unmodified inside sources/terminus-*.bdf.gz.
+License and attribution: licenses/Terminus-OFL.txt.
+
+Rare punctuation fallback: GNU Unifont 17.0.03, selected under SIL OFL 1.1.
+https://www.unifoundry.com/unifont/index.html
+Original unifont.hex.gz SHA256:
+dd9e15729a1450c4f5e7f634ffcade4c84ee3d172291c67d39f1d747ad1be1f6
+sources/unifont-fallback.hex.gz contains 114 unchanged glyphs missing from
+the primary Chinese BDF (including the GB2312 spacing caron U+02C7).
+Licenses and attribution: licenses/Unifont-LICENSE.txt and Unifont-OFL.txt.
+
+All source SHA256 values below refer to decompressed data. The generator
+verifies them before packing. No font installation, download or Pillow is
+needed to regenerate: python scripts/generate-display-font.py
+
+ZhengGeDianHei-16.bdf  3a212ba548894f5339046dcbbdf622832ba515e9a3a17a1a1bb563326017b55a
+terminus-ter-u12n.bdf  9e942cad8173fddf34fc8a784e9ec6d2d4cfb8b82363faf65f43b236fe2f5a99
+terminus-ter-u16n.bdf  5197662b22bf9f3e68d4af9f969a7fefa3edae40dd82ae969a147381130fb4ae
+terminus-ter-u16b.bdf  92861fecd6f94c5ecc764fc43df5a69eb000ae13a75f652c6525db0495274f0a
+terminus-ter-u18b.bdf  9b0e1f02cc7668f3bd70a2d3c59de207985608b0ca4de5b87b8ef5904c998113
+terminus-ter-u20b.bdf  3051598391e5f7f59f09dc5aa26a97700fcbbe57ac315495878c52fc74aba500
+unifont-fallback.hex  fd03e9067a1beac619b3f197d0141fadb6b335c9fa28bed314a642f65d220733
+
+Raster contract:
+- Chinese: fixed 16px advance; original native pixels, regular bitmap weight.
+- Latin body: native 8x16 normal; title/brand: native 8x16 bold.
+- Metadata: native 6x12; quota digits: native 10x18 / 10x20 bold.
+- No rescaling, outline rasterization, greyscale thresholding, artificial
+  dilation, temporal dithering or per-glyph advance corrections.
+- Source baselines are retained with 2px top padding. Four vertical padding
+  pixels keep the established layout line heights (20/16/22/24).
+- All Chinese faces share the same unmodified source strokes. Emphasis uses
+  the existing filled status badge; Chinese counters are not thickened shut.
+- 7,752-codepoint repertoire retained: GB2312, Latin-1, general punctuation,
+  and visible U+FFFD fallback. Unsupported/control glyphs use that fallback.
+- Atlas: 290127 bytes compressed in flash; 1496136 bytes expanded in PSRAM.
+- Generated composite is named CodePulse Pixel16, not an upstream font name.
+
+fonts/LICENSE.txt is the retained Noto license from the previous vector
+prototype. The active atlas uses the sources/licenses documented above.

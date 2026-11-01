@@ -1,0 +1,8 @@
+# Generated / imported font and pixel reference data must keep original bytes.
+firmware/fonts/sources/
+firmware/preview/baselines/
+firmware/managed_components/
+firmware/build*/
+firmware/tmp/
+.toolchains/
+.tmpshots/

@@ -1,0 +1,177 @@
+.ambient-panel {
+  margin: 20px 0;
+  padding: 20px;
+  border: 1px solid var(--border, #7775);
+  border-radius: 14px;
+  color: inherit;
+  background: var(--bg-secondary, #88888808);
+}
+.ambient-heading,
+.ambient-status,
+.ambient-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ambient-heading h3 {
+  margin: 4px 0 0;
+  font-size: 20px;
+}
+.ambient-eyebrow {
+  font-size: 10px;
+  letter-spacing: 2px;
+  opacity: 0.55;
+}
+.ambient-tag {
+  border: 1px solid #8886;
+  border-radius: 20px;
+  padding: 4px 10px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+.ambient-description {
+  font-size: 13px;
+  line-height: 1.8;
+  opacity: 0.75;
+  margin: 14px 0;
+}
+.ambient-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin: 14px 0;
+}
+.ambient-toggle input {
+  accent-color: #74886b;
+}
+.ambient-status {
+  font-size: 12px;
+  padding: 12px 0;
+  opacity: 0.75;
+  border-bottom: 1px solid #8884;
+}
+.ambient-details {
+  border-bottom: 1px solid #8883;
+  padding: 14px 0;
+}
+.ambient-details summary {
+  font-size: 13px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.ambient-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 14px 0;
+}
+.ambient-fields label,
+.ambient-wide {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+}
+.ambient-panel input:not([type='checkbox']),
+.ambient-panel select {
+  width: 100%;
+  box-sizing: border-box;
+  background: transparent;
+  color: inherit;
+  border: 1px solid #8886;
+  border-radius: 6px;
+  padding: 8px;
+  font: inherit;
+}
+.ambient-panel select option {
+  background: Canvas;
+  color: CanvasText;
+}
+.ambient-panel input:focus,
+.ambient-panel select:focus {
+  outline: 2px solid #849c7b;
+  outline-offset: 2px;
+}
+.ambient-hint {
+  font-size: 11px;
+  line-height: 1.7;
+  opacity: 0.6;
+}
+.ambient-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.ambient-panel button {
+  font: inherit;
+  font-size: 12px;
+  padding: 7px 11px;
+  border: 1px solid #8886;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.ambient-panel button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.ambient-panel .ambient-primary {
+  background: #718568;
+  color: #fff;
+  border-color: #718568;
+}
+.ambient-message {
+  font-size: 12px;
+}
+.ambient-health {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 14px;
+  font-size: 11px;
+  opacity: 0.65;
+}
+.ambient-empty {
+  font-size: 12px;
+  padding: 18px 0 0;
+  opacity: 0.55;
+}
+.ambient-card {
+  border: 1px solid #8884;
+  border-radius: 10px;
+  margin-top: 12px;
+  padding: 14px;
+}
+.ambient-card-meta {
+  font-size: 11px;
+}
+.ambient-card-meta span {
+  opacity: 0.6;
+}
+.ambient-card p {
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ambient-preview {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #8884;
+}
+.ambient-preview p.device-preview-note {
+  display: none;
+}
+@media (max-width: 560px) {
+  .ambient-fields {
+    grid-template-columns: 1fr;
+  }
+  .ambient-panel {
+    padding: 14px;
+  }
+}

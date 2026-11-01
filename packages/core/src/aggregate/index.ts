@@ -1,3 +1,7 @@
+import { createHash } from 'node:crypto'
+import { deviceThreadId, isDeviceThreadSource, orderDeviceThreadSources, type DeviceThreadOrder, type DeviceThreadSource } from './device-thread-order.js'
+
+import { normalizeDeviceDisplay, type DeviceDisplayConfig, type DeviceThreadV1 } from '@codepulse/shared'
 /**
  * 聚合辅助函数：把各 agent 的运行时状态收敛为 UI 与硬件消费的视图 ——
  * 托盘总体指示、完整状态快照，以及极简设备投影。
@@ -5,6 +9,8 @@
  * @module core/aggregate
  */
 import {
+  buildWorkPresentation, buildProjectDeckGroups, buildProjectUsageSummaries,
+  hudStateLevel, hudStatePriority, needsHudAttention, isDisplayAgent,
   type AgentRuntimeState,
   type AgentType,
   type DeviceAgentState,
@@ -115,7 +121,9 @@ export function toDeviceStatus(snapshot: StatusSnapshot): DeviceStatus {
  * 每种 CLI 最多返回一条最相关状态，同时合并该 CLI 在不同工作区捕获到的
  * 额度桶。绝对工作区路径不会离开电脑，只传目录名。
  */
-export function toDeviceStatusV1(snapshot: StatusSnapshot): DeviceStatusV1 {
+export function toDeviceStatusV1(snapshot: StatusSnapshot, displayConfig?: DeviceDisplayConfig, order?: DeviceThreadOrder): DeviceStatusV1 {
+  const work = buildWorkPresentation(snapshot)
+  const summaries = buildProjectUsageSummaries(work.panels)
   const projections = DEVICE_AGENT_ORDER.flatMap((agentType) => {
     const states = snapshot.agents.filter((agent) => agent.agentType === agentType)
     if (states.length === 0) return []
@@ -128,12 +136,11 @@ export function toDeviceStatusV1(snapshot: StatusSnapshot): DeviceStatusV1 {
       project: hidden ? null : compactText(workspaceBasename(source.workspacePath), 64),
       model: compactText(source.model, 64),
       activity: hidden ? null : projectDeviceActivity(source),
-      needsAttention:
-        !hidden &&
-        (source.needPermission ||
-          source.needUserInput ||
-          source.state === TurnState.WAITING_PERMISSION ||
-          source.state === TurnState.WAITING_USER_INPUT),
+      needsAttention: !hidden && needsHudAttention(source),
+      quotaSummary: {
+        fiveHourUsedPercent: summaries.find(s => s.agentType === agentType)?.fiveHourPercent ?? null,
+        weeklyUsedPercent: summaries.find(s => s.agentType === agentType)?.sevenDayPercent ?? null,
+      },
       tokens: projectDeviceTokens(source.token),
       quotas: projectDeviceQuotas(states, agentType),
       updatedAt: finiteTimestamp(source.lastEventAt),
@@ -142,7 +149,7 @@ export function toDeviceStatusV1(snapshot: StatusSnapshot): DeviceStatusV1 {
   })
 
   const active = projections
-    .filter((projection) => !projection.source.taskHidden)
+    .filter((projection) => !projection.source.taskHidden && projection.source.lastEventAt > 0)
     .sort((a, b) => compareDeviceAgents(a.source, b.source))[0]
   const mainState = mapMainState(snapshot.overall)
   const content: Omit<DeviceStatusV1, 'revision'> = {
@@ -158,6 +165,31 @@ export function toDeviceStatusV1(snapshot: StatusSnapshot): DeviceStatusV1 {
     ),
   }
 
+  if (displayConfig) {
+    const config = normalizeDeviceDisplay(displayConfig)
+    // The host supplies shared first-seen positions. Legacy raw API callers keep
+    // their existing order persistence until they opt into the shared projection.
+    const groups = buildProjectDeckGroups(work.panels)
+    const groupIds = new Map(groups.flatMap(group => {
+      const id = createHash('sha256').update(group.id).digest('hex').slice(0, 24)
+      return group.cards.map(card => [deviceThreadId(card.agent), id] as const)
+    }))
+    const sources = snapshot.workOrder
+      ? groups.flatMap(group => group.cards.map(card => card.agent)).filter((agent): agent is DeviceThreadSource => isDisplayAgent(agent.agentType))
+      : orderDeviceThreadSources(snapshot.agents.filter(isDeviceThreadSource), order)
+    const threads: DeviceThreadV1[] = sources.filter(source => config.agents.includes(source.agentType)).map(source => ({
+      id: deviceThreadId(source), type: source.agentType,
+      title: deviceUtf8Text(source.taskTitle?.trim() || workspaceBasename(source.workspacePath) || source.agentType, 96),
+      detail: deviceUtf8Text(projectDeviceActivity(source) ?? '', 96),
+      state: mapDeviceAgentState(source.state),
+      level: hudStateLevel(source), unread: source.unread,
+      groupId: groupIds.get(deviceThreadId(source)),
+    }))
+    config.page = Math.min(config.page, Math.max(0, Math.ceil(threads.length / 9) - 1))
+    content.display = config
+    content.threadTotal = threads.length
+    content.threads = threads.slice(config.page * 9, config.page * 9 + 9)
+  }
   return { ...content, revision: createDeviceRevision(content) }
 }
 
@@ -228,29 +260,7 @@ function compareDeviceAgents(a: AgentRuntimeState, b: AgentRuntimeState): number
 }
 
 function deviceAgentPriority(agent: AgentRuntimeState): number {
-  if (agent.taskHidden) return 100
-  switch (agent.state) {
-    case TurnState.ERROR:
-      return 0
-    case TurnState.USAGE_LIMITED:
-      return 1
-    case TurnState.TIMEOUT:
-      return 2
-    case TurnState.WAITING_PERMISSION:
-    case TurnState.WAITING_USER_INPUT:
-      return 3
-    case TurnState.TOOL_RUNNING:
-    case TurnState.THINKING:
-    case TurnState.PROMPT_SUBMITTED:
-      return 4
-    case TurnState.DONE:
-      return agent.unread ? 5 : 6
-    case TurnState.CANCELLED:
-      return 7
-    case TurnState.IDLE:
-    default:
-      return 8
-  }
+  return agent.taskHidden ? 100 : -hudStatePriority(agent)
 }
 
 function projectDeviceTokens(token: TokenPayload | undefined): DeviceTokenUsageV1 {
@@ -268,6 +278,8 @@ function projectDeviceTokens(token: TokenPayload | undefined): DeviceTokenUsageV
   }
 }
 
+// Legacy raw quota buckets remain wire-compatible. Display selection belongs
+// exclusively to the shared quotaSummary above; new firmware must use it.
 interface DeviceQuotaCandidate extends DeviceQuotaBucketV1 {
   updatedAt: number
 }
@@ -462,4 +474,14 @@ function overallMessage(overall: OverallState): string {
     default:
       return '空闲'
   }
+}
+
+/** Byte bound agrees with the MCU UTF-8 buffers; never split a code point. */
+function deviceUtf8Text(text: string, limit: number): string {
+  let result = ''
+  for (const char of text.replace(/[\x00-\x1f\x7f]/g, ' ')) {
+    if (Buffer.byteLength(result + char, 'utf8') > limit) break
+    result += char
+  }
+  return result
 }

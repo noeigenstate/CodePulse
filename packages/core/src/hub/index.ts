@@ -17,6 +17,7 @@ import {
   type UiLocale,
   TurnState,
   workspaceKey,
+  normalizeTaskTitle,
 } from '@codepulse/shared'
 import { buildStatusSnapshot } from '../aggregate/index.js'
 import { createInitialRuntimeState, reduce } from '../state-machine/index.js'
@@ -71,8 +72,27 @@ export class StatusHub extends EventEmitter {
   private readonly usageStability = new UsageStabilityRegistry()
   /** Hook deliveries already applied; prevents a lost HTTP response from double-counting. */
   private readonly seenHookEventIds = new Set<string>()
+  /** Bounded provenance tombstones stop later tools/Stop events resurrecting helpers. */
+  private readonly auxiliarySessions = new Set<string>()
   /** 无活动看门狗定时器句柄（运行中时存在）。 */
   private tickTimer?: NodeJS.Timeout
+  /** Longer-lived presentation data shares the same canonical rows. The normal
+   * snapshot keeps its existing expiry behavior; no second backend/cache.
+   */
+  private presentationRetention?: (agent: Readonly<AgentRuntimeState>, now: number) => boolean
+  private presentationOnly = new Set<string>()
+
+  setPresentationRetention(keep?: (agent: Readonly<AgentRuntimeState>, now: number) => boolean): void {
+    this.presentationRetention = keep
+  }
+
+  /** Complete source for a surface with its own retention policy. */
+  snapshotForPresentation(now = Date.now()): StatusSnapshot {
+    const agents = [...this.agents.values()]
+      .map((agent) => this.usageStability.projectAgent(agent))
+      .sort(compareRuntimeState)
+    return buildStatusSnapshot(agents, now)
+  }
 
   /**
    * Creates a status hub instance.
@@ -94,9 +114,53 @@ export class StatusHub extends EventEmitter {
 
    */
   ingest(event: AgentEvent): boolean {
+    if (!this.acceptSession(event)) return false
     if (!this.acceptHookDelivery(event.id)) return false
     this.applyEvent(event)
     return true
+  }
+
+  /** Reject helper activity before persistence, state transitions and notifications. */
+  private acceptSession(event: AgentEvent): boolean {
+    if (event.internal?.auxiliarySession) {
+      if (event.externalSessionId)
+        this.excludeAuxiliarySession(event.source, event.externalSessionId)
+      return false
+    }
+    return (
+      !event.externalSessionId ||
+      !this.auxiliarySessions.has(sessionKey(event.source, event.externalSessionId))
+    )
+  }
+
+  /** Excludes one positively identified helper; never hides its workspace or parent. */
+  excludeAuxiliarySession(source: AgentType, sessionId: string): void {
+    const identity = sessionKey(source, sessionId)
+    this.auxiliarySessions.delete(identity)
+    this.auxiliarySessions.add(identity)
+    while (this.auxiliarySessions.size > MAX_SEEN_HOOK_EVENTS) {
+      this.auxiliarySessions.delete(this.auxiliarySessions.values().next().value!)
+    }
+    const key = this.sessionKeys.get(identity) ?? sessionRuntimeKey(source, sessionId)
+    const existing = this.agents.get(key)
+    this.sessionKeys.delete(identity)
+    if (existing?.externalSessionId === sessionId && this.agents.delete(key)) {
+      this.presentationOnly.delete(key)
+      this.emit('status', this.snapshot())
+    }
+  }
+
+  /** Native renames update presentation without new activity, unread state, or notifications. */
+  updateSessionTitles(source: AgentType, titles: ReadonlyMap<string, string>): void {
+    let changed = false
+    for (const [key, current] of this.agents) {
+      if (current.agentType !== source || !current.externalSessionId) continue
+      const title = normalizeTaskTitle(titles.get(current.externalSessionId))
+      if (!title || title === current.taskTitle) continue
+      this.agents.set(key, { ...current, taskTitle: title })
+      changed = true
+    }
+    if (changed) this.emit('status', this.snapshot())
   }
 
   /**
@@ -133,6 +197,7 @@ export class StatusHub extends EventEmitter {
 
    */
   observeQuota(event: AgentEvent): boolean {
+    if (!this.acceptSession(event)) return false
     const stabilized = this.usageStability.stabilizeEvent(event)
     const key = this.keyForEvent(stabilized)
     const current = this.agents.get(key) ?? createInitialRuntimeState(stabilized.source)
@@ -156,6 +221,7 @@ export class StatusHub extends EventEmitter {
       next: this.usageStability.projectAgent(reduced.next),
     }
     this.agents.set(key, result.next)
+    if (!isExpiredAgent(result.next, event.timestamp)) this.presentationOnly.delete(key)
     this.rememberEventKey(event, key)
 
     this.emit('event', event)
@@ -181,6 +247,25 @@ export class StatusHub extends EventEmitter {
       if (current.agentType !== agentType || !current.unread) continue
       if (workspacePath && workspaceKey(current.workspacePath) !== workspaceKey(workspacePath))
         continue
+      this.agents.set(key, { ...current, unread: false })
+      changed = true
+    }
+    if (changed) this.emit('status', this.snapshot())
+  }
+
+  /** Acknowledge exactly the rows represented by a presentation's project card.
+   * Session IDs take precedence over mutable cwd. Legacy path-only rows never
+   * acknowledge unrelated session-backed rows that happen to share that cwd.
+   */
+  acknowledgeRows(rows: readonly AgentRuntimeState[]): void {
+    const identity = (agent: AgentRuntimeState): string =>
+      agent.externalSessionId
+        ? sessionRuntimeKey(agent.agentType, agent.externalSessionId)
+        : runtimeKey(agent.agentType, agent.workspacePath ?? '')
+    const targets = new Set(rows.map(identity))
+    let changed = false
+    for (const [key, current] of this.agents) {
+      if (!current.unread || !targets.has(identity(current))) continue
       this.agents.set(key, { ...current, unread: false })
       changed = true
     }
@@ -218,6 +303,7 @@ export class StatusHub extends EventEmitter {
 
       if (agent.taskHidden) {
         this.agents.delete(key)
+        this.presentationOnly.delete(key)
         if (agent.externalSessionId) {
           this.sessionKeys.delete(sessionKey(agent.agentType, agent.externalSessionId))
         }
@@ -241,7 +327,12 @@ export class StatusHub extends EventEmitter {
 
    */
   snapshot(now = Date.now()): StatusSnapshot {
-    const agents = [...this.agents.values()]
+    const agents = [...this.agents.entries()].flatMap(([key, agent]) => {
+      if (!this.presentationOnly.has(key)) return [agent]
+      // Match the ordinary expiry view without destroying rows still needed
+      // by a longer-lived surface or clearing its unread result.
+      return hasRetainedQuota(agent.token) ? [{ ...agent, taskHidden: true, unread: false }] : []
+    })
       .map((agent) => this.usageStability.projectAgent(agent))
       .sort(compareRuntimeState)
     return buildStatusSnapshot(agents, now)
@@ -331,7 +422,18 @@ export class StatusHub extends EventEmitter {
   private pruneExpiredAgents(now: number): boolean {
     let changed = false
     for (const [key, agent] of [...this.agents.entries()]) {
-      if (!isExpiredAgent(agent, now)) continue
+      if (!isExpiredAgent(agent, now)) {
+        if (this.presentationOnly.delete(key)) changed = true
+        continue
+      }
+      if (!agent.taskHidden && this.presentationRetention?.(agent, now)) {
+        if (!this.presentationOnly.has(key)) {
+          this.presentationOnly.add(key)
+          changed = true
+        }
+        continue
+      }
+      this.presentationOnly.delete(key)
       if (hasRetainedQuota(agent.token)) {
         if (!agent.taskHidden || agent.unread) {
           this.agents.set(key, { ...agent, taskHidden: true, unread: false })

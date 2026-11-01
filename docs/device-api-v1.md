@@ -1,7 +1,64 @@
 # CodePulse 局域网设备协议 v1
 
-本文档定义桌面端与 ESP32 水墨屏之间的第一版协议。设备通过局域网主动拉取，
-桌面端不向设备开放 Hook 写入、确认任务或 WebSocket 接口。
+## 助手增量扩展（本地 0.0.27 候选）
+
+标准客户端可在同一个设备服务上注册 `/api/v1/device/assistant/*`。以下端点沿用
+现有 `X-CodePulse-Device-Token` 认证；工作状态接口仍只读，不接受 CLI 事件或
+编程任务确认。未注册助手模块的宿主不提供这些路由。除 `info` 外，还须发送
+`X-CodePulse-Device-Id`（1–64 字符，仅字母、数字、`-`、`_`、`:`）。设备 ID 是
+同一授权下的上下文分区，不是新的认证凭据。不要在 URL 中传令牌。
+
+| 方法与相对路径 | 请求 / 响应 |
+| --- | --- |
+| `GET info` | 语音开关、协议版本和 PCM 规格，不返回凭据或全部待办 |
+| `POST text` | `{text}`，最多 4000 字符 / 16000 字节；返回 `reply`、`draftId`、`needsConfirmation` |
+| `POST voice` | `application/octet-stream`，16 kHz / 单声道 / signed 16-bit LE PCM，0.1–30 秒 / 960000 字节；返回转写和同样的建议字段 |
+| `POST speech` | `{text}`，最多 300 字符 / 3000 字节；返回原始 PCM，不是 WAV/MP3；响应头 `x-codepulse-audio-rate: 16000` |
+| `GET announcement` | `{announcement: null}` 或 `{announcement:{id,text}}`，领取本设备的一条到期播报 |
+| `POST announcement/ack` | `{id}` / 1000 字节上限；播放完成后回执，成功为 `{ok:true}` |
+
+建议不会立即修改待办。设备随后发送“确认”才执行自己的未过期建议；“取消”或新输入
+解除原确认关联。建议十分钟过期；三个及以上动作改到桌面查看确认。桌面与各设备的
+近期对话隔离，仅保留有界内存上下文。播报后十分钟内可按该设备最近提醒提出延后。
+所有动作经过类型、时间、待办修订版本检查和数据库事务；重复确认不重复创建。
+
+语音默认关闭；用户配置的 AI/ASR/TTS 服务由桌面调用，设备不持有供应商密钥。
+识别和生成串行处理；合成同时最多一个请求，超时和容量有界。异常响应只给出简短
+配置/网络错误，不返回上游正文。提醒有安静时段和 30 分钟补报窗口；回执持久化，
+60 秒未确认的领取可以重试。设备应在重复领取同一 ID 时重试回执，不重复播放。
+电脑休眠或退出时不提供服务。LAN 仍是既有 HTTP 配对模式，应在可信局域网内使用。
+
+### 待办页（兼容的可选显示字段）
+
+`ambient.items` 可包含 0–6 行。每行 `{title,meta,overdue}`，`overdue` 为布尔值，
+固件字符串缓冲区分别为 160 和 48 字节（含终止符）；宿主按 UTF-8 边界截断，
+固件拒绝超限字段。禁止与 `ambient.imageHex` 同时使用。宿主继续提供 `ambient.text` 摘要，旧固件忽略
+items 仍能显示文字；新 C/Wasm 渲染器显示复选框、标题、时间和到期标记。
+此扩展不改变 v1 的工作/用量、注意力优先级、黑白翻转或刷新回执语义。
+
+合成 400×300 样例：[空列表](device-preview-v027/todos-0.png)、
+[单项](device-preview-v027/todos-1.png)、[六项](device-preview-v027/todos-6.png)。
+实现与兼容性详见 [整合记录](LUMADESK-INTEGRATION.md)。
+
+## 设备显示投影
+
+统一宿主为桌面配置预览和 LAN API 提供同一个 projector。每个原生用户任务有
+稳定编号；标题优先用会话名称，回退到工作区。明确识别的内部建议／审核会话
+不进入任务生命周期；普通用户任务、用户 fork 和同项目的多个任务仍独立保留。
+
+顺序沿用 HUD：Claude → Codex → Kimi → Grok；设备目前支持
+Claude、Codex 及 Grok，尚不支持 Kimi。项目相邻，组内 provider 优先、同级先到
+先得。version 2 顺序记录以哈希绑定会话首次确定的项目组；瞬时 cwd、标题、
+状态和活动时间不触发重排。该规则只影响设备投影，不修改 StatusHub 的工作目录。
+
+显示配置包含 HUD／用量模式、账号筛选、剩余／已用、环境与额度显示、页码。
+设置中的草稿先预览，应用配置后原子保存并唤醒等待请求。预览是最新目标画面，
+不是物理屏幕当前画面的回执。设备遥测不回传；未知环境信息不得伪造。
+3／6／9 任务样例只在 renderer 使用，不能写入共享状态或应用到设备。
+
+三行及 1／2／3 列规则、两行长标题省略和独立待确认区域由共用 C/Wasm 渲染器
+实现。密集卡片优先标题，隐藏状态细节，底部持续显示账号额度。
+当前运行时是黑白差分路径，未实现静态红色或三色低闪的受支持配置。
 
 ## 1. 启用服务
 
@@ -180,6 +237,34 @@ timeout | usage_limited | cancelled
 
 ## 4. 条件请求与水墨屏刷新
 
+### 0.0.18：即时状态读取（2026-10-23）
+
+`GET /api/v1/device/status` 新增可选请求头 `X-CodePulse-Wait-Ms: 1000`。
+仅当 If-None-Match 仍匹配时挂起，最长 1000 ms；StatusHub 状态变化或桌面
+保存设备配置时，立即重新投影，有新 revision 就提前返回 200。保持不变则到期
+返回 304。该时间是空闲请求的最长保持时间，不是收到变化后的等待时间。
+旧客户端不传此头时行为不变；认证、只读边界、v1 JSON 字段和 ETag 语义不变。
+不回传设备传感器、屏幕状态或显示回执。非法等待值返回 400，同时最多 32 个
+挂起读取，超出返回 503；断开与关闭服务会清理监听器／定时器。
+
+0.0.18 设备连续读取，正常请求间只让出 100 ms 给系统与按键；不再每 30 秒
+取数。已验证可用的备用地址也会缓存，避免重复 mDNS 查询的 3 秒开销；请求
+失败、Wi-Fi 重连、USB 重新配网会使地址缓存失效。网络请求仍有 7 秒超时，
+失败后 3 秒重试；无网络时无法承诺即时到达。主任务单独拥有网络及屏幕，
+不启动第二个并发刷屏者。
+
+收到数据后，待确认／待查看／异常／限额优先分类；普通状态、任务增删、标题、
+可见额度和配置变化也立即符合刷新条件，取消原 60 秒状态稳定和 180 秒显示
+间隔。正在刷屏时完成当前一轮，再取最新快照，不排队回放中间态。相同画面
+不驱动屏幕；同状态下的工具详情变化不单独刷新，也不扩大额度更新范围。
+短按同样取消 3 分钟等待。重要状态随同一张最新画面更新，不重新排列卡片。
+
+温湿度仍每 30 秒采样；小于 1°C／5 个湿度百分点的变化不触发或扩大刷新。
+大变化仍沿用 15 分钟辅助更新门槛，电量阈值仍为 10 个百分点；手动刷新可
+带入当前读数。PAIR125、一次变更区域局刷、故障锁止和启动一次清洁全刷不变。
+配置预览仍是目标画面，不是设备实时显示回执；旧固件仍遵守旧刷新节奏。
+
+
 `200` 响应会带弱 ETag，例如：
 
 ```http
@@ -206,3 +291,171 @@ If-None-Match: W/"v1-5db1f203"
 - v1 后续只会新增可忽略字段，不会改变现有字段含义或单位。
 - 破坏兼容性的字段、枚举或单位变更必须发布新的 `/api/v2/device/status`。
 - token 不应写入日志、URL、崩溃报告或屏幕；建议保存在 ESP32 NVS 中。
+
+## Shared HUD work presentation (additive v1 extension)
+
+The unified host uses the retained HUD projection for both preview and LAN status. Optional thread level/unread/groupId and agent quotaSummary fields carry shared display semantics; legacy fields remain compatible. See [the implementation and firmware acceptance contract](WORK-PRESENTATION-HANDOFF.md). Old firmware ignores these fields; displaying their semantics requires an updated production renderer.
+
+
+### Optional BW inversion (firmware 0.0.24+)
+
+`display.inverted` is an optional boolean, default false. Old devices ignore it;
+new devices reject non-boolean values. It complements the final 400×300 black
+plane after rendering all work, quota and ambient content. The red plane and
+refresh waveforms are unchanged. Both desktop previews use the same C renderer.
+Concept cards, prompts, personal notes and imported images use the existing
+`ambient` extension; images remain 384×208 MSB-first packed black bits (19,968
+hex characters). No new image format or network access is required on the MCU.
+
+### Explicit content display (firmware 0.0.25+)
+
+`ambient.manual` is an optional boolean, default false. True denotes an explicit
+user display action; it permits covering passive `notice` tasks without changing
+any work/read state. `action` and `fault` still preempt it. Automatic content
+continues to yield to notice/action/fault. The flag is transient, never stored in
+the content library, and participates in the response revision. Non-booleans are
+rejected by new firmware. Older firmware ignores it and still suppresses content
+while review notices exist; update firmware to enable the new behavior.
+
+### Red ink for ambient images (firmware 0.0.27+)
+
+`ambient.red` is an optional object that adds red to an ambient bitmap. The first
+user is the pixel pet card (`pet:<pet>:<mood>:<YYYY-MM-DD>`); any bitmap card may use it.
+
+```json
+"red": { "x": 128, "y": 40, "w": 128, "h": 128, "hex": "…" }
+```
+
+- Coordinates are in the multimedia picture area (384×208, origin top left); on the
+  device that is screen pixel (8+x, 60+y), the same as `imageHex` (32+y with the pet layout below).
+- `x` and `w` are multiples of 8, `w ≥ 8`, `h ≥ 1`, `x + w ≤ 384`, `y + h ≤ 208`.
+- `w * h / 8 ≤ 3072` bytes (a 128×128 rectangle is 2048 bytes).
+- `hex` has exactly `w * h / 4` characters, row-major, MSB first, upper or lower
+  case. A set bit is red pigment (as in `imageHex`, 1 means ink).
+- Only a card that also carries `imageHex` may carry `red`.
+- Where black and red are both 1 the pixel is black. The desktop never produces
+  overlap; firmware still gives black priority.
+- An invalid `red` (out of bounds, wrong length, no `imageHex`, wrong type) makes the
+  firmware drop only `red` and show the card in black and white. The status must not
+  fail to parse because of it, so a new optional field can never take a device offline.
+  This is deliberately unlike `imageHex`, which still fails strictly.
+- Older firmware ignores the unknown `red` field and shows the black part only.
+
+Firmware behaviour. The ambient renderer draws the black image first, then paints red
+where the red bit is 1 and the black bit is 0. With `display.inverted` only the
+black/white pixels invert; red stays red and never produces a black-and-red-both-clear
+encoding. A frame that has red, or follows a frame that had red, and whose picture
+changed is shown with a full three-colour refresh (`epd_ssd1683_refresh`, real red
+plane, about 16 s with visible flashing); log tag `red_full`, distinct from the boot
+`clean_baseline`. Other changes keep the low-flicker PAIR partial refresh, which needs
+the red plane to be all 0xFF. Cooldown: when less than 120 s have passed since the last
+runtime full refresh, *entering* a red frame (previous frame had no red) draws red pixels
+as black through the partial refresh; *leaving or replacing* a red frame always does a full
+refresh regardless of the cooldown, because partial refresh cannot clear red. A refresh
+failure follows the existing policy (mark faulted, power down safely). PAIR waveforms,
+LUTs, boot clear, keys and power flow are unchanged.
+
+Desktop side. `withAmbient` keeps the whole status within the MCU's 32,000 byte limit by
+dropping `red` first (black-only still shows the picture) and only then the bitmap. A pet
+card keeps a fixed id while shown, so a showing costs one full refresh in and one out; pets
+follow the existing automatic-push pacing (interval, daily cap, quiet hours, idle only) and
+manual display, and add no timed refreshes. The mood (sleepy, hungry, working, happy, idle)
+is chosen from live status and local time when the card is built.
+
+### Pet layout (firmware 0.0.28+)
+
+`ambient.layout` is an optional string; the only value is `"pet"`. The desktop sets it on pixel
+pet cards, and only sends it when the card also carries `imageHex`. It is part of the card
+projection, so a change of layout changes the response revision. The firmware redraws a card only
+when `ambient.id` changes, so for bitmap cards the desktop derives the id (still 24 hex characters)
+from the card id together with the layout, `imageHex` and `red`: the same card with another
+layout or picture is a new id, an identical one keeps its id. Cards without a bitmap keep the
+plain hash of the card id.
+
+- A `"pet"` card with a bitmap is laid out as: picture 384×208 at screen pixel (8, 32) (`red`
+  keeps picture-area coordinates and follows the same origin), a 1 px divider at y=243, `text`
+  in 20px bold on one line (12px if it does not fit in 376 px), then `source` in 12px.
+- A missing, `null`, other-string or non-string `layout`, or a card without `imageHex`, keeps
+  the original layout (picture at (8, 60)). An invalid `layout` never fails the status, like `red`.
+- Older firmware ignores the field and shows the original layout, so no version negotiation is
+  needed.
+
+### Calendar layout (firmware 0.0.29+)
+
+`ambient.layout` also accepts `"calendar"`, which draws a month grid from the optional
+`ambient.calendar` object. The desktop sends one such card per local day (`calendar:YYYY-MM-DD`,
+`source` "日历"); it has no `imageHex` and no `red`.
+
+```json
+"ambient": {
+  "id": "…24 hex…",
+  "source": "日历",
+  "text": "10月30日 周五 · 农历九月廿一 · 第44周",
+  "layout": "calendar",
+  "calendar": {
+    "year": 2026, "month": 10, "today": 30, "first": 3, "days": 31,
+    "lunar": "丙午年 九月廿一", "week": 44,
+    "labels": ["国庆节", "廿二", "廿三", "…"],
+    "flags": [7, 5, 5, "…"]
+  }
+}
+```
+
+- `year` 1900–2100; `month` 1–12; `days` 28–31 and equal to the number of days of that month;
+  `first` 0–6 is the weekday of the 1st (0 = Monday, weeks start on Monday); `today` 0–31 (0 = today
+  is not in this month); `week` 1–53 is the ISO week of today (of the 1st when `today` is 0).
+- `lunar` is the header subtitle: the stem-branch year and today's lunar date, for example
+  "丙午年 九月廿一" or "丙午年 闰六月初三"; at most 32 UTF-8 bytes.
+- `labels[i]` is the small text under day i+1, at most four code points and at most 16 bytes of
+  UTF-8 (four Han characters are 12 bytes), chosen by priority:
+  statutory or traditional festival, then solar term, then the lunar day (the 1st of a lunar month
+  shows the month name such as "十月" or "闰六月").
+  The device font keeps native 12 px glyphs only for the characters the desktop calendar module
+  can emit (every label, header and weekday from 1900 to 2100); any other character is drawn with
+  the 14 px body glyph. When the module's names change, the firmware character set is regenerated.
+- `flags[i]` is a bit set for day i+1: `1` red date number (Saturday, Sunday or an official day off;
+  a make-up workday is not red even on a weekend), `2` red small text (festival or solar term),
+  `4` official day off (the firmware shows it only through the red date number and draws no
+  badge), `8` make-up workday ("班"). `4` and `8` never occur together; an official day off always
+  also carries `1`. In the example, 1 October is a day off with a festival name (`1|2|4` = 7) and
+  2 October is a day off with its lunar day (`1|4` = 5).
+- `labels` and `flags` both have exactly `days` entries.
+- An invalid `calendar` is dropped by the firmware, which then shows `text` as a plain text card; like
+  `red`, it must never make the status fail to parse. Firmware older than 0.0.29 ignores `layout`
+  and `calendar` and always shows `text` that way.
+
+Desktop side. The card id changes every day, so the screen takes at most one three-colour full
+refresh in and one out per day; there is no timed refresh. The projection id (24 hex characters) is
+derived from the card id and the `calendar` JSON, so a holiday update that changes the grid is a new
+id and identical content keeps its id; the object is part of the response revision. Within the
+32,000 byte limit `withAmbient` drops the whole `layout`/`calendar` pair first, keeping the
+one-line text under a new id, and only if even that does not fit keeps the plain work status. The
+card follows the automatic-push pacing (interval, daily cap, quiet hours, idle only), can be shown by
+hand, and is switched by the `calendarEnabled` setting (default true).
+
+Holiday data. The grid marks statutory days off and make-up workdays from a table that is built in
+for 2025 and 2026. While the calendar is enabled the desktop fetches
+`https://cdn.jsdelivr.net/gh/NateScarlet/holiday-cn@master/<year>.json` for the current year, and
+from October for the next year (the announcement usually comes in early November; a miss only costs
+that day's attempt), at most once per year per day (a failed attempt counts). A file is
+used only if it parses as holiday-cn, declares the requested year and has at least one day of that
+year; dates may also fall in 20–31 December before it or 1–10 January after it (a New Year break
+can cross the year, e.g. `2023.json` lists 2022-12-31) and are filed under their own date. It then
+replaces the built-in table for that year (other years are added) and is cached in the user data
+directory as `calendar-holidays.json`. Any failure is silent and leaves the previous table.
+
+### 0.0.26：设备展示减频与局部窗口候选
+
+仍读取同一 v1 快照，不改变桌面/HUD 的任务、已读、保留或顺序语义。
+设备上的活动子阶段使用稳定的“工作中”和中性说明，原始 thinking/tool_running
+切换不独立驱动。新任务、完成未读、授权/补充输入/异常和解除提醒仍及时显示。
+已知额度采用 120 秒的设备展示节奏；未知转已知和达到限额例外。
+温湿度/电量继续阈值与 15 分钟限制，并避免在工作变化时将辅助区一起带入刷新。
+相同 ambient ID 的有效停留期间冻结页眉和额度；宿主移除 ambient 后正常恢复工作。
+预览仍表示目标像素，不模拟物理延迟或残影。
+
+默认关闭的 `CODEPULSE_QUIET_RECT_TRIAL` 窄窗口实验只改变传输区域，保持所选
+PAIR125/PAIR150 波形及单次驱动。配套固件 `7e3d9e6` 已合入独立固件主线；
+原型已刷入 `0.0.26-region-pair150` 并确认开机联网，实际残影改善仍待实物验收。
+两套桌面预览均为 `0.0.26-paced`，仅表示目标像素；版本对应、软件检查和实测范围见
+[日常低干扰显示记录](QUIET-DISPLAY-2026-10-28.md)。

@@ -4,7 +4,7 @@
  *
  * @module adapters/claude-code
  */
-import type { AgentEventInput, AgentEventType } from '@codepulse/shared'
+import { normalizeTaskTitle, type AgentEventInput, type AgentEventType } from '@codepulse/shared'
 import {
   asRecord,
   pickNumber,
@@ -39,6 +39,7 @@ export function fromClaudeHook(raw: unknown): AgentEventInput | null {
     cwd: pickString(r, 'cwd'),
     workspacePath: pickString(r, 'workspace', 'project_dir', 'cwd'),
     model: pickString(r, 'model'),
+    taskTitle: normalizeTaskTitle(pickString(r, 'session_title', 'session_name', 'task_title')),
     reasoningEffort: pickClaudeReasoningEffort(r, asRecord(r.settings), asRecord(r.model)),
     raw,
   }

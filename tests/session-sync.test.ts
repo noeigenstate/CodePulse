@@ -627,7 +627,7 @@ test('SessionSyncService keeps a user-created Codex fork as a root rollout', asy
   }
 })
 
-test('SessionSyncService prefers the newest model config over a newer same-workspace mtime', async () => {
+test('SessionSyncService keeps model configurations separate for same-workspace native sessions', async () => {
   const home = await mkdtempJoin('codepulse-session-sync-model-priority-')
   const sessions = join(home, 'sessions', '2026', '07', '16')
   const cwd = 'E:/work/same-workspace'
@@ -681,10 +681,14 @@ test('SessionSyncService prefers the newest model config over a newer same-works
 
   try {
     await sync.syncNow(['codex'])
-    const codex = hub.snapshot().agents.find((agent) => agent.agentType === 'codex')
-    assert.equal(codex?.externalSessionId, terraId)
-    assert.equal(codex?.model, 'gpt-5.6-terra')
-    assert.equal(codex?.reasoningEffort, 'ultra')
+    const agents = hub.snapshot().agents.filter((agent) => agent.agentType === 'codex')
+    assert.equal(agents.length, 2)
+    const terra = agents.find((agent) => agent.externalSessionId === terraId)
+    const sol = agents.find((agent) => agent.externalSessionId === solId)
+    assert.equal(terra?.model, 'gpt-5.6-terra')
+    assert.equal(terra?.reasoningEffort, 'ultra')
+    assert.equal(sol?.model, 'gpt-5.6-sol')
+    assert.equal(sol?.reasoningEffort, 'max')
   } finally {
     sync.stop()
     await rm(home, { recursive: true, force: true })
@@ -3068,10 +3072,11 @@ test('SessionSyncService keeps Codex weekly quota from a parallel same-workspace
   try {
     await sync.syncNow(['codex'])
     const agents = hub.snapshot().agents.filter((agent) => agent.agentType === 'codex')
-    assert.equal(agents.length, 1)
-    assert.equal(agents[0]?.model, 'gpt-5.6-terra')
-    assert.equal(agents[0]?.token?.contextUsedPercent, (30_000 / 256_000) * 100)
-    assert.equal(agents[0]?.token?.rateLimits?.sevenDay?.usedPercent, 42)
+    assert.equal(agents.length, 2)
+    const modelSession = agents.find((agent) => agent.externalSessionId === modelId)
+    assert.equal(modelSession?.model, 'gpt-5.6-terra')
+    assert.equal(modelSession?.token?.contextUsedPercent, (30_000 / 256_000) * 100)
+    assert.ok(agents.every((agent) => agent.token?.rateLimits?.sevenDay?.usedPercent === 42))
   } finally {
     sync.stop()
     await rm(home, { recursive: true, force: true })
@@ -3489,3 +3494,46 @@ async function mkdtempJoin(prefix: string): Promise<string> {
   const { mkdtemp } = await import('node:fs/promises')
   return mkdtemp(join(tmpdir(), prefix))
 }
+
+test('SessionSyncService ignores expired Grok billing logs without inventing a task', async () => {
+  const home = await mkdtempJoin('codepulse-grok-billing-expired-')
+  const now = Date.parse('2026-10-20T10:00:00Z')
+  await mkdir(join(home, 'logs'), { recursive: true })
+  const hub = new StatusHub({ sessionThrottleMs: 0 })
+  const sync = new SessionSyncService({
+    hub,
+    userHome: home,
+    grokHome: home,
+    codexHome: join(home, 'no-codex'),
+    claudeHome: join(home, 'no-claude'),
+    disableWatch: true,
+    now: () => now,
+  })
+  const logPath = join(home, 'logs', 'unified.jsonl')
+  const billing = (end: number) =>
+    JSON.stringify({
+      msg: 'billing: fetched credits config',
+      ctx: {
+        subscriptionTier: 'SuperGrok',
+        config: {
+          creditUsagePercent: 18,
+          billingPeriodEnd: new Date(end).toISOString(),
+        },
+      },
+    })
+  try {
+    await writeFile(logPath, [billing(now + 86_400_000), billing(now - 1_000)].join('\n'))
+    await sync.syncNow(['grok'])
+    assert.equal(hub.snapshot().agents.filter((a) => a.agentType === 'grok').length, 0)
+    await writeFile(logPath, billing(now + 86_400_000))
+    await sync.syncNow(['grok'])
+    const account = hub.snapshot().agents.find((a) => a.agentType === 'grok')
+    assert.equal(account?.token?.rateLimits?.sevenDay?.usedPercent, 18)
+    assert.equal(account?.state, TurnState.IDLE)
+    assert.equal(account?.workspacePath, undefined)
+    assert.equal(account?.lastEventAt, 0)
+  } finally {
+    sync.stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})

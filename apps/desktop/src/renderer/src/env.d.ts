@@ -1,7 +1,16 @@
 /// <reference types="vite/client" />
+import type { AssistantAudio, AssistantDraft, AssistantSecret, AssistantSettings, AssistantSnapshot, DeskTaskInput } from '@codepulse/shared'
 import type {
+  ProductView, DesktopForm, ShellSnapshot, WorkbenchWindowState, PresentationTarget, DesktopLayout,
+  InkDisplayPlan, HudAppearanceSettings,
+  AmbientConfig,
+  AmbientCard,
+  AmbientSnapshot,
+  DeviceStatusV1,
   Agent,
   AgentType,
+  DeviceDisplayConfig,
+  DeviceDisplaySnapshot,
   DeviceProvisioningRequest,
   DeviceProvisioningSnapshot,
   StatusSnapshot,
@@ -20,6 +29,52 @@ type WindowTheme = 'light' | 'dark'
 
 /** 镜像 src/preload/index.ts 通过 contextBridge 暴露的 API。 */
 export interface CodePulseApi {
+  getAssistant: () => Promise<AssistantSnapshot>
+  previewDeskTasks: () => Promise<DeviceStatusV1>
+  configureAssistant: (settings: AssistantSettings) => Promise<AssistantSnapshot>
+  setAssistantKey: (field: AssistantSecret, value: string) => Promise<AssistantSnapshot>
+  addDeskTask: (input: DeskTaskInput) => Promise<AssistantSnapshot>
+  updateDeskTask: (id: string, input: DeskTaskInput) => Promise<AssistantSnapshot>
+  completeDeskTask: (id: string) => Promise<AssistantSnapshot>
+  cancelDeskTask: (id: string) => Promise<AssistantSnapshot>
+  snoozeDeskTask: (id: string, seconds: number) => Promise<AssistantSnapshot>
+  forgetDeskMemory: (id: string) => Promise<AssistantSnapshot>
+  interpretAssistant: (text: string) => Promise<AssistantDraft>
+  applyAssistantDraft: (id: string) => Promise<AssistantSnapshot>
+  listenAssistant: (pcm: Uint8Array) => Promise<{text:string;draft:AssistantDraft}>
+  speakAssistant: (text: string) => Promise<AssistantAudio>
+  showDeskTasksOnInk: () => Promise<AssistantSnapshot>
+  hideDeskTasksOnInk: () => Promise<AssistantSnapshot>
+  onAssistant: (cb: (snapshot: AssistantSnapshot) => void) => Unsubscribe
+  openSettingsWindow: () => Promise<boolean>
+  getShell: () => Promise<ShellSnapshot>
+  setPresentationTarget: (target: PresentationTarget) => Promise<ShellSnapshot>
+  setFocusMode: (focus: boolean) => Promise<ShellSnapshot>
+  setDesktopLayout: (layout: DesktopLayout) => Promise<ShellSnapshot>
+  setInkPlan: (plan: InkDisplayPlan) => Promise<ShellSnapshot>
+  setHudSettings: (patch: Partial<HudAppearanceSettings>) => Promise<ShellSnapshot>
+  setHudVisible: (visible: boolean) => Promise<ShellSnapshot>
+  getHudPreview: () => Promise<StatusSnapshot | null>
+  setHudContentHeight: (height: number) => Promise<boolean>
+  navigateProduct: (view: ProductView) => Promise<ShellSnapshot>
+  selectDesktopForm: (form: DesktopForm) => Promise<ShellSnapshot>
+  openSurface: (surface: 'standard' | 'hud' | 'screen', view?: ProductView) => Promise<ShellSnapshot>
+  onShell: (cb: (snapshot: ShellSnapshot) => void) => Unsubscribe
+  setWorkbenchWindow: (patch: Partial<WorkbenchWindowState>) => Promise<WorkbenchWindowState>
+  onWorkbenchWindow: (cb: (state: WorkbenchWindowState) => void) => Unsubscribe
+  onDeviceDisplay: (cb: (snapshot: DeviceDisplaySnapshot) => void) => Unsubscribe
+  importAmbientImage: (bytes: Uint8Array, name: string) => Promise<AmbientCard>
+  addAmbientNote: (text: string) => Promise<AmbientCard>
+  removeAmbient: (id: string) => Promise<AmbientSnapshot>
+  getAmbient: () => Promise<AmbientSnapshot>
+  setAmbient: (config: AmbientConfig) => Promise<AmbientSnapshot>
+  setAmbientKey: (provider: AmbientConfig['provider'], key: string) => Promise<AmbientSnapshot>
+  refreshAmbient: () => Promise<AmbientSnapshot>
+  showAmbient: (id: string) => Promise<AmbientSnapshot>
+  dismissAmbient: () => Promise<AmbientSnapshot>
+  previewAmbient: (id: string) => Promise<DeviceStatusV1>
+  openAmbient: (id: string) => Promise<void>
+  onAmbient: (cb: (snapshot: AmbientSnapshot) => void) => Unsubscribe
   /** Host platform exposed by the constrained preload bridge. */
   platform: NodeJS.Platform
   getStatus: () => Promise<StatusSnapshot>
@@ -48,6 +103,8 @@ export interface CodePulseApi {
   loginMimo: () => Promise<boolean>
   /** Clears the MiMo console login. */
   logoutMimo: () => Promise<boolean>
+  getDeviceDisplay: (preview?: DeviceDisplayConfig) => Promise<DeviceDisplaySnapshot>
+  setDeviceDisplay: (config: DeviceDisplayConfig) => Promise<DeviceDisplaySnapshot>
   getDeviceProvisioning: () => Promise<DeviceProvisioningSnapshot>
   startDeviceScan: () => Promise<DeviceProvisioningSnapshot>
   stopDeviceScan: () => Promise<DeviceProvisioningSnapshot>

@@ -27,6 +27,8 @@ export interface AgentRuntimeState {
   externalTurnId?: string
   /** agent 正在工作的工作区路径。 */
   workspacePath?: string
+  /** Explicit native task/session title; workspace remains the fallback. */
+  taskTitle?: string
   /** 使用的模型（如已知）。 */
   model?: string
   /** 当前模型配置的思考深度；未知时不从 token 用量推断。 */
@@ -94,6 +96,8 @@ export type OverallState =
  * 包含各 agent 状态以及推导出的 {@link OverallState}。
  */
 export interface StatusSnapshot {
+  /** Shared presentation order; absent on the raw canonical status endpoint. */
+  workOrder?: import('../presentation/workPresentation.js').WorkPresentationOrder
   /** 提供给托盘的聚合指示。 */
   overall: OverallState
   /** 每个曾上报活动的 agent 各一条。 */

@@ -5,6 +5,7 @@ import WebSocket from 'ws'
 import { StatusHub } from '@codepulse/core'
 import {
   startLocalServer,
+  SessionSyncService,
   type CodexAppServerQuotaServiceOptions,
   type CodexAppServerQuotaSnapshot,
   type CodexQuotaServiceFactory,
@@ -18,11 +19,39 @@ import type {
   StatusSnapshot,
 } from '@codepulse/shared'
 
+import { CodexReadStateSync } from '../packages/local-server/src/codex-read-state.js'
+
 const HOST = '127.0.0.1'
 const openServers: LocalServer[] = []
 
 afterEach(async () => {
   await Promise.all(openServers.splice(0).map((server) => server.close()))
+})
+
+test('desktop bootstrap serves immediately while initial hydration is delayed and receives later data', async (t) => {
+  let release!: () => void
+  const hydration = new Promise<void>(resolve => { release = resolve })
+  const hub = new StatusHub()
+  t.mock.method(SessionSyncService.prototype, 'start', () => hydration.then(() => {
+    hub.ingest({ id: 'late-scan', source: 'codex', eventType: 'session_start', timestamp: Date.now(), workspacePath: 'F:/example/late' })
+  }))
+  t.mock.method(CodexReadStateSync.prototype, 'start', async () => {})
+  let server: LocalServer | undefined
+  try {
+    server = await withTimeout(startLocalServer({ hub, host: HOST, port: 0, authToken: false,
+      disableCodexAppServer: true, waitForInitialSync: false }), 'desktop startup waited on hydration')
+    const address = server.app.server.address()
+    assert.ok(address && typeof address !== 'string')
+    const base = `http://${HOST}:${address.port}`
+    assert.equal((await getJsonBody<{ok: boolean}>(base, '/api/health')).ok, true)
+    assert.equal((await getJsonBody<StatusSnapshot>(base, '/api/status')).agents.length, 0)
+    release()
+    await hydration
+    assert.equal((await getJsonBody<StatusSnapshot>(base, '/api/status')).agents.length, 1)
+  } finally {
+    release()
+    await server?.close()
+  }
 })
 
 test('GET /api/health returns liveness metadata', async () => {
@@ -455,8 +484,9 @@ test('GET /api/agents/detect returns supported agent detection records', async (
   const body = await getJsonBody<{ agents: Agent[] }>(base, '/api/agents/detect')
 
   assert.equal(Array.isArray(body.agents), true)
-  assert.equal(body.agents.length, 5)
+  assert.equal(body.agents.length, 6)
   assert.deepEqual(body.agents.map((agent) => agent.type).sort(), [
+    'antigravity',
     'claude_code',
     'codex',
     'grok',

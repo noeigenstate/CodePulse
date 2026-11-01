@@ -1,0 +1,193 @@
+{
+  "protocolVersion": 1,
+  "mainState": "error",
+  "activeAgent": "codex",
+  "message": "执行出错",
+  "agents": [
+    {
+      "type": "codex",
+      "state": "error",
+      "project": "project-2",
+      "model": null,
+      "activity": null,
+      "needsAttention": true,
+      "quotaSummary": {
+        "fiveHourUsedPercent": null,
+        "weeklyUsedPercent": 11
+      },
+      "tokens": {
+        "input": null,
+        "cachedInput": null,
+        "output": null,
+        "reasoningOutput": null,
+        "total": null,
+        "contextUsedPercent": null,
+        "contextWindow": null,
+        "contextStale": false,
+        "contextCompressed": false,
+        "accuracy": "exact"
+      },
+      "quotas": [
+        {
+          "id": "codex:default",
+          "name": null,
+          "fiveHour": null,
+          "weekly": {
+            "usedPercent": 11,
+            "resetsAt": null,
+            "windowMinutes": 10080
+          }
+        }
+      ],
+      "updatedAt": 1800000000000
+    },
+    {
+      "type": "claude_code",
+      "state": "tool_running",
+      "project": "project-0",
+      "model": null,
+      "activity": null,
+      "needsAttention": false,
+      "quotaSummary": {
+        "fiveHourUsedPercent": 27,
+        "weeklyUsedPercent": 61
+      },
+      "tokens": {
+        "input": null,
+        "cachedInput": null,
+        "output": null,
+        "reasoningOutput": null,
+        "total": null,
+        "contextUsedPercent": null,
+        "contextWindow": null,
+        "contextStale": false,
+        "contextCompressed": false,
+        "accuracy": "exact"
+      },
+      "quotas": [
+        {
+          "id": "claude_code:default",
+          "name": null,
+          "fiveHour": {
+            "usedPercent": 27,
+            "resetsAt": null,
+            "windowMinutes": 300
+          },
+          "weekly": {
+            "usedPercent": 61,
+            "resetsAt": null,
+            "windowMinutes": 10080
+          }
+        }
+      ],
+      "updatedAt": 1800000000000
+    }
+  ],
+  "updatedAt": 1800000000000,
+  "display": {
+    "version": 1,
+    "mode": "hud",
+    "metric": "remaining",
+    "showQuota": true,
+    "showEnvironment": true,
+    "agents": [
+      "codex",
+      "claude_code"
+    ],
+    "page": 0
+  },
+  "threadTotal": 9,
+  "threads": [
+    {
+      "id": "adc100a5fa49b0dbcd9d88d4",
+      "type": "claude_code",
+      "title": "正在执行测试",
+      "detail": "",
+      "state": "tool_running",
+      "level": "active",
+      "unread": false,
+      "groupId": "4d9bfe3661ffb334341fdd17"
+    },
+    {
+      "id": "82e12ec25944ad6077333d2d",
+      "type": "codex",
+      "title": "嵌入式任务空闲",
+      "detail": "",
+      "state": "idle",
+      "level": "quiet",
+      "unread": false,
+      "groupId": "4d9bfe3661ffb334341fdd17"
+    },
+    {
+      "id": "8a55dcf1dfcdcff80f57201b",
+      "type": "codex",
+      "title": "已读完成保留",
+      "detail": "",
+      "state": "done",
+      "level": "quiet",
+      "unread": false,
+      "groupId": "a611fcef91614902afb794b7"
+    },
+    {
+      "id": "160e6111c53b93db19a51b2c",
+      "type": "codex",
+      "title": "等待用户批准",
+      "detail": "",
+      "state": "waiting_permission",
+      "level": "action",
+      "unread": false,
+      "groupId": "a611fcef91614902afb794b7"
+    },
+    {
+      "id": "8f3c91697c1442446442bba9",
+      "type": "codex",
+      "title": "异常待查看",
+      "detail": "",
+      "state": "error",
+      "level": "fault",
+      "unread": true,
+      "groupId": "f6b4aabb31e9f5d565b11e6d"
+    },
+    {
+      "id": "99425fb1608af797c8754de0",
+      "type": "codex",
+      "title": "正在生成响应",
+      "detail": "",
+      "state": "thinking",
+      "level": "active",
+      "unread": false,
+      "groupId": "f6b4aabb31e9f5d565b11e6d"
+    },
+    {
+      "id": "39068a13ad0ed3d83f14a9a5",
+      "type": "codex",
+      "title": "完成未读",
+      "detail": "",
+      "state": "done",
+      "level": "notice",
+      "unread": true,
+      "groupId": "eb4a7dbad40603d1295eeeea"
+    },
+    {
+      "id": "5a661bb681bfaf6d95b17e71",
+      "type": "codex",
+      "title": "用户取消保留",
+      "detail": "",
+      "state": "cancelled",
+      "level": "quiet",
+      "unread": false,
+      "groupId": "eb4a7dbad40603d1295eeeea"
+    },
+    {
+      "id": "c8cc23aec11d58baff1a7dc3",
+      "type": "codex",
+      "title": "等待补充信息",
+      "detail": "",
+      "state": "waiting_user_input",
+      "level": "action",
+      "unread": false,
+      "groupId": "4b4686acc766c9e4f73a576b"
+    }
+  ],
+  "revision": "v1-e03030f9"
+}

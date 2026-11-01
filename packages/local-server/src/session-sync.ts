@@ -18,6 +18,7 @@ import { homedir } from 'node:os'
 import { basename, isAbsolute, join } from 'node:path'
 import {
   codexQuotaFamily,
+  isCodexAuxiliarySession,
   type AgentEvent,
   type TokenPayload,
   type TurnTiming,
@@ -37,6 +38,7 @@ import {
   type CodexRolloutSnapshot,
 } from './quota-watcher.js'
 import { codexModelCacheRevision } from './codex-model-cache.js'
+import { CodexSessionTitles } from './codex-session-titles.js'
 import {
   mergeClaudeContextWithQuota,
   resolveClaudeAccountQuota,
@@ -219,6 +221,7 @@ const ALL_SYNC_SOURCES: readonly SessionSyncSource[] = [
 export class SessionSyncService {
   private readonly hub: StatusHub
   private readonly codexHome: string
+  private readonly codexTitles: CodexSessionTitles
   private readonly grokHome: string
   private readonly kimiHome: string
   private readonly claudeHome: string
@@ -298,6 +301,7 @@ export class SessionSyncService {
     this.hub = options.hub
     this.userHome = options.userHome ?? homedir()
     this.codexHome = options.codexHome ?? process.env.CODEX_HOME ?? join(this.userHome, '.codex')
+    this.codexTitles = new CodexSessionTitles(this.codexHome)
     this.grokHome = options.grokHome ?? process.env.GROK_HOME ?? join(this.userHome, '.grok')
     this.kimiHome =
       options.kimiHome ?? process.env.KIMI_CODE_HOME ?? join(this.userHome, '.kimi-code')
@@ -677,6 +681,8 @@ export class SessionSyncService {
   private async syncCodex(): Promise<number> {
     // No running Codex CLI → never resurrect historical projects from disk.
     if (!(await this.codexProcessAlive(this.excludedCodexProcessIds))) return 0
+    const titles = await this.codexTitles.read()
+    this.hub.updateSessionTitles('codex', titles)
 
     const sessionsRoot = join(this.codexHome, 'sessions')
     const now = this.now()
@@ -741,9 +747,9 @@ export class SessionSyncService {
     }
 
     let count = 0
-    // Dedupe by workspace: keep the freshest *live* file per cwd.
-    const byCwd = new Map<string, CodexWorkspaceCandidate>()
-    // Account limits are independent of workspace dedupe. A newer parallel
+    // Group by native root session: user tasks sharing a workspace remain distinct.
+    const bySession = new Map<string, CodexSessionCandidate>()
+    // Account limits are independent of session grouping. A newer parallel
     // rollout may have model/context data before its first rate_limits row.
     const quotaRows: CodexQuotaRow[] = []
 
@@ -760,10 +766,16 @@ export class SessionSyncService {
         }
 
         const meta = rollout.meta ?? {}
+        if (meta.isAuxiliary) {
+          // A helper header can carry its parent session_id. Exclude only the
+          // helper thread id, never the parent user session or entire workspace.
+          this.hub.excludeAuxiliarySession('codex', meta.threadId ?? sessionIdFromRolloutName(file.path))
+          continue
+        }
         let cwd = meta.cwd
         if (!cwd) cwd = await findCwdInTail(file.path)
         if (!cwd) continue
-        // Resolve aliases before project dedupe/fingerprints so one project has one hub key.
+        // Resolve workspace aliases without combining distinct native user sessions.
         cwd = await this.workspacePaths.resolve(cwd)
 
         const modelConfig = rollout.snapshot.model
@@ -776,9 +788,9 @@ export class SessionSyncService {
             }
           : {}
 
-        const key = normalizePathKey(cwd)
-        const prev = byCwd.get(key)
-        const candidate: CodexWorkspaceCandidate = {
+        const key = meta.sessionId ?? sessionIdFromRolloutName(file.path)
+        const prev = bySession.get(key)
+        const candidate: CodexSessionCandidate = {
           file,
           meta: { ...meta, cwd, ...modelConfig },
           token,
@@ -789,13 +801,13 @@ export class SessionSyncService {
           activityMtimeMs: file.mtimeMs,
         }
         if (!prev) {
-          byCwd.set(key, candidate)
+          bySession.set(key, candidate)
         } else {
-          const preferred = shouldPreferCodexWorkspaceCandidate(candidate, prev) ? candidate : prev
-          byCwd.set(key, {
+          const preferred = shouldPreferCodexSessionCandidate(candidate, prev) ? candidate : prev
+          bySession.set(key, {
             ...preferred,
-            // Child rollouts often keep writing while the root rollout waits.
-            // Fold their mtime into the root heartbeat without using child timing.
+            // Child rollouts can keep writing while their root waits.
+            // Fold only the same root session heartbeat, never a sibling task.
             activityMtimeMs: Math.max(prev.activityMtimeMs, candidate.activityMtimeMs),
           })
         }
@@ -830,7 +842,7 @@ export class SessionSyncService {
       turnTiming,
       activityMtimeMs,
       quotaObservationIdentity,
-    } of byCwd.values()) {
+    } of bySession.values()) {
       const sessionId = meta.sessionId ?? sessionIdFromRolloutName(file.path)
       const cwd = meta.cwd!
       const nativeToken = markUnknownCodexContext(
@@ -890,6 +902,7 @@ export class SessionSyncService {
         source: 'codex',
         sessionId,
         cwd,
+        taskTitle: titles.get(sessionId),
         model: meta.model,
         reasoningEffort: meta.reasoningEffort,
         modelObservedAt: meta.modelObservedAt,
@@ -905,7 +918,7 @@ export class SessionSyncService {
       })
       count += 1
     }
-    const firstCodex = byCwd.values().next().value as CodexWorkspaceCandidate | undefined
+    const firstCodex = bySession.values().next().value as CodexSessionCandidate | undefined
     const publishedQuota = this.publishAccountQuotaObservation(
       'codex',
       accountToken,
@@ -1099,7 +1112,7 @@ export class SessionSyncService {
    */
   private async syncGrok(): Promise<number> {
     const now = this.now()
-    const billing = await readGrokBillingQuota(this.grokHome)
+    const billing = await readGrokBillingQuota(this.grokHome, now)
     const usageSampleId = this.quotaSampleId('grok', billing.token, billing.sourcePath)
     // Only sessions the user currently has open (active_sessions + live pid).
     // Do NOT walk historical ~/.grok/sessions — that resurrects idle projects.
@@ -1757,6 +1770,7 @@ export class SessionSyncService {
     source: SessionSyncSource
     sessionId: string
     cwd: string
+    taskTitle?: string
     model?: string
     reasoningEffort?: string
     reasoningEffortObservedAt?: number
@@ -1790,6 +1804,7 @@ export class SessionSyncService {
         externalSessionId: args.sessionId,
         cwd: args.cwd,
         workspacePath: args.cwd,
+        taskTitle: args.taskTitle,
         model: args.model,
         reasoningEffort: args.reasoningEffort,
         reasoningEffortObservedAt: args.reasoningEffortObservedAt,
@@ -1820,6 +1835,7 @@ export class SessionSyncService {
       externalSessionId: args.sessionId,
       cwd: args.cwd,
       workspacePath: args.cwd,
+      taskTitle: args.taskTitle,
       model: args.model,
       reasoningEffort: args.reasoningEffort,
       reasoningEffortObservedAt: args.reasoningEffortObservedAt,
@@ -1872,6 +1888,8 @@ interface CodexRolloutCacheEntry {
 }
 
 interface CodexMeta {
+  isAuxiliary?: boolean
+  threadSource?: string
   cwd?: string
   /** Root CLI session shared by the parent and all of its subagent threads. */
   sessionId?: string
@@ -1886,8 +1904,8 @@ interface CodexMeta {
   headerComplete?: boolean
 }
 
-/** One live Codex rollout candidate for a deduplicated workspace card. */
-interface CodexWorkspaceCandidate {
+/** One live Codex rollout candidate for a native root session card. */
+interface CodexSessionCandidate {
   file: RolloutFile
   meta: CodexMeta
   token?: TokenPayload
@@ -1963,20 +1981,20 @@ function currentCodexSession(
 }
 
 /**
- * Chooses which same-workspace Codex rollout represents the current project.
+ * Chooses which rollout represents one native root session.
  *
  * Token writes update mtime long after a model change. Prefer the native model
  * configuration timestamp first, then mtime only as a deterministic fallback,
  * so an old Sol session cannot displace a newer Terra configuration.
  *
  * @param candidate Newly scanned rollout candidate.
- * @param current Candidate already selected for the workspace.
+ * @param current Candidate already selected for this root session.
  * @returns True when `candidate` should replace `current`.
 
  */
-function shouldPreferCodexWorkspaceCandidate(
-  candidate: CodexWorkspaceCandidate,
-  current: CodexWorkspaceCandidate,
+function shouldPreferCodexSessionCandidate(
+  candidate: CodexSessionCandidate,
+  current: CodexSessionCandidate,
 ): boolean {
   if (candidate.meta.isSubagent !== current.meta.isSubagent) {
     return current.meta.isSubagent === true
@@ -2214,6 +2232,10 @@ async function readCodexRolloutMeta(file: string): Promise<CodexMeta> {
       const item = JSON.parse(line) as { type?: string; payload?: Record<string, unknown> }
       const p = item.payload
       if (!p) continue
+      if (item.type === 'event_msg' && p.type === 'user_message' &&
+          isCodexAuxiliarySession({ thread_source: meta.threadSource }, p.message)) {
+        meta.isAuxiliary = true
+      }
       if (item.type === 'session_meta' || item.type === 'turn_context') {
         const threadId = stringVal(p.id) ?? meta.threadId
         const rootSessionId =
@@ -2221,9 +2243,11 @@ async function readCodexRolloutMeta(file: string): Promise<CodexMeta> {
         meta = {
           ...meta,
           cwd: stringVal(p.cwd) ?? meta.cwd,
-          sessionId: rootSessionId,
+          sessionId: p.thread_source === 'user' ? (threadId ?? rootSessionId) : rootSessionId,
           threadId,
           isSubagent: isCodexSubagentMeta(p) || meta.isSubagent,
+          threadSource: stringVal(p.thread_source) ?? meta.threadSource,
+          isAuxiliary: isCodexAuxiliarySession(p) || meta.isAuxiliary,
           headerComplete: item.type === 'session_meta' || meta.headerComplete,
         }
       }
@@ -2323,7 +2347,9 @@ function extractMetaFromPartialLine(text: string): CodexMeta {
       Boolean(forkedFromId && threadId && rootSessionId && threadId !== rootSessionId))
   return {
     cwd: cwd ? unescapeJsonString(cwd) : undefined,
-    sessionId: rootSessionId ?? threadId ?? undefined,
+    sessionId: threadSource === 'user' ? (threadId ?? rootSessionId) : (rootSessionId ?? threadId),
+    threadSource,
+    ...(threadSource === 'guardian_review' ? { isAuxiliary: true } : {}),
     threadId: threadId ?? undefined,
     ...(isSubagent ? { isSubagent: true } : {}),
   }
@@ -4051,6 +4077,7 @@ async function readGrokSessionActivityMtime(
  */
 async function readGrokBillingQuota(
   grokHome: string,
+  now: number,
 ): Promise<{ token?: TokenPayload; sourcePath?: string }> {
   const logPath = join(grokHome, 'logs', 'unified.jsonl')
   try {
@@ -4082,6 +4109,9 @@ async function readGrokBillingQuota(
         stringVal(asRecord(config.currentPeriod)?.end) ??
         stringVal(asRecord(config.current_period)?.end)
       const resetsAt = periodEnd ? Math.floor(Date.parse(periodEnd) / 1000) : undefined
+      // A billing log is a historical observation, not a live account query.
+      // The latest expired period must not fall back to an older log entry.
+      if (resetsAt != null && Number.isFinite(resetsAt) && resetsAt * 1000 <= now) return {}
       const periodType =
         stringVal(asRecord(config.currentPeriod)?.type) ??
         stringVal(asRecord(config.current_period)?.type)

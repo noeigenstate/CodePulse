@@ -35,7 +35,7 @@ test('Grok usage reader extracts context from signals.json and weekly credits fr
     'utf8',
   )
 
-  const periodEnd = '2026-07-16T05:46:37.819944+00:00'
+  const periodEnd = new Date(Date.now() + 3 * 24 * 60 * 60_000).toISOString()
   await writeFile(
     join(logsDir, 'unified.jsonl'),
     [
@@ -239,6 +239,28 @@ test('Grok usage reader prefers signals.json over updates.jsonl when both exist'
     assert.equal(usage.context_used_percent, 23)
     assert.equal(usage.usage?.total_tokens, 115254)
     assert.ok(String(usage.usage_source_path).includes('signals.json'))
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('Grok usage reader does not resurrect an expired billing period', async () => {
+  const home = join(tmpdir(), `codepulse-grok-expired-${Date.now()}`)
+  await mkdir(join(home, 'logs'), { recursive: true })
+  const billing = (end) =>
+    JSON.stringify({
+      msg: 'billing: fetched credits config',
+      ctx: { config: { creditUsagePercent: 18, billingPeriodEnd: end } },
+    })
+  await writeFile(
+    join(home, 'logs', 'unified.jsonl'),
+    [
+      billing(new Date(Date.now() + 86_400_000).toISOString()),
+      billing(new Date(Date.now() - 1_000).toISOString()),
+    ].join('\n'),
+  )
+  try {
+    assert.deepEqual(await readLatestGrokUsage({}, { grokHome: home }), {})
   } finally {
     await rm(home, { recursive: true, force: true })
   }

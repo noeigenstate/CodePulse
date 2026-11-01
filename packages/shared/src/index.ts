@@ -16,11 +16,13 @@ export * from './types/event.js'
 export * from './types/timing.js'
 export * from './types/runtime.js'
 export * from './types/device.js'
+export * from './types/device-display.js'
 export * from './types/update.js'
 export * from './types/stats.js'
 export * from './token-format.js'
 export * from './codex-quota.js'
 export * from './path.js'
+export * from './session-metadata.js'
 export * from './pricing.js'
 
 /** 本地 HTTP/WebSocket 服务器绑定的默认主机（仅回环地址）。 */
@@ -37,3 +39,20 @@ export const DEFAULT_DEVICE_SERVER_PORT = 17889
 
 /** 水墨屏固件匿名 health 服务的固定端口。 */
 export const DEFAULT_DISPLAY_DEVICE_PORT = 17890
+
+export * from './presentation-order.js'
+
+export * from './types/ambient.js'
+
+export * from './device-preview-scale.js'
+
+export * from './types/product-shell.js'
+export * from './types/assistant.js'
+
+export * from './presentation/displayAgents.js'
+export * from './presentation/hudState.js'
+export * from './presentation/projectDeck.js'
+export * from './presentation/projectOrder.js'
+export * from './presentation/taskOrder.js'
+export * from './presentation/quotaWindows.js'
+export * from './presentation/workPresentation.js'

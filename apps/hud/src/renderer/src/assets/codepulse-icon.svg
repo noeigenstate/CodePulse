@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="1024"
+  height="1024"
+  viewBox="0 0 1024 1024"
+  fill="none"
+  role="img"
+  aria-labelledby="codepulse-hud-logo-title codepulse-hud-logo-description"
+>
+  <title id="codepulse-hud-logo-title">CodePulse HUD logo</title>
+  <desc id="codepulse-hud-logo-description">
+    A translucent white HUD pane with an orange pulse signal and precise corner guides.
+  </desc>
+
+  <defs>
+    <linearGradient id="glass" x1="210" y1="128" x2="790" y2="910" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.94" />
+      <stop offset="0.52" stop-color="#FFFDFC" stop-opacity="0.82" />
+      <stop offset="1" stop-color="#F6F7F8" stop-opacity="0.72" />
+    </linearGradient>
+    <linearGradient id="glass-sheen" x1="188" y1="126" x2="624" y2="682" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.78" />
+      <stop offset="0.58" stop-color="#FFFFFF" stop-opacity="0.14" />
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0" />
+    </linearGradient>
+    <linearGradient id="pulse" x1="214" y1="365" x2="818" y2="653" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF9A36" />
+      <stop offset="0.46" stop-color="#F97316" />
+      <stop offset="1" stop-color="#E85A05" />
+    </linearGradient>
+    <filter id="panel-shadow" x="30" y="42" width="964" height="978" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="30" stdDeviation="32" flood-color="#1D252C" flood-opacity="0.2" />
+      <feDropShadow dx="0" dy="4" stdDeviation="7" flood-color="#F97316" flood-opacity="0.1" />
+    </filter>
+    <filter id="signal-glow" x="158" y="267" width="708" height="491" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="7" stdDeviation="9" flood-color="#D95100" flood-opacity="0.22" />
+    </filter>
+    <clipPath id="panel-clip">
+      <rect x="92" y="92" width="840" height="840" rx="210" />
+    </clipPath>
+  </defs>
+
+  <g filter="url(#panel-shadow)">
+    <rect x="92" y="92" width="840" height="840" rx="210" fill="url(#glass)" />
+    <rect
+      x="104"
+      y="104"
+      width="816"
+      height="816"
+      rx="198"
+      stroke="#F97316"
+      stroke-opacity="0.34"
+      stroke-width="12"
+    />
+    <rect
+      x="116"
+      y="116"
+      width="792"
+      height="792"
+      rx="186"
+      stroke="#FFFFFF"
+      stroke-opacity="0.72"
+      stroke-width="8"
+    />
+  </g>
+
+  <g clip-path="url(#panel-clip)" opacity="0.34">
+    <path d="M248 136V888M400 110V914M552 110V914M704 110V914M856 136V888" stroke="#F97316" stroke-opacity="0.12" stroke-width="5" />
+    <path d="M136 248H888M110 400H914M110 552H914M110 704H914M136 856H888" stroke="#F97316" stroke-opacity="0.12" stroke-width="5" />
+    <path d="M112 112H912V498C669 383 386 382 112 493V112Z" fill="url(#glass-sheen)" />
+  </g>
+
+  <g stroke="#F97316" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M202 322V216H308" stroke-opacity="0.72" stroke-width="29" />
+    <path d="M822 702V808H716" stroke-opacity="0.72" stroke-width="29" />
+    <path d="M202 276V216H262" stroke="#FFFFFF" stroke-opacity="0.74" stroke-width="8" />
+    <path d="M822 748V808H762" stroke="#FFFFFF" stroke-opacity="0.74" stroke-width="8" />
+  </g>
+
+  <g filter="url(#signal-glow)">
+    <path
+      d="M222 544H350L414 426L500 660L606 350L674 544H802"
+      stroke="#FFFFFF"
+      stroke-opacity="0.8"
+      stroke-width="86"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M222 544H350L414 426L500 660L606 350L674 544H802"
+      stroke="url(#pulse)"
+      stroke-width="64"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </g>
+
+  <circle cx="202" cy="216" r="10" fill="#F97316" />
+  <circle cx="822" cy="808" r="10" fill="#F97316" />
+</svg>

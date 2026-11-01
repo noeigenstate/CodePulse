@@ -1,0 +1,33 @@
+name: Verify unified product
+on:
+  push:
+    branches: [codex/unified-product]
+  pull_request:
+    branches: [codex/unified-product]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - name: Restore Electron ABI
+        if: runner.os == 'Windows'
+        run: pnpm --filter @codepulse/desktop rebuild:electron
+      - name: Exercise all surfaces with an isolated profile
+        if: runner.os == 'Windows'
+        run: pnpm test:surfaces

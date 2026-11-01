@@ -1,0 +1,50 @@
+[
+  {
+    "family": "unifont",
+    "version": "18.0.01",
+    "size": 16,
+    "url": "https://www.unifoundry.com/pub/unifont/unifont-18.0.01/font-builds/unifont-18.0.01.bdf.gz",
+    "sha256": "2989e0211030d8219fd931aba599fc95c86bc327ce1423848ef949783b208257",
+    "bdf_sha256": "8c3c5ce5fb524eec5bacbc91b5ddfde81641e2cfc015521e95107b77570368e3",
+    "path": "fonts/sources/unifont-18.0.01.bdf.gz",
+    "storedSha256": "2989e0211030d8219fd931aba599fc95c86bc327ce1423848ef949783b208257",
+    "licenses": [
+      {
+        "path": "fonts/licenses/unifont-18.0.01-LICENSE.txt",
+        "sha256": "1e74cb82bf476843e97c2596297b04219b1a7e51f7238944a8c031cb9401fa87"
+      },
+      {
+        "path": "fonts/licenses/unifont-18.0.01-OFL-1.1.txt",
+        "sha256": "869692af094c57fb7258c57fe26820c759319603321d0ffeb278de3651763ded"
+      }
+    ]
+  },
+  {
+    "family": "fusion",
+    "version": "2026.10.25",
+    "size": 12,
+    "url": "https://github.com/TakWolf/fusion-pixel-font/releases/download/2026.10.25/fusion-pixel-font-12px-proportional-bdf-v2026.10.25.zip",
+    "sha256": "23165113b96091b95983635cd6baecd86a6113399a72be6dcaf1445bc1f86b94",
+    "bdf_sha256": "06362b84fb05d06c2c5802e303ca65cdcd8a35849c954e29abceab3c6cf10e56",
+    "path": "fonts/sources/fusion-pixel-12px-proportional-2026.10.25.bdf.gz",
+    "storedSha256": "7fa678ba5ad903bee6c31534acf1ec2f801f4e09f0001fe46b60a940529ac40b",
+    "licenses": [
+      {
+        "path": "fonts/licenses/fusion-2026.10.25-OFL.txt",
+        "sha256": "bc518cf64b8032c07690f33cc270c35c179255a6ac8efa7c165ebae7e8f76a63"
+      },
+      {
+        "path": "fonts/licenses/fusion-2026.10.25-LICENSES--ark-pixel--OFL.txt",
+        "sha256": "3ab41567e68e3988ba1ef16dd2644eca95ca5648ea12e7d46e6287fc0bbe5aee"
+      },
+      {
+        "path": "fonts/licenses/fusion-2026.10.25-LICENSES--cubic-11--OFL.txt",
+        "sha256": "2b6e5938e5cffa0b9e183bd05f8c363e174e7ebed1a0556e2855fd1707fa2188"
+      },
+      {
+        "path": "fonts/licenses/fusion-2026.10.25-LICENSES--galmuri--LICENSE.txt",
+        "sha256": "86a3ee9495f942f0243f18c103da9faca27adb88142613edb8bb852e56c892c1"
+      }
+    ]
+  }
+]

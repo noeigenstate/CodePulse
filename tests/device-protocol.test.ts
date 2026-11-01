@@ -152,3 +152,24 @@ function exampleSnapshot(): StatusSnapshot {
     ],
   }
 }
+
+test('device protocol keeps account quotas separate from active tasks', () => {
+  const account: AgentRuntimeState = {
+    agentType: 'grok',
+    state: TurnState.IDLE,
+    toolCallCount: 0,
+    needPermission: false,
+    needUserInput: false,
+    unread: false,
+    lastEventAt: 0,
+    token: {
+      accuracy: 'estimated',
+      rateLimitId: 'grok',
+      rateLimits: { sevenDay: { usedPercent: 18 } },
+    },
+  }
+  const device = toDeviceStatusV1({ overall: 'idle', agents: [account], updatedAt: 0 })
+  assert.equal(device.activeAgent, null)
+  assert.equal(device.agents[0]?.project, null)
+  assert.equal(device.agents[0]?.quotas[0]?.weekly?.usedPercent, 18)
+})

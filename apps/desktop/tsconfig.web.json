@@ -10,7 +10,7 @@
     "types": [],
     "baseUrl": ".",
     "paths": {
-      "@renderer/*": ["src/renderer/src/*"]
+      "@renderer/*": ["src/renderer/src/*"], "@hud/*": ["../hud/src/renderer/src/*"]
     }
   },
   "include": ["src/renderer/src/**/*.ts", "src/renderer/src/**/*.tsx"]

@@ -1,0 +1,11 @@
+/* HUD window controls retain their existing appearance without importing the desktop shell. */
+.surface-controls { display:flex; align-items:center; flex-wrap:wrap; gap:8px; -webkit-app-region:no-drag; }
+.surface-controls button { padding:7px 10px; font-size:12px; border:1px solid var(--line,#8885); border-radius:7px; color:inherit; background:var(--surface-solid,transparent); }
+.surface-controls button:hover { border-color:#829178; }
+.surface-controls button:disabled { opacity:.35; cursor:default; }
+.surface-switch { display:flex; border:1px solid var(--line,#8885); border-radius:8px; padding:2px; }
+.surface-switch button { border:0; background:transparent; }
+.surface-switch [aria-pressed='true'] { background:#74876b; color:#fff; }
+.surface-controls.is-compact { gap:5px; }
+.surface-controls.is-compact button { font-size:10px; padding:4px 7px; background:transparent; }
+.surface-error { font-size:10px; max-width:180px; }

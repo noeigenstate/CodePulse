@@ -1,0 +1,143 @@
+{
+  "protocolVersion": 1,
+  "mainState": "waiting_permission",
+  "activeAgent": "codex",
+  "message": "需要用户介入",
+  "agents": [
+    {
+      "type": "codex",
+      "state": "waiting_permission",
+      "project": "project-1",
+      "model": null,
+      "activity": null,
+      "needsAttention": true,
+      "quotaSummary": {
+        "fiveHourUsedPercent": null,
+        "weeklyUsedPercent": 11
+      },
+      "tokens": {
+        "input": null,
+        "cachedInput": null,
+        "output": null,
+        "reasoningOutput": null,
+        "total": null,
+        "contextUsedPercent": null,
+        "contextWindow": null,
+        "contextStale": false,
+        "contextCompressed": false,
+        "accuracy": "exact"
+      },
+      "quotas": [
+        {
+          "id": "codex:default",
+          "name": null,
+          "fiveHour": null,
+          "weekly": {
+            "usedPercent": 11,
+            "resetsAt": null,
+            "windowMinutes": 10080
+          }
+        }
+      ],
+      "updatedAt": 1800000000000
+    },
+    {
+      "type": "claude_code",
+      "state": "tool_running",
+      "project": "project-0",
+      "model": null,
+      "activity": null,
+      "needsAttention": false,
+      "quotaSummary": {
+        "fiveHourUsedPercent": 27,
+        "weeklyUsedPercent": 61
+      },
+      "tokens": {
+        "input": null,
+        "cachedInput": null,
+        "output": null,
+        "reasoningOutput": null,
+        "total": null,
+        "contextUsedPercent": null,
+        "contextWindow": null,
+        "contextStale": false,
+        "contextCompressed": false,
+        "accuracy": "exact"
+      },
+      "quotas": [
+        {
+          "id": "claude_code:default",
+          "name": null,
+          "fiveHour": {
+            "usedPercent": 27,
+            "resetsAt": null,
+            "windowMinutes": 300
+          },
+          "weekly": {
+            "usedPercent": 61,
+            "resetsAt": null,
+            "windowMinutes": 10080
+          }
+        }
+      ],
+      "updatedAt": 1800000000000
+    }
+  ],
+  "updatedAt": 1800000000000,
+  "display": {
+    "version": 1,
+    "mode": "hud",
+    "metric": "remaining",
+    "showQuota": true,
+    "showEnvironment": true,
+    "agents": [
+      "codex",
+      "claude_code"
+    ],
+    "page": 0
+  },
+  "threadTotal": 4,
+  "threads": [
+    {
+      "id": "adc100a5fa49b0dbcd9d88d4",
+      "type": "claude_code",
+      "title": "正在执行测试",
+      "detail": "",
+      "state": "tool_running",
+      "level": "active",
+      "unread": false,
+      "groupId": "4d9bfe3661ffb334341fdd17"
+    },
+    {
+      "id": "82e12ec25944ad6077333d2d",
+      "type": "codex",
+      "title": "嵌入式任务空闲",
+      "detail": "",
+      "state": "idle",
+      "level": "quiet",
+      "unread": false,
+      "groupId": "4d9bfe3661ffb334341fdd17"
+    },
+    {
+      "id": "8a55dcf1dfcdcff80f57201b",
+      "type": "codex",
+      "title": "已读完成保留",
+      "detail": "",
+      "state": "done",
+      "level": "quiet",
+      "unread": false,
+      "groupId": "a611fcef91614902afb794b7"
+    },
+    {
+      "id": "160e6111c53b93db19a51b2c",
+      "type": "codex",
+      "title": "等待用户批准",
+      "detail": "",
+      "state": "waiting_permission",
+      "level": "action",
+      "unread": false,
+      "groupId": "a611fcef91614902afb794b7"
+    }
+  ],
+  "revision": "v1-22c0f0ec"
+}

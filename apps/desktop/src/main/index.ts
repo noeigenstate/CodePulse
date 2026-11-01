@@ -1,8 +1,21 @@
+import { DeviceViewLeases } from './device-view-leases.js'
+import { createAssistantRuntime } from './assistant-runtime.js'
+import { registerAssistantIpc } from './assistant-ipc.js'
+import { registerAssistantRoutes } from './assistant-http.js'
+import { selectDeskContent } from './assistant-presentation.js'
+import { ProductShell, shellPreferenceStore } from './product-shell.js'
+import { registerProductIpc } from './product-ipc.js'
+import { ScreenWorkbenchWindow } from './screen-workbench-window.js'
+import { registerAmbientIpc } from './ambient-ipc.js'
+import { inkAllowsAmbient, inkFeatureAt } from './ambient-plan.js'
+import { createAmbientRuntime } from './ambient-runtime.js'
+import { withAmbient } from './ambient-rules.js'
 import { spawn } from 'node:child_process'
+import { HudSurface } from './hud-surface.js'
 import { readFileSync, writeFileSync, unlinkSync } from 'node:fs'
 import { homedir, networkInterfaces } from 'node:os'
 import { join } from 'node:path'
-import { app, BrowserWindow, dialog, ipcMain, Menu, powerMonitor, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, powerMonitor, shell, screen, type Rectangle } from 'electron'
 import {
   type Agent,
   type AgentType,
@@ -18,6 +31,9 @@ import {
   type UsageLedgerSnapshot,
 } from '@codepulse/shared'
 import { StatusHub } from '@codepulse/core'
+import { normalizeDeviceDisplay } from '@codepulse/shared'
+import { createDeviceDisplayProjector } from './device-display-projection.js'
+import { readDeviceDisplayConfig, writeDeviceDisplayConfig } from './device-display-settings.js'
 import {
   openDb,
   persistEvent,
@@ -70,6 +86,11 @@ const EVENT_PRUNE_INTERVAL_MS = 24 * 60 * 60_000
 /** Merges tray, focus, and renderer bootstrap refresh requests into one short batch. */
 const FOCUS_SYNC_DEBOUNCE_MS = 180
 
+let ambientRuntime: ReturnType<typeof createAmbientRuntime> | undefined
+let assistantRuntime: ReturnType<typeof createAssistantRuntime> | undefined
+let standardVisible = false
+let productShell: ProductShell | undefined
+let screenWorkbench: ScreenWorkbenchWindow | undefined
 let mainWindow: BrowserWindow | null = null
 let tray: TrayController | null = null
 let server: LocalServer | null = null
@@ -103,6 +124,7 @@ let deviceProvisioning: DeviceProvisioningSnapshot = {
 }
 
 const hub = new StatusHub()
+let hudSurface: HudSurface | null = null
 const focusSync = new FocusSyncScheduler(async () => {
   await server?.syncSessions()
 }, FOCUS_SYNC_DEBOUNCE_MS)
@@ -121,6 +143,8 @@ function scheduleFocusSync(): void {
 
 function broadcast(channel: string, payload: unknown): void {
   mainWindow?.webContents.send(channel, payload)
+  hudSurface?.broadcast(channel, payload)
+  screenWorkbench?.broadcast(channel, payload)
 }
 
 function updateDeviceProvisioning(
@@ -132,6 +156,7 @@ function updateDeviceProvisioning(
 }
 
 function showWindow(): void {
+  standardVisible = true
   if (!mainWindow) {
     createWindow()
     void refreshLocalAgents()
@@ -155,11 +180,38 @@ function hookBinDir(): string {
   return join(app.getAppPath(), '..', '..', 'packages', 'hooks', 'bin')
 }
 
+let consoleBounds: Rectangle | undefined
+let consoleWasMaximized = false
+let desktopIsFocused = false
+function setDesktopFocus(focus: boolean): void {
+  const win = mainWindow
+  if (!win || win.isDestroyed() || desktopIsFocused === focus) return
+  desktopIsFocused = focus
+  if (focus) {
+    consoleBounds = win.getNormalBounds()
+    consoleWasMaximized = win.isMaximized()
+    if (consoleWasMaximized) win.unmaximize()
+    const area = screen.getDisplayMatching(consoleBounds).workArea
+    const width = Math.min(820, area.width), height = Math.min(740, area.height)
+    win.setBounds({ width, height,
+      x: Math.max(area.x, Math.min(consoleBounds.x, area.x + area.width - width)),
+      y: Math.max(area.y, Math.min(consoleBounds.y, area.y + area.height - height)),
+    })
+  } else {
+    if (consoleBounds) win.setBounds(consoleBounds)
+    else win.setSize(1120, 780)
+    if (consoleWasMaximized) win.maximize()
+    consoleBounds = undefined
+    consoleWasMaximized = false
+  }
+}
+
 function createWindow(): void {
   const chrome = windowChromePalette(windowTheme)
+  desktopIsFocused = false
   mainWindow = new BrowserWindow({
-    width: 960,
-    height: 680,
+    width: 1120,
+    height: 780,
     minWidth: 720,
     minHeight: 480,
     show: false,
@@ -184,12 +236,15 @@ function createWindow(): void {
     },
   })
 
-  mainWindow.on('ready-to-show', () => mainWindow?.show())
+  mainWindow.on('ready-to-show', () => { if (standardVisible) mainWindow?.show() })
   mainWindow.on('focus', () => {
     scheduleFocusSync()
   })
   mainWindow.on('closed', () => {
     mainWindow = null
+    desktopIsFocused = false
+    consoleBounds = undefined
+    consoleWasMaximized = false
   })
   // A crashed or killed renderer leaves a blank window; reload it instead.
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
@@ -200,6 +255,7 @@ function createWindow(): void {
   })
 
   const devUrl = process.env['ELECTRON_RENDERER_URL']
+  if (productShell?.snapshot().focusMode) setDesktopFocus(true)
   if (devUrl) {
     void mainWindow.loadURL(devUrl)
   } else {
@@ -226,6 +282,7 @@ function wireHub(): void {
   })
 
   hub.on('status', (snapshot: StatusSnapshot) => {
+    ambientRuntime?.service.tick()
     pendingStatusSnapshot = snapshot
     if (statusFlushTimer) return
     statusFlushTimer = setTimeout(() => {
@@ -280,10 +337,53 @@ function setWindowTheme(value: unknown, targetWindow: BrowserWindow | null): Win
   return windowTheme
 }
 
+let deviceProjector: ReturnType<typeof createDeviceDisplayProjector> | undefined
+function projectDeviceDisplay(snapshot: StatusSnapshot, config?: import('@codepulse/shared').DeviceDisplayConfig, includeAmbient = true) {
+  deviceProjector ??= createDeviceDisplayProjector(join(app.getPath('userData'), 'device-thread-order.json'),
+    () => console.warn('[codepulse] device display order could not be saved; retaining in-memory positions'))
+  // Both preview and LAN transport consume the same retained, dismissed and ordered HUD source.
+  const work = hudSurface?.snapshot() ?? snapshot
+  return withAmbient(deviceProjector(work, config), includeAmbient ? selectDeskContent(assistantRuntime?.service.inkCard(work), ambientRuntime?.service.current(work)) : undefined)
+}
+
+function deviceDisplaySnapshot(preview?: unknown) {
+  const config = readDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json'))
+  return { config, status: projectDeviceDisplay(hub.snapshot(), preview === undefined ? config : normalizeDeviceDisplay(preview), preview === undefined), serverAvailable: Boolean(deviceServer) }
+}
+
+const deviceViews = new Set<number>()
+const deviceLeases = new DeviceViewLeases(active => {
+  if (!deviceUsb) return
+  if (active && !shutdownStarted) deviceUsb.startScanning(); else deviceUsb.stopScanning()
+  updateDeviceProvisioning({ scanning: active && !shutdownStarted,
+    phase: deviceProvisioning.phase === 'idle' || deviceProvisioning.phase === 'scanning' ? (active ? 'scanning' : 'idle') : deviceProvisioning.phase })
+}, () => { void deviceUsb?.cancelProvisioning().catch(() => {}) })
+function trackDeviceView(sender: Electron.WebContents): void {
+  if (deviceViews.has(sender.id)) return
+  const id = sender.id
+  deviceViews.add(id)
+  sender.once('destroyed', () => { deviceViews.delete(id); deviceLeases.release(id) })
+}
+
 function registerIpc(): void {
-  ipcMain.handle('codepulse:get-status', () => hub.snapshot())
-  ipcMain.handle('codepulse:ack', (_event, agent: AgentType, workspacePath?: string) => {
-    hub.acknowledge(agent, workspacePath)
+  registerAssistantIpc(ipcMain, () => assistantRuntime, () => deviceDisplaySnapshot().status, () => ambientRuntime?.service.dismiss())
+  registerProductIpc(ipcMain, productShell!, screenWorkbench!)
+  ipcMain.handle('codepulse:hud-preview', () => hudSurface?.snapshot() ?? null)
+  registerAmbientIpc(ipcMain, ambientRuntime!, () => deviceDisplaySnapshot().status, url => shell.openExternal(url), () => assistantRuntime?.service.clearTemporaryInk())
+  ipcMain.handle('codepulse:get-device-display', (_event, preview: unknown) => deviceDisplaySnapshot(preview))
+  ipcMain.handle('codepulse:set-device-display', (_event, input: unknown) => {
+    writeDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json'), input)
+    deviceServer?.notifyChanged()
+    const snapshot = deviceDisplaySnapshot()
+    broadcast('codepulse:device-display', snapshot)
+    return snapshot
+  })
+  ipcMain.handle('codepulse:get-status', (event) =>
+    hudSurface?.owns(event.sender) ? hudSurface.snapshot() : hub.snapshot(),
+  )
+  ipcMain.handle('codepulse:ack', (event, agent: AgentType, workspacePath?: string, session?: string) => {
+    if (hudSurface?.owns(event.sender)) hudSurface.acknowledge(agent, workspacePath, session)
+    else hub.acknowledge(agent, workspacePath)
     return true
   })
   ipcMain.handle('codepulse:get-notifications', () => notificationsEnabled)
@@ -293,9 +393,14 @@ function registerIpc(): void {
   })
   ipcMain.handle('codepulse:set-locale', (_event, locale: unknown) => setLocale(locale))
   ipcMain.handle('codepulse:set-window-theme', (event, theme: unknown) =>
-    setWindowTheme(theme, BrowserWindow.fromWebContents(event.sender)),
+    hudSurface?.owns(event.sender)
+      ? hudSurface.setTheme(event.sender, theme)
+      : setWindowTheme(theme, BrowserWindow.fromWebContents(event.sender)),
   )
-  ipcMain.handle('codepulse:detect-agents', () => refreshLocalAgents())
+  ipcMain.handle('codepulse:detect-agents', async (event) => {
+    const agents = await refreshLocalAgents()
+    return hudSurface?.owns(event.sender) ? hudSurface.agents(agents) : agents
+  })
   ipcMain.handle('codepulse:get-update', () => {
     // Respect 24h "later" snooze even if a previous check still has cached info.
     if (isUpdateSnoozed(readUpdateSnoozeUntil())) {
@@ -330,9 +435,9 @@ function registerIpc(): void {
     getUsageSnapshot(query),
   )
   /** 渲染进程主动触发本机 CLI 会话扫盘（不依赖 hook / 用户发消息）。 */
-  ipcMain.handle('codepulse:sync-sessions', async () => {
+  ipcMain.handle('codepulse:sync-sessions', async (event) => {
     await focusSync.schedule()
-    return hub.snapshot()
+    return hudSurface?.owns(event.sender) ? hudSurface.snapshot() : hub.snapshot()
   })
   ipcMain.handle('codepulse:mimo-login-status', async () => Boolean(await readMimoCookie()))
   ipcMain.handle('codepulse:mimo-login', async () => {
@@ -346,24 +451,17 @@ function registerIpc(): void {
     return false
   })
   ipcMain.handle('codepulse:get-device-provisioning', () => deviceProvisioning)
-  ipcMain.handle('codepulse:start-device-scan', () => {
+  ipcMain.handle('codepulse:start-device-scan', event => {
     if (!deviceUsb) return deviceProvisioning
-    updateDeviceProvisioning({
-      scanning: true,
-      phase: deviceProvisioning.phase === 'sending' ? 'sending' : 'scanning',
-      errorCode: undefined,
-    })
-    deviceUsb.startScanning()
+    trackDeviceView(event.sender)
+    deviceLeases.start(event.sender.id)
     return deviceProvisioning
   })
-  ipcMain.handle('codepulse:stop-device-scan', () => {
-    deviceUsb?.stopScanning()
-    return updateDeviceProvisioning({
-      scanning: false,
-      phase: deviceProvisioning.phase === 'scanning' ? 'idle' : deviceProvisioning.phase,
-    })
+  ipcMain.handle('codepulse:stop-device-scan', event => {
+    deviceLeases.stop(event.sender.id)
+    return deviceProvisioning
   })
-  ipcMain.handle('codepulse:provision-device', async (_event, input: unknown) => {
+  ipcMain.handle('codepulse:provision-device', async (event, input: unknown) => {
     const request = parseProvisioningRequest(input)
     if (input && typeof input === 'object' && !Array.isArray(input)) {
       const rawInput = input as Record<string, unknown>
@@ -379,7 +477,8 @@ function registerIpc(): void {
       })
     }
 
-    deviceUsb.stopScanning()
+    trackDeviceView(event.sender)
+    if (!deviceLeases.claim(event.sender.id)) return deviceProvisioning
     updateDeviceProvisioning({
       scanning: false,
       phase: 'sending',
@@ -419,15 +518,11 @@ function registerIpc(): void {
         phase: errorCode === 'cancelled' ? 'cancelled' : 'error',
         errorCode,
       })
-    }
+    } finally { deviceLeases.finish(event.sender.id) }
   })
-  ipcMain.handle('codepulse:cancel-device-provisioning', async () => {
-    await deviceUsb?.cancelProvisioning()
-    return updateDeviceProvisioning({
-      scanning: false,
-      phase: 'cancelled',
-      errorCode: 'cancelled',
-    })
+  ipcMain.handle('codepulse:cancel-device-provisioning', event => {
+    deviceLeases.cancelFor(event.sender.id)
+    return deviceProvisioning
   })
 }
 
@@ -449,16 +544,72 @@ async function bootstrap(): Promise<void> {
     )
   }
 
+  // Both presentations ship with this host, in development and inside app.asar.
+  hudSurface = new HudSurface(
+    hub, join(__dirname, '../hud'), join(app.getPath('userData'), 'hud-workspaces.json'),
+    () => { if (!shutdownStarted) productShell?.refresh() },
+    () => {
+      if (shutdownStarted) return
+      deviceServer?.notifyChanged()
+      broadcast('codepulse:device-display', deviceDisplaySnapshot())
+    },
+  )
+  hudSurface.registerIpc()
+  screenWorkbench = new ScreenWorkbenchWindow({
+    preload: join(__dirname, '../preload/index.js'), renderer: join(__dirname, '../renderer/index.html'),
+    icon: appIconPath(), devUrl: process.env.ELECTRON_RENDERER_URL,
+  })
+  const shellStore = shellPreferenceStore(join(app.getPath('userData'), 'product-shell.json'))
+  productShell = new ProductShell(shellStore.read(), shellStore.write, {
+    hudAvailable: () => Boolean(hudSurface), hudVisible: () => hudSurface?.isVisible() ?? false,
+    focusMode: setDesktopFocus, standard: showWindow, hud: () => hudSurface?.open(mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : undefined),
+    screen: () => screenWorkbench?.open(), hideStandard: () => { standardVisible = false; mainWindow?.hide() }, hideHud: () => hudSurface?.hide(),
+    hudSettingsChanged: (settings) => hudSurface?.syncSettings(settings),
+  }, state => { broadcast('codepulse:shell-status', state); ambientRuntime?.service.tick(); deviceServer?.notifyChanged() })
+  hudSurface.syncSettings(productShell.snapshot().hudSettings)
+  ambientRuntime = createAmbientRuntime(app.getPath('userData'), {
+    status: () => hudSurface?.snapshot() ?? hub.snapshot(),
+    automaticAllowed: () => inkAllowsAmbient(productShell!.snapshot().inkPlan, Date.now()),
+    changed: () => {
+      if (ambientRuntime) broadcast('codepulse:ambient-status', ambientRuntime.service.snapshot())
+      deviceServer?.notifyChanged()
+    },
+  })
+  ambientRuntime.service.start()
+  try {
+    assistantRuntime = createAssistantRuntime(app.getPath('userData'), {
+      automaticAllowed: () => inkFeatureAt(productShell!.snapshot().inkPlan, Date.now()) === 'todos',
+      restoreWork: () => {
+        const plan = productShell!.snapshot().inkPlan
+        if (inkFeatureAt(plan, Date.now()) === 'todos') productShell!.setInkPlan({...plan, mode:'single', fixed:'work'})
+      },
+      changed: () => {
+        if (assistantRuntime) broadcast('codepulse:assistant-status', assistantRuntime.service.snapshot())
+        deviceServer?.notifyChanged()
+      },
+      notify: title => {
+        if (!Notification.isSupported()) return false
+        const notification = new Notification({title:'CodePulse · 待办提醒',body:title,silent:true})
+        notification.on('click', () => { productShell?.navigate('assistant'); showWindow() })
+        notification.show()
+        return true
+      },
+    })
+    assistantRuntime.service.start()
+  } catch {
+    console.error('[codepulse] local assistant storage unavailable; existing work and usage remain available')
+  }
   wireHub()
   registerIpc()
 
   try {
-    // startLocalServer awaits SessionSyncService first disk scan + writes local-auth token.
-    server = await startLocalServer({ hub, mimoCookieProvider: provideMimoCookie })
+    // Binding/authentication must finish before hooks or LAN startup. Historical
+    // hydration continues through Hub events and must not keep the UI/LAN offline.
+    server = await startLocalServer({ hub, mimoCookieProvider: provideMimoCookie, waitForInitialSync: false })
     localServerReady = true
     console.log(`[codepulse] local server listening on ${server.url}`)
     console.log(
-      `[codepulse] session-sync ready: ${hub.snapshot().agents.length} agent slot(s) from disk`,
+      `[codepulse] session-sync loading in background: ${hub.snapshot().agents.length} current agent slot(s)`,
     )
   } catch (err) {
     localServerReady = false
@@ -471,6 +622,9 @@ async function bootstrap(): Promise<void> {
     try {
       deviceServer = await startDeviceServer({
         hub,
+        registerAssistantRoutes: assistantRuntime ? app => registerAssistantRoutes(app, assistantRuntime!.service) : undefined,
+        projectStatus: projectDeviceDisplay,
+        getDisplayConfig: () => readDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json')),
         host: deviceConfig.host,
         port: deviceConfig.port,
         authToken: deviceConfig.authToken,
@@ -515,7 +669,7 @@ async function bootstrap(): Promise<void> {
   }
 
   tray = new TrayController({
-    onOpen: showWindow,
+    onOpen: () => productShell?.restore(),
     onRestoreConfigsAndQuit: () => {
       void restoreConfigsAndQuit()
     },
@@ -527,7 +681,7 @@ async function bootstrap(): Promise<void> {
   // system, English elsewhere (including the POSIX C locale).
   setLocale(app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en')
 
-  createWindow()
+  productShell.restore()
   // Safety net: rescan after the window is up (covers late-arriving rollouts).
   scheduleFocusSync()
   void checkForUpdatesOnce()
@@ -628,6 +782,9 @@ function startMaintenanceTimers(): void {
 }
 
 async function shutdownRuntime(): Promise<void> {
+  assistantRuntime?.service.stop()
+  screenWorkbench?.destroy()
+  ambientRuntime?.service.stop()
   focusSync.cancel()
   hub.stopWatchdog()
   stopMaintenanceTimers()
@@ -649,6 +806,7 @@ async function shutdownRuntime(): Promise<void> {
     ])
   } finally {
     if (timeout) clearTimeout(timeout)
+    assistantRuntime?.close()
   }
 }
 
@@ -1023,7 +1181,7 @@ if (cleanupMode) {
     console.error('[codepulse] unhandled rejection', reason)
   })
 
-  app.on('second-instance', showWindow)
+  app.on('second-instance', () => productShell?.restore())
 
   app
     .whenReady()
@@ -1045,7 +1203,7 @@ ${err instanceof Error ? err.message : String(err)}`,
   })
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    productShell?.restore()
   })
 
   app.on('before-quit', (event) => {

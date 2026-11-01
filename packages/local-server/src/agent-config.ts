@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { access, chmod, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -86,6 +86,7 @@ export interface AgentConfigurationResult {
   codex: AgentConfigurationStatus
   grok: AgentConfigurationStatus
   kimi: AgentConfigurationStatus
+  antigravity: AgentConfigurationStatus
 }
 
 interface JsonObject {
@@ -144,6 +145,7 @@ const HOOK_LAUNCHER_NAMES = [
   'codex-hook.js',
   'grok-hook.js',
   'kimi-hook.js',
+  'antigravity-hook.js',
 ] as const
 
 /** Tiny ESM shim: read sibling hook-runtime.json and run the real install script. */
@@ -168,7 +170,7 @@ try {
 const target = join(String(hookBinDir), ${JSON.stringify(scriptName)})
 // inherit: forward Claude's statusline stdin JSON + stdout status text.
 // (Windows pipe+exit races can assert in libuv; inherit is reliable here.)
-const child = spawn(process.execPath, [target], {
+const child = spawn(process.execPath, [target, ...process.argv.slice(2)], {
   stdio: 'inherit',
   windowsHide: true,
 })
@@ -187,13 +189,14 @@ export async function configureAgents(
   const stableBin = await publishStableHookLaunchers(options)
   const resolved = { ...options, hookBinDir: stableBin }
 
-  const [claude, codex, grok, kimi] = await Promise.all([
+  const [claude, codex, grok, kimi, antigravity] = await Promise.all([
     configureClaudeAgent(resolved),
     configureCodexAgent(resolved),
     configureGrokAgent(resolved),
     configureKimiAgent(resolved),
+    configureAntigravityAgent(resolved),
   ])
-  return { claude, codex, grok, kimi }
+  return { claude, codex, grok, kimi, antigravity }
 }
 
 /**
@@ -207,13 +210,14 @@ export async function cleanupAgents(
   options: AgentConfigurationOptions,
 ): Promise<AgentConfigurationResult> {
   const manifest = await readRestoreManifest(options)
-  const [claude, codex, grok, kimi] = await Promise.all([
+  const [claude, codex, grok, kimi, antigravity] = await Promise.all([
     cleanupClaudeAgent(options, manifest),
     cleanupCodexAgent(options, manifest),
     cleanupGrokAgent(options, manifest),
     cleanupKimiAgent(options, manifest),
+    cleanupAntigravityAgent(options, manifest),
   ])
-  const result = { claude, codex, grok, kimi }
+  const result = { claude, codex, grok, kimi, antigravity }
   // Keep the snapshots if anything failed so a later cleanup can still restore.
   if (!Object.values(result).some((status) => status.error)) {
     await unlink(restoreManifestPath(options)).catch(() => undefined)
@@ -1095,4 +1099,51 @@ function claudeConfigPath(options: Pick<AgentConfigurationOptions, 'env' | 'home
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function antigravityHooksPath(options: AgentConfigurationOptions): string {
+  return (options.env ?? process.env)['CODEPULSE_ANTIGRAVITY_HOOKS_FILE'] ?? join(options.homeDir ?? homedir(), '.gemini', 'config', 'hooks.json')
+}
+function ownsAntigravityHook(entry: unknown): boolean {
+  const value = objectValue(entry)
+  return Boolean(value && JSON.stringify(value).includes('antigravity-hook.js') && isCodePulseCommand(JSON.stringify(value), 'antigravity-hook'))
+}
+/** Install only for an existing Antigravity profile (or an explicit configuration override). */
+export async function configureAntigravityAgent(options: AgentConfigurationOptions): Promise<AgentConfigurationStatus> {
+  const path = antigravityHooksPath(options)
+  try {
+    const home = options.homeDir ?? homedir()
+    const profiles = await Promise.all(['antigravity', 'antigravity-ide', 'antigravity-cli'].map(name => access(join(home, '.gemini', name)).then(() => true, () => false)))
+    if (!(options.env ?? process.env)['CODEPULSE_ANTIGRAVITY_HOOKS_FILE'] && !profiles.some(Boolean)) return { path, changed: false, configured: false }
+    const before = await readTextIfExists(path)
+    const config = parseJsonObject(before)
+    if (config['codepulse-status'] && !ownsAntigravityHook(config['codepulse-status'])) throw new Error('codepulse-status is owned by another hook; configuration preserved')
+    const previous = objectValue(config['codepulse-status'])
+    const entry: JsonObject = { enabled: previous?.enabled !== false }
+    const command = nodeCommand(join(options.hookBinDir, 'antigravity-hook.js'), options.localAuthToken)
+    for (const event of ['SessionStart', 'PreInvocation', 'PreToolUse', 'PostToolUse', 'Stop']) {
+      const hook = { type: 'command', command: command + ' ' + event, timeout: 2 }
+      entry[event] = event === 'PreToolUse' || event === 'PostToolUse' ? [{ matcher: '*', hooks: [hook] }] : [hook]
+    }
+    config['codepulse-status'] = entry
+    const next = JSON.stringify(config, null, 2) + '\n'
+    const changed = next !== before
+    if (changed) await writeManagedText(options, path, next, text => ownsAntigravityHook(parseJsonObject(text)['codepulse-status']))
+    return { path, changed, configured: entry.enabled === true }
+  } catch (error) { return { path, changed: false, configured: false, error: errorMessage(error) } }
+}
+export async function cleanupAntigravityAgent(options: AgentConfigurationOptions, manifest?: RestoreManifest): Promise<AgentConfigurationStatus> {
+  const path = antigravityHooksPath(options)
+  try {
+    const restored = await restoreSnapshot(path, manifest)
+    if (restored != null) return { path, changed: restored, configured: false }
+    const before = await readTextIfExists(path)
+    if (before == null) return { path, changed: false, configured: false }
+    const config = parseJsonObject(before)
+    if (!ownsAntigravityHook(config['codepulse-status'])) return { path, changed: false, configured: false }
+    delete config['codepulse-status']
+    if (createdByCodePulse(path, manifest) && !Object.keys(config).length) await unlink(path)
+    else await writeText(path, JSON.stringify(config, null, 2) + '\n')
+    return { path, changed: true, configured: false }
+  } catch (error) { return { path, changed: false, configured: false, error: errorMessage(error) } }
 }

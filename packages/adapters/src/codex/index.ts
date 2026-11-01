@@ -5,7 +5,12 @@
  * @module adapters/codex
 
  */
-import type { AgentEventInput, AgentEventType } from '@codepulse/shared'
+import {
+  isCodexAuxiliarySession,
+  normalizeTaskTitle,
+  type AgentEventInput,
+  type AgentEventType,
+} from '@codepulse/shared'
 import {
   asRecord,
   pickNumber,
@@ -45,6 +50,15 @@ export function fromCodexHook(raw: unknown): AgentEventInput | null {
     cwd: pickString(r, 'cwd'),
     workspacePath: pickString(r, 'workspace', 'cwd', 'project_dir'),
     model: pickString(r, 'model'),
+    taskTitle: normalizeTaskTitle(
+      pickString(r, 'thread_name', 'thread_title', 'session_title', 'task_title'),
+    ),
+    ...(isCodexAuxiliarySession(
+      r,
+      eventType === 'prompt_submit' ? pickString(r, 'prompt', 'user_prompt') : undefined,
+    )
+      ? { internal: { auxiliarySession: true } }
+      : {}),
     reasoningEffort: pickString(r, 'reasoning_effort', 'reasoningEffort', 'effort'),
     modelObservedAt: pickNumber(r, 'model_observed_at', 'modelObservedAt'),
     tokenSourcePath: pickString(

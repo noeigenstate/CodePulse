@@ -1,0 +1,30 @@
+# Board1 V1.0 uses ESP32-S3-WROOM-1-N16R8.
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+
+# Wi-Fi/HTTP support exceeds the 1 MiB factory partition. Keep the existing
+# offsets while giving the application a 1.5 MiB partition.
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+
+# N16R8 has 8 MiB octal PSRAM.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_USE_MALLOC=y
+
+# The board routes GPIO19/GPIO20 directly to USB D-/D+.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# Board1 has no automatic EN/BOOT circuit. Never reset it automatically after
+# flashing: a reset can release the GPIO9 power latch and remove 3V3.
+CONFIG_ESPTOOLPY_BEFORE_NORESET=y
+CONFIG_ESPTOOLPY_AFTER_NORESET=y
+
+CONFIG_COMPILER_OPTIMIZATION_DEBUG=y
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_ESP_BROWNOUT_DET=y
+
+# UTF-8 multi-thread display model and bounded JSON parser stack.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=32768

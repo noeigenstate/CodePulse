@@ -13,3 +13,5 @@ export * from './state-machine/index.js'
 export * from './rule-engine/index.js'
 export * from './aggregate/index.js'
 export * from './hub/index.js'
+
+export * from './aggregate/device-thread-order.js'

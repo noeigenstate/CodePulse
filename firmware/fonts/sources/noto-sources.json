@@ -1,0 +1,48 @@
+[
+  {
+    "name": "Noto Sans Bold",
+    "version": "2.008",
+    "copyright": "Copyright 2015-2021 Google LLC. All Rights Reserved.",
+    "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/main/hinted/ttf/NotoSans/NotoSans-Bold.ttf",
+    "sha256": "c976e4b1b99edc88775377fcc21692ca4bfa46b6d6ca6522bfda505b28ff9d6a",
+    "path": "fonts/sources/NotoSans-Bold.ttf",
+    "licenses": [
+      {
+        "path": "fonts/licenses/NotoSans-2.008-OFL.txt",
+        "sha256": "0dab92d0544f7b233403f14b84a663bdbfa746982eda629e7f4f9ffe1b036feb"
+      }
+    ]
+  },
+  {
+    "name": "Noto Sans SC Regular",
+    "version": "2.004",
+    "copyright": "© 2014-2021 Adobe (http://www.adobe.com/).",
+    "url": "https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf",
+    "sha256": "faa6c9df652116dde789d351359f3d7e5d2285a2b2a1f04a2d7244df706d5ea9",
+    "path": "fonts/sources/NotoSansSC-Regular.otf",
+    "licenses": [
+      {
+        "path": "fonts/licenses/NotoSansSC-2.004-OFL.txt",
+        "sha256": "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2"
+      }
+    ]
+  },
+  {
+    "name": "GNU Unifont (legacy control-code compatibility glyphs)",
+    "version": "18.0.01",
+    "copyright": "Copyright (C) 1998-2026 Roman Czyborra, Paul Hardy, Qianqian Fang, Andrew Miller, Johnnie Weaver, David Corbett, Ælla Chiana Moskopp, Rebecca Bettencourt, Minseo Lee, Ho-Seok Ee, et al. License: SIL Open Font License version 1.1 and GPLv2+: GNU GPL version 2 or later <http://gnu.org/licenses/gpl.html> with the GNU Font Embedding Exception.",
+    "url": "https://www.unifoundry.com/pub/unifont/unifont-18.0.01/font-builds/unifont-18.0.01.bdf.gz",
+    "sha256": "2989e0211030d8219fd931aba599fc95c86bc327ce1423848ef949783b208257",
+    "path": "fonts/sources/unifont-18.0.01.bdf.gz",
+    "licenses": [
+      {
+        "path": "fonts/licenses/unifont-18.0.01-LICENSE.txt",
+        "sha256": "1e74cb82bf476843e97c2596297b04219b1a7e51f7238944a8c031cb9401fa87"
+      },
+      {
+        "path": "fonts/licenses/unifont-18.0.01-OFL-1.1.txt",
+        "sha256": "869692af094c57fb7258c57fe26820c759319603321d0ffeb278de3651763ded"
+      }
+    ]
+  }
+]

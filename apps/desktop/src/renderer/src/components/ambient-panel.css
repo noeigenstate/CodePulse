@@ -1,0 +1,360 @@
+.ambient-panel {
+  margin: 20px 0;
+  padding: 20px;
+  border: 1px solid var(--border, #7775);
+  border-radius: 14px;
+  color: inherit;
+  background: var(--bg-secondary, #88888808);
+}
+.ambient-heading,
+.ambient-status,
+.ambient-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ambient-heading h3 {
+  margin: 4px 0 0;
+  font-size: 20px;
+}
+.ambient-eyebrow {
+  font-size: 10px;
+  letter-spacing: 2px;
+  opacity: 0.55;
+}
+.ambient-tag {
+  border: 1px solid #8886;
+  border-radius: 20px;
+  padding: 4px 10px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+.ambient-description {
+  font-size: 13px;
+  line-height: 1.8;
+  opacity: 0.75;
+  margin: 14px 0;
+}
+.ambient-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin: 14px 0;
+}
+.ambient-toggle input {
+  accent-color: #74886b;
+}
+.ambient-status {
+  font-size: 12px;
+  padding: 12px 0;
+  opacity: 0.75;
+  border-bottom: 1px solid #8884;
+}
+.ambient-details {
+  border-bottom: 1px solid #8883;
+  padding: 14px 0;
+}
+.ambient-details summary {
+  font-size: 13px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.ambient-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 14px 0;
+}
+.ambient-fields label,
+.ambient-wide {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+}
+.ambient-panel input:not([type='checkbox']),
+.ambient-panel select {
+  width: 100%;
+  box-sizing: border-box;
+  background: transparent;
+  color: inherit;
+  border: 1px solid #8886;
+  border-radius: 6px;
+  padding: 8px;
+  font: inherit;
+}
+.ambient-panel select option {
+  background: Canvas;
+  color: CanvasText;
+}
+.ambient-panel input:focus,
+.ambient-panel select:focus {
+  outline: 2px solid #849c7b;
+  outline-offset: 2px;
+}
+.ambient-hint {
+  font-size: 11px;
+  line-height: 1.7;
+  opacity: 0.6;
+}
+.ambient-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.ambient-panel button {
+  font: inherit;
+  font-size: 12px;
+  padding: 7px 11px;
+  border: 1px solid #8886;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.ambient-panel button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.ambient-panel .ambient-primary {
+  background: #718568;
+  color: #fff;
+  border-color: #718568;
+}
+.ambient-message {
+  font-size: 12px;
+  line-height: 1.6;
+  min-height: 3.2em;
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+}
+.ambient-display-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.ambient-display-actions > span {
+  font-size: 11px;
+  color: var(--ink-muted, #666);
+}
+.ambient-health {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 14px;
+  font-size: 11px;
+  opacity: 0.65;
+}
+.ambient-empty {
+  font-size: 12px;
+  padding: 18px 0 0;
+  opacity: 0.55;
+}
+.ambient-card {
+  border: 1px solid #8884;
+  border-radius: 10px;
+  margin-top: 12px;
+  padding: 14px;
+}
+.ambient-card-meta {
+  font-size: 11px;
+}
+.ambient-card-meta span {
+  opacity: 0.6;
+}
+.ambient-card p {
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ambient-preview {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #8884;
+}
+.ambient-preview p.device-preview-note {
+  display: none;
+}
+@media (max-width: 560px) {
+  .ambient-fields {
+    grid-template-columns: 1fr;
+  }
+  .ambient-panel {
+    padding: 14px;
+  }
+}
+
+.ambient-library-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 20px 0 12px;
+}
+.ambient-library-tabs [aria-pressed='true'] {
+  background: var(--ink, #25282c);
+  color: var(--surface-solid, #fff);
+}
+.ambient-note-editor {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+.ambient-note-editor textarea {
+  grid-column: 1/-1;
+  resize: vertical;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid #8886;
+  border-radius: 6px;
+  padding: 10px;
+}
+.ambient-note-editor small {
+  align-self: center;
+  font-size: 11px;
+  color: var(--ink-muted, #666);
+}
+.ambient-local-options {
+  padding: 10px 0;
+}
+
+.ambient-panel.is-dragging {
+  outline: 2px dashed #718568;
+  outline-offset: 6px;
+}
+.ambient-import-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ambient-import-action span {
+  font-size: 11px;
+  color: var(--ink-muted, #666);
+}
+.ambient-select-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+.ambient-select-card select {
+  flex: 1;
+  min-width: 0;
+}
+.ambient-preview-column > .ambient-library-tabs {
+  margin: 0 0 10px;
+}
+.ambient-panel .device-preview-toolbar {
+  margin-bottom: 8px;
+}
+.ambient-panel .product-preview-label {
+  margin-bottom: 8px;
+}
+
+.ambient-select-card > button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.ambient-pet-picker {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 6px;
+}
+/* A small card per pet: thumbnail, name, then the character note; the chosen badge sits on top. */
+.ambient-pet-option {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 0;
+  padding: 5px 3px 4px;
+  text-align: center;
+  border: 1px solid #8886;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.ambient-pet-option canvas {
+  width: 64px;
+  height: auto;
+  aspect-ratio: 232 / 196;
+  background: #fff;
+  border-radius: 3px;
+  border: 1px solid #8884;
+  box-sizing: content-box;
+}
+.ambient-pet-option strong {
+  font-size: 13px;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.ambient-pet-option span {
+  max-width: 100%;
+  font-size: 11px;
+  line-height: 1.2;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+.ambient-pet-option[aria-checked='true'] {
+  border-color: var(--ink, #25282c);
+  outline: 2px solid var(--ink, #25282c);
+  outline-offset: -2px;
+}
+.ambient-pet-option em {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  font-style: normal;
+  font-size: 10px;
+  line-height: 1.5;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: var(--ink, #25282c);
+  color: var(--surface-solid, #fff);
+}
+.ambient-pet-option:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+/* Narrow windows: three cards per row, so the longest character note still fits on one line. */
+@media (max-width: 1100px) {
+  .ambient-pet-picker {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 720px) {
+  .ambient-pet-picker {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+/* Keeps the display button as high as on the other categories despite the two-line options. */
+.ambient-library-tabs + .ambient-pet-picker {
+  margin: -4px 0 4px;
+}
+.ambient-calendar-info {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 8px;
+}
+.ambient-calendar-info p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.ambient-calendar-info small {
+  font-size: 11px;
+  opacity: 0.6;
+}

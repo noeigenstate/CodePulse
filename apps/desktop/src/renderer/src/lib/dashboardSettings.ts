@@ -11,6 +11,7 @@ export const CLI_TOOL_TYPES = [
   'claude_code',
   'grok',
   'kimi',
+  'antigravity',
   'opencode',
 ] as const satisfies readonly AgentType[]
 
@@ -37,6 +38,7 @@ export const DEFAULT_PANEL_ORDER: readonly CliToolType[] = [
   'codex',
   'grok',
   'kimi',
+  'antigravity',
   'opencode',
 ]
 
@@ -61,6 +63,7 @@ export const DEFAULT_DASHBOARD_SETTINGS: DashboardSettings = {
     claude_code: true,
     grok: true,
     kimi: true,
+    antigravity: true,
     opencode: true,
   },
   panelOrder: [...DEFAULT_PANEL_ORDER],
@@ -96,6 +99,7 @@ export function readDashboardSettings(storage: StorageLike | undefined): Dashboa
         claude_code: visibleTools.claude_code !== false,
         grok: visibleTools.grok !== false,
         kimi: visibleTools.kimi !== false,
+        antigravity: visibleTools.antigravity !== false,
         opencode: visibleTools.opencode !== false,
       },
       panelOrder: normalizePanelOrder(parsed.panelOrder),

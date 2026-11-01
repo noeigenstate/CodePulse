@@ -21,6 +21,7 @@ import {
   isActiveState,
   isTerminalState,
   normalizeWorkspacePath,
+  normalizeTaskTitle,
   maxResetAheadMs,
 } from '@codepulse/shared'
 
@@ -90,6 +91,8 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
   let modelSnapshotAccepted = true
   if (!tokenOnlyQuotaRefresh) {
     if (event.externalSessionId) next.externalSessionId = event.externalSessionId
+    const taskTitle = normalizeTaskTitle(event.taskTitle)
+    if (taskTitle) next.taskTitle = taskTitle
     if (!deferSynchronizedTurnIdentity && shouldAdoptExternalTurnId(current, event)) {
       next.externalTurnId = event.externalTurnId
     }
@@ -160,6 +163,22 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       next.lastAssistantMessage = undefined
       // Privacy-friendly prompt preview from hooks — used for completion toast copy.
       if (event.message) next.lastUserPrompt = event.message
+      break
+
+    case 'model_start':
+      // Model invocations inside one loop preserve timing/counts; a resumed
+      // completed conversation starts fresh without inventing a user prompt.
+      if (current.terminalAt != null || current.state === TurnState.IDLE) {
+        applyPromptTiming(next, acceptedTurnTiming, event.timestamp)
+        next.toolCallCount = 0
+        next.lastAssistantMessage = undefined
+      }
+      next.state = TurnState.THINKING
+      next.needPermission = false
+      next.needUserInput = false
+      next.unread = false
+      next.terminalAt = undefined
+      next.activity = 'AI 正在生成响应'
       break
 
     case 'tool_start':
@@ -266,15 +285,24 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
 
     case 'session_end':
       if (isForeignTurnEvent(current, event)) break
-      next.state = TurnState.IDLE
+      // Closing the transport is not acknowledgement of its last result.
+      const preserveUnreadResult =
+        current.unread &&
+        [TurnState.DONE, TurnState.ERROR, TurnState.TIMEOUT, TurnState.USAGE_LIMITED].some(
+          (state) => state === current.state,
+        )
+      if (!preserveUnreadResult) next.state = TurnState.IDLE
       next.turnStartedAt = undefined
       next.turnTiming = completeTurnTiming(current, acceptedTurnTiming, event.timestamp)
       next.needPermission = false
       next.needUserInput = false
       next.toolName = undefined
-      next.activity = undefined
-      // Start the 5-minute idle retention clock when the session ends.
-      next.terminalAt = event.timestamp
+      if (!preserveUnreadResult) {
+        next.activity = undefined
+        next.unread = false
+        // Quiet session closure starts the ordinary idle retention clock.
+        next.terminalAt = event.timestamp
+      }
       if (!hasContextSnapshot(event.token)) next.token = markContextStale(next.token)
       break
 

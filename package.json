@@ -2,7 +2,7 @@
   "name": "codepulse-desktop",
   "private": true,
   "version": "1.4.11",
-  "description": "CodePulse Desktop / 码脉桌面端 — local AI coding-agent status hub",
+  "description": "CodePulse unified desktop, HUD and e-paper configuration workbench",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -27,7 +27,9 @@
     "smoke": "node scripts/run-smoke.mjs",
     "lint": "prettier --check \"**/*.{ts,tsx,js,json,md}\"",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
-    "db:generate": "pnpm --filter @codepulse/storage db:generate"
+    "db:generate": "pnpm --filter @codepulse/storage db:generate",
+    "start": "pnpm --filter @codepulse/desktop start",
+    "test:surfaces": "node scripts/test-surfaces.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
@@ -45,5 +47,9 @@
       "esbuild"
     ]
   },
-  "packageManager": "pnpm@10.19.0"
+  "packageManager": "pnpm@10.19.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/noeigenstate/CodePulse.git"
+  }
 }

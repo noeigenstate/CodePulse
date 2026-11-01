@@ -78,13 +78,13 @@ const MENU_COPY: Record<
 > = {
   en: {
     noAgents: 'No active agents',
-    open: 'Open dashboard',
+    open: 'Open CodePulse',
     restoreConfigs: 'Restore CLI configs & quit…',
     quit: 'Quit',
   },
   zh: {
     noAgents: '暂无活动 Agent',
-    open: '打开面板',
+    open: '打开 CodePulse',
     restoreConfigs: '还原 CLI 配置并退出…',
     quit: '退出',
   },

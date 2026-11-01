@@ -18,6 +18,7 @@ export const DISPLAY_AGENT_ORDER: readonly AgentType[] = [
   'grok',
   'kimi',
   'opencode',
+  'antigravity',
 ]
 const QUOTA_RECENCY_WINDOW_MS = 30 * 60_000
 

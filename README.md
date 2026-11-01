@@ -1,6 +1,6 @@
 > **Experimental unified product branch (`codex/unified-product`).** Standard
 > desktop, HUD and the 400×300 e-paper configuration preview now build from this
-> single repository. Firmware is independent. This branch has not been merged
+> single repository. Firmware source is included under `firmware/`; hardware designs will be contributed under `hardware/`. This branch has not been merged
 > into `main`; released downloads below still describe the stable upstream app.
 > See [the build/run guide](docs/WORKSPACE.md) and [integration notes](docs/UNIFIED-PRODUCT.md).
 
@@ -30,6 +30,29 @@ context-window meters, and local token analytics for Windows, macOS, and Linux.
 <img src="./docs/screenshots/demo.gif" alt="CodePulse demo: a Claude Code turn finishes, a desktop notification pops up and the tray icon turns green, then another session asks for permission and the tray turns yellow" width="920" />
 
 </div>
+
+## Desktop, firmware and hardware
+
+One repository now hosts the desktop, HUD and embedded terminal source.
+Existing desktop paths and pnpm commands stay unchanged. Firmware uses its
+own ESP-IDF **6.0.1** toolchain; desktop development does not require the SDK.
+
+| Entry | Scope |
+| --- | --- |
+| [Desktop guide](docs/WORKSPACE.md) | Standard client, HUD, screen control and local tasks/assistant |
+| [Firmware](firmware/README.md) | Drivers, production renderer, fonts, refresh policy, builds and tests |
+| [Hardware](hardware/README.md) | Contributor upload guide; PCB/enclosure sources are not uploaded yet |
+| [Repository guide](docs/REPOSITORY.md) | Ownership, versioning, compatibility, cross-surface changes and licenses |
+
+`firmware/` is regular source, not a submodule; no former GitLab access is
+needed. Source version **0.0.29-calendar** is newer than the recorded device's
+**0.0.28-desk-region-pair150**. Source publication never flashes a device.
+The stable desktop features/downloads below remain historical release guidance;
+use the experimental-branch guides above for the combined product.
+
+Local operation needs no cloud. Explicit assistant AI/speech requests send
+their input to the user's configured provider; LAN device service is opt-in
+and authenticated. See [assistant data flow](docs/LUMADESK-INTEGRATION.md).
 
 ---
 
@@ -154,7 +177,9 @@ packages/
   storage/           SQLite schema (Drizzle ORM), repository, usage-stats queries
   local-server/      Fastify HTTP + WebSocket routes, session sync, official quota reads
   hooks/             Lightweight lifecycle hook scripts invoked by the agents
-scripts/             Backend smoke test
+firmware/            ESP32-S3 / ESP-IDF source, renderer, fonts and tests
+hardware/            Board/revision design contribution entry (sources pending)
+scripts/             Backend smoke test and paired firmware-preview checks
 tests/               Unit tests
 ```
 
@@ -545,6 +570,9 @@ See [Download](#download).
 
 ## Contributing
 
+For firmware, hardware or cross-surface changes, read the [repository guide](docs/REPOSITORY.md)
+and run the checks for the affected area. The pnpm requirements below apply to desktop code.
+
 Issues and pull requests are welcome. Before submitting:
 
 1. `pnpm typecheck && pnpm test && pnpm smoke` must pass.
@@ -557,4 +585,6 @@ behavior.
 
 ## License
 
-Released under the [MIT License](./LICENSE) © 2026 CodePulse Contributors.
+Original software is released under the [MIT License](./LICENSE) © 2026 CodePulse Contributors.
+Fonts and components retain [their own notices](firmware/THIRD-PARTY-NOTICES.md).
+Hardware contributors specify the design license when uploading their files.

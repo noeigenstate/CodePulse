@@ -12,7 +12,7 @@ desk content are capabilities of the product, not separate applications.
 ## One checkout
 
 This experimental branch integrates the standard desktop, HUD and screen
-configuration preview. Firmware remains an independent repository and is optional.
+configuration preview. Firmware source is included under `firmware/`. Its toolchain is optional for desktop development; see [repository layout](REPOSITORY.md).
 
 ```powershell
 git clone --branch codex/unified-product --single-branch https://github.com/noeigenstate/CodePulse.git CodePulse
@@ -24,7 +24,8 @@ pnpm start
 
 Use Node.js 22 and pnpm 10.19.0. See [UNIFIED-PRODUCT.md](UNIFIED-PRODUCT.md)
 for source ownership, verification and the earlier split-checkout migration.
-No additional HUD checkout or firmware toolchain is required.
+No additional HUD checkout or firmware toolchain is required for the desktop.
+Firmware build instructions are in [firmware/README.md](../firmware/README.md); hardware uploads are scoped under [hardware/README.md](../hardware/README.md).
 
 ## Build and run
 
@@ -149,7 +150,9 @@ asset is sufficient to build the desktop. To additionally verify source hashes, 
 `CODEPULSE_FIRMWARE_SOURCE` to a configured firmware checkout.
 
 After editing firmware layout/fonts/parser, regenerate **both** previews using
-`scripts/sync-device-preview.ps1 -Firmware <firmware-path> -Zig <path-to-Zig-0.13.0> -Python <python>`.
+`scripts/sync-device-preview.ps1 -Zig <path-to-Zig-0.13.0> -Python <python>`.
+It defaults to the in-repository `firmware/`; `-Firmware` is retained for an explicit source override.
+Run `node scripts/check-firmware-preview.mjs` for SDK-free source/asset checks.
 The firmware dependency checkout must first be configured. Verify native C and
 Wasm pixels before accepting a rendering change. The main desktop and HUD UI
 remain independent of this device renderer.
@@ -195,7 +198,7 @@ Keep test logs, captures and temporary tooling under ignored `.tmpshots/`.
 Do not commit credentials, native session logs, local account databases,
 provisioning payloads, Wi-Fi passwords or device flash/NVS dumps. Private
 hardware history and machine-transfer instructions belong outside this public
-repository. Push only when requested; never push changes to upstream by default.
+repository. Reviewed editable hardware designs belong under `hardware/` with a board revision and contributor-selected license. Push only when requested; never push changes to upstream by default.
 
 Native client viewing can acknowledge the matching completed task in the shared
 Hub. See [read-state compatibility and limits](NATIVE-READ-STATE.md) and

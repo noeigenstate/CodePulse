@@ -1,0 +1,79 @@
+name: Verify firmware
+on:
+  push:
+    branches: [codex/unified-product]
+    paths:
+      - 'firmware/**'
+      - 'apps/desktop/src/main/calendar/**'
+      - 'apps/desktop/src/renderer/src/device-preview/**'
+      - 'apps/hud/src/renderer/src/device-preview/**'
+      - 'apps/*/src/renderer/public/device-preview-licenses.txt'
+      - 'scripts/check-firmware-preview.mjs'
+      - '.github/workflows/firmware.yml'
+  pull_request:
+    paths:
+      - 'firmware/**'
+      - 'apps/desktop/src/main/calendar/**'
+      - 'apps/desktop/src/renderer/src/device-preview/**'
+      - 'apps/hud/src/renderer/src/device-preview/**'
+      - 'apps/*/src/renderer/public/device-preview-licenses.txt'
+      - 'scripts/check-firmware-preview.mjs'
+      - '.github/workflows/firmware.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sources:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/check-firmware-preview.mjs
+      - name: Check calendar's closed font repertoire
+        run: node --experimental-strip-types firmware/scripts/generate-calendar-font-charset.mjs --module apps/desktop/src/main/calendar --check
+      - name: Check native font masks, coverage and licenses
+        run: python3 firmware/tests/test_bitmap_fonts.py
+  esp32s3:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v6.0.1
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [default, region-pair150, audio-check]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile locked firmware; never flash
+        shell: bash
+        env:
+          BUILD_PROFILE: ${{ matrix.profile }}
+        run: |
+          set -euo pipefail
+          . "$IDF_PATH/export.sh"
+          args=(-D CODEPULSE_AUDIO_ENABLED=OFF -D CODEPULSE_AUDIO_INPUT_ENABLED=OFF -D CODEPULSE_AUDIO_COMPILE_TEST=OFF)
+          if [[ "$BUILD_PROFILE" == region-pair150 ]]; then
+            args+=(-D CODEPULSE_QUIET_PAIR150_TRIAL=ON -D CODEPULSE_QUIET_RECT_TRIAL=ON)
+          elif [[ "$BUILD_PROFILE" == audio-check ]]; then
+            args=(-D "SDKCONFIG=$PWD/firmware/build-ci/sdkconfig"
+                  -D "SDKCONFIG_DEFAULTS=$PWD/firmware/sdkconfig.defaults;$PWD/firmware/sdkconfig.defaults.audio"
+                  -D CODEPULSE_AUDIO_ENABLED=ON -D CODEPULSE_AUDIO_INPUT_ENABLED=ON
+                  -D CODEPULSE_AUDIO_COMPILE_TEST=ON -D CODEPULSE_AUDIO_PINS_CONFIRMED=OFF)
+          fi
+          idf.py -C firmware -B "$PWD/firmware/build-ci" "${args[@]}" build
+          idf.py -C firmware -B "$PWD/firmware/build-ci" size
+          python -m unittest discover -s firmware/tools/home-station -p 'test_*.py'
+      - name: Preserve build evidence (not a device release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.profile }}-${{ github.sha }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            firmware/build-ci/codepulse_bringup.bin
+            firmware/build-ci/codepulse_bringup.elf
+            firmware/build-ci/codepulse_bringup.map
+            firmware/build-ci/bootloader/bootloader.bin
+            firmware/build-ci/partition_table/partition-table.bin
+            firmware/build-ci/flasher_args.json
+            firmware/build-ci/project_description.json

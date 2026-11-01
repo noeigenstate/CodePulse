@@ -42,3 +42,9 @@ Thumbs.db
 .env
 .env.local
 requirements.md
+
+# Monorepo firmware toolchain / local validation
+/.toolchains/
+/firmware/managed_components/
+/firmware/build-*/
+/firmware/tmp/

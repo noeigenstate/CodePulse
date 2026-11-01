@@ -1,3 +1,5 @@
+> 2026-11-01：固件已迁入根仓库 `firmware/`；下文独立仓库和双提交号是历史记录。当前入口与版本见 [FIRMWARE-IMPORT](FIRMWARE-IMPORT.md) 和 [固件 README](../firmware/README.md)。
+
 # LumaDesk 核心能力整合
 
 本轮以产品 `7a41eae`、独立固件 `7e3d9e6` 为基线。新增整合改动先在本地验证，

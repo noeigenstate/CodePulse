@@ -7,3 +7,16 @@
 *.ico binary
 *.icns binary
 pnpm-lock.yaml -text
+
+# Firmware sources and future hardware exports retain binary bytes
+*.gz binary
+*.ttf binary
+*.otf binary
+*.pdf binary
+*.xlsx binary
+*.jpg binary
+*.jpeg binary
+
+# Preserve verbatim upstream font notices, including their original whitespace.
+firmware/fonts/*.txt -text -whitespace
+firmware/fonts/licenses/* -text -whitespace

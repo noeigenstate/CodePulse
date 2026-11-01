@@ -1,0 +1,7 @@
+# Preserve the exact pinned upstream bytes, including verbatim licenses.
+sources/*.gz -text
+sources/*.ttf -text
+sources/*.otf -text
+licenses/Noto* -text
+licenses/fusion-2026.10.25-* -text
+licenses/unifont-18.0.01-* -text

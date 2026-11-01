@@ -56,13 +56,15 @@ Developers can retain the old worktrees without affecting this build.
 
 ## Firmware and private data
 
-Firmware remains separately versioned and is not bundled as source or flash
-images here. No flashing or waveform/refresh-policy change is performed by this
-integration. The desktop uses the checked-in C/Wasm renderer, with font notices
-included in packaged resources. To deliberately regenerate it, supply the
-firmware source path and Zig to `scripts/sync-device-preview.ps1`; both previews
-are updated together. Optional source-hash validation uses the explicit
-`CODEPULSE_FIRMWARE_SOURCE` environment variable.
+Firmware runtime versions remain independent, but source is now included under
+`firmware/` in this same Git history. No submodule or former GitLab access is
+required. Hardware contributors upload separately to `hardware/`. See
+[repository management](REPOSITORY.md) and [first import](FIRMWARE-IMPORT.md).
+No flashing or waveform/refresh-policy change is performed by this import.
+The desktop still uses checked-in C/Wasm assets and needs no ESP-IDF install.
+`node scripts/check-firmware-preview.mjs` checks in-tree sources; deliberate
+regeneration uses `scripts/sync-device-preview.ps1`, defaulting to `firmware/`.
+Both UI assets and public font/code notices are updated together.
 
 Do not commit local logs, credentials, device tokens, Wi-Fi settings, native
 session data, recovery/feedback archives or private handoff documents. Keep them

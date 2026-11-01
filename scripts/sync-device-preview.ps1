@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$Zig,
     [string]$Python = 'python',
-    [Parameter(Mandatory = $true)][string]$Firmware
+    [string]$Firmware = (Join-Path (Split-Path $PSScriptRoot -Parent) 'firmware')
 )
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path $PSScriptRoot -Parent

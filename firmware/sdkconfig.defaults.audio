@@ -1,0 +1,6 @@
+# Explicit NEW-board audio profile; use a separate SDKCONFIG/build directory.
+# The existing Board1 partition table and NVS must not be rewritten as part of an app update.
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=n
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.audio.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.audio.csv"

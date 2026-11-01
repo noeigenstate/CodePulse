@@ -1,5 +1,5 @@
 > **实验分支 `codex/unified-product`：** 标准桌面、HUD 和 400×300 墨水屏配置预览
-> 已整合在一个仓库，可单独构建运行。固件仍独立管理；本分支尚未合入 main。
+> 已整合在一个仓库，可单独构建运行。固件源码现已纳入 `firmware/`；硬件设计由贡献者后续上传至 `hardware/`。本分支尚未合入 main。
 > 下方正式下载对应上游稳定版。请先阅读[构建启动说明](docs/WORKSPACE.md)和[整合说明](docs/UNIFIED-PRODUCT.md)。
 
 <div align="center">
@@ -27,6 +27,27 @@
 <img src="./docs/screenshots/demo-zh.gif" alt="CodePulse 演示：Claude Code 任务完成后弹出桌面通知、托盘图标变绿；另一个会话请求授权时托盘变黄" width="920" />
 
 </div>
+
+## 桌面、固件和硬件
+
+一个 CodePulse 仓库承载桌面端、HUD、墨水屏终端和后续硬件设计。
+现有桌面目录和 pnpm 构建保持原样；固件使用自己的 ESP-IDF 6.0.1 工具链。
+普通桌面开发不需要安装嵌入式 SDK。
+
+| 入口 | 内容 |
+| --- | --- |
+| [桌面构建与运行](docs/WORKSPACE.md) | 标准客户端、HUD、屏幕控制、待办与助手 |
+| [固件](firmware/README.md) | 驱动、渲染器、字体、刷新、编译与测试 |
+| [硬件](hardware/README.md) | 同伴后续上传 PCB/结构件的入口与规范；当前暂无设计文件 |
+| [仓库协作](docs/REPOSITORY.md) | 文件归属、版本、兼容性、跨端 PR 和许可 |
+
+`firmware/` 直接包含源码，不是子模块，不需要旧 GitLab 权限。
+固件当前源码为 0.0.29-calendar；已记录实机为 0.0.28-desk-region-pair150，
+新版本不自动刷入。软件预览、编译通过与实机观感分开记录。
+下方仍保留稳定桌面版的功能和下载说明，实验分支的入口以上表为准。
+
+默认本机使用不需要云端；主动使用助手的 AI/语音服务时，会将对应输入发往
+用户配置的服务商。局域网设备服务需显式开启并认证，详见[助手说明](docs/LUMADESK-INTEGRATION.md)。
 
 ---
 
@@ -481,6 +502,9 @@ Windows（安装包）、macOS（Apple Silicon 与 Intel DMG）与 Linux（AppIm
 
 ## 贡献
 
+固件/硬件和跨端改动请先读[仓库协作](docs/REPOSITORY.md)，按涉及范围运行检查；
+以下 pnpm 要求适用于桌面代码。
+
 欢迎提交 issue 与 pull request。提交前请确保：
 
 1. `pnpm typecheck && pnpm test && pnpm smoke` 全部通过。
@@ -492,4 +516,5 @@ Windows（安装包）、macOS（Apple Silicon 与 Intel DMG）与 Linux（AppIm
 
 ## 许可证
 
-基于 [MIT 许可证](./LICENSE) 发布 © 2026 CodePulse Contributors。
+原创软件基于 [MIT 许可证](./LICENSE) 发布 © 2026 CodePulse Contributors。
+字体和组件保留[各自许可](firmware/THIRD-PARTY-NOTICES.md)；硬件设计许可由贡献者在上传时明确。

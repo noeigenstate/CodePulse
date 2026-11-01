@@ -1,0 +1,22 @@
+# ESP-IDF, compiler and preview output
+/build/
+/build-*/
+/managed_components/
+/sdkconfig.old
+/sdkconfig.*.old
+/tmp/
+/out/
+/.toolchains/
+/.venv/
+# Local capture / provisioning / home-station delivery data
+/.tmpshots/
+/nvs*.bin
+/flash-dump*.bin
+/codepulse_shell/
+__pycache__/
+*.pyc
+*.log
+.env
+.env.*
+.DS_Store
+/.idea/

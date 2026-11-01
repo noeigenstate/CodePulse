@@ -23,8 +23,19 @@ description: Use when adding or updating images, animations or videos for README
    ```
 
 4. Check sample frames by eye before encoding: callout positions, text overflow and the last frame's claims.
+5. Follow the ui-standard skill for the look: show named concepts for a restyle and let the user pick, then measure each
+   scene from computed styles (spacing on the 2–64 scale, at most 3 weights, second font size at most 0.8× the largest,
+   few radii) and have another model accept sample frames before the full render.
 
 Put generated media in `docs/hardware/` or `docs/screenshots/`, and keep design exports under `hardware/<board>/<revision>/exports/`.
+
+## Look
+
+- Use a light background: GitHub shows READMEs on a white page, and a dark video reads as a black block there.
+- Small accent text on a light background needs a dark accent (teal `#0b7a68` reaches 4.5:1; `#0fa58e` does not).
+- In a grayscale blur check, a dark-blue PCB vanishes on a blue background; keep the board darker than its surroundings.
+- Overlapping cards hide each other's captions: put captions on each card's outer side and stack the middle cards on top.
+- Remove black backgrounds from EDA exports with `colorkey` before placing them on a light background.
 
 ## README text
 

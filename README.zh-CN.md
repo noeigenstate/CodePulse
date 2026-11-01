@@ -18,9 +18,9 @@
 
 **[🛠 自己做一台](#-自己做一台)** · [📟 硬件](#-硬件) · [💻 桌面应用](#-桌面应用)
 
-<img src="./docs/hardware/codepulse-hardware.webp" alt="硬件展示：标注芯片的主板 3D 渲染、4 层板布局、原理图和墨水屏画面" width="920" />
+<img src="./docs/hardware/codepulse-hardware-zh.webp" alt="硬件展示：标注芯片的主板 3D 渲染、4 层板布局、原理图和墨水屏画面" width="920" />
 
-<sub>▶ <a href="./docs/hardware/codepulse-hardware.mp4">观看高清视频（MP4，28 秒）</a></sub>
+<sub>▶ <a href="./docs/hardware/codepulse-hardware-zh.mp4">观看高清视频（MP4，28 秒）</a></sub>
 
 </div>
 

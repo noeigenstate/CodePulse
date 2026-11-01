@@ -1,228 +1,130 @@
-> **实验分支 `codex/unified-product`：** 标准桌面、HUD 和 400×300 墨水屏配置预览
-> 已整合在一个仓库，可单独构建运行。固件源码现已纳入 `firmware/`；硬件设计由贡献者后续上传至 `hardware/`。本分支尚未合入 main。
-> 下方正式下载对应上游稳定版。请先阅读[构建启动说明](docs/WORKSPACE.md)和[整合说明](docs/UNIFIED-PRODUCT.md)。
-
 <div align="center">
 
 # CodePulse / 码脉
 
-**面向 AI 编程代理的本地状态中心。**
+**AI 编程代理在做什么，屏幕上和桌面上都能一眼看清。**
 
-一眼看清 Claude Code、Codex CLI、OpenCode、Grok 与 Kimi Code 正在工作、在等你、已完成，
-还是卡住了——无需切回终端反复确认。任务完成桌面通知、彩色托盘图标、实时额度与上下文进度、
-本地 Token 用量统计，支持 Windows、macOS 与 Linux。
+面向 Claude Code、Codex CLI、OpenCode、Grok 与 Kimi Code 的本地状态中心，包含桌面控制台、悬浮 HUD 和开源墨水屏终端。
 
-[![status](https://img.shields.io/badge/status-v1.4.11-brightgreen)](#功能特性)
-[![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#下载)
+[![version](https://img.shields.io/badge/version-v1.4.11-brightgreen)](https://github.com/noeigenstate/CodePulse/releases/latest)
+[![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#-下载)
 [![release](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml/badge.svg)](https://github.com/noeigenstate/CodePulse/actions/workflows/release.yml)
-[![node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#开发)
-[![pnpm](https://img.shields.io/badge/pnpm-%E2%89%A59-F69220?logo=pnpm&logoColor=white)](#开发)
-[![built with](https://img.shields.io/badge/built%20with-Electron%20%2B%20TypeScript-47848F?logo=electron&logoColor=white)](#工作原理)
+[![open hardware](https://img.shields.io/badge/hardware-open%20source-3ee6c9)](#-开源硬件)
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
-[English](./README.md) · [简体中文](./README.zh-CN.md) · [产品需求](./docs/WORKSPACE.md)
+[English](./README.md) · [简体中文](./README.zh-CN.md)
 
-**[⬇ 下载 Windows / macOS / Linux 版](https://github.com/noeigenstate/CodePulse/releases/latest)** · [安装说明](#下载)
+**[⬇ 下载](https://github.com/noeigenstate/CodePulse/releases/latest)** · [开源硬件](#-开源硬件) · [从源码构建](#-开发)
 
-<img src="./docs/screenshots/demo-zh.gif" alt="CodePulse 演示：Claude Code 任务完成后弹出桌面通知、托盘图标变绿；另一个会话请求授权时托盘变黄" width="920" />
+<img src="./docs/screenshots/demo-zh.gif" alt="Claude Code 任务完成后弹出桌面通知、托盘图标变绿；另一个会话请求授权时托盘变黄" width="920" />
 
 </div>
 
-## 桌面、固件和硬件
+## ✨ 亮点
 
-一个 CodePulse 仓库承载桌面端、HUD、墨水屏终端和后续硬件设计。
-现有桌面目录和 pnpm 构建保持原样；固件使用自己的 ESP-IDF 6.0.1 工具链。
-普通桌面开发不需要安装嵌入式 SDK。
+<table>
+<tr>
+<td width="33%" valign="top">🚦 <b>统一状态机</b><br/>运行中、等你处理、已完成、出错或卡住，所有代理都用同一套状态。</td>
+<td width="33%" valign="top">🔔 <b>该提醒才提醒</b><br/>彩色托盘图标常驻；任务完成或疑似卡住时，可选弹出桌面通知。</td>
+<td width="33%" valign="top">🎟️ <b>额度与上下文</b><br/>Claude 5 小时和每周额度、Codex 每周额度，以及每个会话剩余的上下文。</td>
+</tr>
+<tr>
+<td valign="top">📈 <b>用量与费用</b><br/>从各 CLI 自己的日志读取精确 Token，按官方 API 价格折算。</td>
+<td valign="top">🖥️ <b>三个界面，一个宿主</b><br/>桌面控制台、HUD 和墨水屏共用同一份实时数据。</td>
+<td valign="top">🔒 <b>默认本地</b><br/>服务只监听本机回环地址，提示词只存简短摘要。除非使用助手的 AI 或语音功能，数据不会离开本机。</td>
+</tr>
+</table>
 
-| 入口 | 内容 |
-| --- | --- |
-| [桌面构建与运行](docs/WORKSPACE.md) | 标准客户端、HUD、屏幕控制、待办与助手 |
-| [固件](firmware/README.md) | 驱动、渲染器、字体、刷新、编译与测试 |
-| [硬件](hardware/README.md) | 同伴后续上传 PCB/结构件的入口与规范；当前暂无设计文件 |
-| [仓库协作](docs/REPOSITORY.md) | 文件归属、版本、兼容性、跨端 PR 和许可 |
+## 🖥️ 界面
 
-`firmware/` 直接包含源码，不是子模块，不需要旧 GitLab 权限。
-固件当前源码为 0.0.29-calendar；已记录实机为 0.0.28-desk-region-pair150，
-新版本不自动刷入。软件预览、编译通过与实机观感分开记录。
-下方仍保留稳定桌面版的功能和下载说明，实验分支的入口以上表为准。
+| 界面             | 作用                                                             |
+| ---------------- | ---------------------------------------------------------------- |
+| **桌面控制台**   | 控制、多媒体、用量统计和设置都在一个窗口里，专注模式只保留看板。 |
+| **HUD**          | 置顶的小型悬浮窗，任务卡片顺序固定，可直接标记已读。             |
+| **墨水屏工作台** | 逐像素预览 400×300 设备画面，并保存墨水屏要显示的内容。          |
+| **待办与助手**   | 本地待办和提醒，也可以显示到墨水屏上。                           |
 
-默认本机使用不需要云端；主动使用助手的 AI/语音服务时，会将对应输入发往
-用户配置的服务商。局域网设备服务需显式开启并认证，详见[助手说明](docs/LUMADESK-INTEGRATION.md)。
+## 📈 用量统计
 
----
+<p align="center"><img src="./docs/screenshots/usage-zh.png" alt="用量统计：折算费用、Token 构成、各工具卡片与费用趋势" width="760" /></p>
 
-AI 编程代理很擅长无人值守地干活，却不擅长在需要你时通知你。CodePulse
-监听 Codex、Claude Code、Grok 与 Kimi Code 暴露的生命周期 hook，把每一个事件
-送进同一个状态机，再用几种清晰的方式把结果呈现出来：
+从各 CLI 自己的日志读取精确 Token，按官方 API 价格折算，可按工具、项目和模型查看。订阅套餐不按 Token 计费，这里的费用是按 API 价格折算的参考值。<sub>图中为示例数据。</sub>
 
-- 📊 **实时 Dashboard** —— 自适应分屏（Claude Code / Codex / OpenCode / Grok / Kimi Code，
-  只用到的 CLI 才出栏），品牌色面板、项目卡片、上下文与额度进度一目了然。
-- ⚙️ **显示设置** —— 可选择自动、白色或黑色主题，也可隐藏不需要的 CLI 面板；
-  自动主题在 08:00–20:00 使用白色，其余时间使用黑色。
-- 📈 **用量与费用** —— 从各 CLI 自己的日志读取精确 Token 用量，按官方 API 价格折算，
-  按工具、项目、模型拆分，并统计每个问题的修复轮次。
-- 🎨 **彩色托盘图标** —— 所有 agent 的总体状态，随时可见。
-- 🔔 **桌面通知**（可选开启）—— 仅在任务完成或疑似卡住时提醒；完成通知以项目名为标题，
-  正文为精简后的用户提问摘要。
+## 📟 开源硬件
 
-一切都在 **本地** 运行。服务只绑定回环地址，提示词仅保存短预览（绝不保存全文），
-且 CodePulse 未运行时 hook 会静默失败——你的 agent 永远不会被阻塞或拖慢。
+<div align="center">
+<img src="./docs/hardware/codepulse-hardware.webp" alt="硬件展示：标注芯片的主板 3D 渲染、4 层板布局、原理图和墨水屏画面" width="920" />
+<br/>
+<sub>▶ <a href="./docs/hardware/codepulse-hardware.mp4">观看高清视频（MP4，28 秒）</a></sub>
+</div>
 
-## 软件截图
+CodePulse 墨水屏终端是一台基于 ESP32-S3 的桌面设备，不用切换窗口就能看到 Claude Code、Codex 和 Grok 的状态。它用嘉立创 EDA 专业版设计，导出文件在 [`hardware/main-board/v3`](./hardware/main-board/v3)。这块音频板还没有经过实机验证，下单前请先看[修订说明](./hardware/main-board/v3/README.md)。
 
-### 实时控制台
+<table>
+<tr>
+<td width="50%" align="center"><img src="./hardware/main-board/v3/exports/3D_主板_2026-10-31.png" alt="主板 3D 渲染图" /></td>
+<td width="50%" align="center"><img src="./hardware/main-board/v3/exports/PCB_主板_2026-10-31.png" alt="主板 PCB 布局图" /></td>
+</tr>
+<tr>
+<td align="center"><b>3D 渲染</b></td>
+<td align="center"><b>4 层板布局</b></td>
+</tr>
+</table>
 
-<p align="center">
-  <img src="./docs/screenshots/dashboard-zh.png" alt="CodePulse 实时控制台" width="920" />
-</p>
+| 部分       | 规格                                                         |
+| ---------- | ------------------------------------------------------------ |
+| **主控**   | ESP32-S3-WROOM-1-N16R8，Wi-Fi + BLE，16 MB Flash，8 MB PSRAM |
+| **屏幕**   | 400×300 墨水屏，24-pin FPC 接口，板载升压电路                |
+| **音频**   | MAX98357A I²S 功放，MSM261 PDM 麦克风                        |
+| **传感器** | AHT20 温湿度传感器                                           |
+| **电源**   | USB-C 供电，BQ24075 锂电池充电与电源路径管理，按键开关机     |
+| **板子**   | 4 层板，45.3 × 77.0 mm                                       |
 
-四栏自适应控制台：Claude 与 Kimi Code 显示 **5 小时 + 每周** 额度；Codex / Grok
-仅显示 **每周额度**。项目卡片展示稳定识别的模型、思考深度、CLI 原生耗时、上下文窗口
-与状态。右上角齿轮可设置主题和显示哪些 CLI；**「用量统计」** 可进入本地统计。_（图为示意数据。）_
+| 文件                                                                                              | 用途                       |
+| ------------------------------------------------------------------------------------------------- | -------------------------- |
+| [`Gerber_主板_2026-10-31.zip`](./hardware/main-board/v3/exports/Gerber_主板_2026-10-31.zip)       | 上传到任意板厂即可下单打板 |
+| [`SCH_电路原理图_2026-10-31.pdf`](./hardware/main-board/v3/exports/SCH_电路原理图_2026-10-31.pdf) | 电路原理图，共 4 页        |
+| [`3D_主板_2026-10-31.step`](./hardware/main-board/v3/exports/3D_主板_2026-10-31.step)             | 3D 模型，用于设计外壳      |
 
-### 用量统计
-
-<p align="center">
-  <img src="./docs/screenshots/usage-zh.png" alt="CodePulse 用量统计：折算费用、Token 构成、各工具卡片与费用趋势" width="920" />
-</p>
-
-从各 CLI 自己的日志读取精确的 Token 用量，按官方 API 价格折算成美元：按工具、项目、模型拆分费用与 Token，并统计每个问题提问了几轮、各模型分别回答了几轮。数据只在本机。_（图为示意数据。）_
-
-## 功能特性
-
-|                           |                                                                                                         |
-| ------------------------- | ------------------------------------------------------------------------------------------------------- |
-| 🚦 **统一状态机**         | 所有 agent 共用一套轮次生命周期：空闲 → 处理中 → 执行工具 → 等待授权/输入 → 完成 / 出错 / 取消 / 卡住。 |
-| 🧭 **多 agent、多工作区** | 跨项目并发会话各自独立追踪；项目卡片顺序在状态更新时保持固定。                                          |
-| 🪟 **自适应分屏**         | 仅在对应 CLI 有任务或仍保留额度时显示分栏，可从一栏自动扩展到四栏。                                     |
-| 🎨 **自动黑白主题**       | 自动模式在 08:00–20:00 使用白色，其余时间使用黑色，也可手动固定主题。                                   |
-| ⚙️ **CLI 面板设置**       | 通过右上角齿轮增删要显示的 CLI；隐藏面板不会停止后台同步或通知。                                        |
-| 🧠 **模型、深度与耗时**   | 稳定显示实际模型、可读取的思考深度和 CLI 原生耗时，刷新后仍可恢复。                                     |
-| 📈 **上下文追踪**         | 直接读取 CLI 原生上下文快照；修复 Windows 长会话漏同步，并正确处理上下文压缩。                          |
-| 🎟️ **配额感知**           | Codex 读取官方 App Server 额度；增长立即更新，降低连续确认后才判定为官方重置。                          |
-| 🔔 **一眼可读的通知**     | 仅任务完成或疑似卡住时提醒；完成标题为项目名，正文为精简后的提问摘要。                                  |
-| 🕰️ **卡住检测**           | 看门狗会标记长时间无活动的轮次，让静默失败不再白白浪费时间。                                            |
-| 💾 **本地历史**           | 事件、会话、轮次与 token 快照持久化到 SQLite——数据归你所有，可查可删。                                  |
-| 📊 **用量与费用**         | 从 CLI 日志读取 Token 用量并按官方 API 价格折算；按工具 / 项目 / 模型拆分，统计问题修复轮次。           |
-| 🔌 **开放本地 API**       | `127.0.0.1:17888` 上的纯 HTTP + WebSocket，可用于本地集成。                                             |
-
-## 用量统计
-
-实时 Dashboard 回答「现在谁在跑」；**用量统计** 回答「花了多少钱、花在哪了」。
-
-在实时控制台右上角点击 **「用量统计」**（英文界面为 **Usage**），选择 **今天 / 近 7 天 / 近 30 天**；按 `Esc` 或 **「返回控制台」** 回到实时面板。
-
-| 模块              | 说明                                                                               |
-| ----------------- | ---------------------------------------------------------------------------------- |
-| **费用与 Token**  | 折算费用、Token 总量（输入 / 缓存写入 / 缓存读取 / 输出）、对话轮次、每轮费用。    |
-| **按工具**        | Claude Code、Codex、OpenCode 分别的费用、费用占比、Token、轮次、请求数、主要模型。 |
-| **费用趋势**      | 今天按小时、其余按天；悬停柱子可看各工具的费用拆分。                               |
-| **按项目 / 模型** | 钱花在哪些项目和模型上，以及各模型平均每个会话的轮次。                             |
-| **问题修复轮次**  | 一个会话视为一个问题：提问了几轮、各模型分别回答了几轮、总共花了多少。             |
-
-**数据来源。** CodePulse 直接读取各 CLI 自己记录的逐请求用量：Claude Code 会话记录（`~/.claude/projects/**/*.jsonl`）、Codex rollout（`~/.codex/sessions/**`）以及 OpenCode 的会话数据库。后台每分钟、以及每次打开页面时增量扫描，写入本地账本，每个 API 请求只计一次。「轮次」是你自己输入的提问（包括任务进行中插入的消息），工具结果和系统注入的上下文不计入。
-
-**费用怎么算。** 每个请求按对应模型的官方 API 列表价计算：输入、缓存写入（5 分钟 / 1 小时）、缓存读取、输出分别计价，OpenAI 输入超过 272K 时按长上下文价。价格表（`packages/shared/src/pricing.ts`）标注了核对日期；没有官方价格的模型只显示 Token。订阅套餐并不按 Token 计费，这里表示「如果走 API 大约要花多少」。
-
-## 工作原理
-
-```
- Codex / Claude Code / Grok / Kimi Code
-   │  生命周期 hook、原生日志与 Codex App Server
-   ▼
- POST /api/events ──► 适配器 ──► StatusHub（纯 reducer + 规则引擎）
- （Fastify，回环）     归一化         │
-                                     ├─► SQLite（事件 / 会话 / 轮次 / token / 工作区）
-                                     ├─► 托盘图标更新
-                                     ├─► 桌面通知
-                                     └─► WebSocket / IPC 推送 ──► Dashboard（React）
-                                                              └─► 用量统计（CLI 日志账本）
-```
-
-仓库是一个 `pnpm` workspace：
-
-```
-apps/desktop/        Electron 应用（main / preload / renderer，含用量统计 UI）
-packages/
-  shared/            领域类型（Agent、Turn、AgentEvent、UsageStats…）与常量
-  core/              状态机、规则引擎、聚合、StatusHub
-  adapters/          Codex / Claude / Grok / Kimi 原始 payload → AgentEvent 映射
-  storage/           SQLite schema（Drizzle ORM）、仓储与用量统计查询
-  local-server/      Fastify HTTP + WebSocket 路由、会话同步与官方额度读取
-  hooks/             agent 调用的轻量生命周期 hook 脚本
-scripts/             后端冒烟测试
-tests/               单元测试
-```
-
-**技术栈：** Electron · electron-vite · TypeScript · React · Tailwind · Zustand ·
-Fastify · better-sqlite3 · Drizzle ORM。
-
-## 下载
-
-从 [GitHub Releases](https://github.com/noeigenstate/CodePulse/releases)
-下载安装包：
-
-- **Windows：** `CodePulse_*_x64-setup.exe`
-- **macOS Apple Silicon：** `CodePulse_*_mac-arm64.dmg`（M 系列芯片）
-- **macOS Intel：** `CodePulse_*_mac-x64.dmg`
-- **Linux x64：** `CodePulse_*_x86_64.AppImage`
-- **Linux arm64 / aarch64：** `CodePulse_*_arm64.AppImage`
-
-Linux 下载后需要先添加可执行权限，再启动 AppImage（ARM 机器把 `x86_64` 换成 `arm64`，
-可用 `uname -m` 查看本机架构）：
+固件源码在 [`firmware/`](./firmware/README.md)，使用 ESP-IDF 6.0.1 构建。配对墨水屏时，打开 **控制**，在墨水屏卡片上点 **连接设备**，用 USB 连接设备并填写 Wi-Fi，之后设备通过[局域网设备 API](docs/device-api-v1.md) 读取状态。这个 API 默认关闭，配对前先开启：
 
 ```bash
-chmod +x CodePulse_*_x86_64.AppImage
-./CodePulse_*_x86_64.AppImage
+CODEPULSE_DEVICE_SERVER_ENABLED=1 pnpm dev
 ```
 
-### macOS 首次打开（未签名构建）
+<p align="center"><img src="./img/CodePulseDeck.png" alt="墨水屏终端外观概念图" width="720" /><br/><sub>外观概念图</sub></p>
 
-当前 Release 中的 macOS 安装包**未做 Apple 代码签名与公证**。用浏览器（如 Chrome）
-下载后，系统会加上隔离标记。双击时可能弹出：
+## ⬇ 下载
 
-> “CodePulse” is damaged and can’t be opened. You should move it to the Trash.  
-> （“CodePulse”已损坏，无法打开。你应该将它移到废纸篓。）
+从 [GitHub Releases](https://github.com/noeigenstate/CodePulse/releases/latest) 下载对应系统的安装包。
 
-这**通常不是安装包真的损坏**，而是 Gatekeeper 对未签名 + 隔离 App 的拦截文案。
-「系统设置 → 隐私与安全性 → 仍要打开」对这种 **damaged** 提示**往往无效**。
+| 系统                | 文件                                                          |
+| ------------------- | ------------------------------------------------------------- |
+| Windows             | `CodePulse_*_x64-setup.exe`                                   |
+| macOS Apple Silicon | `CodePulse_*_mac-arm64.dmg`                                   |
+| macOS Intel         | `CodePulse_*_mac-x64.dmg`                                     |
+| Linux               | `CodePulse_*_x86_64.AppImage` 或 `CodePulse_*_arm64.AppImage` |
 
-**推荐做法（终端）：**
+> v1.4.11 安装包只包含标准桌面版。想现在就用 HUD、墨水屏工作台和助手，请[从源码构建](#-开发)。
 
-1. 打开 DMG，把 `CodePulse.app` 拖到「应用程序」。
-2. 打开「终端」，执行（路径按实际安装位置调整）：
+<details>
+<summary><b>macOS 提示“CodePulse 已损坏，无法打开”</b></summary>
+
+应用并没有损坏。安装包没有签名，下载后会被 macOS 隔离。把应用拖进“应用程序”后清除隔离标记：
 
 ```bash
 xattr -cr /Applications/CodePulse.app
 open /Applications/CodePulse.app
 ```
 
-若 App 还在 DMG 卷上，可先对挂载路径执行，例如：
+“隐私与安全性”里的“仍要打开”解决不了这个提示。请下载与芯片匹配的 DMG。
 
-```bash
-xattr -cr /Volumes/CodePulse*/CodePulse.app
-```
+</details>
 
-3. 之后可从启动台或「应用程序」正常打开。
+<details>
+<summary><b>macOS 检测不到 claude、codex、grok 或 kimi</b></summary>
 
-请按本机芯片选择对应 DMG（arm64 / Intel），架构不对也会打不开。
-
-### macOS 检测不到 Claude / Codex / Grok / Kimi 命令行
-
-从「启动台 / Finder」打开的 App **不会加载** 终端里的 `~/.zshrc` PATH。  
-CLI 若装在 Homebrew（`/opt/homebrew/bin`）或 nvm/npm 全局目录，旧版可能误报「未检测到命令行工具」。
-
-当前版本会自动探测常见安装路径。若仍检测失败，可在终端确认 CLI 可用：
-
-```bash
-which claude codex grok kimi
-claude --version
-codex --version
-grok --version
-kimi --version
-```
-
-也可设置绝对路径后重启 CodePulse：
+从访达打开的应用不会加载终端的 `PATH`。CodePulse 会检查常见安装位置；如果仍然检测不到，手动指定路径后重新打开：
 
 ```bash
 launchctl setenv CLAUDE_CLI_PATH "$(which claude)"
@@ -231,290 +133,157 @@ launchctl setenv GROK_CLI_PATH "$(which grok)"
 launchctl setenv KIMI_CLI_PATH "$(which kimi)"
 ```
 
-（或在启动 CodePulse 的 shell 中 `export` 上述变量后再 `open -a CodePulse`。）
+</details>
 
-## 首次运行
+<details>
+<summary><b>运行 Linux AppImage</b></summary>
 
-1. 打开 CodePulse。
-2. CodePulse 会检查本机 Claude Code、Codex、Grok 和 Kimi Code CLI 配置。
-3. 如果缺少必要项，CodePulse 只会把自己的 hook 与 status line 配置写入：
-   - `~/.claude/settings.json`
-   - `~/.codex/hooks.json`
-   - `~/.codex/config.toml`
-   - `~/.grok/hooks/codepulse.json`（Grok 全局 hooks，默认受信任）
-   - `~/.kimi-code/config.toml`（CodePulse 管理的 Kimi hook 配置块）
-4. 如果配置弹窗提示需要信任 Codex hook，打开一个 Codex 项目终端，运行 `/hooks`，
-   选择 CodePulse hook，并信任：
-   - `SessionStart`
-   - `UserPromptSubmit`
-   - `PreToolUse`
-   - `PermissionRequest`
-   - `PostToolUse`
-   - `Stop`
-5. 运行一轮 Claude Code、Codex、Grok 或 Kimi Code 任务。Dashboard 只显示有活动的 CLI
-   对应分屏（自适应布局）。
-6. 点击齿轮可选择自动/白色/黑色主题，并增删要显示的 CLI 面板。
-7. 需要复盘消耗时，点右上角 **「用量统计」**（详见
-   [用量统计](#用量统计)）。
+```bash
+chmod +x CodePulse_*_x86_64.AppImage   # ARM 设备换成 arm64
+./CodePulse_*_x86_64.AppImage
+```
 
-CodePulse 只管理 CodePulse 自己的 hook 和 status line 配置。你原有的 hook、模型、
-插件和偏好设置会保留。CodePulse 首次修改每个 CLI 配置前，会先保存原始内容
-（`~/.codepulse/config-restore.json`）；卸载时会把配置原样还原。如果你在 CodePulse
-接入之后又改过该文件，则只删除 CodePulse 的条目，保留你的改动。
+</details>
 
-- **Windows：** 卸载程序会自动还原。
-- **macOS / Linux：** 删除应用不会触发卸载程序，请先在托盘菜单选择
-  **「还原 CLI 配置并退出…」**，或运行 `CodePulse --cleanup-config`（如
-  `./CodePulse_*.AppImage --cleanup-config`、
-  `/Applications/CodePulse.app/Contents/MacOS/CodePulse --cleanup-config`），再删除应用。
+## 🚀 首次运行
 
-### 验证
+1. 打开 CodePulse，它会检查 Claude Code、Codex、Grok 和 Kimi Code 的配置。
+2. 它只在各 CLI 配置里添加自己的 hook 和状态栏条目，你原有的 hook、模型和插件都会保留。
+3. 使用 Codex 时，在项目终端运行 `/hooks`，按提示信任 CodePulse 的 hook。
+4. 运行任意代理任务，有活动的 CLI 会自动出现对应面板。
 
-在 Claude Code、Codex、Grok 或 Kimi Code 中跑一次任务，观察对应分屏亮起；也可以检查本地 API：
+CodePulse 首次修改配置前会备份原文件，卸载时自动还原。macOS 和 Linux 删除应用前，请先在托盘菜单选择 **还原 CLI 配置并退出…**，或运行 `CodePulse --cleanup-config`。Windows 卸载时会自动还原。
+
+<details>
+<summary><b>CodePulse 会修改的文件</b></summary>
+
+- `~/.claude/settings.json`
+- `~/.codex/hooks.json` 和 `~/.codex/config.toml`
+- `~/.grok/hooks/codepulse.json`
+- `~/.kimi-code/config.toml`
+
+原始版本备份在 `~/.codepulse/config-restore.json`。
+
+</details>
+
+检查是否正常运行：
 
 ```bash
 curl http://127.0.0.1:17888/api/health
-curl http://127.0.0.1:17888/api/status
 ```
 
-## 托盘状态
+### 托盘颜色
 
-| 颜色  | 含义                       |
-| ----- | -------------------------- |
-| ⚪ 灰 | 全部空闲                   |
-| 🔵 蓝 | 有任务正在运行             |
-| 🟡 黄 | 等待授权或输入——需要你介入 |
-| 🟢 绿 | 一轮任务已完成、未读       |
-| 🔴 红 | 出错                       |
-| 🟠 橙 | 疑似卡住                   |
+| 颜色    | 含义                   |
+| ------- | ---------------------- |
+| ⚪ 灰色 | 全部空闲               |
+| 🔵 蓝色 | 有任务正在运行         |
+| 🟡 黄色 | 等待你授权或输入       |
+| 🟢 绿色 | 任务已完成，你还没查看 |
+| 🔴 红色 | 出错                   |
+| 🟠 橙色 | 疑似卡住               |
 
-通知经过节流与去重，确保你被告知、而不是被骚扰。完成时标题为
-`{emoji} {项目} 已完成`，正文为用户提问摘要（中文 ≤15 字，英文 ≤15 词）。
-桌面通知**默认关闭**，可在设置（齿轮按钮）中打开 **实时消息通知**；无论是否开启，托盘图标和控制台都会实时更新。
-Claude Code 常规的“waiting for your input”空闲提醒会被忽略；黄色状态只表示
-CodePulse 确认看到了真实授权请求或明确输入请求。
+桌面通知默认关闭，可在设置中打开 **实时消息通知**。
 
-## 本地 API
+## ⚙️ 工作原理
 
-仅回环（`127.0.0.1:17888`）——绝不暴露到网络。用环境变量 `CODEPULSE_URL` 可让 hook
-指向其他地址。
-
-| 方法   | 路径                 | 用途                                              |
-| ------ | -------------------- | ------------------------------------------------- |
-| `POST` | `/api/events`        | 接收原始 hook payload（或数组，最多 1000）        |
-| `GET`  | `/api/status`        | Dashboard 使用的完整 `StatusSnapshot`             |
-| `GET`  | `/api/device/status` | 轻量本地客户端使用的精简状态                      |
-| `GET`  | `/api/agents/detect` | 检测本地 Codex / Claude / Grok / Kimi CLI 与 hook |
-| `POST` | `/api/ack/:agent`    | 把某个 agent 的终结结果标记为已读                 |
-| `GET`  | `/api/health`        | 存活探针                                          |
-| `WS`   | `/ws`                | 推送通道：`status` + `notification` 消息          |
-
-## 局域网设备 API（可选）
-
-ESP32 等只读显示设备使用独立的 `0.0.0.0:17889` 服务。它默认关闭、使用单独的
-设备 token，且不包含事件写入或确认任务接口，因此不会改变上面的回环 API
-安全边界。
-
-```bash
-CODEPULSE_DEVICE_SERVER_ENABLED=1 pnpm dev
-TOKEN="$(tr -d '\r\n' < ~/.codepulse/device-auth)"
-curl -H "X-CodePulse-Device-Token: $TOKEN" \
-  http://<电脑局域网IP>:17889/api/v1/device/status
+```
+ Codex / Claude Code / Grok / Kimi Code
+   │  生命周期 hook、原生日志与 Codex App Server
+   ▼
+ POST /api/events ──► 适配器 ──► StatusHub（状态机 + 规则）
+ （仅本机回环）                       │
+                                      ├─► SQLite 历史记录
+                                      ├─► 托盘图标与通知
+                                      ├─► 桌面控制台与 HUD
+                                      └─► 局域网设备 API ──► 墨水屏
 ```
 
-状态协议包含 CLI 状态、项目名、原始 token、上下文占用、5 小时/每周额度与重置时间，
-并支持 ETag/`304`，让水墨屏在内容未变化时跳过刷新。完整字段、安装版启用方法和固件
-轮询规则见 [局域网设备协议 v1](docs/device-api-v1.md)。
+```
+apps/desktop/     Electron 主进程、桌面控制台与墨水屏工作台
+apps/hud/         HUD 界面，与桌面共用同一宿主
+packages/         共享类型、状态机、适配器、存储、本地服务与 hook
+firmware/         ESP32-S3 固件、量产渲染器与字体
+hardware/         按板型和修订存放的 PCB 设计
+tests/            单元测试
+```
 
-## 数据与隐私
+技术栈：Electron、TypeScript、React、Tailwind、Fastify、better-sqlite3、Drizzle ORM。
 
-CodePulse 把单个 SQLite 数据库存放在 Electron 的 user-data 目录：
+<details>
+<summary><b>本地 API</b></summary>
 
-| 操作系统 | 路径                                                       |
-| -------- | ---------------------------------------------------------- |
-| Windows  | `%APPDATA%\CodePulse\codepulse.sqlite`                     |
-| macOS    | `~/Library/Application Support/CodePulse/codepulse.sqlite` |
-| Linux    | `~/.config/CodePulse/codepulse.sqlite`                     |
+API 只监听 `127.0.0.1:17888`。设置 `CODEPULSE_URL` 可以让 hook 指向其他地址。
 
-它记录事件、会话、轮次、工作区与 token 快照。30 天前的原始事件与 token 快照会自动清理。
-提示词只保存短预览，绝不保存全文。删除该文件即可重置全部历史。
+| 方法   | 路径                 | 用途                                 |
+| ------ | -------------------- | ------------------------------------ |
+| `POST` | `/api/events`        | 接收 hook 事件，或最多 1000 条的数组 |
+| `GET`  | `/api/status`        | 完整状态快照                         |
+| `GET`  | `/api/device/status` | 给轻量客户端的精简状态               |
+| `GET`  | `/api/agents/detect` | 检测已安装的 CLI 和 hook             |
+| `POST` | `/api/ack/:agent`    | 把代理结果标记为已读                 |
+| `GET`  | `/api/health`        | 存活检查                             |
+| `WS`   | `/ws`                | 推送 `status` 和 `notification` 消息 |
 
-**用量统计** 只在本机读取上述数据库和 CLI 日志，不会把用量或项目路径上传到任何服务器。
-局域网设备服务默认关闭；启用后把项目标识缩减为目录名而非绝对工作区路径，并要求独立设备
-token。
+端口 `17889` 上的局域网设备 API 默认关闭。它只读、使用独立的设备 token，项目只显示目录名。详见[局域网设备协议 v1](docs/device-api-v1.md)。
 
-## 开发
+</details>
 
-环境要求：
+## 🔒 隐私
 
-- **Node.js ≥ 20**（在 22.x 上测试）
-- **pnpm ≥ 9** —— `npm i -g pnpm`
+- 状态和用量数据都在本机，保存在应用数据目录下的一个 SQLite 文件里。
+- 提示词只存简短摘要，超过 30 天的原始事件会自动清理。
+- 用量统计只在本机读取 CLI 日志，不上传任何数据。
+- 只有在你使用助手的 AI 或语音功能时，请求才会发送给你配置的服务商。
+- 删除数据库文件即可清空全部历史，文件位置：
+  - Windows：`%APPDATA%\CodePulse\codepulse.sqlite`
+  - macOS：`~/Library/Application Support/CodePulse/codepulse.sqlite`
+  - Linux：`~/.config/CodePulse/codepulse.sqlite`
+
+## 🛠 开发
+
+需要 Node.js 20 及以上和 pnpm 9 及以上。
 
 ```bash
 pnpm install
-pnpm dev          # 带热重载的应用（electron-vite）
-pnpm typecheck    # 对每个包运行 tsc
-pnpm test         # 单元测试
-pnpm smoke        # 后端集成测试（无需 Electron、无需 agent）
-pnpm lint         # prettier --check
-pnpm format       # prettier --write
-pnpm db:generate  # 从 schema 生成 Drizzle SQL 迁移
-```
-
-workspace 内的包以 TypeScript **源码** 形式被消费（每个包的 `exports` 指向
-`src/index.ts`）；electron-vite 与 esbuild 直接打包源码，因此开发期没有逐包编译步骤。
-
-原生依赖的 ABI 会显式切换：`pnpm test` 先为当前 Node.js 运行时重建
-`better-sqlite3`；`pnpm dev` / `pnpm start` 则先为 Electron 重建原生依赖。打包流程也会
-自行执行 Electron 重建，因此测试不会再静默使用仅适配 Electron 的二进制文件。
-
-### 构建可分发版本
-
-```bash
-pnpm build        # 构建各包，再把应用打包进 apps/desktop/out
-pnpm dist         # 为当前操作系统打包安装包到 apps/desktop/release
-pnpm dist:win     # Windows NSIS 安装包（.exe）
-pnpm dist:linux   # 按本机 CPU 构建 Linux AppImage（x64 或 arm64）
-pnpm dist:linux:x64
-pnpm dist:linux:arm64
-pnpm dist:mac     # macOS DMG：分别打 arm64 与 Intel x64（非 universal）
-pnpm dist:mac:arm64
-pnpm dist:mac:x64
-pnpm dist:dir     # 免安装目录（更快，便于本地测试）
-```
-
-`pnpm dist` / `dist:win` / `dist:linux` / `dist:mac` 使用 `package.json` 与
-`apps/desktop/package.json` 里的版本号；发版前必须让它们与 tag 一致。推送 tag 前，
-请新增或更新 `docs/release-notes/vX.Y.Z.md`，GitHub Release 会直接使用该文件作为发版说明。
-如果用户可见行为发生变化，请在同一次改动里同步更新英文 README 和本中文版。
-
-打包目标在 `apps/desktop/electron-builder.yml` 中配置（Windows 用 NSIS、macOS 用
-Intel/Apple Silicon 双架构 DMG、Linux 用 x64 与 arm64 AppImage）。Linux 打包直接复用本地安装的
-Electron，因此每种 Linux 架构需要在同架构机器上构建，跨架构构建会直接报错退出。原生模块 `better-sqlite3`
-会保留在 asar 归档之外，以便运行时加载；非运行时源码和未使用的 Electron 语言资源会从
-安装包中排除。
-
-macOS CI 产物为**未签名、未公证**构建。用户侧请按上文
-[macOS 首次打开](#macos-首次打开未签名构建) 用 `xattr -cr` 去除隔离标记；
-「隐私与安全性 → 仍要打开」对 “is damaged” 类弹窗通常无效。
-
-### 发版流程
-
-仓库只保留一个 GitHub Actions workflow：`Build and Release CodePulse`。
-
-它会在推送 `v*` tag 或从 GitHub Actions 手动运行时触发。流程会**并行**构建
-Windows、Linux 与 macOS 安装包，并在各平台任务中执行 `typecheck` / `test` / `smoke` /
-`lint`，最后汇总上传 `.exe`、`.AppImage`、`.dmg`、blockmap 与发版说明，创建或更新
-GitHub Release。
-
-发版说明来自 `docs/release-notes/vX.Y.Z.md`。内容保持简短、面向用户：只写这版更新了什么，
-不要写内部实现流水账。
-
-发布一个版本：
-
-```bash
+pnpm build && pnpm start   # 构建全部内容（含 HUD）并启动
+pnpm dev                   # 桌面版热重载开发
 pnpm typecheck && pnpm test && pnpm smoke && pnpm lint
-git tag vX.Y.Z
-git push origin main vX.Y.Z
 ```
 
-## 故障排查
+完整流程见[构建启动说明](docs/WORKSPACE.md)。固件有单独的[构建说明](firmware/README.md)，桌面开发不需要安装固件工具链。
 
 <details>
-<summary><b>macOS 提示 “CodePulse is damaged and can’t be opened”</b></summary>
-
-安装包一般没有损坏。当前 mac 构建未签名，下载后的隔离标记会触发该文案。
-请按 [macOS 首次打开](#macos-首次打开未签名构建) 执行：
+<summary><b>打包与发版</b></summary>
 
 ```bash
-xattr -cr /Applications/CodePulse.app
-open /Applications/CodePulse.app
+pnpm dist         # 打包当前系统的安装包，输出到 apps/desktop/release
+pnpm dist:win     # Windows NSIS 安装包
+pnpm dist:linux   # 当前 CPU 架构的 Linux AppImage
+pnpm dist:mac     # macOS arm64 与 Intel 两个 DMG
 ```
 
-「系统设置 → 隐私与安全性 → 仍要打开」对这种弹窗通常无效。请确认下载的是
-与本机芯片匹配的 DMG（`mac-arm64` / `mac-x64`）。
+推送 `v*` 标签会触发发版流程：在三个系统上构建和测试，然后发布一个 GitHub Release。发版说明取自 `docs/release-notes/vX.Y.Z.md`。macOS 安装包没有签名。
 
 </details>
 
 <details>
-<summary><b>Dashboard 一直停在“正在等待事件”</b></summary>
+<summary><b>故障排查</b></summary>
 
-说明 agent 没有触达服务。请检查 CodePulse 正在运行、
-`curl http://127.0.0.1:17888/api/health` 返回 `{"ok":true}`，并且配置弹窗没有提示
-Claude / Codex / Grok / Kimi hook 缺失。Codex 如果提示需要信任，请运行一次 `/hooks` 并信任
-CodePulse hook。Grok 全局 hooks 写在 `~/.grok/hooks/codepulse.json`，无需项目级信任。
-
-</details>
-
-<details>
-<summary><b>控制台输出“SQLite unavailable — running without persistence”</b></summary>
-
-原生 `better-sqlite3` 的构建与运行时 ABI 不匹配。实时 Dashboard 仍可用，只是关闭了历史
-持久化。为 Electron 重新构建：
-
-```bash
-pnpm --filter @codepulse/desktop rebuild:electron
-```
-
-若要切回当前 Node.js 运行时，执行 `pnpm test` 即可；其 `pretest` 会自动完成正确的重建。
+- **控制台一直显示“等待事件”。** 确认 `curl http://127.0.0.1:17888/api/health` 返回
+  `{"ok":true}`，并且配置检查没有提示缺少 hook。Codex 需要用 `/hooks` 信任 hook。
+- **提示“SQLite unavailable”。** 原生模块的运行时不匹配，运行
+  `pnpm --filter @codepulse/desktop rebuild:electron`。
+- **端口 17888 被占用。** 从托盘菜单退出另一个实例。
+- **pnpm 没有构建 better-sqlite3 或 electron。** 重新运行 `pnpm install`，或运行 `pnpm rebuild`。
 
 </details>
 
-<details>
-<summary><b>端口 17888 已被占用</b></summary>
+## 🤝 参与贡献
 
-另一个实例（或应用）占用了该端口。从托盘退出另一个实例，或改用其他端口并给 hook 设置
-对应的 `CODEPULSE_URL`。
-
-</details>
-
-<details>
-<summary><b>pnpm install 没有构建 better-sqlite3 / electron</b></summary>
-
-pnpm 10 默认会拦截依赖的构建脚本，除非加入允许清单。它们已列在根 `package.json` 的
-`pnpm.onlyBuiltDependencies` 下；重新运行 `pnpm install`，或执行 `pnpm rebuild`。
-
-</details>
-
-## 常见问题
-
-**Claude Code / Codex 跑完任务时怎么收到提醒？**
-安装 CodePulse，首次运行时让它注册 hook，并在设置中打开 **实时消息通知**（默认关闭）。任务完成后会弹出以项目名为标题的桌面通知，
-托盘图标变绿直到你查看；疑似卡住的任务也会提醒。
-
-**怎么查看 Claude Code 用量限制和 Codex 额度？**
-实时控制台会显示 Claude Code 的 5 小时与每周额度、Codex 每周额度（普通、Reserve、Spark
-分开统计），以及每个会话剩余的上下文窗口，随 CLI 上报实时刷新。
-
-**支持哪些 AI 编程工具？**
-Claude Code、Codex CLI、OpenCode、Grok CLI 与 Kimi Code。只有你在用的 CLI 才会出现面板。
-
-**能同时监控多个 Agent 和多个项目吗？**
-可以。每个会话都有独立的项目卡片，按 CLI 分组；托盘图标显示所有会话中最需要你关注的状态。
-
-**CodePulse 会上传我的代码或提示词吗？**
-不会。服务只监听本机回环地址，提示词只保存短预览，历史记录全部存在本地 SQLite。
-详见[数据与隐私](#数据与隐私)。
-
-**支持哪些系统？**
-Windows（安装包）、macOS（Apple Silicon 与 Intel DMG）与 Linux（AppImage），
-见[下载](#下载)。
-
-## 贡献
-
-固件/硬件和跨端改动请先读[仓库协作](docs/REPOSITORY.md)，按涉及范围运行检查；
-以下 pnpm 要求适用于桌面代码。
-
-欢迎提交 issue 与 pull request。提交前请确保：
-
-1. `pnpm typecheck && pnpm test && pnpm smoke` 全部通过。
-2. 用 `pnpm format` 格式化。
-3. 保持改动聚焦——一个 PR 只做一件事。
-
-产品背景请阅读 [`requirements.md`](./docs/WORKSPACE.md)；其中 §8 的状态机迁移表是生命周期
-行为的权威依据。
+欢迎提交 Issue 和 Pull Request。涉及固件、硬件或跨端的改动，请先阅读[仓库协作说明](docs/REPOSITORY.md)。桌面代码提交前请运行 `pnpm typecheck && pnpm test && pnpm smoke`
+和 `pnpm format`，每个 PR 只做一件事。
 
 ## 许可证
 
-原创软件基于 [MIT 许可证](./LICENSE) 发布 © 2026 CodePulse Contributors。
-字体和组件保留[各自许可](firmware/THIRD-PARTY-NOTICES.md)；硬件设计许可由贡献者在上传时明确。
+软件基于 [MIT 许可证](./LICENSE) 发布 © 2026 CodePulse Contributors。字体和组件保留[各自的许可](firmware/THIRD-PARTY-NOTICES.md)，每个硬件修订单独说明设计许可。

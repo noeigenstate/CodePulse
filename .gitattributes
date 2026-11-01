@@ -20,3 +20,9 @@ pnpm-lock.yaml -text
 # Preserve verbatim upstream font notices, including their original whitespace.
 firmware/fonts/*.txt -text -whitespace
 firmware/fonts/licenses/* -text -whitespace
+
+# Docs media and hardware exports
+*.webp binary
+*.mp4 binary
+*.zip binary
+*.step -text

@@ -18,7 +18,7 @@ import { useScreenTarget } from '../lib/useScreenTarget.js'
 import { useInkStatus } from '../lib/useInkStatus.js'
 import { inkPlanChip } from '../lib/inkStatusText.js'
 import { categoryProblem, refreshSummary } from '../lib/ambientStatus.js'
-import { readRememberedSocial, toggleSocialRow, writeRememberedSocial, type SocialPair } from '../lib/ambientSocial.js'
+import { readRememberedSocial, rememberAfterFlag, toggleSocialRow, writeRememberedSocial, type SocialPair } from '../lib/ambientSocial.js'
 
 /** Tail of the calendar info line: the break going on, or how far away the next one is. */
 function nextHolidayText(next: CalendarNextHoliday | undefined): string {
@@ -451,7 +451,16 @@ export function AmbientPanel({
   )
   const flagSwitch = (flag: 'xEnabled' | 'memeEnabled', label: string) => (
     <label className="page-switch">
-      <input type="checkbox" checked={draft[flag]} onChange={(e) => edit(flag, e.target.checked)} />
+      <input
+        type="checkbox"
+        checked={draft[flag]}
+        onChange={(e) => {
+          const value = e.target.checked
+          rememberedSocial.current = rememberAfterFlag({ xEnabled: draft.xEnabled, memeEnabled: draft.memeEnabled }, flag, value)
+          writeRememberedSocial(window.localStorage, rememberedSocial.current)
+          edit(flag, value)
+        }}
+      />
       {label}
     </label>
   )
@@ -554,6 +563,8 @@ export function AmbientPanel({
                     data-cat={id}
                     aria-pressed={id === category}
                     onClick={() => {
+                      // Re-selecting the current category keeps its selection and preview.
+                      if (id === category) return
                       setCategory(id)
                       setSelectedId('')
                       setPreview(undefined)

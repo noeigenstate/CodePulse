@@ -5,6 +5,7 @@ import {
   readRememberedSocial,
   socialRowOn,
   toggleSocialRow,
+  rememberAfterFlag,
   writeRememberedSocial,
 } from '../apps/desktop/src/renderer/src/lib/ambientSocial.js'
 
@@ -86,4 +87,16 @@ test('malformed or unavailable storage is ignored', () => {
   }
   assert.equal(readRememberedSocial(broken), undefined)
   assert.doesNotThrow(() => writeRememberedSocial(broken, { xEnabled: true, memeEnabled: true }))
+})
+
+test('individual X/meme toggles replace the remembered pair, so the row never restores a source turned off there', () => {
+  // Remembered X+meme, restored by the row; then X off and meme off individually in 设置.
+  let remembered = rememberAfterFlag({ xEnabled: true, memeEnabled: true }, 'xEnabled', false)
+  assert.deepEqual(remembered, { xEnabled: false, memeEnabled: true })
+  remembered = rememberAfterFlag({ xEnabled: false, memeEnabled: true }, 'memeEnabled', false)
+  assert.equal(remembered, undefined)
+  // Row on again: nothing remembered -> meme only, never X.
+  assert.deepEqual(toggleSocialRow({ xEnabled: false, memeEnabled: false }, remembered).patch, { xEnabled: false, memeEnabled: true })
+  // Turning X on individually is remembered as the user's choice.
+  assert.deepEqual(rememberAfterFlag({ xEnabled: false, memeEnabled: false }, 'xEnabled', true), { xEnabled: true, memeEnabled: false })
 })

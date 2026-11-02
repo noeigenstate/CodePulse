@@ -468,3 +468,9 @@
   font-size: var(--fs-xs);
   color: var(--warn);
 }
+
+/* The mode switch and key actions never wrap mid-label or overflow the narrow list column. */
+.ambient-yuanbao .page-segmented button { white-space: nowrap; padding: 0 8px; }
+.ambient-yuanbao .ambient-actions .product-button { white-space: nowrap; padding: 0 12px; }
+.ambient-yuanbao .ambient-yuanbao-keys, .ambient-yuanbao .ambient-fieldset { min-width: 0; }
+.ambient-yuanbao .ambient-message { overflow-wrap: anywhere; }

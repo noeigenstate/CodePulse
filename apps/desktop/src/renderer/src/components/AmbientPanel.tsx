@@ -21,6 +21,7 @@ import './ambient-panel.css'
 import { useScreenTarget } from '../lib/useScreenTarget.js'
 import { useInkStatus } from '../lib/useInkStatus.js'
 import { inkPlanChip } from '../lib/inkStatusText.js'
+import { yuanbaoRowError } from '../lib/yuanbaoStatus.js'
 import { cardCategory, categoryProblem, refreshSummary, type AmbientCategory } from '../lib/ambientStatus.js'
 import {
   lifeRowOn,
@@ -485,6 +486,8 @@ export function AmbientPanel({
   // `holiday` arrives with the host's next contract revision; read it defensively until then.
   const yb = snapshot?.yuanbao as (YuanbaoStatus & { holiday?: { year: number; state: keyof typeof HOLIDAY_STATE } | null }) | undefined
   const hasYbKey = Boolean(yb?.hasKey)
+  // Per-topic errors arrive with the host's next contract revision; read them defensively until then.
+  const ybErrors = (yb as { errors?: Partial<Record<YuanbaoTopic, string>> } | undefined)?.errors
   const ybConfig = draft.yuanbao
   // Keep the text fields in step with the saved config unless the typed text already says the same.
   useEffect(() => {
@@ -508,7 +511,7 @@ export function AmbientPanel({
     id === 'life' ? lifeRowOn(lifeTripleOf(ybConfig)) : id === 'tools' ? ybConfig.toolsEnabled : id === 'holiday' ? ybConfig.holidayEnabled : ybConfig.newsEnabled
   const problem =
     categoryProblem(category, snapshot?.sourceStatus, enabledSources) ||
-    (isYuanbao(category) && ybRowOn(category) && yb?.lastError ? yb.lastError : '')
+    (isYuanbao(category) && ybRowOn(category) ? yuanbaoRowError(category, ybErrors) : '')
   const chip = product ? inkPlanChip(product.shell.inkPlan, 'ambient', ink?.connection, locale) : undefined
   const openPlaylist = (): void => {
     if (product) void product.navigate('control').then(() => product.selectTarget('ink'))

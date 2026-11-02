@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { AssistantAudio, AssistantDraft, AssistantSecret, AssistantSettings, AssistantSnapshot, DeskTaskInput } from '@codepulse/shared'
 import type {
   ProductView, DesktopForm, ShellSnapshot, WorkbenchWindowState, PresentationTarget, DesktopLayout,
-  InkDisplayPlan, HudAppearanceSettings, InkScreenStatus, InkApplyRequest, YuanbaoKeyInput, YuanbaoTestResult,
+  InkDisplayPlan, HudAppearanceSettings, InkScreenStatus, InkApplyRequest, YuanbaoKeyInput, YuanbaoTestResult, YuanbaoTopic,
   AmbientConfig,
   AmbientCard,
   AmbientSnapshot,
@@ -88,6 +88,7 @@ const api = {
   setYuanbaoKey: (input: YuanbaoKeyInput): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:yuanbao-key', input),
   /** One live weather request (counted against the daily limit) to check the key and connectivity. */
   testYuanbao: (): Promise<YuanbaoTestResult> => ipcRenderer.invoke('codepulse:yuanbao-test'),
+  previewYuanbaoSample: (topic: YuanbaoTopic): Promise<DeviceStatusV1> => ipcRenderer.invoke('codepulse:yuanbao-sample', topic),
   previewAmbient: (id: string): Promise<DeviceStatusV1> => ipcRenderer.invoke('codepulse:ambient-preview', id),
   openAmbient: (id: string): Promise<void> => ipcRenderer.invoke('codepulse:ambient-open', id),
   onAmbient: (cb: (snapshot: AmbientSnapshot) => void): Unsubscribe => subscribe('codepulse:ambient-status', cb),

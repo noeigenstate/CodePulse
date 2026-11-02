@@ -1,5 +1,6 @@
 import type { IpcMain } from 'electron'
-import type { AmbientConfig, DeviceStatusV1 } from '@codepulse/shared'
+import type { AmbientConfig, DeviceStatusV1, YuanbaoKeyInput, YuanbaoTopic } from '@codepulse/shared'
+import { yuanbaoSample } from './ambient-yuanbao.js'
 import type { createAmbientRuntime } from './ambient-runtime.js'
 import { withAmbient } from './ambient-rules.js'
 
@@ -11,6 +12,15 @@ export function registerAmbientIpc(
   openExternal: (url: string) => Promise<unknown>,
   onManualShow?: () => void,
 ): void {
+  ipc.handle('codepulse:yuanbao-key', (_event, input: YuanbaoKeyInput) => runtime.setYuanbaoKey(input))
+  ipc.handle('codepulse:yuanbao-test', () => runtime.service.yuanbao.test())
+  ipc.handle('codepulse:yuanbao-sample', (_event, topic: YuanbaoTopic) => {
+    const card = yuanbaoSample(topic)
+    const base = deviceSnapshot()
+    return withAmbient({ ...base, mainState: 'idle', threads: [], threadTotal: 0,
+      display: base.display ? { ...base.display, page: 0 } : undefined,
+      agents: base.agents.map(agent => ({ ...agent, state: 'idle', needsAttention: false })) }, card)
+  })
   ipc.handle('codepulse:ambient-import', (_event, bytes: unknown, name: unknown) =>
     runtime.importImage(bytes, name),
   )

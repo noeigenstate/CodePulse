@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { InkApplyRequest, InkScreenStatus, YuanbaoKeyInput, YuanbaoTestResult } from '@codepulse/shared'
+import type { InkApplyRequest, InkScreenStatus, YuanbaoKeyInput, YuanbaoTestResult, YuanbaoTopic } from '@codepulse/shared'
 import type { AssistantAudio, AssistantDraft, AssistantSecret, AssistantSettings, AssistantSnapshot, DeskTaskInput } from '@codepulse/shared'
 import type {
   ProductView, DesktopForm, ShellSnapshot, WorkbenchWindowState, PresentationTarget, DesktopLayout,
@@ -84,6 +84,7 @@ export interface CodePulseApi {
   setYuanbaoKey: (input: YuanbaoKeyInput) => Promise<AmbientSnapshot>
   /** One live weather request (counted against the daily limit) to check the key and connectivity. */
   testYuanbao: () => Promise<YuanbaoTestResult>
+  previewYuanbaoSample: (topic: YuanbaoTopic) => Promise<DeviceStatusV1>
   previewAmbient: (id: string) => Promise<DeviceStatusV1>
   openAmbient: (id: string) => Promise<void>
   onAmbient: (cb: (snapshot: AmbientSnapshot) => void) => Unsubscribe

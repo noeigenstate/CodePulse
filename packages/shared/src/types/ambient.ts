@@ -93,15 +93,15 @@ export interface YuanbaoConfig {
 }
 export const DEFAULT_YUANBAO: YuanbaoConfig = {
   enabled: false,
-  weatherEnabled: true,
+  weatherEnabled: false,
   city: '北京',
-  goldEnabled: true,
+  goldEnabled: false,
   goldBrand: true,
-  stocksEnabled: true,
+  stocksEnabled: false,
   stocks: ['00700.hk'],
-  toolsEnabled: true,
+  toolsEnabled: false,
   tools: ['Claude Code', 'Codex'],
-  holidayEnabled: true,
+  holidayEnabled: false,
   newsEnabled: false,
   newsTopic: '科技',
   dailyRequestLimit: 48,
@@ -125,6 +125,7 @@ export interface YuanbaoStatus {
   edition: string | null
   /** Site names behind the current cards, e.g. 气象在线、金投网、腾讯自选股. */
   sources: string[]
+  holiday: { year: number; state: 'published' | 'pending' | 'synced' } | null
 }
 export interface YuanbaoTestResult {
   ok: boolean

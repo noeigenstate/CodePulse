@@ -15,6 +15,8 @@ import { inkCardTitle } from './ink-status.js'
 import { builtinCards, restorePersonalCards, personalCard } from './ambient-library.js'
 import { petCards } from './ambient-pet.js'
 import { collectMemes, collectX, collectNews, type JsonRequest } from './ambient-sources.js'
+import { YuanbaoSource, type YuanbaoCache } from './ambient-yuanbao-service.js'
+import type { YuanbaoClient, YuanbaoCredentials } from './ambient-yuanbao.js'
 
 export interface AmbientHistory {
   day: string
@@ -42,6 +44,11 @@ export interface AmbientDependencies {
   automaticAllowed?: () => boolean
   /** The whole applied playlist, rather than only the currently selected slot. */
   plan?: () => InkDisplayPlan
+  yuanbaoKey?: () => YuanbaoCredentials | null
+  yuanbaoClient?: Pick<YuanbaoClient, 'search'>
+  yuanbaoCache?: unknown
+  saveYuanbao?: (cache: YuanbaoCache) => void
+  saveYuanbaoResponse?: (raw: unknown) => void
 }
 const day = (now: number) => {
   const d = new Date(now)
@@ -54,6 +61,7 @@ const SOURCE_FIELDS = [
   'accountMinLikes', 'memeMinUps', 'memeCommunity',
 ] as const satisfies readonly (keyof AmbientConfig)[]
 export class AmbientService {
+  readonly yuanbao: YuanbaoSource
   private config: AmbientConfig
   private history: AmbientHistory
   private cards: AmbientCard[] = []
@@ -82,6 +90,10 @@ export class AmbientService {
       typeof deps.history.seen === 'object'
         ? deps.history
         : { day: '', shown: 0, lastShown: 0, seen: {} }
+    this.yuanbao = new YuanbaoSource({ config: () => this.config, now: () => this.now(),
+      credentials: deps.yuanbaoKey ?? (() => null), client: deps.yuanbaoClient, cache: deps.yuanbaoCache,
+      holidays: () => this.holidays.table(), hasYear: year => this.holidays.hasYear(year),
+      save: deps.saveYuanbao ?? (() => {}), saveLastResponse: deps.saveYuanbaoResponse, changed: () => this.changed() })
   }
   private now() {
     return this.deps.now?.() ?? Date.now()
@@ -111,12 +123,14 @@ export class AmbientService {
   }
   start() {
     this.stopped = false
+    this.yuanbao.start()
     this.timer ??= setInterval(() => this.tick(), 15000)
     this.timer.unref?.()
     this.tick()
   }
   stop() {
     this.stopped = true
+    this.yuanbao.stop()
     this.generation++
     if (this.timer) clearInterval(this.timer)
     this.timer = undefined
@@ -143,7 +157,7 @@ export class AmbientService {
         if (sourceChanged) {
           this.generation++
           this.cards = []
-          if (!this.manual) this.active = undefined
+          if (!this.manual && this.active?.kind !== 'life' && this.active?.kind !== 'search') this.active = undefined
           this.nextCheckAt = 0
         }
       },
@@ -207,6 +221,7 @@ export class AmbientService {
       activeId: this.current()?.id ?? null,
       shownToday: this.history.shown,
       xRequestsToday: this.history.xRequests ?? 0,
+      yuanbao: this.yuanbao.snapshot(),
       pausedReason:
         (this.deps.automaticAllowed?.() === false ? '节目单当前为工作画面时段；仍可临时展示' : '') ||
         pauseReason(this.config, this.deps.status(), this.now()) ||
@@ -224,9 +239,11 @@ export class AmbientService {
       this.active.expiresAt > this.now() &&
       !(this.manual ? this.manualPause(status) : pauseReason(this.config, status, this.now())) &&
       (this.manual || this.deps.automaticAllowed?.() !== false)
+      && (this.manual || (this.active.kind !== 'life' && this.active.kind !== 'search') ||
+        (qualifies(this.active, this.config, this.now()) && this.yuanbao.accepts(this.active)))
       ? this.manual
-        ? { ...this.active, manual: true }
-        : this.active
+        ? { ...this.yuanbao.present(this.active), manual: true }
+        : this.yuanbao.present(this.active)
       : undefined
   }
   private allCards(): AmbientCard[] {
@@ -235,6 +252,7 @@ export class AmbientService {
     return [
       ...this.personal,
       ...this.cards,
+      ...this.yuanbao.cards(),
       ...this.calendarCards(),
       ...petCards(this.deps.status(), this.now()),
       ...builtinCards(this.now()),
@@ -359,6 +377,7 @@ export class AmbientService {
   }
   tick() {
     if (this.stopped) return
+    void this.yuanbao.tick()
     this.resetDay()
     this.syncHolidays()
     if (this.active && (this.activeUntil <= this.now() || this.active.expiresAt <= this.now() || (!this.manual && !this.current()))) {

@@ -23,6 +23,7 @@ import { inkFeatureAt } from '../apps/desktop/src/main/ambient-plan.js'
 import { selectDeskContent } from '../apps/desktop/src/main/assistant-presentation.js'
 import { computeInkStatus } from '../apps/desktop/src/main/ink-status.js'
 import { applyInk, endInkTemporary } from '../apps/desktop/src/main/ink-apply.js'
+import { YuanbaoClient, yuanbaoCredentials, yuanbaoResponseJson, zonedParts, type YuanbaoCredentials } from '../apps/desktop/src/main/ambient-yuanbao.js'
 
 const output = resolve('.tmpshots/surface-smoke', process.env.CODEPULSE_SMOKE_RUN ?? 'local')
 mkdirSync(output,{recursive:true}); app.setPath('userData',join(output,'profile'))
@@ -103,10 +104,35 @@ app.whenReady().then(async()=>{
       })
     } }
     const readCount = (name: string) => previewReads['codepulse:' + name] ?? 0
+    let yuanbaoKey: YuanbaoCredentials | null = null
+    const yuanbaoClient = new YuanbaoClient({ transport: async (_url, init) => {
+      // Synthetic transport only: the smoke never sends credentials or requests to Tencent.
+      const params=JSON.parse(String(init.body)),query=String(params.Query),clock=zonedParts(Date.now())
+      const dateKey=(offset:number)=>new Date(Date.parse(clock.day+'T00:00:00Z')+offset*86400000).toISOString().slice(0,10)
+      const name=query.includes('天气')?'weather-m1':query.includes('金价')?'gold-m1':query.includes('股价')?'stock-m1':null
+      if(name){
+        const raw=JSON.parse(readFileSync(`tests/fixtures/yuanbao/yuanbao-${name}.json`,'utf8')).response
+        raw.Response.Pages=raw.Response.Pages.map((entry:string)=>{
+          const page=JSON.parse(entry)
+          page.passage=String(page.passage).replaceAll('2026-10-29',dateKey(-1)).replaceAll('2026-10-30',clock.day).replaceAll('2026-10-31',dateKey(1))
+            .replace(/北京时间\d+日\d\d:\d\d/,`北京时间${clock.date}日${String(clock.hour).padStart(2,'0')}:${String(clock.minute).padStart(2,'0')}`)
+            .replace('更新时间：1793345461',`更新时间：${Math.floor(Date.now()/1000)}`)
+          return JSON.stringify(page)
+        })
+        return new Response(JSON.stringify(raw))
+      }
+      const year=clock.month>=10?clock.year+1:clock.year
+      const holiday=query.includes('节假日安排')
+      const page={title:holiday?`国务院办公厅关于${year}年部分节假日安排的通知`:`${query} v2.4 更新`,passage:holiday?'国务院办公厅通知':'release 更新',date:clock.day,site:holiday?'中国政府网':'测试发布站',url:holiday?'https://www.gov.cn/synthetic-notice':'https://example.com/synthetic-release'}
+      return new Response(JSON.stringify({Response:{Version:'standard',RequestId:'synthetic-yuanbao-smoke',Pages:[JSON.stringify(page)]}}))
+    } })
     const ambient=new AmbientService({
       config:{...DEFAULT_AMBIENT,enabled:false,xEnabled:true,memeEnabled:false,calendarEnabled:false,quietStart:0,quietEnd:0,idleOnly:false},
       status:()=>hub.snapshot(),key:()=> 'fixture-key',save:()=>{},changed:()=>{broadcast('codepulse:ambient-status',ambient.snapshot());publishInk()},
       plan:()=>product.snapshot().inkPlan, automaticAllowed:()=>inkFeatureAt(product.snapshot().inkPlan,Date.now())==='ambient',
+      yuanbaoKey:()=>yuanbaoKey,yuanbaoClient,
+      saveYuanbao:cache=>writeFileSync(join(output,'yuanbao-cache.json'),JSON.stringify(cache)),
+      saveYuanbaoResponse:raw=>writeFileSync(join(output,'yuanbao-last-response.json'),yuanbaoResponseJson(raw)),
       request:async()=>({tweets:[{id:'12345',author:{userName:'Polymarket'},text:'TEST FIXTURE — this is a screen integration test, not a real news post.',createdAt:new Date().toISOString(),likeCount:9000}]}),image:async()=>'',
     })
     const projector=createDeviceDisplayProjector(join(output,'device-order.json'))
@@ -126,7 +152,7 @@ app.whenReady().then(async()=>{
     registerAssistantIpc(measuredIpc,()=>({service:assistant,setKey:()=>assistant.snapshot(),close:()=>{assistant.stop();assistantStore.close()}}),()=>device().status,()=>ambient.dismiss())
     const imageDir = join(output, 'image-library'); mkdirSync(imageDir, { recursive: true })
     const imageRuntime = createAmbientRuntime(imageDir, { status: () => hub.snapshot(), changed: () => {} })
-    registerAmbientIpc(measuredIpc,{service:ambient,setKey:()=>ambient.snapshot(),importImage:(bytes,name)=>{const card=imageRuntime.importImage(bytes,name);return ambient.addPersonal('image',card.text,card.imageHex)}},()=>device().status,async()=>{},()=>assistant.clearTemporaryInk())
+    registerAmbientIpc(measuredIpc,{service:ambient,setKey:()=>ambient.snapshot(),setYuanbaoKey:input=>{yuanbaoKey=yuanbaoCredentials(input);ambient.yuanbao.credentialsChanged();return ambient.snapshot()},importImage:(bytes,name)=>{const card=imageRuntime.importImage(bytes,name);return ambient.addPersonal('image',card.text,card.imageHex)}},()=>device().status,async()=>{},()=>assistant.clearTemporaryInk())
     const handlers: Record<string, (...args:any[])=>any>={
       'ink-status-get':()=>inkSnapshot(),'ink-apply':(_e,request)=>applyInk(request,inkApplyDependencies),
       'ink-temporary-end':()=>{endInkTemporary(ambient,assistant);publishInk();return inkSnapshot()},

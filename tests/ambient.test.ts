@@ -447,6 +447,7 @@ test('production IPC previews are local and original-post links cannot be replac
     {
       service: f.service,
       setKey: () => f.service.snapshot(),
+      setYuanbaoKey: () => f.service.snapshot(),
       importImage: () => {
         throw new Error('Not used')
       },

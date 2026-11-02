@@ -487,11 +487,11 @@
 .product-brand-mark { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border:1px solid var(--line); border-radius:var(--r-control); background:var(--surface-solid); }
 .product-frame .product-brand small { margin:0; font-size:var(--fs-xs); letter-spacing:0; font-weight:var(--fw-regular); }
 .product-rail nav > div { min-width:0; }
-.product-frame .product-rail button { display:flex; align-items:center; gap:12px; width:100%; min-height:36px; border:1px solid transparent; padding:0 12px; border-radius:var(--r-control); font-size:var(--fs-sm); font-weight:var(--fw-medium); color:var(--ink-700); transition:background var(--motion), color var(--motion); }
+.product-frame .product-rail button { display:flex; align-items:center; gap:12px; white-space:nowrap; width:100%; min-height:36px; border:1px solid transparent; padding:0 12px; border-radius:var(--r-control); font-size:var(--fs-sm); font-weight:var(--fw-medium); color:var(--ink-700); transition:background var(--motion), color var(--motion); }
 .product-frame .product-rail nav button:hover:not([aria-current='page']), .product-frame .product-rail-footer button:hover:not([aria-current='page']) { background:var(--surface-selected); color:var(--ink); }
 .product-frame .product-rail [aria-current='page'] { border-color:var(--line); color:var(--ink); font-weight:var(--fw-strong); background:var(--surface-solid); box-shadow:inset 3px 0 0 var(--ink); }
 .product-nav-section { display:block; padding:16px 12px 4px; color:var(--ink-muted); font-size:var(--fs-xs); font-weight:var(--fw-medium); letter-spacing:0; }
-.product-nav-count { margin-left:auto; padding:0 8px; font-size:var(--fs-xs); font-weight:var(--fw-medium); line-height:20px; white-space:nowrap; border-radius:var(--r-pill); background:var(--surface-selected); color:var(--ink); }
+.product-nav-count { margin-left:auto; flex:none; padding:0 8px; font-size:var(--fs-xs); font-weight:var(--fw-medium); line-height:20px; white-space:nowrap; border-radius:var(--r-pill); background:var(--surface-selected); color:var(--ink); }
 .product-rail-footer { gap:5px; }
 .product-main { background:var(--surface-muted); }
 .product-page { display:flex; flex:1; flex-direction:column; min-width:0; min-height:0; overflow:hidden; }

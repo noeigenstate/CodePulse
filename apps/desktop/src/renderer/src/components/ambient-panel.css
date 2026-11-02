@@ -232,6 +232,9 @@
 }
 .ambient-temp {
   align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 .ambient-message {
   min-height: 20px;

@@ -251,6 +251,19 @@ app.whenReady().then(async()=>{
     await until(()=>product.snapshot().inkPlan.intervalMinutes===5,'offline change applies again')
     await wait(900)
     assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.product-config-actions strong')?.textContent`),'1 项改动，连接后自动应用')
+    // Disabled reasons are keyboard-reachable explanations (InfoTip) and stay inside a narrow window.
+    main.setContentSize(720,600);await wait(350)
+    await click(main,'[data-view=assistant]')
+    const tip=await main.webContents.executeJavaScript(`(()=>{const b=document.querySelector('.desk-assistant .info-tip');return b?{id:b.getAttribute('aria-describedby'),text:document.getElementById(b.getAttribute('aria-describedby')).textContent,h:b.getBoundingClientRect().height,w:b.getBoundingClientRect().width,tab:b.tabIndex}:null})()`) as {id:string;text:string;h:number;w:number;tab:number}|null
+    assert.ok(tip&&tip.text==='连接设备后可临时展示'&&tip.h>=32&&tip.w>=32&&tip.tab>=0,'the disabled reason is a focusable 32px InfoTip: '+JSON.stringify(tip))
+    await main.webContents.executeJavaScript(`document.querySelector('.desk-assistant .info-tip').dispatchEvent(new MouseEvent('mouseover',{bubbles:true}))`);await wait(120)
+    const bubble=await main.webContents.executeJavaScript(`(()=>{const t=document.querySelector('.desk-assistant .info-tip-bubble'),r=t.getBoundingClientRect();return {open:t.classList.contains('is-open'),left:r.left,right:r.right,top:r.top,bottom:r.bottom,w:innerWidth,h:innerHeight}})()`) as {open:boolean;left:number;right:number;top:number;bottom:number;w:number;h:number}
+    assert.ok(bubble.open&&bubble.left>=0&&bubble.right<=bubble.w&&bubble.top>=0&&bubble.bottom<=bubble.h,'the bubble opens inside the 720px window: '+JSON.stringify(bubble))
+    await capture('infotip-720')
+    await main.webContents.executeJavaScript(`document.querySelector('.desk-assistant .info-tip').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);await wait(120)
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.desk-assistant .info-tip-bubble').classList.contains('is-open')`),false,'Escape closes the bubble')
+    main.setContentSize(1120,780);await wait(350)
+    await click(main,'[data-view=control]');await click(main,'#endpoint-ink')
     inkConnected=true;publishInk();await wait()
     await selectPlayback('15');await button(main,'应用')
     await selectPlayback('5') // A real pending change keeps the footer present for the layout checks.
@@ -490,6 +503,8 @@ app.whenReady().then(async()=>{
     const TEMP='临时展示 10 分钟'
     const category=(id:string)=>click(main!,`[data-cat=${id}]`)
     const openSettings=async()=>{if(!await main!.webContents.executeJavaScript(`Boolean(document.querySelector('.ambient-settings')?.open)`))await click(main!,'.ambient-settings > summary')}
+    // The primary button is aria-disabled until a card is selected and the screen is online.
+    const showTemp=async()=>{await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-temp button')?.getAttribute('aria-disabled')==='false'&&Boolean(document.querySelector('.ambient-item[aria-pressed=true]'))`),'temporary display is available');await button(main,TEMP)}
     const previewReady=()=>until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .device-preview')?.getAttribute('data-render-state')==='ready'`),'ambient preview renderer')
     assert.deepEqual(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ambient-catlist [data-cat]')).map(b=>b.querySelector('span').textContent)`), ['概念卡','思考实验','像素宠物','日历','科技热议','X 与 meme','我的图片与便签'], 'category order')
     for (const gone of ['保存推送设置','预览画面','当前目标画面','规则修改后立即保存','图片拖进此页即可导入','内容预览','400 × 300','仅供预览','预览说明','2 倍检查']) assert.equal(await main.webContents.executeJavaScript(`document.body.innerText.includes(${JSON.stringify(gone)})`), false, 'removed copy is gone: '+gone)
@@ -530,7 +545,7 @@ app.whenReady().then(async()=>{
       const r=Array.from(document.querySelectorAll('button')).find(b=>b.getClientRects().length&&b.textContent.trim()===${JSON.stringify(TEMP)}).getBoundingClientRect();
       return {top:r.top,bottom:r.bottom,height:window.innerHeight}
     })()`) as {top:number;bottom:number;height:number}
-    await button(main, TEMP)
+    await showTemp()
     assert.equal(ambient.current()?.kind, 'concept')
     assert.equal(ambient.current()?.manual, true)
     await until(()=>main!.webContents.executeJavaScript(`document.querySelector('[data-feedback=content]').textContent.includes('已临时展示')`), 'temporary display confirmed')
@@ -541,13 +556,13 @@ app.whenReady().then(async()=>{
       return r.top>=0 && r.bottom<=window.innerHeight;
     })()`), true, 'content result is visible when its display button is visible')
     await capture('multimedia-concept')
-    await category('prompt');await previewReady();await button(main, TEMP)
+    await category('prompt');await previewReady();await showTemp()
     assert.equal(ambient.current()?.kind, 'prompt')
     await category('local')
     await main.webContents.executeJavaScript(`(() => { const t=document.querySelector('#ambient-note');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(t,'TEST NOTE — pause, then choose one useful task.');t.dispatchEvent(new Event('input',{bubbles:true})); })()`)
     await button(main, '保存并预览')
     await until(()=>ambient.snapshot().cards.some(c=>c.kind==='note'),'saved local note')
-    await previewReady();await button(main, TEMP); assert.equal(ambient.current()?.kind, 'note')
+    await previewReady();await showTemp(); assert.equal(ambient.current()?.kind, 'note')
     await capture('multimedia-note')
     await button(main, '移除'); assert.equal(ambient.current(), undefined)
     const imageBytes = Array.from(nativeImage.createFromBitmap(Buffer.alloc(80*120*4, 255), {width:80,height:120}).toPNG())
@@ -555,7 +570,7 @@ app.whenReady().then(async()=>{
     await until(()=>ambient.snapshot().cards.some(c=>c.kind==='image'),'dragged image is imported')
     assert.equal(ambient.current(), undefined, 'importing never changes the e-ink screen by itself')
     await until(()=>main!.webContents.executeJavaScript(`document.querySelector('[data-feedback=content]').textContent.includes('已导入 1 张图片')`),'import confirmed')
-    await previewReady();await button(main, TEMP)
+    await previewReady();await showTemp()
     assert.equal(ambient.current()?.kind,'image','the imported picture is shown on request')
     assert.equal(ambient.current()?.imageHex?.length,19968)
     await capture('multimedia-image')
@@ -594,7 +609,7 @@ app.whenReady().then(async()=>{
     assert.deepEqual(await petChecked(), ['false','true','false','false','false'], 'selection moves to the second pet')
     await until(async()=>{const s=await petStats();return s.state==='ready'&&s.hash!==firstPet.hash&&s.red>0},'second pet preview')
     assert.match(await main.webContents.executeJavaScript(`document.querySelector('.ambient-pet-option[aria-checked=true]').textContent`), /已选/)
-    await button(main, TEMP)
+    await showTemp()
     assert.equal(ambient.current()?.kind, 'pet')
     assert.equal(ambient.current()?.pet?.id, 'yaya')
     assert.ok(ambient.current()?.red, 'the pet on screen carries a red plane')
@@ -634,7 +649,7 @@ app.whenReady().then(async()=>{
     assert.match(calendarPage.info,/(假期中|距 .+ 还有 \d+ 天|暂无下一个假日数据)$/,'info line ends with the next holiday or says there is none')
     assert.ok(calendarPage.infoBox&&calendarPage.infoBox.top>=0&&calendarPage.infoBox.bottom<=calendarPage.infoBox.height,'calendar info is on the first screen at 1120x780: '+JSON.stringify(calendarPage.infoBox))
     assert.ok(calendarPage.toggle,'calendar keeps its own switch')
-    await button(main, TEMP)
+    await showTemp()
     assert.equal(ambient.current()?.kind, 'calendar'); assert.equal(ambient.current()?.manual, true)
     assert.equal(withAmbient(device().status,ambient.current()).ambient?.layout,'calendar'); assert.ok(withAmbient(device().status,ambient.current()).ambient?.calendar,'device status exposes ambient.calendar')
     await capture('multimedia-calendar')
@@ -737,6 +752,23 @@ app.whenReady().then(async()=>{
     await until(()=>main!.webContents.executeJavaScript(`Boolean(document.querySelector('.product-nav-count'))`),'work attention badge')
     await click(main,'[data-view=control]');assert.equal(product.snapshot().view,'control')
     assert.equal(JSON.stringify(hub.snapshot().agents),attentionState)
+    // Preview controls sit directly above the frame, right-aligned to its edge, on both pages; captured for review.
+    for (const theme of ['light','dark'] as const) {
+      await click(main,'[data-view=settings]');await click(main,`.theme-swatch-${theme}`);await wait(300)
+      for (const [width,height] of [[1440,900],[720,480]] as const) {
+        main.setContentSize(width,height);await wait(450)
+        for (const page of ['ambient','ink'] as const) {
+          if (page==='ambient') { await click(main,'[data-view=ambient]');await category('concept');await previewReady();await wait(700) }
+          else { await click(main,'[data-view=control]');await click(main,'#endpoint-ink');await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.product-control .device-preview')?.getAttribute('data-render-state')==='ready'`),'ink preview') }
+          const root=page==='ambient'?'.ambient-panel':'.product-control'
+          const bar=await main.webContents.executeJavaScript(`(()=>{const b=document.querySelector(${JSON.stringify(root)}+' .device-preview-framebar'),f=document.querySelector(${JSON.stringify(root)}+' .device-preview-frame');if(!b||!f)return null;const br=b.getBoundingClientRect(),fr=f.getBoundingClientRect();return {barRight:br.right,frameRight:fr.right,barBottom:br.bottom,frameTop:fr.top,more:b.querySelector('.device-preview-more').getBoundingClientRect().height}})()`) as {barRight:number;frameRight:number;barBottom:number;frameTop:number;more:number}|null
+          assert.ok(bar&&Math.abs(bar.barRight-bar.frameRight)<=3&&bar.frameTop-bar.barBottom<=12&&bar.frameTop>=bar.barBottom-1&&bar.more>=32,`${page} preview controls hug the frame (${theme} ${width}): ${JSON.stringify(bar)}`)
+          await capture(`ia2-final-${theme}-${width}x${height}-${page}`)
+        }
+      }
+    }
+    main.setContentSize(1120,780);await wait(350)
+    await click(main,'[data-view=settings]');await click(main,'.theme-swatch-light');await wait(300)
     // The expected unauthorized native-window rejection is visible to Electron's console.
     const unexpected=errors.filter(e=>!e.includes('Only the screen window'))
     assert.deepEqual(unexpected,[])

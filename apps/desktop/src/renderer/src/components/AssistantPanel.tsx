@@ -8,6 +8,7 @@ import type {
 } from '@codepulse/shared'
 import { recordDeskVoice, playDeskVoice, type DeskRecording } from '../lib/assistantAudio.js'
 import { PageHeader } from './PageHeader.js'
+import { InfoTip } from './InfoTip.js'
 import { formatDue } from '../lib/dueText.js'
 import { useInkStatus } from '../lib/useInkStatus.js'
 import './assistant-panel.css'
@@ -199,8 +200,6 @@ export function AssistantPanel({ active, locale = 'zh' }: {
               type="button"
               className="product-button"
               aria-disabled={!snapshot || working || !online}
-              aria-describedby={online ? undefined : 'desk-temp-reason'}
-              title={online ? undefined : '连接设备后可临时展示'}
               onClick={() => {
                 // aria-disabled keeps the button focusable so its reason can be read; the click is ignored.
                 if (!snapshot || working || !online) return
@@ -212,11 +211,7 @@ export function AssistantPanel({ active, locale = 'zh' }: {
             >
               临时展示到墨水屏
             </button>
-            {!online && (
-              <span id="desk-temp-reason" className="page-sr">
-                连接设备后可临时展示
-              </span>
-            )}
+            {!online && <InfoTip text="连接设备后可临时展示" label="为什么不能临时展示" />}
           </span>
         }
       />

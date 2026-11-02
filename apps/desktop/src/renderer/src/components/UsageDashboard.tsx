@@ -15,6 +15,7 @@ import { formatRelative } from '../lib/format.js'
 import { formatModelName } from '../lib/modelName.js'
 import { AgentLogo } from './AgentLogo.js'
 import { PageHeader } from './PageHeader.js'
+import { InfoTip } from './InfoTip.js'
 import { projectLabels, sessionTitle } from '../lib/redact.js'
 import './usage-dashboard.css'
 
@@ -385,11 +386,7 @@ function Kpi({
     <div className="usage-card usage-kpi">
       <p className="usage-kpi-label">
         {label}
-        {hint && (
-          <span className="usage-info" title={hint} aria-label={hint} role="img">
-            ⓘ
-          </span>
-        )}
+        {hint && <InfoTip text={hint} />}
       </p>
       <p className="usage-kpi-value">{value}</p>
       <p className="usage-kpi-delta">

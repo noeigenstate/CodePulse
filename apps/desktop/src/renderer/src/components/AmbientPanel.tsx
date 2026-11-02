@@ -11,13 +11,14 @@ import {
 } from '@codepulse/shared'
 import { DeviceScreenPreview } from './DeviceScreenPreview.js'
 import { PageHeader } from './PageHeader.js'
+import { InfoTip } from './InfoTip.js'
 import { planesToRgba } from '../device-preview/renderer.mjs'
 import './ambient-panel.css'
 import { useScreenTarget } from '../lib/useScreenTarget.js'
 import { useInkStatus } from '../lib/useInkStatus.js'
 import { inkPlanChip } from '../lib/inkStatusText.js'
 import { categoryProblem, refreshSummary } from '../lib/ambientStatus.js'
-import { toggleSocialRow, type SocialPair } from '../lib/ambientSocial.js'
+import { readRememberedSocial, toggleSocialRow, writeRememberedSocial, type SocialPair } from '../lib/ambientSocial.js'
 
 /** Tail of the calendar info line: the break going on, or how far away the next one is. */
 function nextHolidayText(next: CalendarNextHoliday | undefined): string {
@@ -227,7 +228,7 @@ export function AmbientPanel({
   // Only the newest preview request may land; a slower, older answer is dropped.
   const previewSeq = useRef(0)
   // The pair behind the 「X 与 meme」 row switch while it is off.
-  const rememberedSocial = useRef<SocialPair>()
+  const rememberedSocial = useRef<SocialPair | undefined>(readRememberedSocial(window.localStorage))
   const [refreshNote, setRefreshNote] = useState('')
   const refreshTimer = useRef<ReturnType<typeof setTimeout>>()
   const saveTimer = useRef<ReturnType<typeof setTimeout>>()
@@ -579,9 +580,9 @@ export function AmbientPanel({
                         const next = toggleSocialRow(
                           { xEnabled: draft.xEnabled, memeEnabled: draft.memeEnabled },
                           rememberedSocial.current,
-                          Boolean(snapshot?.hasKey),
                         )
                         rememberedSocial.current = next.remembered
+                        writeRememberedSocial(window.localStorage, next.remembered)
                         editMany(next.patch)
                       }}
                     />
@@ -930,8 +931,6 @@ export function AmbientPanel({
                     type="button"
                     className="product-button primary"
                     aria-disabled={busy || !selectedCard || !online}
-                    aria-describedby={tempReason ? 'ambient-temp-reason' : undefined}
-                    title={tempReason}
                     onClick={() => {
                       // aria-disabled keeps the button focusable so its reason can be read; the click is ignored.
                       if (busy || !selectedCard || !online) return
@@ -943,11 +942,7 @@ export function AmbientPanel({
                   >
                     临时展示 10 分钟
                   </button>
-                  {tempReason && (
-                    <span id="ambient-temp-reason" className="page-sr">
-                      {tempReason}
-                    </span>
-                  )}
+                  {tempReason && <InfoTip text={tempReason} label="为什么不能临时展示" />}
                 </span>
                 <p className="ambient-message" data-feedback="content" role="status">
                   {messageScope === 'content' ? message : ''}

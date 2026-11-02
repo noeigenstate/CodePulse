@@ -9,15 +9,19 @@ export interface WindowChromePalette {
 /** Renderer-selected light or dark window palette. */
 export type WindowTheme = 'light' | 'dark'
 
-/** Native chrome colors mirrored from the renderer's light and dark CSS tokens. */
+/**
+ * Native chrome colors. They must equal the `.app-shell.native-workstation` `--canvas` and `--ink`
+ * tokens in renderer/src/components/product-shell.css (light and dark), because the Windows caption
+ * buttons sit next to the renderer-drawn title bar; tests/window-chrome.test.ts enforces it.
+ */
 const WINDOW_CHROME_PALETTES: Record<WindowTheme, WindowChromePalette> = {
   light: {
-    backgroundColor: '#f6f9ff',
-    symbolColor: '#334155',
+    backgroundColor: '#eceeef',
+    symbolColor: '#25282d',
   },
   dark: {
-    backgroundColor: '#090b10',
-    symbolColor: '#f3f5f8',
+    backgroundColor: '#191b1e',
+    symbolColor: '#e8eaed',
   },
 }
 

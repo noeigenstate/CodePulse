@@ -303,7 +303,7 @@ export function App(): JSX.Element {
     />
   )
 
-  if (standaloneScreen) return <div className="app-shell h-full text-ink"><div className="product-scroll h-full"><ScreenWorkbench copy={copy.settings.deviceProvisioning} standalone /></div></div>
+  if (standaloneScreen) return <div className="app-shell native-workstation h-full text-ink"><div className="product-scroll h-full"><ScreenWorkbench copy={copy.settings.deviceProvisioning} standalone /></div></div>
 
   return (
     <div className="app-shell native-workstation flex h-full flex-col text-ink">

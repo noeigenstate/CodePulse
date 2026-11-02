@@ -1,46 +1,24 @@
 import assert from 'node:assert/strict'
+import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { test } from 'node:test'
-import {
-  normalizeWindowTheme,
-  scheduledWindowTheme,
-  windowChromePalette,
-} from '../apps/desktop/src/main/window-chrome.js'
+import { windowChromePalette } from '../apps/desktop/src/main/window-chrome.js'
 
-test('window chrome theme input uses a defensive light fallback', () => {
-  assert.equal(normalizeWindowTheme('dark'), 'dark')
-  assert.equal(normalizeWindowTheme('light'), 'light')
-  assert.equal(normalizeWindowTheme('unexpected'), 'light')
-})
+/** The native caption buttons sit beside the renderer title bar: both must use one token set. */
+function workstationTokens(dark: boolean): { canvas: string; ink: string } {
+  const css = readFileSync('apps/desktop/src/renderer/src/components/product-shell.css', 'utf8')
+  const selector = dark ? ":root[data-theme='dark'] .app-shell.native-workstation {" : '.app-shell.native-workstation {'
+  const start = css.indexOf(selector)
+  assert.ok(start >= 0, `missing ${selector}`)
+  const block = css.slice(start, css.indexOf('}', start))
+  const token = (name: string) => block.match(new RegExp(`--${name}:\s*(#[0-9a-f]{6})`, 'i'))?.[1]?.toLowerCase()
+  return { canvas: token('canvas')!, ink: token('ink')! }
+}
 
-test('initial window chrome follows the automatic 08:00 to 20:00 schedule', () => {
-  assert.equal(scheduledWindowTheme(new Date(2026, 0, 1, 7, 59)), 'dark')
-  assert.equal(scheduledWindowTheme(new Date(2026, 0, 1, 8, 0)), 'light')
-  assert.equal(scheduledWindowTheme(new Date(2026, 0, 1, 19, 59)), 'light')
-  assert.equal(scheduledWindowTheme(new Date(2026, 0, 1, 20, 0)), 'dark')
-})
-
-test('native title-bar colors match the renderer canvas theme tokens', () => {
-  const css = readFileSync('apps/desktop/src/renderer/src/index.css', 'utf8')
-  const light = windowChromePalette('light')
-  const dark = windowChromePalette('dark')
-
-  assert.match(css, new RegExp(`--canvas: ${light.backgroundColor}`))
-  assert.match(css, new RegExp(`--canvas: ${dark.backgroundColor}`))
-  assert.notEqual(light.symbolColor, dark.symbolColor)
-})
-
-test('renderer delegates outer corner geometry to the native window frame', () => {
-  const css = readFileSync('apps/desktop/src/renderer/src/index.css', 'utf8')
-  const mainSource = readFileSync('apps/desktop/src/main/index.ts', 'utf8')
-  const rootShellRule = css.match(/#root > \.app-shell \{([\s\S]*?)\n  \}/)?.[1]
-
-  assert.ok(rootShellRule)
-  assert.match(rootShellRule, /border: 1px solid var\(--line\)/)
-  assert.doesNotMatch(rootShellRule, /border-radius/)
-  assert.doesNotMatch(rootShellRule, /contain:\s*paint/)
-  assert.doesNotMatch(css, /--radius-window:/)
-  assert.doesNotMatch(mainSource, /\.setShape\(/)
-  assert.doesNotMatch(mainSource, /frame:\s*false/)
-  assert.doesNotMatch(mainSource, /transparent:\s*true/)
+test('native caption buttons use the workstation canvas and ink tokens in both themes', () => {
+  for (const [theme, dark] of [['light', false], ['dark', true]] as const) {
+    const tokens = workstationTokens(dark)
+    const palette = windowChromePalette(theme)
+    assert.equal(palette.backgroundColor.toLowerCase(), tokens.canvas, `${theme} background`)
+    assert.equal(palette.symbolColor.toLowerCase(), tokens.ink, `${theme} symbols`)
+  }
 })

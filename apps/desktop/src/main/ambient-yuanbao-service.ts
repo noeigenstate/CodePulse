@@ -7,6 +7,7 @@ import type {
 } from '@codepulse/shared'
 import type { HolidayTable } from './calendar/index.js'
 import { inQuietHours } from './ambient-rules.js'
+import { deviceText, deviceSupports } from './device-text.js'
 import {
   goldCard,
   holidayCard,
@@ -77,6 +78,7 @@ const validCard = (value: unknown): value is AmbientCard => {
     card.id.length <= 400 &&
     typeof card.text === 'string' &&
     Array.from(card.text).length <= 120 &&
+    deviceSupports(deviceText(card.text)) &&
     typeof card.source === 'string' &&
     card.source.startsWith('元宝搜索 · ') &&
     typeof card.url === 'string' &&
@@ -122,8 +124,12 @@ function restore(raw: unknown, now: number): YuanbaoCache {
               id: card.id,
               kind: card.kind,
               topic: card.topic,
-              text: card.text,
-              source: card.source,
+              text: deviceSupports(card.text) ? card.text : deviceText(card.text),
+              source: deviceSupports(card.source)
+                ? card.source
+                : deviceSupports(deviceText(card.source))
+                  ? deviceText(card.source)
+                  : '元宝搜索 · 搜索结果',
               url: card.url,
               publishedAt: card.publishedAt,
               expiresAt: card.expiresAt,
@@ -514,7 +520,9 @@ export class YuanbaoSource {
           ? ''
           : job.topic === 'tools'
             ? `近 3 天没有找到 ${job.value} 的更新`
-            : '未找到可解析的数据'
+            : job.topic === 'news'
+              ? '没有可在墨水屏显示的标题'
+              : '未找到可解析的数据'
       this.recordError(job, manual, error)
       this.persist()
       return {

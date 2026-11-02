@@ -1,6 +1,7 @@
 import { createHash, createHmac } from 'node:crypto'
 import type { AmbientCard, YuanbaoConfig, YuanbaoKeyInput, YuanbaoTopic } from '@codepulse/shared'
 import type { HolidayTable } from './calendar/index.js'
+import { deviceText, deviceSupports } from './device-text.js'
 
 export const YUANBAO_TIMEOUT_MS = 8000
 export const YUANBAO_MAX_BYTES = 512000
@@ -444,8 +445,15 @@ function sourceTime(value: string, now: number, zone = 'Asia/Shanghai'): number 
   }
 }
 function cleanNumber(value: string | undefined): string {
-  if (value === undefined || !/^[+-]?\d+(?:\.\d+)?%?$/.test(value.trim())) return '—'
-  return value.trim()
+  if (value === undefined) return '—'
+  const normalized = deviceText(value)
+  if (!deviceSupports(normalized)) return ''
+  return /^[+-]?\d+(?:\.\d+)?%?$/.test(normalized) ? normalized : '—'
+}
+/** Drop a whole unrenderable field, never individual letters from its value. */
+function displayField(value: unknown): string {
+  const normalized = deviceText(webText(value))
+  return deviceSupports(normalized) ? normalized : ''
 }
 function safeUrl(value: string): string {
   try {
@@ -470,7 +478,7 @@ function makeCard(
     id,
     kind: ['weather', 'gold', 'stock'].includes(topic) ? 'life' : 'search',
     topic,
-    source: `元宝搜索 · ${page?.site || '搜索结果'}`,
+    source: `元宝搜索 · ${displayField(page?.site) || '搜索结果'}`,
     text: take(webText(body), 120),
     url: safeUrl(page?.url ?? ''),
     publishedAt,
@@ -480,20 +488,24 @@ function makeCard(
   }
 }
 function quoteChange(fields: Record<string, string>) {
+  const change = cleanNumber(fields['涨跌值'] ?? fields['涨跌额'])
+  const percent = cleanNumber(fields['涨跌幅'])
+  if (!change || !percent) return ''
+  const state = deviceText(fields['涨跌状态'])
+  const delta = Number(deviceText(fields['涨跌额'] ?? fields['涨跌值']))
   const direction =
-    fields['涨跌状态'] === 'up'
+    state === 'up'
       ? '↑'
-      : fields['涨跌状态'] === 'down'
+      : state === 'down'
         ? '↓'
-        : fields['涨跌状态'] === 'draw'
+        : state === 'draw'
           ? '→'
-          : Number(fields['涨跌额']) > 0
+          : delta > 0
             ? '↑'
-            : Number(fields['涨跌额']) < 0
+            : delta < 0
               ? '↓'
               : '→'
-  const percent = cleanNumber(fields['涨跌幅'])
-  return `${direction}${percent === '—' ? '—' : percent.replace(/^[+-]/, '') + (percent.endsWith('%') ? '' : '%')}（${cleanNumber(fields['涨跌值'] ?? fields['涨跌额'])}）`
+  return `${direction}${percent === '—' ? '—' : percent.replace(/^[+-]/, '') + (percent.endsWith('%') ? '' : '%')}（${change}）`
 }
 export function weatherCard(
   pages: YuanbaoPage[],
@@ -511,28 +523,53 @@ export function weatherCard(
     )
   for (const page of candidates) {
     const { top, blocks } = parsePassage(page.passage)
-    const day = blocks.find((block) => block['日期'] === today)
+    const day = blocks.find((block) => deviceText(block['日期']) === today)
     if (!day) continue
-    const next = blocks.find((block) => block['日期'] === tomorrow)
-    const range = (block?: Record<string, string>) =>
-      `${cleanNumber(block?.['最低温度（摄氏度）'])}–${cleanNumber(block?.['最高温度（摄氏度）'])}℃`
-    const condition = day['当天天气状态'] || day['白天天气状态'] || '—'
+    const next = blocks.find((block) => deviceText(block['日期']) === tomorrow)
+    const range = (block?: Record<string, string>) => {
+      const low = cleanNumber(block?.['最低温度（摄氏度）']),
+        high = cleanNumber(block?.['最高温度（摄氏度）'])
+      return low && high ? `${low}–${high}℃` : ''
+    }
+    const condition = displayField(day['当天天气状态'] || day['白天天气状态'] || '—')
     if (
-      condition === '—' &&
-      cleanNumber(day['最低温度（摄氏度）']) === '—' &&
-      cleanNumber(day['最高温度（摄氏度）']) === '—'
+      (!condition || condition === '—') &&
+      ['', '—'].includes(cleanNumber(day['最低温度（摄氏度）'])) &&
+      ['', '—'].includes(cleanNumber(day['最高温度（摄氏度）']))
     )
       continue
-    const wind =
+    const windFields = [
+      day['当天风向'] || day['白天风向'] || day['风向'] || top['风向'],
+      day['当天风级'] || day['白天风级'] || day['风力'] || top['风力'],
+    ].filter(Boolean)
+    const wind = windFields.every((value) => displayField(value))
+      ? windFields.map((value) => displayField(value)).join('') || '—'
+      : ''
+    const updated = sourceTime(deviceText(top['更新时间'] ?? page.date), now)
+    const published = Number.isFinite(updated) ? updated : now
+    const felt = cleanNumber(day['体感温度（摄氏度）']),
+      humidity = cleanNumber(day['湿度']),
+      air = cleanNumber(day['空气质量'])
+    const restricted = displayField(day['尾号限行'] || '—'),
+      sunset = displayField(day['日落时间'] || '—')
+    const forecast = [
+      displayField(next?.['当天天气状态'] || next?.['白天天气状态'] || '—'),
+      range(next),
+    ]
+      .filter(Boolean)
+      .join(' ')
+    const body =
       [
-        day['当天风向'] || day['白天风向'] || day['风向'] || top['风向'],
-        day['当天风级'] || day['白天风级'] || day['风力'] || top['风力'],
+        [displayField(city), '今天', condition, range(day)].filter(Boolean).join(' '),
+        felt && `体感${felt}℃`,
+        wind,
+        humidity && `湿度${humidity}%`,
+        air && `空气${air}`,
+        restricted && `限行${restricted}`,
+        sunset && `日落${sunset}`,
       ]
         .filter(Boolean)
-        .join('') || '—'
-    const updated = sourceTime(top['更新时间'] ?? page.date, now)
-    const published = Number.isFinite(updated) ? updated : now
-    const body = `${city} 今天 ${condition} ${range(day)} · 体感${cleanNumber(day['体感温度（摄氏度）'])}℃ · ${wind} · 湿度${cleanNumber(day['湿度'])}% · 空气${cleanNumber(day['空气质量'])} · 限行${day['尾号限行'] || '—'} · 日落${day['日落时间'] || '—'} ｜ 明天 ${next?.['当天天气状态'] || next?.['白天天气状态'] || '—'} ${range(next)}`
+        .join(' · ') + (forecast ? ` ｜ 明天 ${forecast}` : '')
     return makeCard(
       'weather',
       `life:weather:${city}:${today}:${Math.floor(published / 7200000)}`,
@@ -558,7 +595,9 @@ export function goldCard(
   const international = blocks.find((block) => block['价格值类型']?.includes('国际价格'))
   if (!domestic) return undefined
   const updated = sourceTime(
-    top['更新时间'] || blocks.find((block) => block['更新时间'])?.['更新时间'] || page.date,
+    deviceText(
+      top['更新时间'] || blocks.find((block) => block['更新时间'])?.['更新时间'] || page.date,
+    ),
     now,
   )
   const published = Number.isFinite(updated) ? updated : now
@@ -572,30 +611,42 @@ export function goldCard(
       parsePassage(physical.passage).blocks.find(
         (block) => block['品牌名称'] && block['价格（元）'],
       )
-    if (first) brandLine = ` · ${first['品牌名称']} ${first['价格（元）']}`
+    if (first) {
+      const name = displayField(first['品牌名称']),
+        price = displayField(first['价格（元）'])
+      if (name && price) brandLine = ` · ${name} ${price}`
+    }
   }
+  const price = cleanNumber(domestic['价格']),
+    internationalPrice = cleanNumber(international?.['价格'])
+  const body =
+    ['国内现货金', price && `${price} 元/克`, quoteChange(domestic)].filter(Boolean).join(' ') +
+    (internationalPrice ? ` · 国际 ${internationalPrice} 美元/盎司` : '') +
+    brandLine
   return makeCard(
     'gold',
     `life:gold:${Math.floor(published / 60000)}`,
-    `国内现货金 ${cleanNumber(domestic['价格'])} 元/克 ${quoteChange(domestic)} · 国际 ${cleanNumber(international?.['价格'])} 美元/盎司${brandLine}`,
+    body,
     page,
     published,
     now,
-    cleanNumber(domestic['价格']) !== '—',
+    Boolean(price && price !== '—'),
   )
 }
 export function stockCard(pages: YuanbaoPage[], symbol: string, now: number): AmbientCard {
-  const [code, market] = symbol.toLowerCase().split('.') as [string, string]
+  const normalizedSymbol = deviceText(symbol).toLowerCase()
+  const label = displayField(normalizedSymbol.toUpperCase())
+  const [code, market] = normalizedSymbol.split('.') as [string, string]
   for (const page of pages.filter((item) => item.vr && item.category === 'stock')) {
     for (const section of page.passage.split(/\n(?=#\s*股票[：:])/)) {
       const fields = parsePassage(section).top
       if (
-        fields['股票代码']?.toLowerCase() !== code ||
-        fields['股票代码前缀']?.toLowerCase() !== market
+        deviceText(fields['股票代码']).toLowerCase() !== code ||
+        deviceText(fields['股票代码前缀']).toLowerCase() !== market
       )
         continue
       const updated = sourceTime(
-        fields['更新时间'] || page.date,
+        displayField(fields['更新时间'] || page.date),
         now,
         market === 'us' ? 'America/New_York' : 'Asia/Shanghai',
       )
@@ -605,22 +656,34 @@ export function stockCard(pages: YuanbaoPage[], symbol: string, now: number): Am
         clock.day !== zonedParts(now, market === 'us' ? 'America/New_York' : 'Asia/Shanghai').day
       const clockText = Number.isFinite(updated)
         ? `${oldDay ? `${clock.month}/${clock.date} ` : ''}${String(clock.hour).padStart(2, '0')}:${String(clock.minute).padStart(2, '0')}`
-        : '—'
+        : (fields['更新时间'] || page.date) && !displayField(fields['更新时间'] || page.date)
+          ? ''
+          : '—'
+      const name = displayField(fields['股票名称'] || '—'),
+        price = cleanNumber(fields['实时股价'])
+      const change = quoteChange(fields),
+        state = displayField(fields['交易状态'] || '—')
+      const high = cleanNumber(fields['今日最高价']),
+        low = cleanNumber(fields['今日最低价'])
+      const main =
+        [name, label, price, change].filter(Boolean).join(' ') +
+        (state ? `${change ? '' : ' '}${state}` : '')
+      const bounds = [high && `高 ${high}`, low && `低 ${low}`].filter(Boolean).join(' ')
       return makeCard(
         'stock',
-        `life:stock:${symbol.toLowerCase()}:${Math.floor(published / 60000)}`,
-        `${fields['股票名称'] || '—'} ${symbol.toUpperCase()} ${cleanNumber(fields['实时股价'])} ${quoteChange(fields)}${fields['交易状态'] || '—'} · 高 ${cleanNumber(fields['今日最高价'])} 低 ${cleanNumber(fields['今日最低价'])} · ${clockText}`,
+        `life:stock:${normalizedSymbol}:${Math.floor(published / 60000)}`,
+        [main, bounds, clockText].filter(Boolean).join(' · '),
         page,
         published,
         now,
-        cleanNumber(fields['实时股价']) !== '—',
+        Boolean(price && price !== '—'),
       )
     }
   }
   return makeCard(
     'stock',
-    `life:stock:${symbol.toLowerCase()}:missing`,
-    `未找到 ${symbol.toUpperCase()} 的行情`,
+    `life:stock:${normalizedSymbol}:missing`,
+    label ? `未找到 ${label} 的行情` : '未找到对应的行情',
     undefined,
     now,
     now,
@@ -631,7 +694,7 @@ function shortened(value: string, count: number): string {
   return Array.from(value).length > count ? take(value, Math.max(0, count - 1)) + '…' : value
 }
 function toolSentence(page: YuanbaoPage): string {
-  const normalize = (value: string) => webText(value).replace(/､/g, '、')
+  const normalize = (value: string) => deviceText(webText(value))
   const heading = normalize(page.title),
     site = normalize(page.site)
   let body = normalize(page.passage)
@@ -652,7 +715,8 @@ function toolSentence(page: YuanbaoPage): string {
       .replace(/^(?:资讯详情|摘要|导读|简介|正文|详情)\s*[：:]\s*/u, '')
       .replace(/[\s|]+/g, ' ')
       .trim()
-  const meaningful = (value: string) => (value.match(/[\p{Script=Han}A-Za-z0-9]/gu) ?? []).length >= 12
+  const meaningful = (value: string) =>
+    (value.match(/[\p{Script=Han}A-Za-z0-9]/gu) ?? []).length >= 12
   return (
     body
       .split(/(?<=[。！？!?])\s*|(?<=\.)\s+/u)
@@ -670,11 +734,21 @@ function toolSentence(page: YuanbaoPage): string {
 /** A version number in a title, e.g. v2.4 or 0.80.1. */
 const TOOL_VERSION = /(?:^|[^\d.])v?\d+\.\d+(?:\.\d+)?(?![\d.])/i
 export function toolCard(pages: YuanbaoPage[], tool: string, now: number): AmbientCard | undefined {
-  const canonical = (value: string) => webText(value).replace(/\s/g, '').toLowerCase()
+  const toolName = displayField(tool)
+  if (!toolName) return undefined
+  const canonical = (value: string) => deviceText(webText(value)).replace(/\s/g, '').toLowerCase()
   const candidates = pages
+    .map((page) => ({
+      ...page,
+      title: deviceText(webText(page.title)),
+      site: displayField(page.site),
+      date: deviceText(page.date),
+    }))
     .filter(
       (page) =>
         !page.vr &&
+        deviceSupports(page.title) &&
+        deviceSupports(toolSentence(page)) &&
         Boolean(safeUrl(page.url)) &&
         canonical(page.title + page.passage).includes(canonical(tool)) &&
         /(?:\bv?\d+\.\d+(?:\.\d+)?\b|版本|release|更新|发布|changelog)/i.test(
@@ -690,13 +764,15 @@ export function toolCard(pages: YuanbaoPage[], tool: string, now: number): Ambie
   if (!page || !safeUrl(page.url)) return undefined
   const updated = sourceTime(page.date, now),
     published = Number.isFinite(updated) ? updated : now
-  const prefix = `${webText(tool)} · `
+  const prefix = `${toolName} · `
   const date = Number.isFinite(updated) ? zonedParts(updated).day.slice(5) : '日期未提供'
   const suffix = `（${shortened(page.site || '网页', 16)} · ${date}）`
   const available = 120 - Array.from(prefix + suffix).length - 1
   const title = shortened(page.title, Math.min(36, Math.max(8, Math.floor(available * 0.4))))
   const summary = toolSentence(page)
-  const sentence = summary ? shortened(summary, Math.min(60, available - Array.from(title).length)) : ''
+  const sentence = summary
+    ? shortened(summary, Math.min(60, available - Array.from(title).length))
+    : ''
   return makeCard(
     'tools',
     `search:tools:${tool.toLowerCase().replace(/\s+/g, '-')}:${hash(page.url).slice(0, 16)}`,
@@ -715,9 +791,9 @@ export function holidayCard(
   const page = pages.find((item) => {
     if (
       item.vr ||
-      !item.title.includes(String(year)) ||
-      !item.title.includes('节假日安排') ||
-      !/国务院办公厅/.test(item.title + item.passage)
+      !deviceText(item.title).includes(String(year)) ||
+      !deviceText(item.title).includes('节假日安排') ||
+      !/国务院办公厅/.test(deviceText(item.title + item.passage))
     )
       return false
     try {
@@ -727,7 +803,7 @@ export function holidayCard(
     }
   })
   if (!page) return undefined
-  const updated = sourceTime(page.date, now),
+  const updated = sourceTime(deviceText(page.date), now),
     published = Number.isFinite(updated) ? updated : now
   const parts = zonedParts(published)
   return makeCard(
@@ -741,15 +817,19 @@ export function holidayCard(
 }
 export function newsCard(pages: YuanbaoPage[], now: number): AmbientCard | undefined {
   const seen = new Set<string>()
-  const top = pages
-    .filter((page) => !page.vr && page.title && !seen.has(page.title) && seen.add(page.title))
-    .slice(0, 3)
+  const top: YuanbaoPage[] = []
+  for (const page of pages) {
+    const title = deviceText(webText(page.title))
+      .replace(/\s+--.*--.*$/, '')
+      .trim()
+    if (page.vr || !title || !deviceSupports(title) || seen.has(title)) continue
+    seen.add(title)
+    top.push({ ...page, title, site: displayField(page.site) })
+    if (top.length === 3) break
+  }
   if (!top.length) return undefined
   const body = top
-    .map(
-      (page) =>
-        `${shortened(page.title.replace(/\s+--.*--.*$/, '').trim(), 28)}（${take(page.site || '网页', 8)}）`,
-    )
+    .map((page) => `${shortened(page.title, 28)}${page.site ? `（${take(page.site, 8)}）` : ''}`)
     .join(' · ')
   return makeCard(
     'news',

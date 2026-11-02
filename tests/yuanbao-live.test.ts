@@ -194,9 +194,10 @@ test('an expired real card does not hide a newly missing quote', async () => {
 })
 test('live news excludes vertical quotes, bounds three headlines and removes the site-title footer', () => {
   const card = newsCard(pages('news'), fetchedAt)!
-  assert.equal(card.text.split(' · ').length, 3)
+  assert.equal(card.text.split(' · ').length, 2)
   assert.match(card.text, /20项领先科技,透视数智时代创新脉动（光明时政）/)
-  assert.match(card.text, /統籌兼顧“從0到1”與“從1到N”/)
+  assert.match(card.text, /商品服务、实体云端/)
+  assert.doesNotMatch(card.text, /統|籌|顧|從|與|時|評|觀|點/)
   assert.doesNotMatch(card.text, /TCL|腾讯自选股|--觀點|--人民網/)
   assert.ok(Array.from(card.text).length <= 120)
 })

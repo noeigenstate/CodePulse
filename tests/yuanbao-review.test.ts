@@ -282,11 +282,11 @@ test('review 5: a key change never refires checked jobs; never-checked jobs run 
   const f = setup({ key: null, config: { toolsEnabled: true, newsEnabled: true } })
   f.setKey(credentials)
   await f.source.tick()
-  assert.equal(f.queries.length, 0, 'the first tick only registers jobs and waits for inputs to settle')
+  const first = f.queries.length
+  assert.equal(first, 4, 'weather, both tools and news each run once (configured inputs are already settled)')
   f.setTime(now + 2500)
   await f.source.tick()
-  const first = f.queries.length
-  assert.equal(first, 4, 'weather, both tools and news each run once')
+  assert.equal(f.queries.length, first, 'they do not run again within their cadence')
   f.setKey({ apiKey: 'another-obviously-fake-review-key' })
   f.setTime(now + 5000)
   await f.source.tick()

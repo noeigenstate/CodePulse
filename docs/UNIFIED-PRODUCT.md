@@ -1,8 +1,10 @@
-# Unified product experimental branch
+# Unified CodePulse product
 
-`codex/unified-product` targets `noeigenstate/CodePulse`. It starts from upstream
-1.4.11 plus the unified-host fixes and incorporates the existing HUD presentation
-and unpublished product navigation/desk-content work. No merge to main is implied.
+`main` in `noeigenstate/CodePulse` is the product development/publication target
+(authorized 2026-11-02). Desktop, HUD and firmware share this root repository.
+The earlier integration branch was `codex/unified-product`, based on upstream
+1.4.11. Dated verification/migration entries below describe their original scope;
+they are not current restrictions on publishing to main. See [REPOSITORY.md](REPOSITORY.md).
 
 ## Ownership and build
 

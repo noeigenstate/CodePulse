@@ -1,9 +1,9 @@
 name: Verify unified product
 on:
   push:
-    branches: [codex/unified-product]
+    branches: [main, codex/unified-product]
   pull_request:
-    branches: [codex/unified-product]
+    branches: [main, codex/unified-product]
   workflow_dispatch:
 permissions:
   contents: read

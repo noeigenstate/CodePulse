@@ -41,6 +41,7 @@ export function createInitialRuntimeState(agentType: AgentType): AgentRuntimeSta
     needUserInput: false,
     lastEventAt: 0,
     unread: false,
+    taskHidden: true,
   }
 }
 
@@ -79,10 +80,13 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
   const tokenOnlyQuotaRefresh = event.internal?.quotaRefresh === true
   const deferSynchronizedTurnIdentity =
     !tokenOnlyQuotaRefresh && event.internal?.sessionSync === true && event.turnTiming != null
+  const passiveObservation = event.eventType === 'session_start' ||
+    (event.eventType === 'token_snapshot' && event.internal?.sessionSync === true &&
+      event.internal.activityRefresh !== true)
   const next: AgentRuntimeState = {
     ...current,
     lastEventAt:
-      event.eventType === 'turn_timeout' || tokenOnlyQuotaRefresh
+      event.eventType === 'turn_timeout' || tokenOnlyQuotaRefresh || passiveObservation
         ? current.lastEventAt
         : event.timestamp,
   }
@@ -126,30 +130,23 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       next.model,
     )
   }
-  // Real activity unhides idle-pruned project cards. Pure quota refreshes do not.
-  if (!tokenOnlyQuotaRefresh) {
-    if (event.eventType !== 'token_snapshot') next.taskHidden = false
-    else if (event.internal?.sessionSync) {
-      next.taskHidden = false
-      // Disk activity while still IDLE restarts the 5-minute idle retention clock.
-      if (next.state === TurnState.IDLE) next.terminalAt = event.timestamp
-    }
-  }
+  // Admission happens only in accepted work transitions below. Session discovery,
+  // viewing, configuration and quota/context reads do not create or revive a task.
 
   switch (event.eventType) {
     case 'session_start':
       // Duplicate or delayed startup hooks must not erase an in-flight turn.
       if (isActiveState(current.state) || current.state === TurnState.TIMEOUT) break
-      next.state = TurnState.IDLE
-      next.unread = false
-      // Count idle retention from first sighting so disk-hydrated cards expire in 5 min.
-      next.terminalAt = event.timestamp
+      // Opening/resuming a native conversation is metadata, not a new turn or read receipt.
+      // Keep a prior result and its original retention timestamp intact.
+      if (current.lastEventAt === 0 && current.terminalAt == null) next.terminalAt = event.timestamp
       if (!hasContextSnapshot(event.token)) next.token = markContextStale(next.token)
       reconcileSynchronizedTimingLifecycle(current, next, event, acceptedTurnTiming)
       break
 
     case 'prompt_submit':
       next.state = TurnState.PROMPT_SUBMITTED
+      next.taskHidden = false
       // The prompt turn is the user-visible root turn. Tool/subagent events may
       // carry different turn IDs and must not replace this completion anchor.
       next.externalTurnId = event.externalTurnId
@@ -174,6 +171,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
         next.lastAssistantMessage = undefined
       }
       next.state = TurnState.THINKING
+      next.taskHidden = false
       next.needPermission = false
       next.needUserInput = false
       next.unread = false
@@ -183,6 +181,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
 
     case 'tool_start':
       next.state = TurnState.TOOL_RUNNING
+      next.taskHidden = false
       next.toolName = event.toolName
       next.toolCallCount = current.toolCallCount + 1
       next.terminalAt = undefined
@@ -192,20 +191,31 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
     case 'tool_end':
       // 回到思考状态，直到下一个信号；保持轮次存活。
       next.state = TurnState.THINKING
+      next.taskHidden = false
       next.toolName = undefined
       next.terminalAt = undefined
       next.activity = 'AI 正在生成响应'
       break
 
     case 'permission_request':
+      // Claude may follow an explicit question tool with a generic permission notification.
+      // Keep the more precise question until a tool-specific approval or actual progress arrives.
+      if (current.state === TurnState.WAITING_USER_INPUT && !event.toolName &&
+          (current.toolName === 'AskUserQuestion' || current.toolName === 'request_user_input')) break
+      next.needUserInput = false
+      next.toolName = event.toolName
       next.state = TurnState.WAITING_PERMISSION
+      next.taskHidden = false
       next.needPermission = true
       next.terminalAt = undefined
       next.activity = event.message ?? describeTool(event) ?? '等待用户授权'
       break
 
     case 'user_input_required':
+      next.needPermission = false
+      next.toolName = event.toolName
       next.state = TurnState.WAITING_USER_INPUT
+      next.taskHidden = false
       next.needUserInput = true
       next.terminalAt = undefined
       next.activity = event.message ?? '等待用户继续输入'
@@ -217,6 +227,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
       // timeout states with a misleading successful completion.
       if (!isActiveState(current.state) || isForeignTurnEvent(current, event)) break
       next.state = TurnState.DONE
+      next.taskHidden = false
       next.turnStartedAt = undefined
       next.turnTiming = completeTurnTiming(current, acceptedTurnTiming, event.timestamp)
       next.needPermission = false
@@ -231,6 +242,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
     case 'turn_error':
       if (isForeignTurnEvent(current, event)) break
       next.state = TurnState.ERROR
+      next.taskHidden = false
       next.turnStartedAt = undefined
       next.turnTiming = completeTurnTiming(current, acceptedTurnTiming, event.timestamp)
       next.terminalAt = event.timestamp
@@ -241,6 +253,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
     case 'turn_cancelled':
       if (isForeignTurnEvent(current, event)) break
       next.state = TurnState.CANCELLED
+      next.taskHidden = false
       next.turnStartedAt = undefined
       next.turnTiming = completeTurnTiming(current, acceptedTurnTiming, event.timestamp)
       next.needPermission = false
@@ -253,6 +266,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
 
     case 'turn_timeout':
       next.state = TurnState.TIMEOUT
+      next.taskHidden = false
       next.turnStartedAt = undefined
       next.turnTiming = completeTurnTiming(current, acceptedTurnTiming, event.timestamp)
       next.needPermission = false
@@ -266,6 +280,7 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
     case 'usage_limited':
       if (isForeignTurnEvent(current, event)) break
       next.state = TurnState.USAGE_LIMITED
+      next.taskHidden = false
       next.turnStartedAt = undefined
       next.turnTiming = completeTurnTiming(current, acceptedTurnTiming, event.timestamp)
       next.needPermission = false
@@ -285,6 +300,12 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
 
     case 'session_end':
       if (isForeignTurnEvent(current, event)) break
+      if (current.taskHidden) {
+        // Closing a merely browsed transport cannot complete or refresh unseen work.
+        next.lastEventAt = current.lastEventAt
+        if (!hasContextSnapshot(event.token)) next.token = markContextStale(next.token)
+        break
+      }
       // Closing the transport is not acknowledgement of its last result.
       const preserveUnreadResult =
         current.unread &&
@@ -644,8 +665,8 @@ function completeTurnTiming(
 /**
  * Reconciles a trusted local-session timing snapshot with the visible lifecycle.
  *
- * Session hydration intentionally begins as `IDLE` so merely opening a CLI does
- * not look like work. When the CLI's own session data says a turn is active,
+ * Session discovery stays hidden and idle until confirmed work, so opening or
+ * browsing a native conversation does not create a task. When the CLI's own session data says a turn is active,
  * however, the card must be restored as active and must not enter idle pruning.
  * Conversely, a newly observed native completion closes a currently active card
  * without overriding a more specific hook terminal result such as `ERROR`.
@@ -665,6 +686,14 @@ function reconcileSynchronizedTimingLifecycle(
   if (event.internal?.sessionSync !== true || !timing) return
 
   if (timing.state === 'active') {
+    // Cold discovery of an abandoned persisted start is not current work. A recent
+    // native start or a later measured execution change can restore missed hooks.
+    const nativeStart = timing.startedAt ?? timing.observedAt
+    const discoveryAge = event.timestamp - nativeStart
+    if (event.source === 'codex' && next.taskHidden && event.internal.activityRefresh !== true &&
+        (discoveryAge < -5_000 || discoveryAge > 10 * 60_000)) return
+    next.taskHidden = false
+    if (next.lastEventAt === 0) next.lastEventAt = Math.min(event.timestamp, timing.observedAt)
     if (!isActiveState(next.state)) {
       next.state = TurnState.PROMPT_SUBMITTED
       next.toolCallCount = 0

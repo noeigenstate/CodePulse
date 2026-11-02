@@ -55,9 +55,9 @@ test('locale toggle switches between Chinese and English labels', () => {
   assert.equal(nextLocale('en'), 'zh')
   assert.equal(overallLabel('running', 'en'), 'Running')
   assert.equal(overallLabel('limited', 'en'), 'Usage limit')
-  assert.equal(turnStateLabel(TurnState.USAGE_LIMITED, 'zh'), '已达用量上限，任务暂时停止')
+  assert.equal(turnStateLabel(TurnState.USAGE_LIMITED, 'zh'), '额度受限')
   assert.equal(turnStateLabel(TurnState.DONE, 'en'), 'Done')
-  assert.equal(turnStateLabel(TurnState.USAGE_LIMITED, 'en'), 'Usage limit reached, paused')
+  assert.equal(turnStateLabel(TurnState.USAGE_LIMITED, 'en'), 'Usage limited')
 })
 
 test('project acknowledgement labels distinguish live attention from completion', () => {

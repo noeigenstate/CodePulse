@@ -58,7 +58,9 @@ test('retained hub source remains available after canonical expiry', () => {
   const hub=new StatusHub(), projection=new HudProjection()
   hub.setPresentationRetention((agent,time)=>projection.shouldRetain(agent,time))
   hub.ingest(normalizeEvent({source:'codex',eventType:'session_start',externalSessionId:'idle',workspacePath:'/private/project',timestamp:now}))
-  // Trigger the real pruning path, not just the read projection.
+  hub.ingest(normalizeEvent({source:'codex',eventType:'prompt_submit',externalSessionId:'idle',workspacePath:'/private/project',timestamp:now}))
+  hub.ingest(normalizeEvent({source:'codex',eventType:'session_end',externalSessionId:'idle',workspacePath:'/private/project',timestamp:now}))
+  // Trigger the real pruning path for work that became idle, not a browsing-only session.
   ;(hub as unknown as { tick(time:number):void }).tick(now+5*60_000)
   assert.equal(hub.snapshot(now+5*60_000).agents.length,0)
   // No second data store: the same canonical row is retained for presentation.

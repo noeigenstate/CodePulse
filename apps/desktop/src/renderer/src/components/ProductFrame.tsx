@@ -80,7 +80,7 @@ export function attentionCount(snapshot: StatusSnapshot): number {
   return snapshot.agents.filter(a => !a.taskHidden && (a.needPermission || a.needUserInput ||
     ['WAITING_PERMISSION','WAITING_USER_INPUT','ERROR','TIMEOUT','USAGE_LIMITED'].includes(a.state) || (a.state === 'DONE' && a.unread))).length
 }
-export function ProductFrame({ product, locale, snapshot, children }: {
+export function ProductFrame({ product, locale, onLocale, snapshot, children }: {
   product: ProductNavigation; locale: string; onLocale?: () => void; snapshot: StatusSnapshot; children: ReactNode
 }): JSX.Element {
   const zh = locale === 'zh', { view, focusMode } = product
@@ -100,9 +100,16 @@ export function ProductFrame({ product, locale, snapshot, children }: {
         <button type="button" data-view="usage" aria-label={zh ? '用量统计' : 'Usage'} aria-current={view === 'usage' ? 'page' : undefined} onClick={() => void product.navigate('usage')}>
           <ProductIcon name="usage"/><span>{zh ? '用量统计' : 'Usage'}</span>
         </button>
-        <button type="button" data-view="settings" aria-label={zh ? '设置' : 'Settings'} aria-current={view === 'settings' ? 'page' : undefined} onClick={() => void product.navigate('settings')}>
-          <ProductIcon name="settings"/><span>{zh ? '设置' : 'Settings'}</span>
-        </button>
+        <div className="product-settings-row">
+          <button type="button" data-view="settings" aria-label={zh ? '设置' : 'Settings'} aria-current={view === 'settings' ? 'page' : undefined} onClick={() => void product.navigate('settings')}>
+            <ProductIcon name="settings"/><span>{zh ? '设置' : 'Settings'}</span>
+          </button>
+          <button type="button" className="product-language-toggle" onClick={onLocale} disabled={!onLocale}
+            aria-label={zh ? 'Switch to English' : '切换为中文'}
+            title={zh ? 'Switch to English / 切换为英文' : '切换为中文 / Switch to Chinese'}>
+            <span lang="zh-CN" data-active={zh}>中</span><span aria-hidden="true">/</span><span lang="en" data-active={!zh}>EN</span>
+          </button>
+        </div>
         <small>{zh ? '本地服务 · 共用数据' : 'Local service · shared data'}</small></div>
     </aside>
     <div className="product-main">

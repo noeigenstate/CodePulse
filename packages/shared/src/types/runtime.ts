@@ -70,7 +70,7 @@ export interface AgentRuntimeState {
   lastEventAt: number
   /** Epoch milliseconds when the current terminal state was entered. */
   terminalAt?: number
-  /** True when the task row has expired but retained account-level quota data remains. */
+  /** Hidden until confirmed work, or after task expiry; account quota data may remain. */
   taskHidden?: boolean
   /** 最近的终结结果是否仍未被用户确认（未读）。 */
   unread: boolean

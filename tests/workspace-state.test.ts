@@ -1308,7 +1308,7 @@ test('StatusHub removes idle projects after five minutes', () => {
   hub.ingest({
     id: 'start',
     source: 'claude_code',
-    eventType: 'session_start',
+    eventType: 'prompt_submit',
     externalSessionId: 'session-a',
     cwd: 'E:/project/a',
     timestamp: startedAt,
@@ -1357,7 +1357,12 @@ test('StatusHub idle retention is not extended by quota-only sessionSync snapsho
     internal: { sessionSync: true },
   })
 
-  // Idle clock starts at last activity (token at +100). Quota-only must not extend it.
+  // Retention applies to real work that became idle, not a session merely opened.
+  hub.ingest({id:'idle-real-prompt',source:'codex',eventType:'prompt_submit',
+    externalSessionId:'session-idle',cwd:'E:/project/idle-card',timestamp:startedAt})
+  hub.ingest({id:'idle-real-end',source:'codex',eventType:'session_end',
+    externalSessionId:'session-idle',cwd:'E:/project/idle-card',timestamp:startedAt+100})
+  // Quota-only data must not extend that real idle transition's clock.
   const idleAnchor = startedAt + 100
   hub.ingest({
     id: 'quota-tick',
@@ -2490,6 +2495,8 @@ test('StatusHub isolates Codex quota when the authenticated account changes', ()
   const firstReset = Math.floor(Date.now() / 1000) + 86_400
   const secondReset = firstReset + 60
 
+  hub.ingest({id:'live-session-prompt',source:'codex',eventType:'prompt_submit',
+    externalSessionId:'live-session',cwd:'E:/project/live',timestamp:99})
   hub.ingest({
     id: 'old-account-quota',
     source: 'codex',

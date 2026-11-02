@@ -12,7 +12,18 @@ export function isSourceProblem(text: string | undefined): boolean {
   return Boolean(value) && !NEUTRAL.test(value)
 }
 
-export type AmbientCategory = 'concept' | 'prompt' | 'pet' | 'calendar' | 'news' | 'social' | 'local'
+export type AmbientCategory =
+  | 'concept'
+  | 'prompt'
+  | 'pet'
+  | 'calendar'
+  | 'news'
+  | 'social'
+  | 'local'
+  | 'life'
+  | 'tools'
+  | 'holiday'
+  | 'headlines'
 
 /** The error to show inside a category, or ''. Only enabled online sources can have one. */
 export function categoryProblem(
@@ -27,9 +38,28 @@ export function categoryProblem(
   return ''
 }
 
-const KINDS: Partial<Record<AmbientCategory, AmbientCard['kind'][]>> = {
-  news: ['news'],
-  social: ['x', 'meme'],
+/** Which category row a card belongs to; 元宝搜索 cards split by their topic. */
+export function cardCategory(card: Pick<AmbientCard, 'kind' | 'topic'>): AmbientCategory | undefined {
+  switch (card.kind) {
+    case 'concept':
+    case 'prompt':
+    case 'pet':
+    case 'calendar':
+    case 'news':
+      return card.kind
+    case 'x':
+    case 'meme':
+      return 'social'
+    case 'image':
+    case 'note':
+      return 'local'
+    case 'life':
+      return 'life'
+    case 'search':
+      return card.topic === 'tools' ? 'tools' : card.topic === 'holiday' ? 'holiday' : card.topic === 'news' ? 'headlines' : undefined
+    default:
+      return undefined
+  }
 }
 
 /**
@@ -42,8 +72,7 @@ export function refreshSummary(
   after: AmbientCard[],
   problem: string,
 ): string {
-  const kinds = KINDS[category] ?? []
-  const added = after.filter((card) => kinds.includes(card.kind) && !before.has(card.id)).length
+  const added = after.filter((card) => cardCategory(card) === category && !before.has(card.id)).length
   const found = added > 0 ? `找到 ${added} 条新内容` : '没有新内容'
   return problem ? `${found}；${problem}` : found
 }

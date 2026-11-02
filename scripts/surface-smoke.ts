@@ -532,7 +532,45 @@ app.whenReady().then(async()=>{
     // The primary button is aria-disabled until a card is selected and the screen is online.
     const showTemp=async()=>{await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-temp button')?.getAttribute('aria-disabled')==='false'&&Boolean(document.querySelector('.ambient-item[aria-pressed=true]'))`),'temporary display is available');await button(main,TEMP)}
     const previewReady=()=>until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .device-preview')?.getAttribute('data-render-state')==='ready'`),'ambient preview renderer')
-    assert.deepEqual(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ambient-catlist [data-cat]')).map(b=>b.querySelector('span').textContent)`), ['概念卡','思考实验','像素宠物','日历','科技热议','X 与 meme','我的图片与便签'], 'category order')
+    assert.deepEqual(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ambient-catlist [data-cat]')).map(b=>b.querySelector('span').textContent)`), ['概念卡','思考实验','像素宠物','日历','科技热议','X 与 meme','我的图片与便签','生活卡','工具更新','假日公告','今日要闻'], 'category order')
+    // 元宝搜索 rows: grouped under one label, inert without a saved key, samples tagged 示例, key fields never keep a key.
+    const setField=(selector:string,value:string)=>main!.webContents.executeJavaScript(`(()=>{const f=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(f,${JSON.stringify(value)});f.dispatchEvent(new Event('input',{bubbles:true}))})()`)
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.ambient-group-label')?.textContent?.startsWith('元宝搜索')`),true,'the four rows sit under one 元宝搜索 label')
+    assert.equal(await main.webContents.executeJavaScript(`(()=>{const b=document.querySelector('.ambient-group-label .info-tip');return b?document.getElementById(b.getAttribute('aria-describedby')).textContent:''})()`),'先在元宝搜索设置里填写密钥','without a key the reason is a focusable InfoTip')
+    const yuanbaoBefore=JSON.stringify(ambient.snapshot().config)
+    for (const id of ['life','tools','holiday','headlines']) {
+      assert.equal(await main.webContents.executeJavaScript(`document.querySelector('[data-rule=${id}] .ambient-switch')?.getAttribute('aria-disabled')`),'true',id+' switch is inert without a key')
+      await click(main,`[data-rule=${id}] .ambient-switch`)
+    }
+    await wait(700)
+    assert.equal(JSON.stringify(ambient.snapshot().config),yuanbaoBefore,'inert switches change nothing')
+    await category('life')
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.ambient-items [data-sample]').length`),3,'life offers weather, gold and stock samples while it has no card')
+    if (await main.webContents.executeJavaScript(`typeof window.codepulse.previewYuanbaoSample==='function'`)) {
+      await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .device-preview-tag')?.textContent==='示例'`),'a sample preview is tagged 示例')
+    }
+    await openSettings()
+    assert.equal(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ambient-settings .ambient-group input[type=checkbox]')).every(b=>b.disabled||b.closest('label').textContent.includes('附品牌'))`),true,'sub-feature switches wait for a key too')
+    await setField('.ambient-settings input[placeholder="00700.hk"]','bad')
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.ambient-settings .ambient-field-error')?.textContent`),'格式：00700.hk','an invalid symbol shows the format inline')
+    await setField('.ambient-settings input[placeholder="00700.hk"]','00700.hk, 600519.sh')
+    assert.equal(await main.webContents.executeJavaScript(`Boolean(document.querySelector('.ambient-settings .ambient-field-error'))`),false)
+    await category('holiday')
+    await category('social')
+    await click(main,'.ambient-yuanbao > summary')
+    const keyForm=await main.webContents.executeJavaScript(`(()=>{const f=document.querySelector('.ambient-yuanbao-keys');const inputs=Array.from(f.querySelectorAll('input'));return {types:inputs.map(i=>i.type),autocomplete:inputs.map(i=>i.autocomplete),placeholders:inputs.map(i=>i.placeholder),save:f.querySelector('button[type=submit]').disabled,buttons:Array.from(f.querySelectorAll('button')).map(b=>[b.textContent,b.disabled])}})()`) as {types:string[];autocomplete:string[];placeholders:string[];save:boolean;buttons:[string,boolean][]}
+    assert.deepEqual(keyForm.types,['password','password'],'SecretId and SecretKey are password fields')
+    assert.ok(keyForm.autocomplete.every(v=>v==='off')&&keyForm.placeholders.every(v=>v===''),'without a saved key nothing claims 已保存')
+    assert.deepEqual(keyForm.buttons,[['保存',true],['清除',true],['测试连接',true]],'save, clear and test wait for input or a saved key')
+    await click(main,'.ambient-yuanbao .page-segmented button:nth-child(2)')
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.ambient-yuanbao-keys input[type=password]').length`),1,'API Key mode has one field')
+    // A fictitious key submits once and is gone from the page immediately, whatever the host answers.
+    await setField('.ambient-yuanbao-keys input[type=password]','AKIDEXAMPLE-fictitious')
+    await button(main,'保存')
+    assert.equal(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ambient-yuanbao-keys input')).every(i=>i.value==='')`),true,'the key field is emptied on save')
+    await wait(400)
+    assert.equal(await main.webContents.executeJavaScript(`document.body.innerText.includes('AKIDEXAMPLE-fictitious')||document.body.innerHTML.includes('AKIDEXAMPLE-fictitious')`),false,'the key is not left anywhere in the page')
+    await click(main,'.ambient-yuanbao > summary')
     for (const gone of ['保存推送设置','预览画面','当前目标画面','规则修改后立即保存','图片拖进此页即可导入','内容预览','400 × 300','仅供预览','预览说明','2 倍检查']) assert.equal(await main.webContents.executeJavaScript(`document.body.innerText.includes(${JSON.stringify(gone)})`), false, 'removed copy is gone: '+gone)
     assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.ambient-panel select[aria-label="选择内容"]')`), null, 'no item dropdown')
     // The social row switch is the existing xEnabled / memeEnabled rule pair.

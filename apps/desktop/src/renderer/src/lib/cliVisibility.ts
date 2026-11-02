@@ -6,20 +6,24 @@ import type { CliToolType } from './dashboardSettings.js'
  * tool that is switched off; they never turn a tool on in a surface.
  */
 
-/** New HUD tool map with master-off tools cleared, or null when nothing needs to change. */
+/**
+ * Patch for the HUD tool map: only the tools that are on in the HUD and off in Settings, each
+ * `false`. Never a full map, so a stale copy cannot switch anything back on (main merges per key).
+ * Null when nothing needs to change.
+ */
 export function hudToolsAfterMasterOff(
   hudTools: Record<HudToolKey, boolean>,
   visible: Record<CliToolType, boolean>,
-): Record<HudToolKey, boolean> | null {
+): Partial<Record<HudToolKey, false>> | null {
+  const patch: Partial<Record<HudToolKey, false>> = {}
   let changed = false
-  const next = { ...hudTools }
   for (const tool of Object.keys(hudTools) as HudToolKey[]) {
     if (hudTools[tool] && visible[tool] === false) {
-      next[tool] = false
+      patch[tool] = false
       changed = true
     }
   }
-  return changed ? next : null
+  return changed ? patch : null
 }
 
 /** New device display config without master-off agents, or null when nothing needs to change. */

@@ -9,7 +9,14 @@ const visible = (off: string[]) =>
 
 test('HUD tools switched off in Settings are cleared and nothing else changes', () => {
   const next = hudToolsAfterMasterOff(DEFAULT_HUD_SETTINGS.visibleTools, visible(['grok', 'opencode']))
-  assert.deepEqual(next, { ...DEFAULT_HUD_SETTINGS.visibleTools, grok: false })
+  assert.deepEqual(next, { grok: false }, 'the patch names only the tool that was switched off')
+})
+
+test('the HUD patch never carries a full map, so a stale HUD state cannot be re-enabled', () => {
+  const patch = hudToolsAfterMasterOff(DEFAULT_HUD_SETTINGS.visibleTools, visible(['codex', 'kimi']))
+  assert.deepEqual(patch, { codex: false, kimi: false })
+  assert.ok(Object.values(patch!).every((value) => value === false))
+  assert.equal(Object.keys(patch!).length, 2)
 })
 
 test('HUD tools are untouched when every enabled tool is still visible', () => {

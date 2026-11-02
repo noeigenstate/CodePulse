@@ -16,7 +16,7 @@ import { planesToRgba } from '../device-preview/renderer.mjs'
 import './ambient-panel.css'
 import { useScreenTarget } from '../lib/useScreenTarget.js'
 import { useInkStatus } from '../lib/useInkStatus.js'
-import { inkPlanChip } from '../lib/inkStatusText.js'
+import { inkPlanChip, showingText } from '../lib/inkStatusText.js'
 
 /** Tail of the calendar info line: the break going on, or how far away the next one is. */
 function nextHolidayText(next: CalendarNextHoliday | undefined): string {
@@ -725,8 +725,8 @@ export function AmbientPanel({
           <fieldset className="ambient-rules" disabled={!snapshot}>
             <p className="page-muted ambient-status" role="status">
               <span>
-                {snapshot?.activeId
-                  ? '内容已设为目标画面'
+                {ink && ink.showing.kind !== 'work'
+                  ? showingText(ink, locale)
                   : snapshot?.pausedReason || '等待下一次展示机会'}
               </span>
               <span>

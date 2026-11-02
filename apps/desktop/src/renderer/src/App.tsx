@@ -25,6 +25,7 @@ import {
   formatTokenPercent,
   type AgentRuntimeState,
   type AgentType,
+  type HudToolKey,
   type TokenPayload,
   type UpdateDownloadProgress,
   type UpdateInfo,
@@ -250,7 +251,8 @@ export function App(): JSX.Element {
     surfaceQueue.current = surfaceQueue.current.then(async () => {
       try {
         const hud = hudToolsAfterMasterOff(productRef.current.shell.hudSettings.visibleTools, visible)
-        if (hud) await productRef.current.setHudSettings({ visibleTools: hud })
+        // A partial map on purpose: main merges per key, so only these tools change.
+        if (hud) await productRef.current.setHudSettings({ visibleTools: hud as Record<HudToolKey, boolean> })
         const display = displayAfterMasterOff((await window.codepulse.getDeviceDisplay()).config, visible)
         if (display) await window.codepulse.setDeviceDisplay(display)
       } catch {

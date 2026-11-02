@@ -81,3 +81,45 @@ test('duplicates that share a parent folder need a longer tail', () => {
 test('duplicates with empty paths keep their plain name', () => {
   assert.deepEqual(projectLabels([{ name: 'x', path: '' }, { name: 'x', path: '' }]), ['x', 'x'])
 })
+
+test('masks flag-style passwords, short names and curl credentials', () => {
+  assert.equal(redactSecrets('mysql --password hunter2 --host db'), `mysql --password ${MASK} --host db`)
+  assert.equal(redactSecrets('run --token abc123 now'), `run --token ${MASK} now`)
+  assert.equal(redactSecrets('pass=hunter2 next'), `pass=${MASK} next`)
+  assert.equal(redactSecrets('pw: hunter2'), `pw: ${MASK}`)
+  assert.equal(redactSecrets('curl -u admin:hunter2 https://host/api'), `curl -u admin:${MASK} https://host/api`)
+  assert.equal(redactSecrets('curl --user admin:hunter2 https://host'), `curl --user admin:${MASK} https://host`)
+  assert.equal(redactSecrets('curl -u "admin:hunter2" https://host'), `curl -u "admin:${MASK}" https://host`)
+})
+
+test('masks Chinese password phrases without a colon and non-ASCII values', () => {
+  assert.equal(redactSecrets('密码 hunter2 别外传'), `密码 ${MASK} 别外传`)
+  assert.equal(redactSecrets('我的密码hunter2'), `我的密码${MASK}`)
+  assert.equal(redactSecrets('口令：我的生日1990，记住'), `口令：${MASK}，记住`)
+  assert.equal(redactSecrets('密码是我家狗的名字。下一句'), `密码是${MASK}。下一句`)
+})
+
+test('short secret words do not hide ordinary words', () => {
+  assert.equal(redactSecrets('bypass: true and compass=north'), 'bypass: true and compass=north')
+  assert.equal(redactSecrets('--port 8080 -p 9000'), '--port 8080 -p 9000')
+})
+
+test('redaction stays linear on pathological input', () => {
+  for (const unit of ['key.', 'a1-', 'password:"', 'token=', 'x'.repeat(3)]) {
+    const text = unit.repeat(Math.ceil(20000 / unit.length)).slice(0, 20000)
+    const started = performance.now()
+    redactSecrets(text)
+    const elapsed = performance.now() - started
+    assert.ok(elapsed < 50, `${JSON.stringify(unit)} x20000 chars took ${elapsed.toFixed(1)}ms`)
+  }
+})
+
+test('titles are cut before masking and never keep half a key', () => {
+  const key = 'sk-' + 'a1b2c3d4'.repeat(8)
+  const title = `${'word '.repeat(31)}${key} tail`
+  const shown = sessionTitle('p', title, true, copy)
+  assert.ok(!shown.includes('sk-a1b2'), shown)
+  assert.ok(shown.endsWith('…'))
+  const huge = sessionTitle('p', 'key.'.repeat(5000), true, copy)
+  assert.ok(huge.length <= 'p · '.length + 161)
+})

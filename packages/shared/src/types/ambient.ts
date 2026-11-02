@@ -126,11 +126,78 @@ export const DEFAULT_AMBIENT: AmbientConfig = {
   quietEnd: 8,
   idleOnly: true,
 }
+/** 元宝搜索 (Tencent Cloud WSA SearchPro) — features that feed desk cards. */
+export type YuanbaoTopic = 'weather' | 'gold' | 'stock' | 'tools' | 'holiday' | 'news'
+export interface YuanbaoConfig {
+  /** Master switch; nothing is requested without a saved key either. */
+  enabled: boolean
+  weatherEnabled: boolean
+  city: string
+  goldEnabled: boolean
+  /** Adds the first brand price (e.g. 周大福) as a second line. */
+  goldBrand: boolean
+  stocksEnabled: boolean
+  /** Up to 3, lower-case `<code>.<market>`: `00700.hk`, `600519.sh`, `000001.sz`, `aapl.us`. */
+  stocks: string[]
+  toolsEnabled: boolean
+  /** Up to 4 tool names searched for release news. */
+  tools: string[]
+  holidayEnabled: boolean
+  newsEnabled: boolean
+  newsTopic: string
+  /** Requests per local day across all features, 1–200. */
+  dailyRequestLimit: number
+}
+export const DEFAULT_YUANBAO: YuanbaoConfig = {
+  enabled: false,
+  weatherEnabled: true,
+  city: '北京',
+  goldEnabled: true,
+  goldBrand: true,
+  stocksEnabled: true,
+  stocks: ['00700.hk'],
+  toolsEnabled: true,
+  tools: ['Claude Code', 'Codex'],
+  holidayEnabled: true,
+  newsEnabled: false,
+  newsTopic: '科技',
+  dailyRequestLimit: 48,
+}
+export type YuanbaoAuthMode = 'tc3' | 'apikey'
+/** Renderer → main only; the main process never sends a key back. Empty strings clear it. */
+export interface YuanbaoKeyInput {
+  secretId?: string
+  secretKey?: string
+  apiKey?: string
+}
+export interface YuanbaoStatus {
+  hasKey: boolean
+  authMode: YuanbaoAuthMode | null
+  requestsToday: number
+  limit: number
+  lastLatencyMs: number | null
+  lastError: string
+  lastCheckedAt: number
+  /** Edition reported by the API: 'lite' | 'standard' | 'flagship'. */
+  edition: string | null
+  /** Site names behind the current cards, e.g. 气象在线、金投网、腾讯自选股. */
+  sources: string[]
+}
+export interface YuanbaoTestResult {
+  ok: boolean
+  latencyMs: number | null
+  edition: string | null
+  /** The parsed weather line on success. */
+  cardText: string
+  error: string
+}
 export interface AmbientCard {
   /** Optional production-rendered checklist; old firmware uses the text fallback. */
   items?: { title: string; meta: string; overdue: boolean }[]
   id: string
-  kind: 'x' | 'meme' | 'concept' | 'prompt' | 'note' | 'image' | 'news' | 'pet' | 'calendar'
+  kind: 'x' | 'meme' | 'concept' | 'prompt' | 'note' | 'image' | 'news' | 'pet' | 'calendar' | 'life' | 'search'
+  /** 元宝搜索 cards only: which feature produced it ('life' kind: weather/gold/stock; 'search' kind: tools/holiday/news). */
+  topic?: YuanbaoTopic
   source: string
   text: string
   url: string
@@ -181,6 +248,8 @@ export interface AmbientSnapshot {
   shownToday: number
   xRequestsToday: number
   pausedReason: string
+  /** 元宝搜索 status; never contains credentials. Absent on hosts without the source. */
+  yuanbao?: YuanbaoStatus
 }
 export function normalizeAmbient(value: unknown): AmbientConfig {
   const v = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}

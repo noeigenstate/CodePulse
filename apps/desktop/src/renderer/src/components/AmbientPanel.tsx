@@ -741,7 +741,7 @@ export function AmbientPanel({
                   {flag ? ruleSwitch(flag, label) : <span className="ambient-rule-name">{label}</span>}
                   <p className="page-muted">{rule}</p>
                   {id === 'pet' && (
-                    <p className="page-muted">当前形象：{petProfile(draft.petId).name}（在左侧“像素宠物”里更换）</p>
+                    <p className="page-muted">当前形象：{petProfile(draft.petId).name}（在上方“像素宠物”里更换）</p>
                   )}
                   {id === 'social' && (
                     <div className="ambient-subrules">
@@ -877,7 +877,7 @@ export function AmbientPanel({
                 <button
                   type="button"
                   className="product-button"
-                  disabled={busy || !snapshot?.hasKey}
+                  disabled={busy || !snapshot?.hasKey || !draft.xEnabled}
                   onClick={() =>
                     void action(
                       () => window.codepulse.setAmbientKey(draft.provider, ''),

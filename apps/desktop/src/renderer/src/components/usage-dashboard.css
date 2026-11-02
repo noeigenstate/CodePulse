@@ -230,7 +230,7 @@
 .usage-tool[data-agent='opencode'] {
   --agent-accent: var(--opencode);
 }
-.usage-tool-icon {
+.usage-tool .usage-tool-icon {
   width: 36px;
   height: 36px;
   border-radius: var(--r-card);

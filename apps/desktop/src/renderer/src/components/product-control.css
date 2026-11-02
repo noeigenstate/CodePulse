@@ -78,8 +78,10 @@
 .product-config-actions p { flex-basis:100%; margin:0; color:var(--ink); font-size:13px; line-height:20px; }
 .product-config-actions p button { margin-left:12px; }
 .product-desktop-panel { min-width:0; }
-.product-console-live-stage { min-height:400px; height:560px; max-height:70vh; overflow:hidden; border:1px solid var(--line); border-radius:14px; background:var(--surface-solid); }
+.product-console-live-stage { display:flex; flex-direction:column; min-height:400px; height:560px; max-height:70vh; overflow:hidden; border:1px solid var(--line); border-radius:14px; background:var(--surface-solid); }
 .product-control button:focus-visible,.product-control summary:focus-visible,.product-control input:focus-visible,.product-control select:focus-visible { outline:2px solid var(--ink); outline-offset:4px; }
+/* The session list scrolls inside the stage; the footer strip stays reachable below it. */
+.product-console-live-stage > .flex-1 { min-height:0; }
 @media (max-width:1100px) {
   .ink-control-workspace,.product-config-grid { grid-template-columns:minmax(0,1fr); }
   .product-console-live-stage { height:480px; }

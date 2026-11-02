@@ -208,7 +208,7 @@ export class AmbientService {
       shownToday: this.history.shown,
       xRequestsToday: this.history.xRequests ?? 0,
       pausedReason:
-        (this.deps.automaticAllowed?.() === false ? '控制中当前为工作画面；仍可手动展示' : '') ||
+        (this.deps.automaticAllowed?.() === false ? '节目单当前为工作画面时段；仍可临时展示' : '') ||
         pauseReason(this.config, this.deps.status(), this.now()) ||
         (this.history.shown >= this.config.dailyLimit ? '今日展示已达上限' : '') ||
         (!this.current() &&

@@ -35,6 +35,7 @@ import { useStore } from './store.js'
 import { AgentLogo, CodexLogo } from './components/AgentLogo.js'
 import { SettingsDialog } from './components/SettingsDialog.js'
 import { UsageDashboard } from './components/UsageDashboard.js'
+import { displayAfterMasterOff, hudToolsAfterMasterOff } from './lib/cliVisibility.js'
 import {
   acknowledgeCodexTrust,
   buildAgentSetupReminder,
@@ -238,14 +239,41 @@ export function App(): JSX.Element {
     [updateDashboardSettings],
   )
 
+  // Settings › 显示的 CLI is the master switch: a tool that is off is also removed from the HUD and the
+  // e-ink display. Only ever removes; a tool is never switched on in a surface from here.
+  const productRef = useRef(product)
+  productRef.current = product
+  const visibleToolsRef = useRef(dashboardSettings.visibleTools)
+  visibleToolsRef.current = dashboardSettings.visibleTools
+  const surfaceQueue = useRef<Promise<void>>(Promise.resolve())
+  const reconcileSurfaces = useCallback((visible: DashboardSettings['visibleTools']): void => {
+    surfaceQueue.current = surfaceQueue.current.then(async () => {
+      try {
+        const hud = hudToolsAfterMasterOff(productRef.current.shell.hudSettings.visibleTools, visible)
+        if (hud) await productRef.current.setHudSettings({ visibleTools: hud })
+        const display = displayAfterMasterOff((await window.codepulse.getDeviceDisplay()).config, visible)
+        if (display) await window.codepulse.setDeviceDisplay(display)
+      } catch {
+        // The next toggle or launch reconciles again.
+      }
+    })
+  }, [])
+  const surfacesReconciled = useRef(false)
+  useEffect(() => {
+    if (!product.ready || standaloneScreen || surfacesReconciled.current) return
+    surfacesReconciled.current = true
+    reconcileSurfaces(visibleToolsRef.current)
+  }, [product.ready, standaloneScreen, reconcileSurfaces])
+
   const setToolVisibility = useCallback(
     (tool: CliToolType, visible: boolean): void => {
       updateDashboardSettings((current) => ({
         ...current,
         visibleTools: { ...current.visibleTools, [tool]: visible },
       }))
+      if (!visible) reconcileSurfaces({ ...visibleToolsRef.current, [tool]: false })
     },
-    [updateDashboardSettings],
+    [updateDashboardSettings, reconcileSurfaces],
   )
 
   const reorderPanel = useCallback(
@@ -294,15 +322,7 @@ export function App(): JSX.Element {
             active={!product.focusMode && (product.view === 'control' || product.view === 'work')}
             snapshot={snapshot}
             desktopPreview={liveConsole}
-            usagePreview={
-              <UsageDashboard
-                embedded
-                locale={locale}
-                copy={copy.usageBoard}
-                onClose={() => {}}
-                active={!product.focusMode && (product.view === 'control' || product.view === 'work') && product.target === 'desktop'}
-              />
-            }
+            cliVisibility={dashboardSettings.visibleTools}
           />
         </section>
         {product.visited.has('usage') && (
@@ -312,12 +332,12 @@ export function App(): JSX.Element {
         )}
         {product.visited.has('ambient') && (
           <section className="product-scroll" hidden={product.focusMode || product.view !== 'ambient'}>
-            <AmbientPanel active={!product.focusMode && product.view === 'ambient'} />
+            <AmbientPanel active={!product.focusMode && product.view === 'ambient'} product={product} locale={locale} />
           </section>
         )}
         {product.visited.has('assistant') && (
           <section className="product-scroll" hidden={product.focusMode || product.view !== 'assistant'}>
-            <AssistantPanel active={!product.focusMode && product.view === 'assistant'} />
+            <AssistantPanel active={!product.focusMode && product.view === 'assistant'} product={product} locale={locale} />
           </section>
         )}
         {product.visited.has('settings') && (

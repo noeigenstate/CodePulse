@@ -7,9 +7,13 @@ import type {
   DeskTask,
 } from '@codepulse/shared'
 import { recordDeskVoice, playDeskVoice, type DeskRecording } from '../lib/assistantAudio.js'
+import { PageHeader } from './PageHeader.js'
+import { formatDue } from '../lib/dueText.js'
+import { inkPlanChip } from '../lib/inkStatusText.js'
+import { useInkStatus } from '../lib/useInkStatus.js'
 import './assistant-panel.css'
 
-export function AssistantPanel({ active }: {
+export function AssistantPanel({ active, product, locale = 'zh' }: {
   active: boolean
   /** ia-refactor contract: shell state (applied playlist) and navigation to 控制 › 节目单. */
   product?: import('./ProductFrame.js').ProductNavigation
@@ -19,6 +23,12 @@ export function AssistantPanel({ active }: {
     [error, setError] = useState(''),
     [working, setWorking] = useState(false)
   const [message, setMessage] = useState('')
+  const ink = useInkStatus()
+  const online = ink?.connection === 'connected'
+  const chip = product ? inkPlanChip(product.shell.inkPlan, 'todos', ink?.connection, locale) : undefined
+  const openPlaylist = (): void => {
+    if (product) void product.navigate('control').then(() => product.selectTarget('ink'))
+  }
   const [title, setTitle] = useState(''),
     [notes, setNotes] = useState(''),
     [due, setDue] = useState(''),
@@ -184,47 +194,28 @@ export function AssistantPanel({ active }: {
     ) ?? []
   return (
     <div className="desk-assistant">
-      <header className="desk-assistant-heading">
-        <div>
-          <h1>待办与助手</h1>
-          <p role="status">{message || '记下要做的事，让提醒留在桌边。数据保存在这台电脑。'}</p>
-        </div>
-        <div className="desk-assistant-actions">
-          <button
-            disabled={!snapshot || working}
-            onClick={() =>
-              void run(async () => {
-                await window.codepulse.showDeskTasksOnInk()
-                setMessage('已设为待办目标，停留 15 分钟；工作紧急提醒优先。')
-              })
-            }
-          >
-            显示到墨水屏
-          </button>
-          <button
-            disabled={!snapshot || working}
-            onClick={() =>
-              void run(async () => {
-                await window.codepulse.openSurface('standard', 'control')
-                await window.codepulse.setPresentationTarget('ink')
-              })
-            }
-          >
-            常驻与轮播配置
-          </button>
-          <button
-            disabled={!snapshot || working}
-            onClick={() =>
-              void run(async () => {
-                await window.codepulse.hideDeskTasksOnInk()
-                setMessage('已返回工作目标画面，实体屏以设备刷新结果为准。')
-              })
-            }
-          >
-            回到工作画面
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        title="待办与助手"
+        subtitle={<span role="status">{message || '记下要做的事，让提醒留在桌边。数据保存在这台电脑。'}</span>}
+        actions={
+          <>
+            {!online && <span className="page-muted">连接设备后可临时展示</span>}
+            <button
+              type="button"
+              className="product-button"
+              disabled={!snapshot || working || !online}
+              onClick={() =>
+                void run(async () => {
+                  await window.codepulse.showDeskTasksOnInk()
+                  setMessage('已临时展示待办，10 分钟后自动回到节目单；工作紧急提醒优先。')
+                })
+              }
+            >
+              临时展示到墨水屏
+            </button>
+          </>
+        }
+      />
       {error && (
         <p className="desk-assistant-error" role="alert">
           {error}
@@ -324,7 +315,7 @@ export function AssistantPanel({ active }: {
                   </div>
                   {task.notes && <p>{task.notes}</p>}
                   <small>
-                    {task.dueAt ? new Date(task.dueAt).toLocaleString() : '未设置提醒'}
+                    {task.dueAt ? formatDue(task.dueAt, Date.now(), locale) : '未设置提醒'}
                     {task.reminderState === 'expired'
                       ? ' · 已错过提醒，待办仍保留'
                       : task.reminderState === 'delivered'
@@ -383,7 +374,6 @@ export function AssistantPanel({ active }: {
             />
             <div className="desk-assistant-actions">
               <button
-                className="primary"
                 disabled={!snapshot || working || snapshot.busy || !input.trim() || recording}
               >
                 {working || snapshot?.busy ? '正在处理…' : '交给助手'}
@@ -406,7 +396,7 @@ export function AssistantPanel({ active }: {
                 <div key={i} className="desk-draft-task">
                   <strong>{task.title}</strong>
                   <small>
-                    {task.dueAt ? new Date(task.dueAt).toLocaleString() : '仅添加待办，不设置提醒'}
+                    {task.dueAt ? formatDue(task.dueAt, Date.now(), locale) : '仅添加待办，不设置提醒'}
                   </small>
                 </div>
               ))}
@@ -426,7 +416,6 @@ export function AssistantPanel({ active }: {
               <div className="desk-assistant-actions">
                 {draft.actions.length > 0 && (
                   <button
-                    className="primary"
                     disabled={working}
                     onClick={() =>
                       void run(async () => {
@@ -560,7 +549,6 @@ export function AssistantPanel({ active }: {
               分钟的旧提醒不补报，事项仍留在列表。起止时间相同表示不设置安静时段。电脑休眠或客户端退出时无法即时提醒。
             </p>
             <button
-              className="primary"
               disabled={working || !settingsDirty}
               onClick={() =>
                 void run(async () => {
@@ -627,6 +615,15 @@ export function AssistantPanel({ active }: {
           </>
         )}
       </details>
+      <p className="page-muted desk-assistant-footer">
+        待办是否出现在墨水屏：在{' '}
+        {product ? (
+          <button type="button" className="page-link" onClick={openPlaylist}>控制 › 节目单</button>
+        ) : (
+          '控制 › 节目单'
+        )}{' '}
+        设置{chip && <span className={`page-chip ${chip.included ? 'is-on' : ''}`}>{chip.text}</span>}
+      </p>
     </div>
   )
 }

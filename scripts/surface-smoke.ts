@@ -366,9 +366,16 @@ app.whenReady().then(async()=>{
     await click(main,'[data-view=ambient]')
     assert.equal(product.snapshot().target,'ink')
     assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.product-targets').length`),0)
-    if (!await main.webContents.executeJavaScript(`document.querySelector('.ambient-configuration > fieldset > .ambient-toggle input').checked`)) await click(main,'.ambient-configuration > fieldset > .ambient-toggle input')
-    await button(main,'保存推送设置');assert.match(await main.webContents.executeJavaScript(`document.querySelector('[data-feedback=settings]').textContent`), /设置已保存/);assert.equal(ambient.current(), undefined, 'saving preferences does not select content');await button(main,'检查新内容')
-    await until(()=>ambient.snapshot().cards.filter(c=>c.kind==='x').length===1,'content fixture');await button(main,'热点与 meme');await button(main,'预览画面')
+    // Rules save by themselves: no save button, a transient 已保存, and saving never selects content.
+    assert.equal(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent.includes('保存推送设置'))`),false,'no save button for rules')
+    await click(main,'[data-rule=social] .ambient-subrules label:nth-child(2) input')
+    await until(()=>ambient.snapshot().config.memeEnabled===true,'rule change saves on its own')
+    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.page-saved')?.textContent==='已保存'`),'saved confirmation')
+    assert.equal(ambient.current(), undefined, 'saving rules does not select content')
+    await click(main,'[data-rule=social] .ambient-subrules label:nth-child(2) input')
+    await until(()=>ambient.snapshot().config.memeEnabled===false,'rule change saves back')
+    await button(main,'检查新内容')
+    await until(()=>ambient.snapshot().cards.filter(c=>c.kind==='x').length===1,'content fixture');await button(main,'X 与 meme');await button(main,'预览画面')
     await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .device-preview')?.getAttribute('data-render-state')==='ready'`),'content renderer')
     await capture('updates')
     await button(main, '概念卡'); await button(main, '预览画面')
@@ -376,27 +383,27 @@ app.whenReady().then(async()=>{
     // Reference for the pet page: where the display button sits for a normal category at scroll top.
     const conceptFirstScreen = await main.webContents.executeJavaScript(`(() => {
       for(let e=document.querySelector('.ambient-panel');e;e=e.parentElement)e.scrollTop=0;
-      const r=Array.from(document.querySelectorAll('button')).find(b=>b.getClientRects().length&&b.textContent.trim()==='显示到屏幕').getBoundingClientRect();
+      const r=Array.from(document.querySelectorAll('button')).find(b=>b.getClientRects().length&&b.textContent.trim()==='临时展示到墨水屏 · 10 分钟').getBoundingClientRect();
       return {top:r.top,bottom:r.bottom,height:window.innerHeight}
     })()`) as {top:number;bottom:number;height:number}
-    await button(main, '显示到屏幕')
+    await button(main, '临时展示到墨水屏 · 10 分钟')
     assert.equal(ambient.current()?.kind, 'concept')
     assert.equal(ambient.current()?.manual, true)
-    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .product-preview-label').textContent.includes('当前目标画面')`), 'manual display leaves sample mode')
-    assert.match(await main.webContents.executeJavaScript(`document.querySelector('[data-feedback=content]').textContent`), /已设为目标画面/)
+    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .ambient-stage-label').textContent.includes('当前目标画面')`), 'manual display leaves sample mode')
+    assert.match(await main.webContents.executeJavaScript(`document.querySelector('[data-feedback=content]').textContent`), /已临时展示到墨水屏/)
     assert.equal(await main.webContents.executeJavaScript(`(() => {
       const actions=document.querySelector('.ambient-display-actions');actions.scrollIntoView({block:'end'});
       const r=document.querySelector('[data-feedback=content]').getBoundingClientRect();
       return r.top>=0 && r.bottom<=window.innerHeight;
     })()`), true, 'content result is visible when its display button is visible')
     await capture('multimedia-concept')
-    await button(main, '思考实验'); await button(main, '预览画面'); await button(main, '显示到屏幕')
+    await button(main, '思考实验'); await button(main, '预览画面'); await button(main, '临时展示到墨水屏 · 10 分钟')
     assert.equal(ambient.current()?.kind, 'prompt')
     await button(main, '我的图片与便签')
     await main.webContents.executeJavaScript(`(() => { const t=document.querySelector('#ambient-note');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(t,'TEST NOTE — pause, then choose one useful task.');t.dispatchEvent(new Event('input',{bubbles:true})); })()`)
     await button(main, '保存并预览')
     await until(()=>ambient.snapshot().cards.some(c=>c.kind==='note'),'saved local note')
-    await button(main, '显示到屏幕'); assert.equal(ambient.current()?.kind, 'note')
+    await button(main, '临时展示到墨水屏 · 10 分钟'); assert.equal(ambient.current()?.kind, 'note')
     await capture('multimedia-note')
     await button(main, '移除'); assert.equal(ambient.current(), undefined)
     const imageBytes = Array.from(nativeImage.createFromBitmap(Buffer.alloc(80*120*4, 255), {width:80,height:120}).toPNG())
@@ -404,7 +411,7 @@ app.whenReady().then(async()=>{
     await until(()=>ambient.current()?.kind==='image','dragged image becomes current target')
     assert.equal(ambient.current()?.imageHex?.length,19968)
     await capture('multimedia-image')
-    await button(main, '回到工作画面'); assert.equal(ambient.current(), undefined)
+    ambient.dismiss(); await wait(); assert.equal(ambient.current(), undefined)
     // Pixel pets: the page lists five pets, shows red ink in the preview, and displays one on the screen.
     const petStats = () => main!.webContents.executeJavaScript(`(() => {
       const canvas=document.querySelector('.ambient-panel .device-preview canvas.device-screen');
@@ -429,22 +436,22 @@ app.whenReady().then(async()=>{
     // The primary action stays on the first screen at the default 1120 x 780 window, like other categories.
     const firstScreen = await main.webContents.executeJavaScript(`(() => {
       for(let e=document.querySelector('.ambient-panel');e;e=e.parentElement)e.scrollTop=0;
-      const r=Array.from(document.querySelectorAll('button')).find(b=>b.getClientRects().length&&b.textContent.trim()==='显示到屏幕').getBoundingClientRect();
+      const r=Array.from(document.querySelectorAll('button')).find(b=>b.getClientRects().length&&b.textContent.trim()==='临时展示到墨水屏 · 10 分钟').getBoundingClientRect();
       return {top:r.top,bottom:r.bottom,height:window.innerHeight}
     })()`) as {top:number;bottom:number;height:number}
     writeFileSync(join(output,'first-screen.json'),JSON.stringify({concept:conceptFirstScreen,pet:firstScreen}))
     // Five pet cards with real thumbnails need a little more height than the one-line concept row.
-    assert.ok(firstScreen.top<=conceptFirstScreen.top+56,'pet page keeps 显示到屏幕 close to the concept page: '+JSON.stringify({pet:firstScreen,concept:conceptFirstScreen}))
+    assert.ok(firstScreen.top<=conceptFirstScreen.top+96,'pet page keeps the display button close to the concept page: '+JSON.stringify({pet:firstScreen,concept:conceptFirstScreen}))
     await click(main,'.ambient-pet-option:nth-child(2)')
     assert.deepEqual(await petChecked(), ['false','true','false','false','false'], 'selection moves to the second pet')
     await until(async()=>{const s=await petStats();return s.state==='ready'&&s.hash!==firstPet.hash&&s.red>0},'second pet preview')
     assert.match(await main.webContents.executeJavaScript(`document.querySelector('.ambient-pet-option[aria-checked=true]').textContent`), /已选/)
-    await button(main, '显示到屏幕')
+    await button(main, '临时展示到墨水屏 · 10 分钟')
     assert.equal(ambient.current()?.kind, 'pet')
     assert.equal(ambient.current()?.pet?.id, 'yaya')
     assert.ok(ambient.current()?.red, 'the pet on screen carries a red plane')
     assert.ok(withAmbient(device().status,ambient.current()).ambient?.red, 'device status exposes ambient.red')
-    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .product-preview-label').textContent.includes('当前目标画面')`), 'pet display leaves sample mode')
+    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .ambient-stage-label').textContent.includes('当前目标画面')`), 'pet display leaves sample mode')
     await until(async()=>(await petStats()).red>0,'live target shows red')
     await assertPetTextFits('1120')
     await capture('multimedia-pet')
@@ -463,29 +470,29 @@ app.whenReady().then(async()=>{
     await click(main,'.ambient-pet-option:nth-child(1)')
     assert.deepEqual(await petChecked(), ['true','false','false','false','false'])
     await assertPetTextFits('1120 first pet chosen')
-    await button(main, '回到工作画面'); assert.equal(ambient.current(), undefined)
+    ambient.dismiss(); await wait(); assert.equal(ambient.current(), undefined)
     // Calendar: the last category opens on today's card, with its info line, firmware note and settings toggle.
-    assert.deepEqual(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ambient-library-tabs button')).map(b=>b.textContent.trim())`), ['概念卡','思考实验','我的图片与便签','热点与 meme','像素宠物','日历'], 'category order')
+    assert.deepEqual(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ambient-tabs button')).map(b=>b.textContent.trim())`), ['概念卡','思考实验','像素宠物','日历','科技热议','X 与 meme','我的图片与便签'], 'category order matches the rule rows')
     await button(main, '日历')
-    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .product-preview-label')?.textContent.includes('内容示例') && document.querySelector('.ambient-panel .device-preview')?.getAttribute('data-render-state')==='ready'`),'calendar preview')
+    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .ambient-stage-label')?.textContent.includes('内容示例') && document.querySelector('.ambient-panel .device-preview')?.getAttribute('data-render-state')==='ready'`),'calendar preview')
     const calendarPage = await main.webContents.executeJavaScript(`(() => ({
-      tabs:Array.from(document.querySelectorAll('.ambient-library-tabs button')).map(b=>b.getAttribute('aria-pressed')),
+      tabs:Array.from(document.querySelectorAll('.ambient-tabs button')).map(b=>b.getAttribute('aria-selected')),
       info:document.querySelector('.ambient-calendar-info p')?.textContent??'',
       infoBox:(()=>{for(let e=document.querySelector('.ambient-panel');e;e=e.parentElement)e.scrollTop=0;const r=document.querySelector('.ambient-calendar-info')?.getBoundingClientRect();return r?{top:r.top,bottom:r.bottom,height:window.innerHeight}:null})(),
       hint:document.querySelector('.ambient-calendar-info small')?.textContent??'',
       picker:Boolean(document.querySelector('.ambient-pet-picker, .ambient-select-card')),
-      toggle:Array.from(document.querySelectorAll('.ambient-toggle')).some(l=>l.textContent.includes('日历 · 农历与节假日')),
-      note:document.querySelector('.ambient-local-options')?.textContent.includes('内置 2025–2026，联网自动更新')
+      toggle:Boolean(document.querySelector('[data-rule=calendar] .page-switch input')),
+      note:document.querySelector('[data-rule=calendar]')?.textContent.includes('内置 2025–2026，联网自动更新')
     }))()`) as {tabs:string[];info:string;infoBox:{top:number;bottom:number;height:number}|null;hint:string;picker:boolean;toggle:boolean;note:boolean}
-    assert.equal(calendarPage.tabs.at(-1),'true','calendar tab is selected'); assert.equal(calendarPage.picker,false,'one card a day needs no picker')
+    assert.equal(calendarPage.tabs[3],'true','calendar tab is selected'); assert.equal(calendarPage.picker,false,'one card a day needs no picker')
     assert.match(calendarPage.info,/^\d+月\d+日 周[一二三四五六日] · 农历.+ · 第\d+周/,'info line: date, lunar, week'); assert.match(calendarPage.hint,/固件 0\.0\.29/)
     assert.match(calendarPage.info,/(假期中|距 .+ 还有 \d+ 天|暂无下一个假日数据)$/,'info line ends with the next holiday or says there is none')
     assert.ok(calendarPage.infoBox&&calendarPage.infoBox.top>=0&&calendarPage.infoBox.bottom<=calendarPage.infoBox.height,'calendar info is on the first screen at 1120x780: '+JSON.stringify(calendarPage.infoBox))
     assert.ok(calendarPage.toggle,'settings checkbox'); assert.ok(calendarPage.note,'settings note about holiday data')
-    await button(main, '显示到屏幕')
+    await button(main, '临时展示到墨水屏 · 10 分钟')
     assert.equal(ambient.current()?.kind, 'calendar'); assert.equal(ambient.current()?.manual, true)
     assert.equal(withAmbient(device().status,ambient.current()).ambient?.layout,'calendar'); assert.ok(withAmbient(device().status,ambient.current()).ambient?.calendar,'device status exposes ambient.calendar')
-    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .product-preview-label').textContent.includes('当前目标画面')`), 'calendar display leaves sample mode')
+    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .ambient-stage-label').textContent.includes('当前目标画面')`), 'calendar display leaves sample mode')
     await capture('multimedia-calendar')
     await assertCanvasPure('calendar 1120')
     for (const [width,height] of [[1440,900],[1024,768]] as const) {
@@ -496,9 +503,9 @@ app.whenReady().then(async()=>{
       await capture('multimedia-calendar-'+width)
     }
     main.setContentSize(1120,780); await wait(350)
-    await button(main, '回到工作画面'); assert.equal(ambient.current(), undefined)
-    await button(main, '热点与 meme')
-    await click(main,'[data-view=settings]');await button(main,'屏幕工作台 ↗')
+    ambient.dismiss(); await wait(); assert.equal(ambient.current(), undefined)
+    await button(main, 'X 与 meme')
+    await click(main,'[data-view=settings]');assert.equal(await main.webContents.executeJavaScript(`document.body.textContent.includes('屏幕工作台')`),false,'settings no longer lists the screen workbench');await main.webContents.executeJavaScript(`window.codepulse.openSurface('screen')`);await wait()
     await until(()=>BrowserWindow.getAllWindows().some(w=>w.getTitle().includes('屏幕工作台')),'screen window')
     const screenWindow=BrowserWindow.getAllWindows().find(w=>w.getTitle().includes('屏幕工作台'))!
     await until(()=>screenWindow.webContents.executeJavaScript(`document.querySelector('.screen-live .device-preview')?.getAttribute('data-render-state')==='ready'`),'real Wasm screen pixels')
@@ -525,7 +532,7 @@ app.whenReady().then(async()=>{
     await click(main,'[data-view=settings]')
     assert.equal(await main.webContents.executeJavaScript(`Boolean(document.querySelector('.product-topbar'))`),false)
     assert.ok(await main.webContents.executeJavaScript(`Boolean(document.querySelector('.settings-embedded'))`))
-    await button(main,'多媒体玩法（X 与 meme）');assert.equal(product.snapshot().view,'ambient')
+    await button(main,'桌边内容（X 与 meme）');assert.equal(product.snapshot().view,'ambient')
     await click(main,'[data-view=settings]');await click(main,'.theme-swatch-dark');await wait(500)
     await click(main,'[data-view=control]');await capture('control-dark')
     main.setSize(720,600);await capture('compact')

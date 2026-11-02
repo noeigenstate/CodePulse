@@ -163,6 +163,12 @@ export interface UsageCopy {
   roundsHint: string
   roundsUnit: string
   untitled: string
+  /** Marker that replaces the first prompt in the rounds list until the user reveals it. */
+  titleHidden: string
+  showTitle: string
+  hideTitle: string
+  colSession: string
+  colTool: string
   emptyTitle: string
   emptyBody: string
   footnote: string
@@ -366,8 +372,8 @@ const UI_COPY: Record<Locale, UiCopy> = {
       notifications: '桌面通知',
       notificationsHint: '任务完成或疑似卡住时弹出系统通知。关闭后托盘图标和控制台仍会实时更新。',
       notificationsToggle: '实时消息通知',
-      cliTools: '显示的 CLI 工具',
-      cliToolsHint: '隐藏仅影响主控制台显示，不会停止本机同步或通知。',
+      cliTools: '显示的 CLI（所有展示端共用）',
+      cliToolsHint: '关闭的工具不会出现在任何展示端；本机同步与通知不受影响。',
       codex: 'Codex',
       claudeCode: 'Claude Code',
       grok: 'Grok',
@@ -467,9 +473,14 @@ const UI_COPY: Record<Locale, UiCopy> = {
       colAvgRounds: '平均每会话轮次',
       noPrice: '无官方价格',
       roundsTitle: '问题修复轮次',
-      roundsHint: '一个会话视为一个问题：你提了几轮、各模型分别回答了几轮、总共花了多少。',
+      roundsHint: '标题默认隐藏首条提示，避免泄露路径或密钥；已识别的敏感片段会打码。一个会话视为一个问题。',
       roundsUnit: '轮',
-      untitled: '（无标题）',
+      untitled: '无标题',
+      titleHidden: '首条提示已隐藏',
+      showTitle: '显示',
+      hideTitle: '隐藏',
+      colSession: '会话',
+      colTool: '工具',
       emptyTitle: '这个时间段还没有用量',
       emptyBody: '在 Claude Code、Codex 或 OpenCode 里工作后，这里会自动统计。',
       footnote:
@@ -578,9 +589,9 @@ const UI_COPY: Record<Locale, UiCopy> = {
       notificationsHint:
         'Show a system notification when a turn finishes or looks stuck. When off, the tray icon and live console still update in real time.',
       notificationsToggle: 'Real-time notifications',
-      cliTools: 'Visible CLI tools',
+      cliTools: 'Visible CLI tools (shared by every surface)',
       cliToolsHint:
-        'Hiding a tool only changes the live console; syncing and notifications continue.',
+        'A tool switched off appears on no surface; syncing and notifications continue.',
       codex: 'Codex',
       claudeCode: 'Claude Code',
       grok: 'Grok',
@@ -684,9 +695,14 @@ const UI_COPY: Record<Locale, UiCopy> = {
       noPrice: 'No official price',
       roundsTitle: 'Rounds per problem',
       roundsHint:
-        'Each conversation counts as one problem: how many rounds you asked, which models answered them, and what it cost.',
+        'First prompts are hidden by default so paths and keys do not leak; recognised secrets are masked even when shown. Each conversation counts as one problem.',
       roundsUnit: 'rounds',
-      untitled: '(untitled)',
+      untitled: 'Untitled',
+      titleHidden: 'first prompt hidden',
+      showTitle: 'Show',
+      hideTitle: 'Hide',
+      colSession: 'Session',
+      colTool: 'Tool',
       emptyTitle: 'No usage in this period',
       emptyBody: 'Work in Claude Code, Codex or OpenCode and it shows up here automatically.',
       footnote:

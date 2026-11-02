@@ -1,4 +1,5 @@
 import { ProductModuleLinks } from './ProductModuleLinks.js'
+import { PageHeader } from './PageHeader.js'
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
 import type { Locale, SettingsCopy } from '../lib/i18n.js'
 import { CLI_TOOL_TYPES, type CliToolType, type ThemePreference } from '../lib/dashboardSettings.js'
@@ -155,36 +156,38 @@ export function SettingsDialog({
         role={embedded ? undefined : 'dialog'}
         tabIndex={-1}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
-          <div>
+        {embedded ? (
+          <PageHeader
+            title={copy.title}
+            subtitle={locale === 'zh' ? '界面、通知与各展示端共用的选项' : 'Appearance, notifications and options shared by every surface'}
+          />
+        ) : (
+          <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
             <h2 className="text-lg font-semibold text-ink">{copy.title}</h2>
+            <button
+              aria-label={copy.close}
+              className="settings-close"
+              onClick={onClose}
+              ref={closeButtonRef}
+              title={copy.close}
+              type="button"
+            >
+              <CloseIcon />
+            </button>
           </div>
-          <button
-            hidden={embedded}
-            aria-label={copy.close}
-            className="settings-close"
-            onClick={onClose}
-            ref={closeButtonRef}
-            title={copy.close}
-            type="button"
-          >
-            <CloseIcon />
-          </button>
-        </div>
+        )}
 
-        <div className="grid min-h-0 gap-6 overflow-y-auto px-5 py-5">
+        <div className={embedded ? 'page-body' : 'grid min-h-0 gap-6 overflow-y-auto px-5 py-5'}>
           {onLocaleChange && (
-            <section>
-              <h3 className="text-sm font-semibold text-ink">
-                {locale === 'zh' ? '界面语言' : 'Language'}
-              </h3>
-              <p className="mt-1.5 text-meta leading-5 text-ink-500">
+            <section className="page-card">
+              <h2>{locale === 'zh' ? '界面语言' : 'Language'}</h2>
+              <p className="page-card-sub">
                 {locale === 'zh' ? '切换桌面端与控制面板显示语言。' : 'Switch the display language for desktop and controls.'}
               </p>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button
                   aria-pressed={locale === 'zh'}
-                  className={`theme-option !min-h-0 !flex-row !items-center !justify-center !py-2.5 ${locale === 'zh' ? 'is-active' : ''}`}
+                  className={`theme-option ${locale === 'zh' ? 'is-active' : ''}`}
                   onClick={() => onLocaleChange('zh')}
                   type="button"
                 >
@@ -192,7 +195,7 @@ export function SettingsDialog({
                 </button>
                 <button
                   aria-pressed={locale === 'en'}
-                  className={`theme-option !min-h-0 !flex-row !items-center !justify-center !py-2.5 ${locale === 'en' ? 'is-active' : ''}`}
+                  className={`theme-option ${locale === 'en' ? 'is-active' : ''}`}
                   onClick={() => onLocaleChange('en')}
                   type="button"
                 >
@@ -201,9 +204,9 @@ export function SettingsDialog({
               </div>
             </section>
           )}
-          <section>
-            <h3 className="text-sm font-semibold text-ink">{copy.theme}</h3>
-            <p className="mt-1.5 text-meta leading-5 text-ink-500">{copy.themeAutoHint}</p>
+          <section className="page-card">
+            <h2>{copy.theme}</h2>
+            <p className="page-card-sub">{copy.themeAutoHint}</p>
             <div className="mt-3 grid grid-cols-3 gap-2">
               <ThemeOption
                 active={theme === 'auto'}
@@ -226,9 +229,9 @@ export function SettingsDialog({
             </div>
           </section>
 
-          <section>
-            <h3 className="text-sm font-semibold text-ink">{copy.notifications}</h3>
-            <p className="mt-1.5 text-meta leading-5 text-ink-500">{copy.notificationsHint}</p>
+          <section className="page-card">
+            <h2>{copy.notifications}</h2>
+            <p className="page-card-sub">{copy.notificationsHint}</p>
             <div className="mt-3 grid gap-2">
               <ToolToggle
                 checked={notificationsEnabled ?? false}
@@ -239,9 +242,9 @@ export function SettingsDialog({
             </div>
           </section>
 
-          <section>
-            <h3 className="text-sm font-semibold text-ink">{copy.cliTools}</h3>
-            <p className="mt-1.5 text-meta leading-5 text-ink-500">{copy.cliToolsHint}</p>
+          <section className="page-card">
+            <h2>{copy.cliTools}</h2>
+            <p className="page-card-sub">{copy.cliToolsHint}</p>
             <div className="mt-3 grid gap-2">
               {CLI_TOOL_TYPES.map((tool) => (
                 <ToolToggle
@@ -254,9 +257,9 @@ export function SettingsDialog({
             </div>
           </section>
 
-          <section>
-            <h3 className="text-sm font-semibold text-ink">{copy.mimoQuota}</h3>
-            <p className="mt-1.5 text-meta leading-5 text-ink-500">{copy.mimoQuotaHint}</p>
+          <section className="page-card">
+            <h2>{copy.mimoQuota}</h2>
+            <p className="page-card-sub">{copy.mimoQuotaHint}</p>
             <div className="mt-3 flex items-center justify-between gap-3">
               <p className="min-w-0 truncate font-medium text-ink">
                 {mimoLoggedIn === undefined
@@ -276,14 +279,14 @@ export function SettingsDialog({
             </div>
           </section>
 
-          <ProductModuleLinks onOpen={embedded ? undefined : onClose} />
+          <ProductModuleLinks embedded={embedded} locale={locale} onOpen={embedded ? undefined : onClose} />
 
-          <section>
-            <h3 className="text-sm font-semibold text-ink">{copy.updates}</h3>
+          <section className="page-card">
+            <h2>{copy.updates}</h2>
             <div className="mt-3 flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="font-medium text-ink">{copy.currentVersion}</p>
-                <p className="mt-0.5 truncate text-meta text-ink-500">
+                <p className="page-card-sub truncate">
                   {appVersion ? `v${appVersion}` : '—'}
                 </p>
               </div>
@@ -297,7 +300,7 @@ export function SettingsDialog({
               </button>
             </div>
             {updateResult && (
-              <p className="mt-1.5 text-meta leading-5 text-ink-500">
+              <p className="page-card-sub">
                 {updateResult.kind === 'found'
                   ? copy.updateFound.replace('{version}', updateResult.version)
                   : updateResult.kind === 'error'
@@ -351,7 +354,7 @@ function ToolToggle({
 }): JSX.Element {
   return (
     <label className="settings-tool-row">
-      <span className="font-medium text-ink">{label}</span>
+      <span>{label}</span>
       <input
         checked={checked}
         className="settings-switch"

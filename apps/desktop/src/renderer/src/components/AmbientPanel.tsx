@@ -11,9 +11,12 @@ import {
   type DeviceStatusV1,
 } from '@codepulse/shared'
 import { DeviceScreenPreview } from './DeviceScreenPreview.js'
+import { PageHeader } from './PageHeader.js'
 import { planesToRgba } from '../device-preview/renderer.mjs'
 import './ambient-panel.css'
 import { useScreenTarget } from '../lib/useScreenTarget.js'
+import { useInkStatus } from '../lib/useInkStatus.js'
+import { inkPlanChip } from '../lib/inkStatusText.js'
 
 /** Tail of the calendar info line: the break going on, or how far away the next one is. */
 function nextHolidayText(next: CalendarNextHoliday | undefined): string {
@@ -114,19 +117,89 @@ function PetThumb({ card }: { card: AmbientCard }): JSX.Element {
   )
 }
 
-export function AmbientPanel({ active = true }: {
+type Category = 'concept' | 'prompt' | 'pet' | 'calendar' | 'news' | 'social' | 'local'
+/** Tab names are the rule names, so a tab and its rule row always read the same. */
+const CATEGORIES: { id: Category; label: string; rule: string }[] = [
+  { id: 'concept', label: '概念卡', rule: '经济学 / 哲学 / 物理学，每天最多出现一次' },
+  { id: 'prompt', label: '思考实验', rule: '一分钟读完的思考实验，离线可用' },
+  { id: 'pet', label: '像素宠物', rule: '按当前心情出场，同一形象同一心情每天最多一次' },
+  { id: 'calendar', label: '日历', rule: '农历与节假日，每天最多出现一次。假日数据：内置 2025–2026，联网自动更新。' },
+  { id: 'news', label: '科技热议', rule: '来自 Hacker News 近 24 小时超过 100 赞的标题，保留原文' },
+  { id: 'social', label: 'X 与 meme', rule: '指定账号的热门原帖，以及少量高热度 meme 图片' },
+  { id: 'local', label: '我的图片与便签', rule: '拖进页面的图片与便签，只在手动展示时出现' },
+]
+const RULE_FLAG: Partial<Record<Category, 'conceptsEnabled' | 'promptsEnabled' | 'petEnabled' | 'calendarEnabled' | 'newsEnabled'>> = {
+  concept: 'conceptsEnabled',
+  prompt: 'promptsEnabled',
+  pet: 'petEnabled',
+  calendar: 'calendarEnabled',
+  news: 'newsEnabled',
+}
+const SAVE_DELAY_MS = 400
+
+type NumberField =
+  | 'minLikes'
+  | 'memeMinUps'
+  | 'pollMinutes'
+  | 'gapMinutes'
+  | 'dailyLimit'
+  | 'dailyRequestLimit'
+  | 'quietStart'
+  | 'quietEnd'
+
+/** A number that is only committed on blur or Enter, so typing "30" never saves "3" first. */
+function NumberRule({ label, value, min, max, disabled, onCommit }: {
+  label: string
+  value: number
+  min: number
+  max: number
+  disabled?: boolean
+  onCommit: (value: number) => void
+}): JSX.Element {
+  const [text, setText] = useState(String(value))
+  useEffect(() => setText(String(value)), [value])
+  const commit = () => {
+    const parsed = Number(text)
+    const next = Number.isFinite(parsed) ? Math.max(min, Math.min(max, Math.round(parsed))) : value
+    setText(String(next))
+    if (next !== value) onCommit(next)
+  }
+  return (
+    <label className="page-field">
+      {label}
+      <input
+        type="number"
+        min={min}
+        max={max}
+        value={text}
+        disabled={disabled}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit()
+        }}
+      />
+    </label>
+  )
+}
+
+export function AmbientPanel({
+  active = true,
+  product,
+  locale = 'zh',
+}: {
   active?: boolean
   /** ia-refactor contract: shell state (applied playlist) and navigation to 控制 › 节目单. */
   product?: import('./ProductFrame.js').ProductNavigation
   locale?: import('../lib/i18n.js').Locale
 }): JSX.Element {
   const { target, error: targetError } = useScreenTarget(active)
+  const ink = useInkStatus()
+  const online = ink?.connection === 'connected'
   const [snapshot, setSnapshot] = useState<AmbientSnapshot>()
   const [draft, setDraft] = useState<AmbientConfig>({ ...DEFAULT_AMBIENT })
   const [key, setKey] = useState('')
-  const [category, setCategory] = useState<
-    'local' | 'concept' | 'prompt' | 'pet' | 'calendar' | 'online'
-  >('concept')
+  const [category, setCategory] = useState<Category>('concept')
   const [note, setNote] = useState('')
   const [selectedId, setSelectedId] = useState('')
   const [dragging, setDragging] = useState(false)
@@ -135,9 +208,15 @@ export function AmbientPanel({ active = true }: {
   const [message, setMessage] = useState('')
   const [messageScope, setMessageScope] = useState<'content' | 'settings'>('content')
   const [preview, setPreview] = useState<DeviceStatusV1>()
+  const [savedFlash, setSavedFlash] = useState(false)
+  const [saveFailed, setSaveFailed] = useState(false)
   const savedConfig = useRef<AmbientConfig>()
   const draftRef = useRef(draft)
   draftRef.current = draft
+  const saveTimer = useRef<ReturnType<typeof setTimeout>>()
+  const flashTimer = useRef<ReturnType<typeof setTimeout>>()
+  const unsaved = useRef(false)
+  const saveSeq = useRef(0)
   useEffect(() => {
     let alive = true,
       received = false
@@ -152,7 +231,7 @@ export function AmbientPanel({ active = true }: {
         }
       })
       .catch(() => {
-        if (alive) setMessage('当前桌面服务尚未加载信息推送，请重新启动统一应用。')
+        if (alive) setMessage('当前桌面服务尚未加载桌边内容，请重新启动统一应用。')
       })
     const stop = window.codepulse.onAmbient((s) => {
       received = true
@@ -160,21 +239,51 @@ export function AmbientPanel({ active = true }: {
       setSnapshot(s)
       const incoming = normalizeAmbient(s.config)
       if (JSON.stringify(savedConfig.current) !== JSON.stringify(incoming)) {
-        const dirty =
-          savedConfig.current &&
-          JSON.stringify(draftRef.current) !== JSON.stringify(savedConfig.current)
         savedConfig.current = incoming
-        if (!dirty) setDraft(incoming)
-        else setMessage('另一窗口已更新设置；这里保留你的未保存修改。')
+        // Never overwrite what the user is typing; the pending save carries it.
+        if (!unsaved.current) setDraft(incoming)
       }
     })
     return () => {
       alive = false
       stop()
+      clearTimeout(saveTimer.current)
+      clearTimeout(flashTimer.current)
     }
   }, [])
-  const edit = <K extends keyof AmbientConfig>(name: K, value: AmbientConfig[K]) =>
-    setDraft((d) => ({ ...d, [name]: value }))
+
+  /**
+   * Rules save by themselves. `enabled` and `displayMinutes` belong to the playlist in 控制 and are
+   * never taken from the draft: the last saved values go back with every write.
+   */
+  async function persist(next: AmbientConfig) {
+    const seq = ++saveSeq.current
+    const base = savedConfig.current
+    try {
+      const state = await window.codepulse.setAmbient(
+        base ? { ...next, enabled: base.enabled, displayMinutes: base.displayMinutes } : next,
+      )
+      savedConfig.current = normalizeAmbient(state.config)
+      setSnapshot(state)
+      if (seq === saveSeq.current) unsaved.current = false
+      setSaveFailed(false)
+      setSavedFlash(true)
+      clearTimeout(flashTimer.current)
+      flashTimer.current = setTimeout(() => setSavedFlash(false), 1800)
+    } catch {
+      if (seq === saveSeq.current) unsaved.current = false
+      setSavedFlash(false)
+      setSaveFailed(true)
+    }
+  }
+  const edit = <K extends keyof AmbientConfig>(name: K, value: AmbientConfig[K], delay = 0) => {
+    const next = { ...draftRef.current, [name]: value }
+    draftRef.current = next
+    setDraft(next)
+    unsaved.current = true
+    clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => void persist(draftRef.current), delay)
+  }
   async function action(
     run: () => Promise<AmbientSnapshot>,
     success = '',
@@ -227,17 +336,21 @@ export function AmbientPanel({ active = true }: {
       setSnapshot(await window.codepulse.getAmbient())
       setSelectedId(card.id)
       setPreview(await window.codepulse.previewAmbient(card.id))
-      try {
-        setSnapshot(await window.codepulse.showAmbient(card.id))
-        setPreview(undefined)
-        setMessage('图片已设为目标画面，联网屏幕会在当前刷新结束后获取。')
-      } catch (error) {
-        const detail = error instanceof Error ? error.message.split('Error: ').pop()! : ''
-        setMessage(
-          /^先处理 Agent/.test(detail)
-            ? `图片已准备好。${detail}`
-            : '图片已保存，但展示未完成，请点击“显示到屏幕”重试。',
-        )
+      if (!online) {
+        setMessage('图片已保存，可以先预览。连接设备后可临时展示。')
+      } else {
+        try {
+          setSnapshot(await window.codepulse.showAmbient(card.id))
+          setPreview(undefined)
+          setMessage('图片已临时展示到墨水屏，10 分钟后自动回到节目单。')
+        } catch (error) {
+          const detail = error instanceof Error ? error.message.split('Error: ').pop()! : ''
+          setMessage(
+            /^先处理 Agent/.test(detail)
+              ? `图片已准备好。${detail}`
+              : '图片已保存，但展示未完成，请点击“临时展示到墨水屏”重试。',
+          )
+        }
       }
     } catch (error) {
       const detail = error instanceof Error ? error.message.split('Error: ').pop()! : ''
@@ -262,7 +375,7 @@ export function AmbientPanel({ active = true }: {
       setSnapshot(await window.codepulse.getAmbient())
       setSelectedId(card.id)
       setPreview(await window.codepulse.previewAmbient(card.id))
-      setMessage('便签已保存在本机，点击“显示到屏幕”即可展示。')
+      setMessage('便签已保存在本机，可预览；连接设备后可临时展示。')
     } catch {
       setMessage('便签保存失败，请填写 1–120 字的内容。')
     } finally {
@@ -273,9 +386,9 @@ export function AmbientPanel({ active = true }: {
     snapshot?.cards.filter((c) =>
       category === 'local'
         ? c.kind === 'image' || c.kind === 'note'
-        : category === 'online'
-          ? c.kind === 'x' || c.kind === 'meme' || c.kind === 'news'
-          : c.kind === category,
+        : category === 'social'
+          ? c.kind === 'x' || c.kind === 'meme'
+          : c.kind === (category === 'news' ? 'news' : category),
     ) ?? []
   const previewStatus =
     preview && target
@@ -288,36 +401,38 @@ export function AmbientPanel({ active = true }: {
     category === 'pet'
       ? (visibleCards.find((c) => c.pet?.id === draft.petId) ?? visibleCards[0])
       : (visibleCards.find((c) => c.id === selectedId) ?? visibleCards[0])
-  const number = (
-    name:
-      | 'minLikes'
-      | 'memeMinUps'
-      | 'pollMinutes'
-      | 'gapMinutes'
-      | 'dailyLimit'
-      | 'dailyRequestLimit'
-      | 'displayMinutes'
-      | 'quietStart'
-      | 'quietEnd',
-    label: string,
-    min: number,
-    max: number,
-  ) => (
-    <label>
+  const current = CATEGORIES.find((c) => c.id === category)!
+  const currentFlag = RULE_FLAG[category]
+  const ruleOn = currentFlag
+    ? draft[currentFlag]
+    : category === 'social'
+      ? draft.xEnabled || draft.memeEnabled
+      : false
+  const chip = product ? inkPlanChip(product.shell.inkPlan, 'ambient', ink?.connection, locale) : undefined
+  const nextAutoAt = snapshot && 'nextAutoAt' in snapshot ? (snapshot as { nextAutoAt?: number | null }).nextAutoAt : undefined
+  const openPlaylist = (): void => {
+    if (product) void product.navigate('control').then(() => product.selectTarget('ink'))
+  }
+  const number = (name: NumberField, label: string, min: number, max: number, disabled = false) => (
+    <NumberRule
+      label={label}
+      value={draft[name]}
+      min={min}
+      max={max}
+      disabled={disabled}
+      onCommit={(value) => edit(name, value)}
+    />
+  )
+  const ruleSwitch = (flag: NonNullable<(typeof RULE_FLAG)[Category]> | 'xEnabled' | 'memeEnabled', label: string) => (
+    <label className="page-switch">
+      <input type="checkbox" checked={draft[flag]} onChange={(e) => edit(flag, e.target.checked)} />
       {label}
-      <input
-        type="number"
-        min={min}
-        max={max}
-        value={draft[name]}
-        onChange={(e) => edit(name, Number(e.target.value))}
-      />
     </label>
   )
   return (
     <section
       className={'ambient-panel' + (dragging ? ' is-dragging' : '')}
-      aria-labelledby="ambient-title"
+      aria-label="桌边内容"
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes('Files')) {
           e.preventDefault()
@@ -333,60 +448,69 @@ export function AmbientPanel({ active = true }: {
         void importFile(e.dataTransfer.files[0])
       }}
     >
-      <div className="ambient-heading">
-        <div>
-          <span className="ambient-eyebrow">MULTIMEDIA</span>
-          <h3 id="ambient-title">多媒体玩法</h3>
-        </div>
-        <div className="ambient-import-action">
-          <span>图片拖进此页即可展示</span>
-          <input
-            ref={fileInput}
-            type="file"
-            accept="image/png,image/jpeg"
-            hidden
-            onChange={(e) => void importFile(e.target.files?.[0])}
-          />
-          <button type="button" disabled={busy} onClick={() => fileInput.current?.click()}>
-            选择图片
-          </button>
-        </div>
+      <PageHeader
+        title="桌边内容"
+        subtitle="管理可以出现在墨水屏上的内容，以及自动挑选的规则"
+        actions={
+          <>
+            <input
+              ref={fileInput}
+              type="file"
+              accept="image/png,image/jpeg"
+              hidden
+              onChange={(e) => void importFile(e.target.files?.[0])}
+            />
+            <span className="page-muted">图片拖进此页即可导入</span>
+            <button type="button" className="product-button" disabled={busy} onClick={() => fileInput.current?.click()}>
+              选择图片
+            </button>
+          </>
+        }
+      />
+      <div className="ambient-info">
+        <span>
+          是否进入轮播、停留多久在{' '}
+          {product ? (
+            <button type="button" className="page-link" onClick={openPlaylist}>
+              控制 › 节目单
+            </button>
+          ) : (
+            '控制 › 节目单'
+          )}{' '}
+          设置
+        </span>
+        {chip && <span className={`page-chip ${chip.included ? 'is-on' : ''}`}>{chip.text}</span>}
       </div>
-      <p className="ambient-description">
-        一张图片，一个新概念，或一条值得瞥一眼的动态。手动随时选，自动偶尔看；授权与异常提醒优先。
-      </p>
-      <div className="product-config-grid ambient-workbench">
-        <div className="ambient-preview-column">
-          <div className="ambient-library-tabs" aria-label="内容分类">
-            {(
-              [
-                ['concept', '概念卡'],
-                ['prompt', '思考实验'],
-                ['local', '我的图片与便签'],
-                ['online', '热点与 meme'],
-                ['pet', '像素宠物'],
-                ['calendar', '日历'],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                type="button"
-                key={id}
-                aria-pressed={category === id}
-                onClick={() => {
-                  setCategory(id)
-                  setSelectedId('')
-                  setPreview(undefined)
-                  // One card a day, so the page opens on it, like picking a pet does.
-                  const today =
-                    id === 'calendar'
-                      ? snapshot?.cards.find((c) => c.kind === 'calendar')
-                      : undefined
-                  if (today) void showPreview(today)
-                }}
-              >
-                {label}
-              </button>
-            ))}
+      <div className="ambient-tabs" role="tablist" aria-label="内容分类">
+        {CATEGORIES.map(({ id, label }) => (
+          <button
+            type="button"
+            role="tab"
+            key={id}
+            aria-selected={category === id}
+            onClick={() => {
+              setCategory(id)
+              setSelectedId('')
+              setPreview(undefined)
+              // One card a day, so the page opens on it, like picking a pet does.
+              const today =
+                id === 'calendar' ? snapshot?.cards.find((c) => c.kind === 'calendar') : undefined
+              if (today) void showPreview(today)
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="ambient-grid">
+        <div className="ambient-card ambient-preview-column">
+          <div className="page-card-head">
+            <div>
+              <h2>{current.label}</h2>
+              <p className="page-card-sub">
+                400 × 300 预览{ruleOn || category === 'local' ? '' : ' · 未加入挑选规则，仅可手动展示'}
+              </p>
+            </div>
           </div>
           {category === 'pet' && visibleCards.length > 0 && (
             <div className="ambient-pet-picker" role="radiogroup" aria-label="选择宠物形象">
@@ -432,7 +556,7 @@ export function AmbientPanel({ active = true }: {
                   </option>
                 ))}
               </select>
-              <button type="button" disabled={busy} onClick={() => void showPreview(selectedCard)}>
+              <button type="button" className="product-button" disabled={busy} onClick={() => void showPreview(selectedCard)}>
                 预览画面
               </button>
             </div>
@@ -446,15 +570,11 @@ export function AmbientPanel({ active = true }: {
               <small>月历需要固件 0.0.29 以上，旧固件只显示一行文字</small>
             </div>
           )}
-          <section className="product-preview-stage">
-            <div className="product-preview-label">
+          <section className="ambient-stage">
+            <div className="ambient-stage-label">
               <span>{preview ? '内容示例' : '当前目标画面'}</span>
               {preview && (
-                <button
-                  type="button"
-                  className="product-button"
-                  onClick={() => setPreview(undefined)}
-                >
+                <button type="button" className="product-button is-compact" onClick={() => setPreview(undefined)}>
                   返回实时画面
                 </button>
               )}
@@ -467,12 +587,12 @@ export function AmbientPanel({ active = true }: {
                 fit
               />
             ) : (
-              <p className="product-empty">
+              <p className="ambient-empty">
                 {targetError ? '预览暂不可用，等待设备服务连接。' : '正在读取当前画面…'}
               </p>
             )}
             {targetError && target && !preview && (
-              <p className="product-caption" role="status">
+              <p className="page-muted" role="status">
                 连接暂时中断，当前显示最后收到的目标画面。
               </p>
             )}
@@ -482,33 +602,20 @@ export function AmbientPanel({ active = true }: {
             <div className="ambient-display-actions">
               <button
                 type="button"
-                className="ambient-primary"
-                disabled={busy || !selectedCard}
+                className="product-button primary"
+                disabled={busy || !selectedCard || !online}
                 onClick={() =>
                   selectedCard &&
                   void action(async () => {
                     const state = await window.codepulse.showAmbient(selectedCard.id)
                     setPreview(undefined)
                     return state
-                  }, '已设为目标画面，联网屏幕会在当前刷新结束后获取。')
+                  }, '已临时展示到墨水屏，10 分钟后自动回到节目单。')
                 }
               >
-                显示到屏幕
+                临时展示到墨水屏 · 10 分钟
               </button>
-              <button
-                type="button"
-                disabled={busy || !snapshot?.activeId}
-                onClick={() =>
-                  void action(async () => {
-                    const state = await window.codepulse.dismissAmbient()
-                    setPreview(undefined)
-                    return state
-                  }, '已恢复工作目标画面。')
-                }
-              >
-                回到工作画面
-              </button>
-              <span>手动展示 · {snapshot?.config.displayMinutes ?? 10} 分钟</span>
+              {!online && <span className="page-muted">连接设备后可临时展示</span>}
             </div>
           </section>
           {category === 'local' && (
@@ -522,24 +629,19 @@ export function AmbientPanel({ active = true }: {
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
               />
-              <button type="button" disabled={busy || !note.trim()} onClick={() => void addNote()}>
+              <button type="button" className="product-button" disabled={busy || !note.trim()} onClick={() => void addNote()}>
                 保存并预览
               </button>
               <small>{note.length} / 120 · 最近 8 张个人内容</small>
             </div>
           )}
-          <h4 className="ambient-candidates-title">
-            可选内容{' '}
-            <small>
-              预览只在电脑上；显示到屏幕后停留 {snapshot?.config.displayMinutes ?? 10} 分钟
-            </small>
-          </h4>
+          <h3 className="ambient-candidates-title">可选内容</h3>
           <div className="ambient-cards">
             {!visibleCards.length && (
               <p className="ambient-empty">暂时没有合适内容。屏幕继续显示工作状态与用量。</p>
             )}
             {(selectedCard ? [selectedCard] : []).map((card) => (
-              <article className="ambient-card" key={card.id}>
+              <article className="ambient-item" key={card.id}>
                 <div className="ambient-card-meta">
                   <strong>{card.source}</strong>
                   <span>
@@ -564,8 +666,8 @@ export function AmbientPanel({ active = true }: {
                     此刻心情：{petMoodLabel(card.pet.mood).label}（
                     {petMoodLabel(card.pet.mood).hint}
                     ）。心情随工作状态和本地时间变化，选好形象后可随时手动展示。
-                    自动推送只在允许展示的时段出场：安静时段和 Agent
-                    工作时不会推送（可在“展示节奏”里调整），
+                    自动挑选只在允许展示的时段出场：安静时段和 Agent
+                    工作时不会出现（可在“展示节奏”里调整），
                     所以“犯困”“陪你干活”多半只在手动展示时看到。屏幕上的红色需要完整刷新，约 16
                     秒并会闪一下， 所以宠物只在展示和退场时刷新两次。
                   </p>
@@ -574,6 +676,7 @@ export function AmbientPanel({ active = true }: {
                   {card.url && (
                     <button
                       type="button"
+                      className="product-button is-compact"
                       onClick={() =>
                         void window.codepulse
                           .openAmbient(card.id)
@@ -586,6 +689,7 @@ export function AmbientPanel({ active = true }: {
                   {(card.kind === 'image' || card.kind === 'note') && (
                     <button
                       type="button"
+                      className="product-button is-compact"
                       disabled={busy}
                       onClick={() =>
                         void action(async () => {
@@ -603,18 +707,23 @@ export function AmbientPanel({ active = true }: {
             ))}
           </div>
         </div>
-        <aside className="product-config ambient-configuration">
-          <h2>自动推送设置</h2>
-          <fieldset disabled={busy || !snapshot}>
-            <label className="ambient-toggle">
-              <input
-                type="checkbox"
-                checked={draft.enabled}
-                onChange={(e) => edit('enabled', e.target.checked)}
-              />
-              自动推送（手动展示无需开启）
-            </label>
-            <div className="ambient-status" role="status">
+        <aside className="ambient-card ambient-configuration" aria-label="挑选规则">
+          <div className="page-card-head">
+            <div>
+              <h2>挑选规则</h2>
+              <p className="page-card-sub">决定自动展示时从哪些类别里挑</p>
+            </div>
+            <span className={`page-saved ${savedFlash ? 'is-shown' : ''}`} role="status">
+              {savedFlash ? '已保存' : ''}
+            </span>
+          </div>
+          {saveFailed && (
+            <p className="ambient-message" role="alert">
+              保存未完成，请检查输入后重试。
+            </p>
+          )}
+          <fieldset className="ambient-rules" disabled={!snapshot}>
+            <p className="page-muted ambient-status" role="status">
               <span>
                 {snapshot?.activeId
                   ? '内容已设为目标画面'
@@ -622,216 +731,195 @@ export function AmbientPanel({ active = true }: {
               </span>
               <span>
                 今日 {snapshot?.shownToday ?? 0} / {snapshot?.config.dailyLimit ?? 6} 条
+                {typeof nextAutoAt === 'number' && ` · 下次最早 ${new Date(nextAutoAt).toTimeString().slice(0, 5)}`}
               </span>
-            </div>
-            <div className="ambient-local-options">
-              <label className="ambient-toggle">
-                <input
-                  type="checkbox"
-                  checked={draft.conceptsEnabled}
-                  onChange={(e) => edit('conceptsEnabled', e.target.checked)}
-                />{' '}
-                概念卡 · 经济学 / 哲学 / 物理学
-              </label>
-              <label className="ambient-toggle">
-                <input
-                  type="checkbox"
-                  checked={draft.promptsEnabled}
-                  onChange={(e) => edit('promptsEnabled', e.target.checked)}
-                />{' '}
-                一分钟思考实验
-              </label>
-              <label className="ambient-toggle">
-                <input
-                  type="checkbox"
-                  checked={draft.petEnabled}
-                  onChange={(e) => edit('petEnabled', e.target.checked)}
-                />{' '}
-                像素宠物 · {petProfile(draft.petId).name}（在“像素宠物”页换形象）
-              </label>
-              <label className="ambient-toggle">
-                <input
-                  type="checkbox"
-                  checked={draft.calendarEnabled}
-                  onChange={(e) => edit('calendarEnabled', e.target.checked)}
-                />{' '}
-                日历 · 农历与节假日
-              </label>
-              <label className="ambient-toggle">
-                <input
-                  type="checkbox"
-                  checked={draft.newsEnabled}
-                  onChange={(e) => edit('newsEnabled', e.target.checked)}
-                />{' '}
-                科技热议 · Hacker News
-              </label>
-              <p className="ambient-hint">
-                日历：每天最多出现一次。假日数据：内置 2025–2026，联网自动更新。
-              </p>
-              <p className="ambient-hint">
-                宠物按当前心情出场，同一形象同一心情每天最多一次，并遵守下方的展示节奏。概念与思考卡离线可用，原创短解读配阅读来源。科技热议只选近
-                24 小时首页中超过 100 赞的标题，保留原文，不自动改写为新闻。
-              </p>
-            </div>
+            </p>
+            {CATEGORIES.map(({ id, label, rule }) => {
+              const flag = RULE_FLAG[id]
+              return (
+                <div className={`ambient-rule${id === category ? ' is-current' : ''}`} key={id} data-rule={id}>
+                  {flag ? ruleSwitch(flag, label) : <span className="ambient-rule-name">{label}</span>}
+                  <p className="page-muted">{rule}</p>
+                  {id === 'pet' && (
+                    <p className="page-muted">当前形象：{petProfile(draft.petId).name}（在左侧“像素宠物”里更换）</p>
+                  )}
+                  {id === 'social' && (
+                    <div className="ambient-subrules">
+                      {ruleSwitch('xEnabled', '订阅 X 贴文')}
+                      {ruleSwitch('memeEnabled', '启用 meme')}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
             <details className="ambient-details">
               <summary>X 贴文 · 来源与筛选</summary>
-              <label className="ambient-toggle">
-                <input
-                  type="checkbox"
-                  checked={draft.xEnabled}
-                  onChange={(e) => edit('xEnabled', e.target.checked)}
-                />
-                订阅 X 贴文
-              </label>
-              <div className="ambient-fields">
-                <label>
-                  接入方式
-                  <select
-                    value={draft.provider}
-                    onChange={(e) => edit('provider', e.target.value as AmbientConfig['provider'])}
-                  >
-                    <option value="twitterapi">TwitterAPI.io · 第三方按量付费</option>
-                    <option value="x">X 官方 API · 按量付费</option>
-                  </select>
-                </label>
-                <label>
-                  API 密钥
-                  <input
-                    type="password"
-                    autoComplete="off"
-                    value={key}
-                    placeholder={
-                      snapshot?.hasKey && snapshot.config.provider === draft.provider
-                        ? '已保存，留空保留'
-                        : '填入对应来源的 API 密钥'
-                    }
-                    onChange={(e) => setKey(e.target.value)}
-                  />
-                </label>
-              </div>
-              <p className="ambient-hint">
-                密钥通过系统加密保存在本机，API 费用由所选服务按量计收。这里展示指定账号的热门原帖。
-              </p>
-              <label className="ambient-wide">
-                账号（逗号分隔）
-                <input
-                  value={draft.accounts.join(', ')}
-                  onChange={(e) => edit('accounts', e.target.value.split(/[,，\s]+/))}
-                />
-              </label>
-              <div className="ambient-fields">
-                <label>
-                  必须包含任一关键词（可留空）
-                  <input
-                    value={draft.keywords.join(', ')}
-                    onChange={(e) =>
-                      edit(
-                        'keywords',
-                        e.target.value.split(/[,，]/).map((s) => s.trimStart()),
-                      )
-                    }
-                  />
-                </label>
-                <label>
-                  排除关键词
-                  <input
-                    value={draft.exclude.join(', ')}
-                    onChange={(e) =>
-                      edit(
-                        'exclude',
-                        e.target.value.split(/[,，]/).map((s) => s.trimStart()),
-                      )
-                    }
-                  />
-                </label>
-                {number('minLikes', '最低点赞数', 0, 1000000)}
-                {number('dailyRequestLimit', '每天最多检查 X（含手动检查）', 1, 96)}
-              </div>
-              <p className="ambient-hint">
-                默认关注 Polymarket、马斯克和 AI 官方账号。只收近 12
-                小时原帖，过滤回复、转发和敏感标记；作者观点会保留来源，不转换为已证实新闻。
-              </p>
-              <details>
-                <summary>按账号调整门槛 · 马斯克默认 50,000 赞</summary>
+              <div className={`ambient-subfields${draft.xEnabled ? '' : ' is-dim'}`}>
                 <div className="ambient-fields">
-                  {[
-                    ...new Set(
-                      draft.accounts
-                        .map((a) => a.replace(/^@/, '').trim())
-                        .filter((a) => /^[A-Za-z0-9_]{1,15}$/.test(a)),
-                    ),
-                  ].map((account) => (
-                    <label key={account}>
-                      @{account} 最低赞数
+                  <label className="page-field">
+                    接入方式
+                    <select
+                      value={draft.provider}
+                      disabled={!draft.xEnabled}
+                      onChange={(e) => edit('provider', e.target.value as AmbientConfig['provider'])}
+                    >
+                      <option value="twitterapi">TwitterAPI.io · 第三方按量付费</option>
+                      <option value="x">X 官方 API · 按量付费</option>
+                    </select>
+                  </label>
+                  <div className="ambient-key-row">
+                    <label className="page-field">
+                      API 密钥
                       <input
-                        type="number"
+                        type="password"
+                        autoComplete="off"
+                        value={key}
+                        disabled={!draft.xEnabled}
+                        placeholder={
+                          snapshot?.hasKey && snapshot.config.provider === draft.provider
+                            ? '已保存，留空保留'
+                            : '填入对应来源的 API 密钥'
+                        }
+                        onChange={(e) => setKey(e.target.value)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="product-button"
+                      disabled={busy || !key.trim() || !draft.xEnabled}
+                      onClick={() =>
+                        void action(
+                          async () => {
+                            const state = await window.codepulse.setAmbientKey(draft.provider, key)
+                            setKey('')
+                            return state
+                          },
+                          '密钥已加密保存在本机。',
+                          'settings',
+                        )
+                      }
+                    >
+                      保存密钥
+                    </button>
+                  </div>
+                </div>
+                <p className="page-muted">
+                  密钥通过系统加密保存在本机，API 费用由所选服务按量计收。这里展示指定账号的热门原帖。
+                </p>
+                <label className="page-field">
+                  账号（逗号分隔）
+                  <input
+                    value={draft.accounts.join(', ')}
+                    disabled={!draft.xEnabled}
+                    onChange={(e) => edit('accounts', e.target.value.split(/[,，\s]+/), SAVE_DELAY_MS)}
+                  />
+                </label>
+                <div className="ambient-fields">
+                  <label className="page-field">
+                    必须包含任一关键词（可留空）
+                    <input
+                      value={draft.keywords.join(', ')}
+                      disabled={!draft.xEnabled}
+                      onChange={(e) =>
+                        edit('keywords', e.target.value.split(/[,，]/).map((s) => s.trimStart()), SAVE_DELAY_MS)
+                      }
+                    />
+                  </label>
+                  <label className="page-field">
+                    排除关键词
+                    <input
+                      value={draft.exclude.join(', ')}
+                      disabled={!draft.xEnabled}
+                      onChange={(e) =>
+                        edit('exclude', e.target.value.split(/[,，]/).map((s) => s.trimStart()), SAVE_DELAY_MS)
+                      }
+                    />
+                  </label>
+                  {number('minLikes', '最低点赞数', 0, 1000000, !draft.xEnabled)}
+                  {number('dailyRequestLimit', '每天最多检查 X（含手动检查）', 1, 96, !draft.xEnabled)}
+                </div>
+                <p className="page-muted">
+                  默认关注 Polymarket、马斯克和 AI 官方账号。只收近 12
+                  小时原帖，过滤回复、转发和敏感标记；作者观点会保留来源，不转换为已证实新闻。
+                </p>
+                <details>
+                  <summary>按账号调整门槛 · 马斯克默认 50,000 赞</summary>
+                  <div className="ambient-fields">
+                    {[
+                      ...new Set(
+                        draft.accounts
+                          .map((a) => a.replace(/^@/, '').trim())
+                          .filter((a) => /^[A-Za-z0-9_]{1,15}$/.test(a)),
+                      ),
+                    ].map((account) => (
+                      <NumberRule
+                        key={account}
+                        label={`@${account} 最低赞数`}
+                        value={draft.accountMinLikes[account.toLowerCase()] ?? draft.minLikes}
                         min={0}
                         max={1000000}
-                        value={draft.accountMinLikes[account.toLowerCase()] ?? draft.minLikes}
-                        onChange={(e) =>
+                        disabled={!draft.xEnabled}
+                        onCommit={(value) =>
                           edit('accountMinLikes', {
                             ...draft.accountMinLikes,
-                            [account.toLowerCase()]: Number(e.target.value),
+                            [account.toLowerCase()]: value,
                           })
                         }
                       />
-                    </label>
-                  ))}
-                </div>
-              </details>
-              <p className="ambient-hint">
-                每次只读一页：第三方最多 20 条，官方最多 10 条。展示上限与 API
-                费用不同，建议同时设置来源后台的消费上限。今日已检查 X{' '}
-                {snapshot?.xRequestsToday ?? 0} 次。
-              </p>
-              <button
-                type="button"
-                disabled={busy || !snapshot?.hasKey}
-                onClick={() =>
-                  void action(
-                    () => window.codepulse.setAmbientKey(draft.provider, ''),
-                    '已清除该来源密钥',
-                  )
-                }
-              >
-                清除该来源密钥
-              </button>
+                    ))}
+                  </div>
+                </details>
+                <p className="page-muted">
+                  每次只读一页：第三方最多 20 条，官方最多 10 条。展示上限与 API
+                  费用不同，建议同时设置来源后台的消费上限。今日已检查 X{' '}
+                  {snapshot?.xRequestsToday ?? 0} 次。
+                </p>
+                <button
+                  type="button"
+                  className="product-button"
+                  disabled={busy || !snapshot?.hasKey}
+                  onClick={() =>
+                    void action(
+                      () => window.codepulse.setAmbientKey(draft.provider, ''),
+                      '已清除该来源密钥',
+                      'settings',
+                    )
+                  }
+                >
+                  清除该来源密钥
+                </button>
+              </div>
             </details>
             <details className="ambient-details">
               <summary>Meme · 少量高热度图片</summary>
-              <label className="ambient-toggle">
-                <input
-                  type="checkbox"
-                  checked={draft.memeEnabled}
-                  onChange={(e) => edit('memeEnabled', e.target.checked)}
-                />
-                启用 meme
-              </label>
-              <div className="ambient-fields">
-                <label>
-                  来源
-                  <select
-                    value={draft.memeCommunity}
-                    onChange={(e) =>
-                      edit('memeCommunity', e.target.value as AmbientConfig['memeCommunity'])
-                    }
-                  >
-                    <option value="memes">r/memes</option>
-                    <option value="dankmemes">r/dankmemes</option>
-                    <option value="ProgrammerHumor">r/ProgrammerHumor</option>
-                  </select>
-                </label>
-                {number('memeMinUps', '最低赞数', 0, 1000000)}
+              <div className={`ambient-subfields${draft.memeEnabled ? '' : ' is-dim'}`}>
+                <div className="ambient-fields">
+                  <label className="page-field">
+                    来源
+                    <select
+                      value={draft.memeCommunity}
+                      disabled={!draft.memeEnabled}
+                      onChange={(e) =>
+                        edit('memeCommunity', e.target.value as AmbientConfig['memeCommunity'])
+                      }
+                    >
+                      <option value="memes">r/memes</option>
+                      <option value="dankmemes">r/dankmemes</option>
+                      <option value="ProgrammerHumor">r/ProgrammerHumor</option>
+                    </select>
+                  </label>
+                  {number('memeMinUps', '最低赞数', 0, 1000000, !draft.memeEnabled)}
+                </div>
+                <p className="page-muted">
+                  从公开来源一次取 20 个候选，再按赞数筛选；这是候选中的高赞内容，并非全站热榜。来自
+                  Reddit 的 PNG / JPEG
+                  图片，无需账号。保留原帖入口，自动适配黑白小屏；跳过成人内容、剧透、动图和超大图片；竖图保持比例并留白。
+                </p>
               </div>
-              <p className="ambient-hint">
-                从公开来源一次取 20 个候选，再按赞数筛选；这是候选中的高赞内容，并非全站热榜。来自
-                Reddit 的 PNG / JPEG
-                图片，无需账号。保留原帖入口，自动适配黑白小屏；跳过成人内容、剧透、动图和超大图片；竖图保持比例并留白。
-              </p>
             </details>
             <details className="ambient-details">
               <summary>展示节奏</summary>
-              <label className="ambient-toggle">
+              <label className="page-switch">
                 <input
                   type="checkbox"
                   checked={draft.idleOnly}
@@ -843,13 +931,12 @@ export function AmbientPanel({ active = true }: {
                 {number('pollMinutes', '检查间隔（分钟）', 15, 1440)}
                 {number('gapMinutes', '展示间隔（分钟）', 30, 1440)}
                 {number('dailyLimit', '每天最多展示', 1, 24)}
-                {number('displayMinutes', '每条停留（分钟）', 1, 30)}
                 {number('quietStart', '安静时段开始（本地小时）', 0, 23)}
                 {number('quietEnd', '安静时段结束（本地小时）', 0, 23)}
               </div>
-              <p className="ambient-hint">
-                起止小时相同表示不设安静时段。以上只限制自动推送；手动展示可跳过空闲、间隔与每日上限，也可暂时覆盖待查看；
-                授权、补充输入及异常提醒仍优先。图片与便签只手动展示。
+              <p className="page-muted">
+                起止小时相同表示不设安静时段。以上只限制自动挑选；手动展示可跳过空闲、间隔与每日上限，也可暂时覆盖待查看；
+                授权、补充输入及异常提醒仍优先。图片与便签只手动展示。每项停留多久在“控制 › 节目单”设置。
               </p>
             </details>
             <p className="ambient-message" data-feedback="settings" role="status">
@@ -858,29 +945,7 @@ export function AmbientPanel({ active = true }: {
             <div className="ambient-actions">
               <button
                 type="button"
-                className="ambient-primary"
-                disabled={busy || !snapshot}
-                onClick={() =>
-                  void action(
-                    async () => {
-                      if (key.trim()) {
-                        await window.codepulse.setAmbientKey(draft.provider, key)
-                        setKey('')
-                      }
-                      const s = await window.codepulse.setAmbient(draft)
-                      savedConfig.current = normalizeAmbient(s.config)
-                      setDraft(savedConfig.current)
-                      return s
-                    },
-                    '自动推送设置已保存。展示选中内容请点左侧“显示到屏幕”。',
-                    'settings',
-                  )
-                }
-              >
-                保存推送设置
-              </button>
-              <button
-                type="button"
+                className="product-button"
                 disabled={busy || !snapshot || snapshot?.collecting}
                 onClick={() =>
                   void action(
@@ -902,6 +967,7 @@ export function AmbientPanel({ active = true }: {
                 <span>最近检查 {new Date(snapshot!.lastCheckedAt).toLocaleTimeString()}</span>
               )}
             </div>
+            <p className="page-muted">规则修改后立即保存</p>
           </fieldset>
         </aside>
       </div>

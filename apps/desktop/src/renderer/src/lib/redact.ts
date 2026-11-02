@@ -6,21 +6,32 @@ export const MASK = '••••••'
 
 const SECRET_WORDS =
   'password|passwd|passphrase|pwd|token|secret|api[_-]?key|apikey|access[_-]?key|private[_-]?key|client[_-]?secret|credentials?|key'
+/** Quoted values are capped so an unclosed quote cannot make every match scan to the end of the text. */
+const VALUE = `(?:"[^"\\n]{0,200}"|'[^'\\n]{0,200}'|[^\\s,;"'}\\])]+)`
+/** Everything up to the next whitespace or punctuation, including non-ASCII text. */
+const LOOSE = `[^\\s,;:，。；、！？!?"'“”‘’()（）\\[\\]【】<>《》]+`
 
+/*
+ * Every pattern is anchored on a literal word and uses bounded repeats, so matching stays linear
+ * in the text length (a 20,000-character run of "key." takes a few milliseconds at most).
+ */
 const RULES: [RegExp, string][] = [
   // Authorization: Bearer abc / Authorization=Basic abc / authorization: abc
-  [/\b(authorization)(["']?\s*[:=]\s*)(?:(?:bearer|basic|token)\s+)?(?:"[^"\n]*"|'[^'\n]*'|[^\s,;"']+)/gi, `$1$2${MASK}`],
+  [new RegExp(`\\b(authorization)(["']?\\s*[:=]\\s*)(?:(?:bearer|basic|token)\\s+)?${VALUE}`, 'gi'), `$1$2${MASK}`],
   // https://user:pass@host
-  [/(:\/\/[^\s:/@]+:)[^\s@/]+(@)/g, `$1${MASK}$2`],
-  // password: "x", token=abc, api_key: 'abc', DB_PASSWORD=abc, "secret": "abc"
-  [
-    new RegExp(`\\b([A-Za-z0-9_.-]*(?:${SECRET_WORDS})[A-Za-z0-9_.-]*)(["']?\\s*[:=]\\s*)(?:"[^"\\n]*"|'[^'\\n]*'|[^\\s,;"'}\\])]+)`, 'gi'),
-    `$1$2${MASK}`,
-  ],
+  [/(:\/\/[^\s:/@]{1,100}:)[^\s@/]{1,200}(@)/g, `$1${MASK}$2`],
+  // curl -u admin:hunter2 / --user admin:hunter2
+  [/(^|\s)(-u\s+|--user[\s=]+)(["']?)([^\s:'"]{1,100}):[^\s'"]{1,200}/g, `$1$2$3$4:${MASK}`],
+  // password: "x", token=abc, api_key: 'abc', DB_PASSWORD=abc, "secret": "abc"; the word may sit inside a longer name
+  [new RegExp(`((?:${SECRET_WORDS})[A-Za-z0-9_.-]{0,32})(["']?\\s*[:=]\\s*)${VALUE}`, 'gi'), `$1$2${MASK}`],
+  // pass=abc / pw: abc (short words need a word boundary, or "bypass: true" would be masked)
+  [new RegExp(`\\b(pass|pw)(["']?\\s*[:=]\\s*)${VALUE}`, 'gi'), `$1$2${MASK}`],
+  // --password hunter2 / --token abc
+  [/(--?(?:password|passwd|passphrase|pass|pwd|pw|token|secret|api-?key|apikey|access-?key)\s+)(?!-)\S{1,200}/gi, `$1${MASK}`],
   // "password is hunter2"
-  [/\b(password|passcode|token|secret)(\s+is\s+)\S+/gi, `$1$2${MASK}`],
-  // 密码是xxx / 密码：xxx / 口令=xxx
-  [/(密码|口令|密钥|令牌)(\s*(?:是|为|:|：|=)\s*)[!-~]+/g, `$1$2${MASK}`],
+  [/\b(password|passcode|token|secret)(\s+is\s+)\S{1,200}/gi, `$1$2${MASK}`],
+  // 密码是xxx / 密码：xxx / 口令=xxx / 密码 xxx / 我的密码xxx; the value runs to the next space or punctuation
+  [new RegExp(`(密码|口令|密钥|令牌)(\\s*(?:是|为|:|：|=)?\\s*)${LOOSE}`, 'g'), `$1$2${MASK}`],
   // Bearer eyJ...
   [/\b(bearer\s+)[A-Za-z0-9._~+/=-]{6,}/gi, `$1${MASK}`],
   // Well-known key shapes.
@@ -30,8 +41,9 @@ const RULES: [RegExp, string][] = [
   [/\bAKIA[0-9A-Z]{16}\b/g, MASK],
   [/\bAIza[A-Za-z0-9_-]{30,}/g, MASK],
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}/g, MASK],
-  // Any other long mixed letter+digit run with no separators reads as a key.
-  [/\b(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{32,}\b/g, MASK],
+  // Any other long mixed letter+digit run with no separators reads as a key. Starting only at the
+  // beginning of a run (and bounding the look-aheads) keeps this linear on long dashed runs.
+  [/(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]{0,80}\d)(?=[A-Za-z0-9_-]{0,80}[A-Za-z])[A-Za-z0-9_-]{32,}/g, MASK],
 ]
 
 /** Replace anything that looks like a credential with a mask, leaving the surrounding words. */
@@ -57,8 +69,17 @@ export function sessionTitle(
   const text = (title ?? '').replace(/\s+/g, ' ').trim()
   if (!text) return `${project} · ${copy.untitled}`
   if (!revealed) return `${project} · ${copy.hidden}`
-  const masked = redactSecrets(text)
-  return `${project} · ${masked.length > MAX_TITLE ? `${masked.slice(0, MAX_TITLE)}…` : masked}`
+  // Cut first, then mask: the work is bounded by the display limit, and a cut inside a word is
+  // pulled back to the previous space so half a key never survives as an unmasked prefix.
+  let shown = text
+  if (text.length > MAX_TITLE) {
+    shown = text.slice(0, MAX_TITLE)
+    if (!/\s/.test(text.charAt(MAX_TITLE))) {
+      const space = shown.lastIndexOf(' ')
+      if (space > MAX_TITLE - 48) shown = shown.slice(0, space)
+    }
+  }
+  return `${project} · ${redactSecrets(shown)}${text.length > MAX_TITLE ? '…' : ''}`
 }
 
 /**

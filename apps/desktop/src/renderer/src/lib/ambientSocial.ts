@@ -53,3 +53,17 @@ export function toggleSocialRow(
   if (remembered && socialRowOn(remembered)) return { patch: { ...remembered }, remembered }
   return { patch: { xEnabled: false, memeEnabled: true }, remembered }
 }
+
+/**
+ * An individual X or meme toggle (in the category's 设置) is the user's latest explicit choice, so it
+ * replaces the remembered pair: the row switch must never bring back a source the user turned off
+ * there. When the change leaves both off, nothing is remembered and the row falls back to meme only.
+ */
+export function rememberAfterFlag(
+  current: SocialPair,
+  flag: keyof SocialPair,
+  value: boolean,
+): SocialPair | undefined {
+  const next = { ...current, [flag]: value }
+  return socialRowOn(next) ? next : undefined
+}

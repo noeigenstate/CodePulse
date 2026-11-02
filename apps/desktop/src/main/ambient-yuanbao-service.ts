@@ -367,13 +367,18 @@ export class YuanbaoSource {
             this.cache.requests >= this.deps.config().yuanbao.dailyRequestLimit
           )
             return
-          const checked = Math.max(
+          // A key change never refires work that already ran (re-saving a key must not spend a
+          // round), but a job that has never been checked runs once its inputs have settled, so a
+          // newly enabled feature shows content without waiting a full cadence.
+          const history = Math.max(
             this.cache.checks[job.key] ?? -Infinity,
-            this.cache.checks['@credentials'] ?? -Infinity,
             ...Object.entries(checks)
               .filter(([key]) => key.startsWith(job.topic + ':'))
               .map(([, at]) => at),
           )
+          const checked = Number.isFinite(history)
+            ? Math.max(history, this.cache.checks['@credentials'] ?? -Infinity)
+            : -Infinity
           const due =
             job.topic === 'holiday'
               ? !Number.isFinite(checked) || localDay(checked) !== localDay(this.now())

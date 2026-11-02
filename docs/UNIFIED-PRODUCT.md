@@ -21,8 +21,8 @@ also includes it in the installer; other upstream package targets are retained.
 On Windows `scripts/start-desktop.ps1 -Build -DeviceServer` additionally enables
 the optional device service. No sibling source checkout is required.
 
-The accepted standard client provides Control and Multimedia, with Usage and
-global Settings in the rail footer. Control offers connected desktop/HUD/e-paper
+The accepted standard client provides Control, then a Features group (Desk
+content, Tasks & assistant, Usage), with Settings in the rail footer. Control offers connected desktop/HUD/e-paper
 cards with their existing configuration options. Focus mode collapses the console
 to the original work dashboard and has an explicit return control. HUD can coexist with the standard window; the screen
 workbench remains independent. All three use the same host and saved device
@@ -154,3 +154,22 @@ pin request; the latest isolated run observed that refusal, so pin reliability
 is not claimed. Installer/clean-clone checks, live X access and physical e-paper
 quality have not been revalidated for this change. Firmware and device protocol
 are unchanged.
+
+## Information architecture (ia-refactor)
+
+- One e-ink status bar sits at the top of every product page except focus mode.
+  It only renders `InkScreenStatus` (computed in the main process, read through
+  `useInkStatus`); wording lives in `renderer/src/lib/inkStatusText.ts`.
+- What the e-ink screen shows is decided in one place: Control › E-paper ›
+  playlist (applied through `applyInk`). Desk content and Tasks only manage their
+  content and rules and link back to the playlist; their chips read the applied plan.
+- Desk content (formerly Multimedia) saves rule changes immediately. It cannot
+  change `enabled` or the dwell time, which belong to the playlist.
+- Settings › Visible CLI is the master switch for every surface. Switching a tool off
+  also removes it from the HUD tool list and the device display agents; a tool is
+  never switched on in a surface automatically (`lib/cliVisibility.ts`).
+- Usage hides first-prompt titles by default and masks secrets even when shown
+  (`lib/redact.ts`); projects with the same folder name get a path-tail suffix.
+- Design tokens (font sizes 12/13/14/16/20/24, weights 400/500/600, radii
+  6/10/14/pill, 36px buttons, one 150ms transition) live at the top of
+  `product-shell.css`. The live session workbench cards keep their own styles.

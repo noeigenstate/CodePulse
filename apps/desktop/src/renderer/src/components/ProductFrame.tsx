@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { normalizeShellPreferences, type DesktopLayout, type HudAppearanceSettings, type InkDisplayPlan, type ProductView,
   type PresentationTarget, type ShellSnapshot, type StatusSnapshot } from '@codepulse/shared'
+import { InkStatusBar } from './InkStatusBar.js'
 import './product-shell.css'
 
 export const TARGET_NAMES = { desktop: ['桌面端', 'Desktop'], hud: ['HUD', 'HUD'], ink: ['墨水屏', 'E-paper'] } as const
 export const PRODUCT_NAV: { id: ProductView; label: string; english: string; icon: string }[] = [
   { id: 'control', label: '控制', english: 'Control', icon: 'control' },
-  { id: 'ambient', label: '多媒体玩法', english: 'Multimedia', icon: 'ambient' },
+  { id: 'ambient', label: '桌边内容', english: 'Desk content', icon: 'ambient' },
   { id: 'assistant', label: '待办与助手', english: 'Tasks & assistant', icon: 'tasks' },
+  { id: 'usage', label: '用量统计', english: 'Usage', icon: 'usage' },
 ]
 export function ProductIcon({ name }: { name: string }): JSX.Element {
   const paths: Record<string, ReactNode> = {
@@ -91,15 +93,12 @@ export function ProductFrame({ product, locale, snapshot, children }: {
     <aside className="product-rail" hidden={focusMode}>
       <div className="product-brand"><span className="product-brand-mark"><ProductIcon name="work"/></span>CodePulse</div>
       <nav aria-label={zh ? '功能导航' : 'Navigation'}>{PRODUCT_NAV.map((item, index) => <div key={item.id}>
-        {index === 1 && <span className="product-nav-section">{zh ? '功能' : 'FEATURES'}</span>}
+        {index === 1 && <span className="product-nav-section">{zh ? '功能' : 'Features'}</span>}
         <button type="button" data-view={item.id} aria-current={view === item.id ? 'page' : undefined} onClick={() => void product.navigate(item.id)}>
           <ProductIcon name={item.icon}/><span>{zh ? item.label : item.english}</span>
-          {item.id === 'control' && attention > 0 && <small className="product-nav-count">{attention}</small>}
+          {item.id === 'control' && attention > 0 && <small className="product-nav-count">{zh ? `${attention} 待查看` : `${attention} to review`}</small>}
         </button></div>)}</nav>
       <div className="product-rail-footer">
-        <button type="button" data-view="usage" aria-label={zh ? '用量统计' : 'Usage'} aria-current={view === 'usage' ? 'page' : undefined} onClick={() => void product.navigate('usage')}>
-          <ProductIcon name="usage"/><span>{zh ? '用量统计' : 'Usage'}</span>
-        </button>
         <button type="button" data-view="settings" aria-label={zh ? '设置' : 'Settings'} aria-current={view === 'settings' ? 'page' : undefined} onClick={() => void product.navigate('settings')}>
           <ProductIcon name="settings"/><span>{zh ? '设置' : 'Settings'}</span>
         </button>
@@ -108,6 +107,10 @@ export function ProductFrame({ product, locale, snapshot, children }: {
     <div className="product-main">
       {focusMode && <header className="product-focusbar"><div className="product-brand"><span className="product-brand-mark"><ProductIcon name="work"/></span>CodePulse<small>{zh ? '专注模式' : 'Focus'}</small></div>
         <button ref={returnButton} type="button" className="product-button" onClick={() => void product.setFocus(false)}><ProductIcon name="expand"/>{zh ? '返回控制台' : 'Back to console'}</button></header>}
+      {!focusMode && <div className="ink-status-slot"><InkStatusBar locale={zh ? 'zh' : 'en'}
+        hideConnect={(view === 'control' || view === 'work') && product.target === 'ink'}
+        onConnect={() => void product.navigate('control').then(() => product.selectTarget('ink'))}
+        onPlaylist={() => void product.navigate('control').then(() => product.selectTarget('ink'))}/></div>}
       {product.error && <p className="product-attention" role="alert">{product.error}</p>}
       <main className="product-content">{children}</main>
     </div>

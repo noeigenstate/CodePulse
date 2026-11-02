@@ -1,264 +1,300 @@
+/* 桌边内容 on the shared design tokens (product-shell.css): sizes 12/13/14/16/20/24, weights 400/500/600,
+ * radii 6/10/14/pill, spacing 4/8/12/16/20/24/32/40, one 150ms transition. */
 .ambient-panel {
-  margin: 20px 0;
-  padding: 20px;
-  border: 1px solid var(--border, #7775);
-  border-radius: 14px;
+  max-width: 1380px;
+  margin: 0 auto;
   color: inherit;
-  background: var(--bg-secondary, #88888808);
 }
-.ambient-heading,
-.ambient-status,
-.ambient-card-meta {
+.ambient-panel.is-dragging {
+  outline: 2px dashed var(--ink-subtle);
+  outline-offset: 8px;
+}
+.ambient-info {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
   flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 16px;
+  font-size: var(--fs-sm);
+  color: var(--ink-muted);
 }
-.ambient-heading h3 {
-  margin: 4px 0 0;
-  font-size: 20px;
-}
-.ambient-eyebrow {
-  font-size: 10px;
-  letter-spacing: 2px;
-  opacity: 0.55;
-}
-.ambient-tag {
-  border: 1px solid #8886;
-  border-radius: 20px;
-  padding: 4px 10px;
-  font-size: 11px;
-  opacity: 0.7;
-}
-.ambient-description {
-  font-size: 13px;
-  line-height: 1.8;
-  opacity: 0.75;
-  margin: 14px 0;
-}
-.ambient-toggle {
+.ambient-tabs {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  margin: 14px 0;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--line-soft);
 }
-.ambient-toggle input {
-  accent-color: #74886b;
+.ambient-tabs button {
+  position: relative;
+  min-height: var(--h-button);
+  padding: 0 12px;
+  border-radius: var(--r-control) var(--r-control) 0 0;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--ink-muted);
+  transition: background var(--motion), color var(--motion);
 }
-.ambient-status {
-  font-size: 12px;
-  padding: 12px 0;
-  opacity: 0.75;
-  border-bottom: 1px solid #8884;
+.ambient-tabs button:hover:not([aria-selected='true']) {
+  background: var(--surface-selected);
+  color: var(--ink);
 }
-.ambient-details {
-  border-bottom: 1px solid #8883;
-  padding: 14px 0;
+.ambient-tabs button[aria-selected='true'] {
+  color: var(--ink);
+  font-weight: var(--fw-strong);
 }
-.ambient-details summary {
-  font-size: 13px;
-  cursor: pointer;
-  font-weight: 600;
+.ambient-tabs button[aria-selected='true']::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: var(--r-pill);
+  background: var(--ink);
+}
+.ambient-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .ambient-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.ambient-card {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-card);
+  background: var(--surface-solid);
+}
+.ambient-card .page-card-head h2 {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-strong);
+  line-height: 24px;
+}
+.ambient-panel input:not([type='checkbox']),
+.ambient-panel select,
+.ambient-panel textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: var(--h-button);
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: var(--surface-solid);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-md);
+  transition: border-color var(--motion);
+}
+.ambient-panel textarea {
+  padding: 8px 12px;
+}
+.ambient-panel input:hover:not(:disabled),
+.ambient-panel select:hover:not(:disabled),
+.ambient-panel textarea:hover:not(:disabled) {
+  border-color: var(--ink-subtle);
+}
+.ambient-panel input:disabled,
+.ambient-panel select:disabled {
+  opacity: 0.4;
 }
 .ambient-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
-  margin: 14px 0;
+  margin: 12px 0;
 }
-.ambient-fields label,
-.ambient-wide {
+.ambient-key-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.ambient-key-row .page-field {
+  flex: 1;
+  min-width: 0;
+}
+.ambient-rules {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  font-size: 12px;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
-.ambient-panel input:not([type='checkbox']),
-.ambient-panel select {
-  width: 100%;
-  box-sizing: border-box;
-  background: transparent;
-  color: inherit;
-  border: 1px solid #8886;
-  border-radius: 6px;
-  padding: 8px;
-  font: inherit;
+.ambient-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
 }
-.ambient-panel select option {
-  background: Canvas;
-  color: CanvasText;
+.ambient-rule {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-card);
+  transition: border-color var(--motion), background var(--motion);
 }
-.ambient-panel input:focus,
-.ambient-panel select:focus {
-  outline: 2px solid #849c7b;
+.ambient-rule.is-current {
+  border-color: var(--line);
+  background: var(--surface-muted);
+}
+.ambient-rule-name {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  font-size: var(--fs-md);
+  color: var(--ink);
+}
+.ambient-subrules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 24px;
+}
+.ambient-subfields.is-dim {
+  opacity: 0.5;
+}
+.ambient-details {
+  border-top: 1px solid var(--line-soft);
+  padding: 12px 0 0;
+}
+.ambient-details summary,
+.ambient-details details > summary {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+.ambient-details summary:focus-visible {
+  outline: 2px solid var(--workstation-accent, var(--ink-subtle));
   outline-offset: 2px;
 }
 .ambient-hint {
-  font-size: 11px;
-  line-height: 1.7;
-  opacity: 0.6;
+  margin: 4px 0 0;
+  font-size: var(--fs-xs);
+  line-height: 16px;
+  color: var(--ink-muted);
 }
 .ambient-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 14px;
-}
-.ambient-panel button {
-  font: inherit;
-  font-size: 12px;
-  padding: 7px 11px;
-  border: 1px solid #8886;
-  border-radius: 7px;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-}
-.ambient-panel button:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-.ambient-panel .ambient-primary {
-  background: #718568;
-  color: #fff;
-  border-color: #718568;
+  margin-top: 12px;
 }
 .ambient-message {
-  font-size: 12px;
-  line-height: 1.6;
-  min-height: 3.2em;
+  min-height: 20px;
   margin: 8px 0 0;
+  font-size: var(--fs-sm);
+  line-height: 20px;
   overflow-wrap: anywhere;
 }
 .ambient-display-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-.ambient-display-actions > span {
-  font-size: 11px;
-  color: var(--ink-muted, #666);
+  gap: 8px 12px;
+  margin-top: 8px;
 }
 .ambient-health {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  margin-top: 14px;
-  font-size: 11px;
-  opacity: 0.65;
+  gap: 4px;
+  font-size: var(--fs-xs);
+  color: var(--ink-muted);
 }
 .ambient-empty {
-  font-size: 12px;
-  padding: 18px 0 0;
-  opacity: 0.55;
+  margin: 0;
+  padding: 16px 0 0;
+  font-size: var(--fs-sm);
+  color: var(--ink-muted);
 }
-.ambient-card {
-  border: 1px solid #8884;
-  border-radius: 10px;
-  margin-top: 12px;
-  padding: 14px;
+.ambient-candidates-title {
+  margin: 20px 0 0;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--ink-muted);
+}
+.ambient-item {
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-card);
 }
 .ambient-card-meta {
-  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: var(--fs-xs);
 }
 .ambient-card-meta span {
-  opacity: 0.6;
+  color: var(--ink-muted);
 }
-.ambient-card p {
-  font-size: 13px;
-  line-height: 1.7;
+.ambient-item p {
+  margin: 8px 0 0;
+  font-size: var(--fs-sm);
+  line-height: 20px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.ambient-preview {
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid #8884;
-}
-.ambient-preview p.device-preview-note {
-  display: none;
-}
-@media (max-width: 560px) {
-  .ambient-fields {
-    grid-template-columns: 1fr;
-  }
-  .ambient-panel {
-    padding: 14px;
-  }
-}
-
-.ambient-library-tabs {
+.ambient-stage {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 20px 0 12px;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
 }
-.ambient-library-tabs [aria-pressed='true'] {
-  background: var(--ink, #25282c);
-  color: var(--surface-solid, #fff);
+.ambient-stage-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 28px;
+  font-size: var(--fs-sm);
+  color: var(--ink-muted);
 }
 .ambient-note-editor {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 8px;
+  margin-top: 16px;
+}
+.ambient-note-editor label {
+  grid-column: 1 / -1;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
 }
 .ambient-note-editor textarea {
-  grid-column: 1/-1;
+  grid-column: 1 / -1;
   resize: vertical;
-  font: inherit;
-  color: inherit;
-  background: transparent;
-  border: 1px solid #8886;
-  border-radius: 6px;
-  padding: 10px;
 }
 .ambient-note-editor small {
   align-self: center;
-  font-size: 11px;
-  color: var(--ink-muted, #666);
-}
-.ambient-local-options {
-  padding: 10px 0;
-}
-
-.ambient-panel.is-dragging {
-  outline: 2px dashed #718568;
-  outline-offset: 6px;
-}
-.ambient-import-action {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.ambient-import-action span {
-  font-size: 11px;
-  color: var(--ink-muted, #666);
+  font-size: var(--fs-xs);
+  color: var(--ink-muted);
 }
 .ambient-select-card {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   margin-bottom: 12px;
-  font-size: 12px;
 }
 .ambient-select-card select {
   flex: 1;
   min-width: 0;
 }
-.ambient-preview-column > .ambient-library-tabs {
-  margin: 0 0 10px;
-}
-.ambient-panel .device-preview-toolbar {
-  margin-bottom: 8px;
-}
-.ambient-panel .product-preview-label {
-  margin-bottom: 8px;
-}
-
 .ambient-select-card > button {
   flex-shrink: 0;
   white-space: nowrap;
@@ -267,8 +303,8 @@
 .ambient-pet-picker {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 6px;
-  margin-bottom: 6px;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 /* A small card per pet: thumbnail, name, then the character note; the chosen badge sits on top. */
 .ambient-pet-option {
@@ -276,40 +312,46 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1px;
+  gap: 4px;
   min-width: 0;
-  padding: 5px 3px 4px;
+  min-height: 32px;
+  padding: 8px 4px;
   text-align: center;
-  border: 1px solid #8886;
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
   background: transparent;
   color: inherit;
   cursor: pointer;
+  transition: border-color var(--motion), background var(--motion);
+}
+.ambient-pet-option:hover {
+  background: var(--surface-selected);
 }
 .ambient-pet-option canvas {
   width: 64px;
   height: auto;
   aspect-ratio: 232 / 196;
   background: #fff;
-  border-radius: 3px;
-  border: 1px solid #8884;
+  border-radius: var(--r-control);
+  border: 1px solid var(--line-soft);
   box-sizing: content-box;
 }
 .ambient-pet-option strong {
-  font-size: 13px;
-  line-height: 1.25;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  line-height: 16px;
   white-space: nowrap;
 }
 .ambient-pet-option span {
   max-width: 100%;
-  font-size: 11px;
-  line-height: 1.2;
-  opacity: 0.7;
+  font-size: var(--fs-xs);
+  line-height: 16px;
+  color: var(--ink-muted);
   white-space: nowrap;
 }
 .ambient-pet-option[aria-checked='true'] {
-  border-color: var(--ink, #25282c);
-  outline: 2px solid var(--ink, #25282c);
+  border-color: var(--ink);
+  outline: 2px solid var(--ink);
   outline-offset: -2px;
 }
 .ambient-pet-option em {
@@ -317,15 +359,15 @@
   top: 4px;
   right: 4px;
   font-style: normal;
-  font-size: 10px;
-  line-height: 1.5;
-  padding: 0 5px;
-  border-radius: 10px;
-  background: var(--ink, #25282c);
-  color: var(--surface-solid, #fff);
+  font-size: var(--fs-xs);
+  line-height: 16px;
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  background: var(--ink);
+  color: var(--surface-solid);
 }
 .ambient-pet-option:focus-visible {
-  outline: 2px solid #3b82f6;
+  outline: 2px solid var(--workstation-accent, var(--ink-subtle));
   outline-offset: 2px;
 }
 /* Narrow windows: three cards per row, so the longest character note still fits on one line. */
@@ -338,23 +380,22 @@
   .ambient-pet-picker {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-}
-/* Keeps the display button as high as on the other categories despite the two-line options. */
-.ambient-library-tabs + .ambient-pet-picker {
-  margin: -4px 0 4px;
+  .ambient-fields {
+    grid-template-columns: 1fr;
+  }
 }
 .ambient-calendar-info {
   display: grid;
-  gap: 2px;
-  margin: 0 0 8px;
+  gap: 4px;
+  margin: 0 0 12px;
 }
 .ambient-calendar-info p {
   margin: 0;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.5;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  line-height: 20px;
 }
 .ambient-calendar-info small {
-  font-size: 11px;
-  opacity: 0.6;
+  font-size: var(--fs-xs);
+  color: var(--ink-muted);
 }

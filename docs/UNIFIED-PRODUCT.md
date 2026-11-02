@@ -1,7 +1,9 @@
 # Unified CodePulse product
 
 `main` in `noeigenstate/CodePulse` is the product development/publication target
-(authorized 2026-11-02). Desktop, HUD and firmware share this root repository.
+with its required PR protection retained (confirmed 2026-11-02). Push authorized
+changes to a product branch and integrate through PR checks/reviews. Desktop, HUD
+and firmware share this root repository.
 The earlier integration branch was `codex/unified-product`, based on upstream
 1.4.11. Dated verification/migration entries below describe their original scope;
 they are not current restrictions on publishing to main. See [REPOSITORY.md](REPOSITORY.md).

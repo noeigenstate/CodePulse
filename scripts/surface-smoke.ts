@@ -21,6 +21,8 @@ import { LumaAssistantProvider } from '../apps/desktop/src/main/assistant-provid
 import { registerAssistantIpc } from '../apps/desktop/src/main/assistant-ipc.js'
 import { inkFeatureAt } from '../apps/desktop/src/main/ambient-plan.js'
 import { selectDeskContent } from '../apps/desktop/src/main/assistant-presentation.js'
+import { computeInkStatus } from '../apps/desktop/src/main/ink-status.js'
+import { applyInk, endInkTemporary } from '../apps/desktop/src/main/ink-apply.js'
 
 const output = resolve('.tmpshots/surface-smoke', process.env.CODEPULSE_SMOKE_RUN ?? 'local')
 mkdirSync(output,{recursive:true}); app.setPath('userData',join(output,'profile'))
@@ -73,6 +75,7 @@ app.whenReady().then(async()=>{
     let main: BrowserWindow | undefined
     const host=resolve(process.env.CODEPULSE_SMOKE_ASSETS ?? 'apps/desktop')
     const broadcast=(channel:string,payload:unknown)=>BrowserWindow.getAllWindows().forEach(w=>w.webContents.send(channel,payload))
+    let publishInk = () => {}
     let product: ProductShell
     const hud=new HudSurface(hub,join(host,'out/hud'),join(output,'hud-workspaces.json'),()=>product?.refresh());hud.registerIpc()
     const screen=new ScreenWorkbenchWindow({preload:join(host,'out/preload/index.js'),renderer:join(host,'out/renderer/index.html'),icon:join(host,'build/icon.png')})
@@ -80,7 +83,7 @@ app.whenReady().then(async()=>{
     const configure=screen.configure.bind(screen)
     screen.configure=(id,input)=>{const before=screen.state();const result=configure(id,input);appendFileSync(join(output,'window-state.log'),JSON.stringify({id,input,before,result})+'\n');return result}
     const store=shellPreferenceStore(join(output,'product-shell.json'));store.write(normalizeShellPreferences({version:1,form:'standard',view:'overview'}))
-    product=new ProductShell(store.read(),store.write,{hudAvailable:()=>true,hudVisible:()=>hud.isVisible(),standard:()=>main?.show(),hud:()=>hud.open(main?.getBounds()),screen:()=>screen.open(),hideStandard:()=>main?.hide(),hideHud:()=>hud.hide()},s=>broadcast('codepulse:shell-status',s))
+    product=new ProductShell(store.read(),store.write,{hudAvailable:()=>true,hudVisible:()=>hud.isVisible(),standard:()=>main?.show(),hud:()=>hud.open(main?.getBounds()),screen:()=>screen.open(),hideStandard:()=>main?.hide(),hideHud:()=>hud.hide()},s=>{broadcast('codepulse:shell-status',s);publishInk()})
     let targetDelay = 0, failTarget: string | undefined
     registerProductIpc({ handle(channel, listener) {
       ipcMain.handle(channel, async (event, ...args) => {
@@ -90,7 +93,7 @@ app.whenReady().then(async()=>{
         }
         return listener(event, ...args)
       })
-    } },product,screen)
+    } },product,screen,plan=>applyInk({plan,display:config},inkApplyDependencies).shell)
     const previewReads: Record<string, number> = {}
     const measuredIpc = { handle(channel: string, listener: (...args: any[]) => any) {
       ipcMain.handle(channel, (...args) => {
@@ -101,21 +104,31 @@ app.whenReady().then(async()=>{
     const readCount = (name: string) => previewReads['codepulse:' + name] ?? 0
     const ambient=new AmbientService({
       config:{...DEFAULT_AMBIENT,enabled:false,xEnabled:true,memeEnabled:false,calendarEnabled:false,quietStart:0,quietEnd:0,idleOnly:false},
-      status:()=>hub.snapshot(),key:()=> 'fixture-key',save:()=>{},changed:()=>broadcast('codepulse:ambient-status',ambient.snapshot()),
+      status:()=>hub.snapshot(),key:()=> 'fixture-key',save:()=>{},changed:()=>{broadcast('codepulse:ambient-status',ambient.snapshot());publishInk()},
+      plan:()=>product.snapshot().inkPlan, automaticAllowed:()=>inkFeatureAt(product.snapshot().inkPlan,Date.now())==='ambient',
       request:async()=>({tweets:[{id:'12345',author:{userName:'Polymarket'},text:'TEST FIXTURE — this is a screen integration test, not a real news post.',createdAt:new Date().toISOString(),likeCount:9000}]}),image:async()=>'',
     })
     const projector=createDeviceDisplayProjector(join(output,'device-order.json'))
     const assistantStore=new AssistantStore(join(output,'assistant.sqlite'))
     const assistant=new AssistantService({store:assistantStore,keys:()=>({llmKey:'',speechAppKey:'',speechToken:''}),
       provider:new LumaAssistantProvider(()=>({llmKey:'',speechAppKey:'',speechToken:''}),async()=>{throw Error('No external calls in UI fixtures')}),
-      save:()=>{},changed:()=>broadcast('codepulse:assistant-status',assistant.snapshot()),notify:()=>false,
+      save:()=>{},changed:()=>{broadcast('codepulse:assistant-status',assistant.snapshot());publishInk()},notify:()=>false,
       automaticAllowed:()=>inkFeatureAt(product.snapshot().inkPlan,Date.now())==='todos'})
     const device=(draft?:DeviceDisplayConfig)=>({config,status:withAmbient(projector(hud.snapshot(),draft??config),draft?undefined:selectDeskContent(assistant.inkCard(hud.snapshot()),ambient.current())),serverAvailable:false})
+    // A synthetic authenticated device exercises connected drafts without binding a server.
+    const inkSnapshot=()=>computeInkStatus({plan:product.snapshot().inkPlan,now:Date.now(),lastSeenAt:Date.now(),serverEnabled:true,
+      projected:device().status,ambientTemporary:ambient.temporaryInk(),assistantUntil:assistant.temporaryInkUntil(),
+      ambientPausedReason:ambient.snapshot().pausedReason,nextAutoAt:ambient.nextAutoAt()})
+    publishInk=()=>{broadcast('codepulse:ink-status',inkSnapshot());broadcast('codepulse:device-display',device())}
+    const inkApplyDependencies={shell:product,ambient,readDisplay:()=>config,writeDisplay:(next:DeviceDisplayConfig)=>{config=next},displaySnapshot:()=>device(),
+      committed:()=>{broadcast('codepulse:shell-status',product.snapshot());broadcast('codepulse:ambient-status',ambient.snapshot());publishInk()}}
     registerAssistantIpc(measuredIpc,()=>({service:assistant,setKey:()=>assistant.snapshot(),close:()=>{assistant.stop();assistantStore.close()}}),()=>device().status,()=>ambient.dismiss())
     const imageDir = join(output, 'image-library'); mkdirSync(imageDir, { recursive: true })
     const imageRuntime = createAmbientRuntime(imageDir, { status: () => hub.snapshot(), changed: () => {} })
     registerAmbientIpc(measuredIpc,{service:ambient,setKey:()=>ambient.snapshot(),importImage:(bytes,name)=>{const card=imageRuntime.importImage(bytes,name);return ambient.addPersonal('image',card.text,card.imageHex)}},()=>device().status,async()=>{},()=>assistant.clearTemporaryInk())
     const handlers: Record<string, (...args:any[])=>any>={
+      'ink-status-get':()=>inkSnapshot(),'ink-apply':(_e,request)=>applyInk(request,inkApplyDependencies),
+      'ink-temporary-end':()=>{endInkTemporary(ambient,assistant);publishInk();return inkSnapshot()},
       'get-status':(event)=>hud.owns(event.sender)?hud.snapshot():hub.snapshot(),'sync-sessions':(event)=>hud.owns(event.sender)?hud.snapshot():hub.snapshot(),
       'detect-agents':()=>[],'get-update':()=>null,'get-version':()=> '1.4.11','get-notifications':()=>false,'set-notifications':(_e,v)=>v,
       'hud-preview':()=>hud.snapshot(),'get-usage':()=>null,'mimo-login-status':()=>false,'set-locale':(_e,v)=>v,'set-window-theme':(_e,v)=>v,
@@ -159,18 +172,18 @@ app.whenReady().then(async()=>{
       assert.equal(bad.size,0,label+': canvas pixels outside {white, black, red} at dpr '+box.dpr+' css '+box.w+'x'+box.h+' (first at x,y): '+JSON.stringify([...bad])+' box '+JSON.stringify({left,top,width,height,size}))
     }
     await capture('control-desktop')
-    // Layout changes stay drafts until applied, and survive focus/console transitions.
-    await button(main,'功能平铺');assert.equal(product.snapshot().desktopLayout,'work')
-    await button(main,'进入专注模式')
+    // Desktop has one live workbench and one focus entry; the stored layout stays compatible.
+    assert.equal(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.product-control button')).filter(b=>b.textContent.includes('功能平铺')).length`),0)
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.product-control .page-header button').length`),1)
+    await button(main,'专注模式')
     assert.equal(product.snapshot().focusMode,true)
     assert.equal(await main.webContents.executeJavaScript(`getComputedStyle(document.querySelector('.product-rail')).display`),'none')
     assert.ok(await main.webContents.executeJavaScript(`document.querySelector('.product-live-console').getClientRects().length > 0`))
     await capture('focus')
     await button(main,'返回控制台')
     assert.equal(product.snapshot().focusMode,false)
-    assert.ok(await main.webContents.executeJavaScript(`document.querySelector('.product-segments [aria-pressed=true]').textContent.includes('功能平铺')`))
-    await button(main,'立即应用');assert.equal(product.snapshot().desktopLayout,'board')
-    assert.ok(await main.webContents.executeJavaScript(`Boolean(document.querySelector('.product-desktop-preview.is-board'))`))
+    assert.equal(product.snapshot().desktopLayout,'work')
+    assert.ok(await main.webContents.executeJavaScript(`Boolean(document.querySelector('.product-console-live-stage'))`))
     await click(main,'[data-view=usage]')
     assert.ok(await main.webContents.executeJavaScript(`document.body.textContent.includes('暂无可用的历史统计')`))
     assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.product-targets').length`),0)
@@ -183,12 +196,12 @@ app.whenReady().then(async()=>{
       const control = document.querySelector('.product-control');
       const stage = document.querySelector('.ink-control-workspace .product-preview-stage');
       const canvas = stage.querySelector('.device-preview-scroll canvas').getBoundingClientRect();
-      const apply = document.querySelector('.ink-config .product-config-actions button').getBoundingClientRect();
+      const apply = document.querySelector('.ink-config .product-config-actions').getBoundingClientRect();
       return {viewport: [innerWidth,innerHeight], dpr: devicePixelRatio, canvas: [canvas.width,canvas.height], origin: [canvas.left,canvas.top],
         canvasBottom: canvas.bottom, applyBottom: apply.bottom, applyTop: apply.top,
         pageOverflow: control.scrollHeight-control.clientHeight,
         previewOverflow: stage.scrollHeight-stage.clientHeight,
-        configOverflow: document.querySelector('.ink-config .product-config-scroll').scrollHeight-document.querySelector('.ink-config .product-config-scroll').clientHeight,
+        configOverflow: document.querySelector('.ink-config').scrollHeight-document.querySelector('.ink-config').clientHeight,
         horizontalOverflow: document.documentElement.scrollWidth-innerWidth};
     })()`)
     for (const [width,height] of [[1120,780],[1366,900],[1440,900],[1600,1000],[1000,720]]) {
@@ -196,10 +209,12 @@ app.whenReady().then(async()=>{
       const measured = await geometry(); layouts.push(measured)
       assertWholePixels(measured.canvas as number[],measured.dpr as number,1,'resizing keeps whole physical pixels per device pixel',measured.origin as number[])
       if(width===1440) assert.equal(pixelRatio(measured.canvas as number[],measured.dpr as number),Math.max(1,Math.round(measured.dpr as number)),'1440x900 reaches the preferred 1:k scale')
-      assert.ok(measured.pageOverflow <= 1,JSON.stringify(measured))
       assert.ok(measured.previewOverflow <= 1,JSON.stringify(measured))
       if(width! >= 1120) assert.ok(measured.configOverflow <= 1,JSON.stringify(measured))
-      assert.ok(measured.applyBottom <= height! && measured.applyTop >= 0,'apply remains visible')
+      assert.equal(await main.webContents.executeJavaScript(`getComputedStyle(document.querySelector('.ink-config .product-config-actions')).position`),'static','apply stays in document flow')
+      await main.webContents.executeJavaScript(`document.querySelector('.ink-config .product-config-actions').scrollIntoView({block:'end'})`)
+      assert.ok(await main.webContents.executeJavaScript(`document.querySelector('.ink-config .product-config-actions').getBoundingClientRect().bottom<=innerHeight+1`),'apply footer is reachable by scrolling')
+      await main.webContents.executeJavaScript(`document.querySelector('.product-control').scrollTop=0`)
       assert.equal(measured.horizontalOverflow,0)
       await capture('ink-'+width+'x'+height)
     }
@@ -225,9 +240,11 @@ app.whenReady().then(async()=>{
       assert.equal(measured.horizontalOverflow,0,JSON.stringify(measured))
       assert.ok(measured.previewOverflow <= 1,JSON.stringify(measured))
       // Below 900 CSS px the control page stacks and scrolls as a whole, by design.
-      if ((measured.viewport as number[])[0]! >= 900) assert.ok(measured.pageOverflow <= 1,JSON.stringify(measured))
+      assert.equal(measured.configOverflow,0,'the playlist does not clip content behind a sticky footer')
     }
     await wait(250)
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.ink-preview-options').open`),false,'preview options start collapsed')
+    await click(main,'.ink-preview-options > summary')
     const beforeInspect = JSON.stringify(config)
     await button(main,'2 倍检查')
     assert.ok(await main.webContents.executeJavaScript(`Boolean(document.querySelector('.ink-control-workspace dialog[open]'))`))
@@ -241,30 +258,32 @@ app.whenReady().then(async()=>{
     assert.equal(JSON.stringify(config),beforeInspect,'inspection never applies device settings')
     await click(main,'.ink-work-options summary')
     const normalPixels = await main.webContents.executeJavaScript(`Array.from(document.querySelector('.ink-control-workspace .device-preview-scroll canvas').getContext('2d').getImageData(0,0,400,300).data)`)
-    await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ink-config label')).find(l=>l.textContent.includes('黑底白字')).querySelector('input').click()`)
-    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ink-control-workspace .device-preview-scroll canvas').getContext('2d').getImageData(0,0,1,1).data[0]===0`),'inverted draft pixels')
+    await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ink-config label')).find(l=>l.textContent.includes('反色显示')).querySelector('input').click()`)
+    assert.equal(config.inverted,false,'connected changes stay drafts')
+    assert.deepEqual(await main.webContents.executeJavaScript(`Array.from(document.querySelector('.ink-control-workspace .device-preview-scroll canvas').getContext('2d').getImageData(0,0,400,300).data)`),normalPixels,'live preview keeps the applied target')
+    await button(main,'应用到设备')
+    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ink-control-workspace .device-preview-scroll canvas').getContext('2d').getImageData(0,0,1,1).data[0]===0`),'applied inverted pixels')
     const invertedPixels = await main.webContents.executeJavaScript(`Array.from(document.querySelector('.ink-control-workspace .device-preview-scroll canvas').getContext('2d').getImageData(0,0,400,300).data)`)
-    assert.deepEqual(invertedPixels, normalPixels.map((v:number,i:number)=>i%4===3?v:255-v),'style checkbox flips production pixels without saving')
+    assert.deepEqual(invertedPixels, normalPixels.map((v:number,i:number)=>i%4===3?v:255-v),'apply updates the production pixels')
     await capture('ink-inverted')
-    await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ink-config label')).find(l=>l.textContent.includes('黑底白字')).querySelector('input').click()`)
-    await wait(350)
-    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.product-sample-options')?.tagName`),'SECTION','density samples never collapse')
-    await button(main,'9 个任务样例')
-    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.ink-config .product-config-actions button').disabled`),true,'samples cannot be applied')
-    const expanded=await geometry(); assert.ok(expanded.applyBottom <= 780,'expanded details keep the apply action in view')
+    await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ink-config label')).find(l=>l.textContent.includes('反色显示')).querySelector('input').click()`)
+    await button(main,'应用到设备')
+    const beforeSamples=JSON.stringify(config)
+    await button(main,'9 任务')
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.ink-preview-caption').textContent`),'样例 · 不是设备画面')
+    assert.equal(JSON.stringify(config),beforeSamples,'sample selection never applies synthetic content')
     await capture('ink-dense')
     await button(main,'2 倍检查'); await capture('ink-dense-inspector')
     main.webContents.sendInputEvent({type:'keyDown',keyCode:'Escape'})
     await until(()=>main!.webContents.executeJavaScript(`document.querySelectorAll('dialog[open]').length===0`),'Escape closes the inspection')
-    await button(main,'实时任务')
-    await click(main,'.ink-work-options summary')
+    await button(main,'实时')
     writeFileSync(join(output,'layout.json'),JSON.stringify(layouts,null,2))
     await capture('control-ink')
     await button(main,'用量看板');assert.equal(config.mode,'hud')
-    await button(main,'进入专注模式');await button(main,'返回控制台')
+    await button(main,'专注模式');await button(main,'返回控制台')
     assert.equal(product.snapshot().target,'ink')
     assert.ok(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.product-control .ink-config button')).some(b=>b.textContent==='用量看板' && b.getAttribute('aria-pressed')==='true')`))
-    await button(main,'立即应用');assert.equal(config.mode,'usage')
+    await button(main,'应用到设备');assert.equal(config.mode,'usage')
     await click(main,'#endpoint-hud')
     await until(()=>main!.webContents.executeJavaScript(`Boolean(document.querySelector('.product-control .hud-preview .project-deck-shell'))`),'real HUD preview')
     await capture('control-hud')
@@ -279,7 +298,7 @@ app.whenReady().then(async()=>{
     await main.webContents.executeJavaScript("document.querySelector('#endpoint-ink').click()")
     await wait(100)
     assert.equal(product.snapshot().target,'hud','fixture save is still pending')
-    assert.equal(await main.webContents.executeJavaScript("document.querySelector('#endpoint-ink').getAttribute('aria-pressed')"),'true','card selection paints before persistence completes')
+    assert.equal(await main.webContents.executeJavaScript("document.querySelector('#endpoint-ink').getAttribute('aria-selected')"),'true','tab selection paints before persistence completes')
     await until(()=>product.snapshot().target==='ink','delayed target saved'); await wait(300)
     targetDelay = 0
     await main.webContents.executeJavaScript(`(() => {
@@ -301,7 +320,7 @@ app.whenReady().then(async()=>{
     await wait(30)
     await main.webContents.executeJavaScript("document.querySelector('#endpoint-ink').click()")
     await wait(100)
-    assert.equal(await main.webContents.executeJavaScript("document.querySelector('#endpoint-ink').getAttribute('aria-pressed')"),'true','last quick click wins immediately')
+    assert.equal(await main.webContents.executeJavaScript("document.querySelector('#endpoint-ink').getAttribute('aria-selected')"),'true','last quick click wins immediately')
     await wait(650)
     assert.equal(product.snapshot().target,'ink')
     targetDelay = 0
@@ -309,7 +328,7 @@ app.whenReady().then(async()=>{
     await click(main,'#endpoint-hud')
     await until(()=>main!.webContents.executeJavaScript("Boolean(document.querySelector('.product-attention[role=alert]'))"),'failed-save feedback')
     assert.equal(product.snapshot().target,'ink')
-    assert.equal(await main.webContents.executeJavaScript("document.querySelector('#endpoint-ink').getAttribute('aria-pressed')"),'true','failed save rolls back selection')
+    assert.equal(await main.webContents.executeJavaScript("document.querySelector('#endpoint-ink').getAttribute('aria-selected')"),'true','failed save rolls back selection')
     failTarget = undefined
     await click(main,'#endpoint-hud')
     writeFileSync(join(output,'switching.json'),JSON.stringify({immediateSelection:true,rapidSelection:true,rollback:true,hiddenPreviewPaused:true,coalescedReads:true,previewReads},null,2))
@@ -339,7 +358,7 @@ app.whenReady().then(async()=>{
     hudWindow.isMinimized=originalMinimized;hudWindow.restore=originalRestore;hudWindow.focus=originalFocus
     writeFileSync(join(output,'hud-reveal.json'),JSON.stringify({restored,focused,area,bounds,visible:hud.isVisible()},null,2))
     assert.equal(product.snapshot().form,'standard','opening HUD preserves launch preference')
-    await button(main,'进入专注模式');await button(hudWindow,'标准')
+    await button(main,'专注模式');await button(hudWindow,'标准')
     assert.equal(product.snapshot().focusMode,false);assert.equal(product.snapshot().view,'control')
     assert.equal(visible.get(hudWindow.id),true,'HUD return opens console without hiding HUD')
     writeFileSync(join(output,'hud.png'),(await hudWindow.webContents.capturePage()).toPNG())
@@ -527,14 +546,17 @@ app.whenReady().then(async()=>{
     await button(main,'确认执行');await until(()=>assistantStore.list().length===2,'assistant confirmation persists')
     assert.ok(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.desk-assistant button')).find(b=>b.textContent==='开始录音').disabled`),'microphone is opt-in')
     await capture('assistant')
-    await click(main,'[data-view=control]');await click(main,'#endpoint-ink');await button(main,'固定显示')
-    const previousPlan=product.snapshot().inkPlan
+    await click(main,'[data-view=control]');await click(main,'#endpoint-ink');await button(main,'轮播')
+    const previousPlan=structuredClone(product.snapshot().inkPlan)
     ambient.dismiss()
-    await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ink-config .product-feature-main')).find(label=>label.textContent.includes('待办与提醒')).querySelector('input').click()`)
-    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ink-control-workspace .device-preview').getAttribute('data-render-state')==='ready'`),'production todo preview')
+    await click(main,'button[role=switch][aria-label="待办与提醒加入节目单"]')
     assert.deepEqual(product.snapshot().inkPlan,previousPlan,'todo configuration remains a draft')
-    await button(main,'立即应用');assert.equal(product.snapshot().inkPlan.fixed,'todos')
-    assert.equal(device().status.ambient?.items?.length,2,'saved todo plan uses the production checklist')
+    await button(main,'应用到设备')
+    assert.equal(product.snapshot().inkPlan.mode,'cycle')
+    assert.deepEqual(product.snapshot().inkPlan.items,['work','ambient','todos'])
+    assistant.showOnInk();publishInk()
+    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ink-control-workspace .device-preview').getAttribute('data-render-state')==='ready'`),'production todo preview')
+    assert.equal(device().status.ambient?.items?.length,2,'temporary todo display uses the production checklist')
     await capture('control-todos')
     assert.equal(JSON.stringify(hub.snapshot().agents),before,'assistant work never acknowledges programming tasks')
     hub.ingest({id:'shell-attention',source:'codex',eventType:'permission_request',externalSessionId:'shell-ui',workspacePath:'F:/example/codepulse',toolName:'shell',timestamp:Date.now()})

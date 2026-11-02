@@ -23,7 +23,7 @@ export function inQuietHours(config: AmbientConfig, now: number): boolean {
   return start !== end && (start < end ? hour >= start && hour < end : hour >= start || hour < end)
 }
 export function pauseReason(config: AmbientConfig, status: StatusSnapshot, now: number): string {
-  if (!config.enabled) return '桌边动态已关闭'
+  if (!config.enabled) return '桌边内容已关闭'
   if (inQuietHours(config, now)) return '安静时段'
   if (status.agents.some((a) => !a.taskHidden && needsHudAttention(a))) return '先处理 Agent 提醒'
   if (

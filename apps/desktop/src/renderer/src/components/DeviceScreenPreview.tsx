@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject, type ReactNode } from 'react'
 import { deviceInspectScale, devicePixelRatioLabel, devicePreviewScale, type DeviceStatusV1 } from '@codepulse/shared'
 import { createDevicePlaneRenderer, planesToRgba } from '../device-preview/renderer.mjs'
 import manifest from '../device-preview/manifest.json'
@@ -129,7 +129,7 @@ function useWholePixelAlign(canvas: RefObject<HTMLElement>, frame: RefObject<HTM
   }, [scroll, dpr])
 }
 
-export function DeviceScreenPreview({ status, sample = false, live = false, fit = false, active = true }: { status: DeviceStatusV1; active?: boolean; sample?: boolean; live?: boolean; fit?: boolean }): JSX.Element {
+export function DeviceScreenPreview({ status, sample = false, live = false, fit = false, active = true, options, collapsibleOptions = false }: { status: DeviceStatusV1; active?: boolean; sample?: boolean; live?: boolean; fit?: boolean; options?: ReactNode; collapsibleOptions?: boolean }): JSX.Element {
   const canvas = useRef<HTMLCanvasElement>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
   const enlargedCanvas = useRef<HTMLCanvasElement>(null)
@@ -169,19 +169,21 @@ export function DeviceScreenPreview({ status, sample = false, live = false, fit 
     }).catch(() => { if (alive) setState('error') }) }, 32)
     return () => { alive = false; clearTimeout(timer) }
   }, [status, retry, active])
-  const description = status.ambient ? `桌边动态，${status.ambient.source}：${status.ambient.text}` : status.display?.mode === 'usage'
+  const description = status.ambient ? `桌边内容，${status.ambient.source}：${status.ambient.text}` : status.display?.mode === 'usage'
     ? `用量看板，${status.display.agents.length} 个账号`
     : `HUD 工作，${status.threads?.length ?? 0} 个线程。${(status.threads ?? []).map(t => t.title).join('；')}`
-  return <div className={'device-preview ' + (fit ? 'device-preview-fit' : '')} data-render-state={state} data-pixel-ratio={scale.k}>
-    <div className="device-preview-toolbar">
+  const toolbar = <div className="device-preview-toolbar">
       <span>{live ? '当前目标画面' : status.ambient ? '内容预览' : sample ? '样例画面' : '最新任务画面'} · 400 × 300</span>
       <div><span className="device-preview-scale">{devicePixelRatioLabel(scale.k)}</span><button ref={inspectTrigger} type="button" onClick={() => inspector.current?.showModal()}>2 倍检查</button></div>
     </div>
+  return <div className={'device-preview ' + (fit ? 'device-preview-fit' : '')} data-render-state={state} data-pixel-ratio={scale.k}>
+    {!collapsibleOptions && toolbar}
     <div ref={scroll} className="device-preview-scroll" aria-busy={state === 'loading'}>
       <div ref={frame} className="device-preview-frame" style={{ width: scale.cssWidth }}>
         <canvas ref={canvas} width={400} height={300} className="device-screen" style={{ width: scale.cssWidth, height: scale.cssHeight, visibility: state === 'error' ? 'hidden' : 'visible' }} role="img" aria-label={description}>{description}</canvas>
       </div>
     </div>
+    {collapsibleOptions && <details className="ink-preview-options"><summary>预览选项</summary><div className="ink-preview-options-body">{toolbar}{options}</div></details>}
     <div className="device-preview-footnote">
       <div className="device-preview-note" aria-live="polite">
         {state === 'error' ? <><span>预览暂时无法生成。</span><button type="button" onClick={() => setRetry(n => n + 1)}>重试预览</button></> : state === 'loading' ? '正在生成画面…' : sample ? '仅供预览，不会发送到设备。' : live ? '目标画面随工作状态自动更新。' : '更改即时预览，应用后才保存。'}

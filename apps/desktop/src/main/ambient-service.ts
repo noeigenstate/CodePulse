@@ -1,13 +1,17 @@
 import {
   normalizeAmbient,
+  INK_TEMPORARY_MINUTES,
   hudStateLevel,
   type AmbientCard,
   type AmbientConfig,
   type AmbientSnapshot,
   type StatusSnapshot,
+  type InkDisplayPlan,
 } from '@codepulse/shared'
 import { HolidayStore, type HolidayCache } from './ambient-calendar.js'
-import { contentKey, pauseReason, qualifies, xMinimumLikes } from './ambient-rules.js'
+import { contentKey, pauseReason, qualifies, xMinimumLikes, inQuietHours } from './ambient-rules.js'
+import { inkFeatureAt } from './ambient-plan.js'
+import { inkCardTitle } from './ink-status.js'
 import { builtinCards, restorePersonalCards, personalCard } from './ambient-library.js'
 import { petCards } from './ambient-pet.js'
 import { collectMemes, collectX, collectNews, type JsonRequest } from './ambient-sources.js'
@@ -36,6 +40,8 @@ export interface AmbientDependencies {
   holidayCache?: unknown
   saveHolidayCache?: (cache: HolidayCache) => void
   automaticAllowed?: () => boolean
+  /** The whole applied playlist, rather than only the currently selected slot. */
+  plan?: () => InkDisplayPlan
 }
 const day = (now: number) => {
   const d = new Date(now)
@@ -113,15 +119,59 @@ export class AmbientService {
     return this.config
   }
   configure(input: unknown) {
-    const config = normalizeAmbient(input)
-    this.deps.save(config, this.history) // Do not apply unsaved settings on failure.
-    this.config = config
-    this.generation++
-    this.cards = []
-    if (!this.manual) this.active = undefined
-    this.nextCheckAt = 0
+    const prepared = this.prepareConfiguration(input)
+    prepared.save()
+    prepared.commit()
     this.changed()
     return this.snapshot()
+  }
+  prepareConfiguration(input: unknown) {
+    const config = normalizeAmbient(input)
+    const previous = this.config
+    return {
+      save: () => this.deps.save(config, this.history),
+      rollback: () => this.deps.save(previous, this.history),
+      commit: () => {
+        this.config = config
+        this.generation++
+        this.cards = []
+        if (!this.manual) this.active = undefined
+        this.nextCheckAt = 0
+      },
+    }
+  }
+  /** A hidden manual card keeps its original deadline and resumes if the alert clears. */
+  temporaryInk(): { title: string; until: number } | null {
+    if (!this.manual || !this.active || this.activeUntil <= this.now() || this.active.expiresAt <= this.now()) return null
+    return { title: inkCardTitle(this.active), until: Math.min(this.activeUntil, this.active.expiresAt) }
+  }
+  nextAutoAt(): number | null {
+    this.resetDay()
+    const config = this.config, now = this.now(), plan = this.deps.plan?.()
+    if (!config.enabled || this.history.shown >= config.dailyLimit ||
+        (plan && (plan.mode !== 'cycle' || !plan.items.includes('ambient'))) ||
+        (!plan && this.deps.automaticAllowed?.() === false)) return null
+    const reason = pauseReason(config, this.deps.status(), now)
+    if (reason && reason !== '安静时段') return null // A user's next action or idle time cannot be predicted.
+    if (!config.conceptsEnabled && !config.promptsEnabled && !config.petEnabled &&
+        !config.calendarEnabled && !config.memeEnabled && !config.newsEnabled &&
+        !(config.xEnabled && this.deps.key(config.provider))) return null
+    const end = new Date(now)
+    end.setHours(24, 0, 0, 0)
+    let at = Math.max(now, this.history.lastShown ? this.history.lastShown + config.gapMinutes * 60000 : now)
+    if (this.active && this.activeUntil > now) at = Math.max(at, this.activeUntil)
+    while (at < end.getTime()) {
+      if (inQuietHours(config, at)) {
+        const resume = new Date(at)
+        resume.setHours(config.quietEnd, 0, 0, 0)
+        if (resume.getTime() <= at) resume.setDate(resume.getDate() + 1)
+        at = resume.getTime()
+      } else if (plan && inkFeatureAt(plan, at) !== 'ambient') {
+        const dwell = plan.intervalMinutes * 60000
+        at = (Math.floor(at / dwell) + 1) * dwell
+      } else return at
+    }
+    return null
   }
   snapshot(): AmbientSnapshot {
     this.resetDay()
@@ -131,6 +181,7 @@ export class AmbientService {
       collecting: this.collecting,
       lastCheckedAt: this.lastCheckedAt,
       nextCheckAt: this.nextCheckAt,
+      nextAutoAt: this.nextAutoAt(),
       sourceStatus: {
         x: !this.config.xEnabled
           ? '已关闭'
@@ -248,12 +299,14 @@ export class AmbientService {
     if (!card) throw new Error('内容已过期，请重新选择')
     this.active = card
     this.manual = true
-    this.activeUntil = this.now() + this.config.displayMinutes * 60000
+    this.activeUntil = this.now() + INK_TEMPORARY_MINUTES * 60000
     this.changed()
     return this.snapshot()
   }
   dismiss() {
     this.active = undefined
+    this.activeUntil = 0
+    this.manual = false
     this.changed()
     return this.snapshot()
   }
@@ -296,8 +349,10 @@ export class AmbientService {
     if (this.stopped) return
     this.resetDay()
     this.syncHolidays()
-    if (this.active && !this.current()) {
+    if (this.active && (this.activeUntil <= this.now() || this.active.expiresAt <= this.now() || (!this.manual && !this.current()))) {
       this.active = undefined
+      this.manual = false
+      this.activeUntil = 0
       this.changed()
     }
     if (

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import {
   DEFAULT_ASSISTANT_SETTINGS,
+  INK_TEMPORARY_MINUTES,
   hudStateLevel,
   type AssistantAction,
   type AssistantConversationTurn,
@@ -26,7 +27,6 @@ export interface AssistantDependencies {
   notify: (title: string) => boolean
   now?: () => number
   automaticAllowed?: () => boolean
-  restoreWork?: () => void
 }
 interface DraftRecord {
   draft: AssistantDraft
@@ -366,7 +366,7 @@ export class AssistantService {
     this.emit()
   }
   showOnInk(): AssistantSnapshot {
-    this.inkUntil = this.now() + 900000
+    this.inkUntil = this.now() + INK_TEMPORARY_MINUTES * 60000
     this.emit()
     return this.snapshot()
   }
@@ -377,11 +377,10 @@ export class AssistantService {
     }
   }
   hideOnInk(): AssistantSnapshot {
-    this.inkUntil = 0
-    this.deps.restoreWork?.()
-    this.emit()
+    this.clearTemporaryInk()
     return this.snapshot()
   }
+  temporaryInkUntil(): number { return this.inkUntil > this.now() ? this.inkUntil : 0 }
   inkCard(
     status: Pick<StatusSnapshot, 'agents'>,
     preview = false,

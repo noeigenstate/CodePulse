@@ -327,13 +327,13 @@ test('AI keys are selected by provider and never reused across providers', async
 test('todo pages are stable between deadline milestones, without countdown refreshes', () => {
   const f = fixture()
   try {
-    f.store.add({ title: '稳定待办', dueAt: f.now + 600000 }, f.now)
+    f.store.add({ title: '稳定待办', dueAt: f.now + 300000 }, f.now)
     f.service.showOnInk()
     const first = f.service.inkCard({ agents: [] })
     assert.equal(first?.items?.length, 1)
     f.setNow(f.now + 60000)
     assert.equal(f.service.inkCard({ agents: [] })?.id, first?.id)
-    f.setNow(f.now + 540001)
+    f.setNow(f.now + 240001)
     const overdue = f.service.inkCard({ agents: [] })
     assert.notEqual(overdue?.id, first?.id)
     assert.equal(overdue?.items?.[0].overdue, true)

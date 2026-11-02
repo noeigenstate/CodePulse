@@ -12,7 +12,7 @@ import {
 
 export function createAssistantRuntime(
   directory: string,
-  deps: Pick<AssistantDependencies, 'changed' | 'notify' | 'automaticAllowed' | 'restoreWork'>,
+  deps: Pick<AssistantDependencies, 'changed' | 'notify' | 'automaticAllowed'>,
 ) {
   mkdirSync(directory, { recursive: true })
   const settingsPath = join(directory, 'assistant-settings.json'),

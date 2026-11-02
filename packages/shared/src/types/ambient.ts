@@ -171,6 +171,8 @@ export interface AmbientSnapshot {
   collecting: boolean
   lastCheckedAt: number
   nextCheckAt: number
+  /** Earliest possible automatic display today; null if disabled, capped or currently unpredictable. */
+  nextAutoAt: number | null
   sourceStatus: { x: string; meme: string; news?: string }
   /** Next official holiday from the holiday table in use; absent when none is known. */
   calendarNext?: CalendarNextHoliday

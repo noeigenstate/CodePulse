@@ -3,7 +3,7 @@ import test from 'node:test'
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { DEFAULT_HUD_SETTINGS, DEFAULT_INK_PLAN, normalizeShellPreferences, productTargets, type ShellPreferences } from '@codepulse/shared'
+import { DEFAULT_HUD_SETTINGS, DEFAULT_INK_PLAN, normalizeInkPlan, normalizeShellPreferences, productTargets, type ShellPreferences } from '@codepulse/shared'
 import { ProductShell, shellPreferenceStore } from '../apps/desktop/src/main/product-shell.js'
 import { DeviceViewLeases } from '../apps/desktop/src/main/device-view-leases.js'
 import { registerProductIpc } from '../apps/desktop/src/main/product-ipc.js'
@@ -44,6 +44,23 @@ function fixture(input?: unknown) {
     },
   }
 }
+test('ink plans retain work first, deduplicate slots and accept five-minute dwell', () => {
+  const plan = normalizeInkPlan({ mode: 'cycle', fixed: 'todos', items: ['todos', 'ambient', 'todos'], intervalMinutes: 5 })
+  assert.deepEqual(plan, { mode: 'cycle', fixed: 'work', items: ['work', 'todos', 'ambient'], intervalMinutes: 5 })
+  assert.equal(normalizeInkPlan({ intervalMinutes: 7 }).intervalMinutes, 15)
+  assert.equal(normalizeInkPlan({ intervalMinutes: '5' }).intervalMinutes, 15)
+  assert.equal(normalizeInkPlan({ mode: 'single', fixed: 'work' }).fixed, 'work')
+  assert.deepEqual(normalizeInkPlan({ items: [] }).items, ['work'])
+  assert.deepEqual(normalizeInkPlan({ items: ['invalid'] }).items, ['work'])
+})
+test('legacy non-work fixed plans migrate once to a cycle with work and that content', () => {
+  for (const fixed of ['ambient', 'todos']) {
+    const plan = normalizeInkPlan({ mode: 'single', fixed, items: ['ambient', 'todos'], intervalMinutes: 30 })
+    assert.deepEqual(plan, { mode: 'cycle', fixed: 'work', items: ['work', fixed], intervalMinutes: 30 })
+    assert.deepEqual(normalizeInkPlan(plan), plan)
+    assert.deepEqual(normalizeShellPreferences({ inkPlan: { mode: 'single', fixed } }).inkPlan.items, ['work', fixed])
+  }
+})
 test('shell defaults provide control; malformed routes cannot become file or network destinations', () => {
   assert.deepEqual(normalizeShellPreferences(null), {
     version: 1,

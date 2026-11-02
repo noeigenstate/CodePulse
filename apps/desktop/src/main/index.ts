@@ -8,6 +8,8 @@ import { registerProductIpc } from './product-ipc.js'
 import { ScreenWorkbenchWindow } from './screen-workbench-window.js'
 import { registerAmbientIpc } from './ambient-ipc.js'
 import { inkAllowsAmbient, inkFeatureAt } from './ambient-plan.js'
+import { InkStatusRuntime, computeInkStatus } from './ink-status.js'
+import { applyInk, endInkTemporary } from './ink-apply.js'
 import { createAmbientRuntime } from './ambient-runtime.js'
 import { withAmbient } from './ambient-rules.js'
 import { spawn } from 'node:child_process'
@@ -90,6 +92,9 @@ let ambientRuntime: ReturnType<typeof createAmbientRuntime> | undefined
 let assistantRuntime: ReturnType<typeof createAssistantRuntime> | undefined
 let standardVisible = false
 let productShell: ProductShell | undefined
+let inkStatusRuntime: InkStatusRuntime | undefined
+let inkLastSeenAt: number | null = null
+let inkUpdateBatch = 0
 let screenWorkbench: ScreenWorkbenchWindow | undefined
 let mainWindow: BrowserWindow | null = null
 let tray: TrayController | null = null
@@ -283,6 +288,7 @@ function wireHub(): void {
 
   hub.on('status', (snapshot: StatusSnapshot) => {
     ambientRuntime?.service.tick()
+    inkStatusRuntime?.refresh()
     pendingStatusSnapshot = snapshot
     if (statusFlushTimer) return
     statusFlushTimer = setTimeout(() => {
@@ -365,33 +371,60 @@ function trackDeviceView(sender: Electron.WebContents): void {
   sender.once('destroyed', () => { deviceViews.delete(id); deviceLeases.release(id) })
 }
 
-// CONTRACT STUB (ia-refactor base): the core engineer replaces this with the real
-// computation in main/ink-status.ts (connection tracking, temporary displays, next slot, broadcasts).
-function inkScreenStatus(): InkScreenStatus {
-  const plan = productShell!.snapshot().inkPlan
+function inkStatusInput() {
+  const ambient = ambientRuntime?.service.snapshot()
   return {
-    connection: deviceServer ? 'disconnected' : 'server-off', lastSeenAt: null, showing: { kind: 'work' }, temporary: null,
-    mode: plan.mode, current: inkFeatureAt(plan, Date.now()), next: null, slotNote: '', updatedAt: Date.now(),
+    plan: productShell!.snapshot().inkPlan,
+    lastSeenAt: inkLastSeenAt,
+    serverEnabled: Boolean(deviceServer),
+    projected: deviceDisplaySnapshot().status,
+    ambientTemporary: ambientRuntime?.service.temporaryInk() ?? null,
+    assistantUntil: assistantRuntime?.service.temporaryInkUntil() ?? 0,
+    ambientPausedReason: ambient?.pausedReason ?? '',
+    nextAutoAt: ambient?.nextAutoAt ?? null,
   }
+}
+function inkScreenStatus(): InkScreenStatus {
+  return inkStatusRuntime?.snapshot() ?? computeInkStatus({ ...inkStatusInput(), now: Date.now() })
+}
+function notifyInkDisplayChanged(): void {
+  if (inkUpdateBatch) return
+  deviceServer?.notifyChanged()
+  broadcast('codepulse:device-display', deviceDisplaySnapshot())
+  inkStatusRuntime?.refresh()
+}
+function applyInkRequest(request: unknown) {
+  return applyInk(request, {
+    shell: productShell!, ambient: ambientRuntime!.service,
+    readDisplay: () => readDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json')),
+    writeDisplay: display => writeDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json'), display),
+    displaySnapshot: () => deviceDisplaySnapshot(),
+    committed: () => {
+      // Tick may select a card synchronously; do not publish any intermediate state.
+      inkUpdateBatch++
+      try { ambientRuntime?.service.tick() } finally { inkUpdateBatch-- }
+      broadcast('codepulse:shell-status', productShell!.snapshot())
+      broadcast('codepulse:ambient-status', ambientRuntime!.service.snapshot())
+      notifyInkDisplayChanged()
+    },
+  })
 }
 
 function registerIpc(): void {
   ipcMain.handle('codepulse:ink-status-get', () => inkScreenStatus())
-  ipcMain.handle('codepulse:ink-apply', (_event, request: InkApplyRequest) => {
-    const shell = productShell!.setInkPlan(normalizeInkPlan(request?.plan))
-    writeDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json'), request?.display)
-    deviceServer?.notifyChanged()
-    const display = deviceDisplaySnapshot()
-    broadcast('codepulse:device-display', display)
-    return { shell, display }
-  })
+  ipcMain.handle('codepulse:ink-apply', (_event, request: InkApplyRequest) => applyInkRequest(request))
   ipcMain.handle('codepulse:ink-temporary-end', () => {
-    ambientRuntime?.service.dismiss()
-    assistantRuntime?.service.clearTemporaryInk()
+    inkUpdateBatch++
+    try { endInkTemporary(ambientRuntime!.service, assistantRuntime?.service) } finally { inkUpdateBatch-- }
+    broadcast('codepulse:ambient-status', ambientRuntime!.service.snapshot())
+    if (assistantRuntime) broadcast('codepulse:assistant-status', assistantRuntime.service.snapshot())
+    notifyInkDisplayChanged()
     return inkScreenStatus()
   })
   registerAssistantIpc(ipcMain, () => assistantRuntime, () => deviceDisplaySnapshot().status, () => ambientRuntime?.service.dismiss())
-  registerProductIpc(ipcMain, productShell!, screenWorkbench!)
+  registerProductIpc(ipcMain, productShell!, screenWorkbench!, plan => applyInkRequest({
+    plan: normalizeInkPlan(plan), display: deviceDisplaySnapshot().config,
+  }).shell)
   ipcMain.handle('codepulse:hud-preview', () => hudSurface?.snapshot() ?? null)
   registerAmbientIpc(ipcMain, ambientRuntime!, () => deviceDisplaySnapshot().status, url => shell.openExternal(url), () => assistantRuntime?.service.clearTemporaryInk())
   ipcMain.handle('codepulse:get-device-display', (_event, preview: unknown) => deviceDisplaySnapshot(preview))
@@ -400,6 +433,7 @@ function registerIpc(): void {
     deviceServer?.notifyChanged()
     const snapshot = deviceDisplaySnapshot()
     broadcast('codepulse:device-display', snapshot)
+    inkStatusRuntime?.refresh()
     return snapshot
   })
   ipcMain.handle('codepulse:get-status', (event) =>
@@ -574,8 +608,7 @@ async function bootstrap(): Promise<void> {
     () => { if (!shutdownStarted) productShell?.refresh() },
     () => {
       if (shutdownStarted) return
-      deviceServer?.notifyChanged()
-      broadcast('codepulse:device-display', deviceDisplaySnapshot())
+      notifyInkDisplayChanged()
     },
   )
   hudSurface.registerIpc()
@@ -589,27 +622,38 @@ async function bootstrap(): Promise<void> {
     focusMode: setDesktopFocus, standard: showWindow, hud: () => hudSurface?.open(mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : undefined),
     screen: () => screenWorkbench?.open(), hideStandard: () => { standardVisible = false; mainWindow?.hide() }, hideHud: () => hudSurface?.hide(),
     hudSettingsChanged: (settings) => hudSurface?.syncSettings(settings),
-  }, state => { broadcast('codepulse:shell-status', state); ambientRuntime?.service.tick(); deviceServer?.notifyChanged() })
+  }, state => {
+    if (inkUpdateBatch) return
+    broadcast('codepulse:shell-status', state)
+    ambientRuntime?.service.tick()
+    notifyInkDisplayChanged()
+  })
   hudSurface.syncSettings(productShell.snapshot().hudSettings)
   ambientRuntime = createAmbientRuntime(app.getPath('userData'), {
     status: () => hudSurface?.snapshot() ?? hub.snapshot(),
     automaticAllowed: () => inkAllowsAmbient(productShell!.snapshot().inkPlan, Date.now()),
+    plan: () => productShell!.snapshot().inkPlan,
     changed: () => {
+      if (inkUpdateBatch) return
       if (ambientRuntime) broadcast('codepulse:ambient-status', ambientRuntime.service.snapshot())
-      deviceServer?.notifyChanged()
+      notifyInkDisplayChanged()
     },
   })
+  const initialPlan = productShell.snapshot().inkPlan
+  const ambientConfig = ambientRuntime.service.getConfig()
+  const initialEnabled = initialPlan.mode === 'cycle' && initialPlan.items.includes('ambient')
+  if (ambientConfig.enabled !== initialEnabled || ambientConfig.displayMinutes !== initialPlan.intervalMinutes) {
+    try { ambientRuntime.service.configure({ ...ambientConfig, enabled: initialEnabled, displayMinutes: initialPlan.intervalMinutes }) }
+    catch { console.warn('[codepulse] saved ambient settings could not follow the playlist') }
+  }
   ambientRuntime.service.start()
   try {
     assistantRuntime = createAssistantRuntime(app.getPath('userData'), {
       automaticAllowed: () => inkFeatureAt(productShell!.snapshot().inkPlan, Date.now()) === 'todos',
-      restoreWork: () => {
-        const plan = productShell!.snapshot().inkPlan
-        if (inkFeatureAt(plan, Date.now()) === 'todos') productShell!.setInkPlan({...plan, mode:'single', fixed:'work'})
-      },
       changed: () => {
+        if (inkUpdateBatch) return
         if (assistantRuntime) broadcast('codepulse:assistant-status', assistantRuntime.service.snapshot())
-        deviceServer?.notifyChanged()
+        notifyInkDisplayChanged()
       },
       notify: title => {
         if (!Notification.isSupported()) return false
@@ -623,6 +667,18 @@ async function bootstrap(): Promise<void> {
   } catch {
     console.error('[codepulse] local assistant storage unavailable; existing work and usage remain available')
   }
+  inkStatusRuntime = new InkStatusRuntime({
+    read: inkStatusInput,
+    publish: status => broadcast('codepulse:ink-status', status),
+    advance: () => {
+      inkUpdateBatch++
+      try { ambientRuntime?.service.tick() } finally { inkUpdateBatch-- }
+      if (ambientRuntime) broadcast('codepulse:ambient-status', ambientRuntime.service.snapshot())
+      deviceServer?.notifyChanged()
+      broadcast('codepulse:device-display', deviceDisplaySnapshot())
+    },
+  })
+  inkStatusRuntime.refresh()
   wireHub()
   registerIpc()
 
@@ -649,12 +705,14 @@ async function bootstrap(): Promise<void> {
         registerAssistantRoutes: assistantRuntime ? app => registerAssistantRoutes(app, assistantRuntime!.service) : undefined,
         projectStatus: projectDeviceDisplay,
         getDisplayConfig: () => readDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json')),
+        onStatusRead: () => { inkLastSeenAt = Date.now(); inkStatusRuntime?.refresh() },
         host: deviceConfig.host,
         port: deviceConfig.port,
         authToken: deviceConfig.authToken,
         onMdnsError: (message) => console.warn(`[codepulse] device mDNS: ${message}`),
       })
       console.log(`[codepulse] LAN device server listening on ${deviceServer.url}`)
+      inkStatusRuntime.refresh()
       console.log(
         deviceServer.authTokenPath
           ? `[codepulse] device token stored at ${deviceServer.authTokenPath}`
@@ -806,6 +864,7 @@ function startMaintenanceTimers(): void {
 }
 
 async function shutdownRuntime(): Promise<void> {
+  inkStatusRuntime?.stop()
   assistantRuntime?.service.stop()
   screenWorkbench?.destroy()
   ambientRuntime?.service.stop()

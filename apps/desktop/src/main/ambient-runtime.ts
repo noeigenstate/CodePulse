@@ -8,7 +8,7 @@ import { checkMemeImage, packMemeBitmap } from './ambient-image.js'
 
 export function createAmbientRuntime(
   directory: string,
-  deps: Pick<AmbientDependencies, 'status' | 'changed' | 'automaticAllowed'>,
+  deps: Pick<AmbientDependencies, 'status' | 'changed' | 'automaticAllowed' | 'plan'>,
 ) {
   const path = join(directory, 'ambient-settings.json'),
     keysPath = join(directory, 'ambient-keys.json')

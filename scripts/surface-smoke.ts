@@ -562,6 +562,14 @@ app.whenReady().then(async()=>{
     assert.deepEqual(keyForm.types,['password','password'],'SecretId and SecretKey are password fields')
     assert.ok(keyForm.autocomplete.every(v=>v==='off')&&keyForm.placeholders.every(v=>v===''),'without a saved key nothing claims 已保存')
     assert.deepEqual(keyForm.buttons,[['保存',true],['清除',true],['测试连接',true]],'save, clear and test wait for input or a saved key')
+    // The key panel stays inside the narrow list column at 1440 and 720: no clipped labels, no sideways overflow.
+    for (const [width,height] of [[1440,900],[720,600]] as const) {
+      main.setContentSize(width,height);await wait(400)
+      const fit=await main.webContents.executeJavaScript(`(()=>{const d=document.querySelector('.ambient-yuanbao'),c=document.querySelector('.ambient-cats');const seg=Array.from(d.querySelectorAll('.page-segmented button')).map(b=>[b.textContent,Math.round(b.getBoundingClientRect().height)]);return {overflow:d.scrollWidth-d.clientWidth,card:c.scrollWidth-c.clientWidth,seg,page:document.documentElement.scrollWidth-innerWidth}})()`) as {overflow:number;card:number;seg:[string,number][];page:number}
+      assert.ok(fit.overflow<=1&&fit.card<=1&&fit.page<=1&&fit.seg.every(([,h])=>h<=36),`元宝搜索 settings fit at ${width}: ${JSON.stringify(fit)}`)
+      assert.deepEqual(fit.seg.map(([t])=>t),['SecretId/Key','API Key'],'short segment labels')
+    }
+    main.setContentSize(1120,780);await wait(350)
     await click(main,'.ambient-yuanbao .page-segmented button:nth-child(2)')
     assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.ambient-yuanbao-keys input[type=password]').length`),1,'API Key mode has one field')
     // A fictitious key submits once and is gone from the page immediately, whatever the host answers.

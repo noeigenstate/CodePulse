@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { AmbientSnapshot, YuanbaoAuthMode, YuanbaoStatus, YuanbaoTestResult } from '@codepulse/shared'
 import { InfoTip } from './InfoTip.js'
+import { syncAuthMode } from '../lib/yuanbaoStatus.js'
 
 /**
  * 元宝搜索 key and connection settings. A key goes only from these password fields to the main
@@ -17,6 +18,9 @@ export function YuanbaoSettings({ status, limit, onLimit, onSnapshot, disabled, 
   limitField: (value: number, onCommit: (value: number) => void) => JSX.Element
 }): JSX.Element {
   const [mode, setMode] = useState<YuanbaoAuthMode>(status?.authMode ?? 'tc3')
+  const [touched, setTouched] = useState(false)
+  // The saved mode wins until the user picks one themselves (the first snapshot usually arrives after mount).
+  useEffect(() => setMode((current) => syncAuthMode(current, touched, status?.authMode)), [status?.authMode, touched])
   const [secretId, setSecretId] = useState('')
   const [secretKey, setSecretKey] = useState('')
   const [apiKey, setApiKey] = useState('')
@@ -91,18 +95,22 @@ export function YuanbaoSettings({ status, limit, onLimit, onSnapshot, disabled, 
             <button
               type="button"
               aria-pressed={mode === 'tc3'}
+              title="SecretId + SecretKey"
               onClick={() => {
                 clearFields()
+                setTouched(true)
                 setMode('tc3')
               }}
             >
-              SecretId + SecretKey
+              SecretId/Key
             </button>
             <button
               type="button"
               aria-pressed={mode === 'apikey'}
+              title="API Key"
               onClick={() => {
                 clearFields()
+                setTouched(true)
                 setMode('apikey')
               }}
             >
@@ -171,7 +179,7 @@ export function YuanbaoSettings({ status, limit, onLimit, onSnapshot, disabled, 
         {limitField(limit, onLimit)}
         <p className="ambient-message" data-feedback="yuanbao" role="status">
           {note ||
-            (test ? (test.ok ? `连接正常 · ${test.latencyMs ?? '—'} ms · ${test.edition ?? '—'} · ${test.cardText}` : test.error) : '')}
+            (test ? (test.ok ? `连接正常 · ${test.latencyMs ?? '—'} ms · ${test.edition ?? '—'} · ${test.cardText}` : test.error) : status?.lastError ?? '')}
         </p>
         {stats.length > 0 && (
           <p className="ambient-yuanbao-stats" role="status">

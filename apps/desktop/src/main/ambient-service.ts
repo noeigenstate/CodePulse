@@ -49,6 +49,7 @@ export interface AmbientDependencies {
   yuanbaoCache?: unknown
   saveYuanbao?: (cache: YuanbaoCache) => void
   saveYuanbaoResponse?: (raw: unknown) => void
+  saveYuanbaoDebug?: (topic: string, raw: unknown) => void
 }
 const day = (now: number) => {
   const d = new Date(now)
@@ -94,7 +95,7 @@ export class AmbientService {
       credentials: deps.yuanbaoKey ?? (() => null), client: deps.yuanbaoClient, cache: deps.yuanbaoCache,
       holidays: () => this.holidays.table(), hasYear: year => this.holidays.hasYear(year),
       scheduledAllowed: () => this.history.day !== day(this.now()) || this.history.shown < this.config.dailyLimit,
-      save: deps.saveYuanbao ?? (() => {}), saveLastResponse: deps.saveYuanbaoResponse, changed: () => this.changed() })
+      save: deps.saveYuanbao ?? (() => {}), saveLastResponse: deps.saveYuanbaoResponse, saveDebugResponse: deps.saveYuanbaoDebug, changed: () => this.changed() })
   }
   private now() {
     return this.deps.now?.() ?? Date.now()

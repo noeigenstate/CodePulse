@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, renameSync } from 'node:fs'
+import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { nativeImage, safeStorage, net } from 'electron'
 import type { AmbientConfig, YuanbaoKeyInput } from '@codepulse/shared'
@@ -68,6 +68,17 @@ export function createAmbientRuntime(
       writeFileSync(path + '.tmp', yuanbaoResponseJson(raw), { encoding: 'utf8', mode: 0o600 })
       renameSync(path + '.tmp', path)
     },
+    ...(process.env.CODEPULSE_YUANBAO_DEBUG === '1'
+      ? {
+          saveYuanbaoDebug: (topic: string, raw: unknown) => {
+            const dir = join(directory, 'yuanbao-debug')
+            mkdirSync(dir, { recursive: true })
+            const path = join(dir, `${topic.replace(/[^a-z]/g, '')}.json`)
+            writeFileSync(path + '.tmp', yuanbaoResponseJson(raw), { encoding: 'utf8', mode: 0o600 })
+            renameSync(path + '.tmp', path)
+          },
+        }
+      : {}),
     request: async (url, headers) =>
       JSON.parse(
         Buffer.from(await fetchBytes(url, headers, 512000, net.fetch.bind(net))).toString('utf8'),

@@ -49,6 +49,8 @@ interface Dependencies {
   scheduledAllowed?: () => boolean
   save: (cache: YuanbaoCache) => void
   saveLastResponse?: (raw: unknown) => void
+  /** Diagnostics only (CODEPULSE_YUANBAO_DEBUG=1): every sanitized response, per topic. */
+  saveDebugResponse?: (topic: string, raw: unknown) => void
   changed: () => void
 }
 interface Job {
@@ -194,9 +196,9 @@ export class YuanbaoSource {
       params: YuanbaoSearchParams,
     ) => jobs.push({ key: `${topic}:${value}`, topic, value, cadence, params })
     add('weather', config.city, 7200000, { Query: `${config.city}今天天气`, Mode: 1 })
-    add('gold', '', 3600000, { Query: '今日金价 国内现货黄金', Mode: 1 })
+    add('gold', '', 3600000, { Query: '今日金价', Mode: 1 })
     for (const symbol of config.stocks)
-      add('stock', symbol, 3600000, { Query: `${symbol} 股票行情 股价`, Mode: 1 })
+      add('stock', symbol, 3600000, { Query: `${symbol.split('.')[0]!.toUpperCase()}股价`, Mode: 1 })
     for (const tool of config.tools)
       add('tools', tool, 43200000, { Query: `${tool} 更新 发布 版本`, Mode: 2, Freshness: 'd3' })
     const year = holidayWatchYear(this.now())
@@ -451,6 +453,11 @@ export class YuanbaoSource {
       this.cache.edition = ['lite', 'standard', 'flagship'].includes(String(result.edition))
         ? result.edition
         : null
+      try {
+        this.deps.saveDebugResponse?.(job.topic, sanitizeYuanbaoResponse(result.raw, key))
+      } catch {
+        /* Diagnostics must never affect a paid response. */
+      }
       if (manual) {
         try {
           this.deps.saveLastResponse?.(sanitizeYuanbaoResponse(result.raw, key))

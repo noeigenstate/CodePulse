@@ -23,6 +23,8 @@ import { DeviceProvisioningPanel } from './DeviceProvisioningPanel.js'
 import { createDeviceDensityPreview, type DevicePreviewSource } from './device-density-preview.js'
 import type { DeviceProvisioningCopy, Locale } from '../lib/i18n.js'
 import './device-display.css'
+import { WorkVoiceSettingsPanel } from './WorkVoiceSettings.js'
+import { WorkStateGuide } from './WorkStateGuide.js'
 
 const HUD_TOOLS: { key: HudToolKey; label: string }[] = [
   { key: 'codex', label: 'Codex' },
@@ -773,7 +775,7 @@ function InkControlWorkspace({
             </label>
           </div>
 
-          <label><input type="checkbox" checked={Boolean(displayDraft.inverted)} onChange={(e) => changeDisplay({ inverted: e.target.checked })} /> 黑底白字（固件 0.0.24 起支持）</label>
+          <label><input type="checkbox" checked={Boolean(displayDraft.inverted)} onChange={(e) => changeDisplay({ inverted: e.target.checked })} /> {zh ? '黑底白字（固件 0.0.24 起支持）' : 'Inverted colors (firmware 0.0.24+)'}</label>
               <label className="product-cycle-row">
             <span>{zh ? '额度口径' : 'Quota Metric'}</span>
             <select
@@ -788,6 +790,8 @@ function InkControlWorkspace({
           </label>
 
           </details>
+          <WorkVoiceSettingsPanel locale={locale} target="ink" active={active} />
+          <WorkStateGuide locale={locale} />
           </div>
           <footer className="product-config-actions">
           <button
@@ -1114,6 +1118,8 @@ export function ProductControl({
                   <em className="product-feature-badge">{zh ? '暂不支持' : 'Unsupported'}</em>
                 </div>
 
+                <WorkVoiceSettingsPanel locale={locale} target="desktop" active={active && target === 'desktop'} />
+                <WorkStateGuide locale={locale} />
                 <button
                   type="button"
                   className="product-button primary"

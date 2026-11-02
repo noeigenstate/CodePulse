@@ -1,5 +1,5 @@
 import type { OverallState } from '@codepulse/shared'
-import { TurnState } from '@codepulse/shared'
+import { TurnState, WORK_STATE_LABELS } from '@codepulse/shared'
 
 export type Locale = 'zh' | 'en'
 
@@ -568,34 +568,7 @@ const OVERALL_LABELS: Record<Locale, Record<OverallState, string>> = {
   },
 }
 
-const TURN_STATE_LABELS: Record<Locale, Record<TurnState, string>> = {
-  zh: {
-    [TurnState.IDLE]: '空闲',
-    [TurnState.PROMPT_SUBMITTED]: '处理中',
-    [TurnState.THINKING]: '处理中',
-    [TurnState.TOOL_RUNNING]: '执行工具',
-    [TurnState.WAITING_PERMISSION]: '等待授权',
-    [TurnState.WAITING_USER_INPUT]: '等待输入',
-    [TurnState.DONE]: '已完成',
-    [TurnState.ERROR]: '出错',
-    [TurnState.TIMEOUT]: '疑似卡住',
-    [TurnState.USAGE_LIMITED]: '已达用量上限，任务暂时停止',
-    [TurnState.CANCELLED]: '已取消',
-  },
-  en: {
-    [TurnState.IDLE]: 'Idle',
-    [TurnState.PROMPT_SUBMITTED]: 'Processing',
-    [TurnState.THINKING]: 'Processing',
-    [TurnState.TOOL_RUNNING]: 'Using tools',
-    [TurnState.WAITING_PERMISSION]: 'Permission',
-    [TurnState.WAITING_USER_INPUT]: 'Waiting input',
-    [TurnState.DONE]: 'Done',
-    [TurnState.ERROR]: 'Error',
-    [TurnState.TIMEOUT]: 'Possibly stuck',
-    [TurnState.USAGE_LIMITED]: 'Usage limit reached, paused',
-    [TurnState.CANCELLED]: 'Cancelled',
-  },
-}
+const TURN_STATE_LABELS = WORK_STATE_LABELS
 
 const THINKING_DEPTH_LABELS: Record<Locale, Record<string, string>> = {
   zh: {

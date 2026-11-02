@@ -60,6 +60,7 @@ export function fromClaudeHook(raw: unknown): AgentEventInput | null {
       event.message = pickString(r, 'message') ?? '请求授权'
       break
     case 'user_input_required':
+      event.toolName = pickString(r, 'tool_name', 'toolName')
       event.message = pickString(r, 'message') ?? '等待用户继续输入'
       break
     case 'usage_limited':
@@ -91,11 +92,20 @@ function mapClaudeEvent(hookEvent: string, raw: Record<string, unknown>): AgentE
     case 'UserPromptSubmit':
       return 'prompt_submit'
     case 'PreToolUse':
-      return 'tool_start'
+      return pickString(raw, 'tool_name', 'toolName') === 'AskUserQuestion' ? 'user_input_required' : 'tool_start'
+    case 'PermissionRequest':
+      return pickString(raw, 'tool_name', 'toolName') === 'AskUserQuestion' ? 'user_input_required' : 'permission_request'
     case 'PostToolUse':
       return 'tool_end'
-    case 'Notification':
+    case 'Notification': {
+      const type = pickString(raw, 'notification_type')
+      if (type === 'idle_prompt' || type === 'auth_success') return null
+      if (type === 'elicitation_dialog' || type === 'elicitation_url_dialog') return 'user_input_required'
+      if (type === 'permission_prompt') return 'permission_request'
       return classifyNotification(pickString(raw, 'message'))
+    }
+    case 'StopFailure':
+      return 'turn_error'
     case 'Stop':
       return 'turn_stop'
     case 'Cancel':

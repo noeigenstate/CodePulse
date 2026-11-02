@@ -4,8 +4,8 @@ Read ../AGENTS.md, ../docs/REPOSITORY.md, README.md and doc/DEVELOPMENT.md.
 
 - This directory is part of the root Git repository. Commit and push from that
   repository; there is no firmware origin/main or second publishing remote.
-  Use the current authorized product branch. Do not merge product main or flash
-  hardware without the user's authorization. A code push does not authorize a flash.
+  The root product main is the development/publication target. Publish only with
+  task authorization. A code push does not authorize a release or hardware flash.
 - Preserve ESP-IDF v6.0.1, esp32s3 and dependencies.lock. Keep generated builds,
   managed_components, toolchains, credentials, NVS and captures out of Git.
 - Assert GPIO9 PWR_HOLD before board initialization. Preserve the existing

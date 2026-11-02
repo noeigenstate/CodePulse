@@ -3,7 +3,7 @@
  *
  * 只同步「用户正从这个项目开着 CLI」的槽位，不把磁盘上沉寂/历史项目拉出来：
  * - Grok：仅 `active_sessions.json` 且进程仍存活
- * - Codex：仅近期仍在写入的 rollout（CLI 开着才会持续写盘），且本机有 codex 进程
+ * - Codex：近期 rollout 提供元数据，真实轮次/token 进展才是工作证据；浏览写盘不是工作
  * - Claude：仅 `~/.claude/sessions/{pid}.json` 且 pid 仍存活；上下文从 projects transcript 尾部读取
  *
  * 其它：启动 await 首扫、稳态轮询、目录监听、指纹增量 ingest。
@@ -285,6 +285,7 @@ export class SessionSyncService {
   private fingerprints = new Map<string, string>()
   /** sessionKey → activity-only fingerprint (mtime/context; excludes rate limits) */
   private activityFingerprints = new Map<string, string>()
+  private codexWorkFingerprints = new Map<string, string>()
   /** Monotonic suffix used only for fresh resolver observations without native identity. */
   private quotaObservationSequence = 0
   private firstSync: Promise<void>
@@ -1712,7 +1713,7 @@ export class SessionSyncService {
     modelObservedAt?: number,
     turnTiming?: TurnTiming,
     tokenSourcePath?: string,
-  ): 'skip' | 'activity' | 'quota' | 'rehydrate' {
+  ): 'skip' | 'activity' | 'quota' | 'rehydrate' | 'discovery' | 'metadata' {
     const full = fingerprint(
       source,
       sessionId,
@@ -1743,6 +1744,20 @@ export class SessionSyncService {
     this.fingerprints.set(mapKey, full)
     this.activityFingerprints.set(mapKey, activity)
 
+    if (source === 'codex') {
+      // Resume/view writes change mtime, settings and context metadata. Only real
+      // turn or measured token progress may refresh liveness/recover a timeout.
+      const work = JSON.stringify([turnTiming?.state, turnTiming?.externalTurnId,
+        turnTiming?.startedAt, turnTiming?.elapsedMs, turnTiming?.observedAt, turnTiming?.outcome,
+        token.input, token.cachedInput, token.output, token.reasoningOutput, token.total])
+      const previousWork = this.codexWorkFingerprints.get(mapKey)
+      this.codexWorkFingerprints.set(mapKey, work)
+      if (previousWork !== undefined && previousWork !== work) return 'activity'
+      if (prevActivity !== activity) {
+        if (previousWork === undefined) return 'discovery'
+        if (previousWork === work) return 'metadata'
+      }
+    }
     if (prevActivity !== activity) return 'activity'
     if (!inHub) return 'rehydrate'
     if (prevFull !== full) return 'quota'

@@ -120,7 +120,8 @@ export interface AgentEvent {
      */
     sessionSync?: boolean
     /**
-     * The local CLI source changed since the previous synchronization scan.
+     * Execution-related local CLI data changed since the previous synchronization scan.
+     * Codex excludes mtime/configuration-only writes from this evidence.
      * This is stronger than merely seeing a persisted active record again and
      * may safely recover a card that the watchdog marked as timed out.
 

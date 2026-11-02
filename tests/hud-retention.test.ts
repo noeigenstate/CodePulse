@@ -33,7 +33,8 @@ function setup() {
 
 test('HUD default keeps idle cards for 30 minutes while classic/device still expire at five', () => {
   const { hub, send, tick, visible } = setup()
-  send('session_start')
+  send('prompt_submit', start - 1)
+  send('session_end')
   tick(start + 6 * minute)
   assert.equal(hub.snapshot(start + 6 * minute).agents.length, 0)
   assert.equal(toDeviceStatusV1(hub.snapshot(start + 6 * minute), normalizeDeviceDisplay({})).threads?.length, 0)
@@ -46,7 +47,7 @@ test('HUD default keeps idle cards for 30 minutes while classic/device still exp
 
 test('each HUD retention setting applies to idle, cancelled and acknowledged terminal cards', () => {
   const events = [
-    'session_start',
+    'session_end',
     'turn_cancelled',
     'turn_stop',
     'turn_error',
@@ -57,7 +58,7 @@ test('each HUD retention setting applies to idle, cancelled and acknowledged ter
     for (const event of events) {
       const { hub, hud, send, tick, visible } = setup()
       hud.setRetention(duration)
-      if (event !== 'session_start') send('prompt_submit', start - 1)
+      send('prompt_submit', start - 1)
       send(event)
       hub.acknowledge('codex', 'F:/test/project')
       tick(start + duration * minute - 1)
@@ -132,7 +133,8 @@ test('quota refreshes preserve source unread/expiry anchor and do not extend qui
 
 test('real activity restores a retained project to both surfaces without changing its HUD workspace', () => {
   const { hub, send, tick, visible } = setup()
-  send('session_start')
+  send('prompt_submit', start - 1)
+  send('session_end')
   visible(start)
   tick(start + 6 * minute)
   assert.equal(hub.snapshot().agents.length, 0)
@@ -187,22 +189,37 @@ test('long abandoned waits remain visible as unread timeout results on the HUD',
 
 test('HUD retention does not retain unsupported providers or alter a host without that surface', () => {
   const { hub, send, tick } = setup()
-  send('session_start', start, { source: 'opencode' })
+  send('prompt_submit', start - 1, { source: 'opencode' })
+  send('session_end', start, { source: 'opencode' })
   tick(start + 6 * minute)
   assert.equal(hub.snapshotForPresentation().agents.length, 0)
   const plain = new StatusHub()
-  plain.ingest({ id: 'start', source: 'codex', eventType: 'session_start', timestamp: start })
+  plain.ingest({ id: 'start', source: 'codex', eventType: 'prompt_submit', timestamp: start - 1 })
+  plain.ingest({ id: 'close', source: 'codex', eventType: 'session_end', timestamp: start })
   ;(plain as unknown as { tick(now: number): void }).tick(start + 6 * minute)
   assert.equal(plain.snapshotForPresentation().agents.length, 0)
 })
 
 test('retention changes take effect without waiting for another agent event', () => {
   const { hub, hud, send, tick, visible } = setup()
-  send('session_start')
+  send('prompt_submit', start - 1)
+  send('session_end')
   tick(start + 6 * minute)
   assert.equal(visible(start + 15 * minute).length, 1)
   hud.setRetention(10)
   assert.equal(visible(start + 15 * minute).length, 0)
   tick(start + 15 * minute)
   assert.equal(hub.snapshotForPresentation().agents.length, 0)
+})
+
+test('opening a conversation never creates a retained HUD card at any retention setting', () => {
+  for (const duration of [10, 30, 60, 120, 240]) {
+    const { hud, send, tick, visible } = setup()
+    hud.setRetention(duration)
+    send('session_start')
+    assert.equal(visible(start).length, 0)
+    send('session_start', start + 6 * minute)
+    tick(start + 6 * minute)
+    assert.equal(visible(start + 6 * minute).length, 0)
+  }
 })

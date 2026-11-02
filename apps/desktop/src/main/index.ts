@@ -57,6 +57,9 @@ import {
 } from '@codepulse/local-server'
 import { TrayController } from './tray.js'
 import { showNotification } from './notifications.js'
+import { WorkVoiceRuntime } from './work-voice-runtime.js'
+import { registerWorkVoiceRoutes } from './work-voice-http.js'
+import { readWorkVoiceTargets, writeWorkVoiceTarget } from './work-voice-settings.js'
 import { readNotificationsEnabled, writeNotificationsEnabled } from './notification-settings.js'
 import { FocusSyncScheduler } from './focus-sync.js'
 import { DisplayDeviceBrowser } from './device-browser.js'
@@ -109,6 +112,7 @@ let usageScanner: UsageScanner | null = null
 let usageScanTimer: NodeJS.Timeout | null = null
 /** Desktop toast opt-in, persisted in userData; off until the user enables it in settings. */
 let notificationsEnabled = false
+let workVoice: WorkVoiceRuntime | undefined
 let shutdownStarted = false
 let installingUpdate = false
 let lastTrayStatusKey: string | undefined
@@ -282,6 +286,7 @@ function wireHub(): void {
   })
 
   hub.on('status', (snapshot: StatusSnapshot) => {
+    workVoice?.observe(snapshot)
     ambientRuntime?.service.tick()
     pendingStatusSnapshot = snapshot
     if (statusFlushTimer) return
@@ -309,6 +314,7 @@ function notificationSettingsPath(): string {
 function setLocale(value: unknown): UiLocale {
   const locale: UiLocale = value === 'zh' ? 'zh' : 'en'
   hub.setLocale(locale)
+  workVoice?.setLocale(locale)
   tray?.setLocale(locale)
   return locale
 }
@@ -386,6 +392,20 @@ function registerIpc(): void {
     else hub.acknowledge(agent, workspacePath)
     return true
   })
+  ipcMain.handle('codepulse:work-voice-get', () => workVoice!.snapshot())
+  const voiceTarget = (value: unknown): 'desktop' | 'ink' => {
+    if (value !== 'desktop' && value !== 'ink') throw Error('Unknown voice output')
+    return value
+  }
+  ipcMain.handle('codepulse:work-voice-set', (_event, target: unknown, value: unknown) => {
+    const selected = voiceTarget(target)
+    const settings = writeWorkVoiceTarget(join(app.getPath('userData'), 'work-voice-settings.json'), selected, value)
+    return workVoice!.configure(selected, settings[selected])
+  })
+  ipcMain.handle('codepulse:work-voice-test', (_event, target: unknown, locale: unknown) =>
+    workVoice!.test(voiceTarget(target), locale === 'en' ? 'en' : 'zh'),
+  )
+  ipcMain.handle('codepulse:work-voice-stop', (_event, target: unknown) => workVoice!.stopSpeaking(voiceTarget(target)))
   ipcMain.handle('codepulse:get-notifications', () => notificationsEnabled)
   ipcMain.handle('codepulse:set-notifications', (_event, enabled: unknown) => {
     notificationsEnabled = writeNotificationsEnabled(notificationSettingsPath(), enabled)
@@ -529,6 +549,8 @@ function registerIpc(): void {
 async function bootstrap(): Promise<void> {
   Menu.setApplicationMenu(null)
   notificationsEnabled = readNotificationsEnabled(notificationSettingsPath())
+  workVoice = new WorkVoiceRuntime(readWorkVoiceTargets(join(app.getPath('userData'), 'work-voice-settings.json')),
+    snapshot => broadcast('codepulse:work-voice', snapshot))
 
   const dbPath = join(app.getPath('userData'), 'codepulse.sqlite')
   try {
@@ -622,6 +644,7 @@ async function bootstrap(): Promise<void> {
     try {
       deviceServer = await startDeviceServer({
         hub,
+        registerWorkVoiceRoutes: app => registerWorkVoiceRoutes(app, workVoice!.delivery),
         registerAssistantRoutes: assistantRuntime ? app => registerAssistantRoutes(app, assistantRuntime!.service) : undefined,
         projectStatus: projectDeviceDisplay,
         getDisplayConfig: () => readDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json')),
@@ -782,6 +805,7 @@ function startMaintenanceTimers(): void {
 }
 
 async function shutdownRuntime(): Promise<void> {
+  workVoice?.close()
   assistantRuntime?.service.stop()
   screenWorkbench?.destroy()
   ambientRuntime?.service.stop()

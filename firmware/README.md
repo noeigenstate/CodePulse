@@ -55,6 +55,14 @@ python tests/test_bitmap_fonts.py
 残影、红色全刷效果和新板音频仍需各自实测。默认构建不等于每块旧板正在使用的
 PAIR150/region 配置；更新已有设备时先核对版本、分区和实物板型。
 
+## 工作语音候选 / Work voice candidate
+
+音频构建已加入共享工作状态的播报接收通道，桌面与墨水屏可独立控制。
+主机在本地合成 PCM，固件领取短期 ID、播放并确认，不需要麦克风或助手云语音密钥。
+新板音频仍需核对 GPIO；Board1 默认关闭，禁止将非驱动编译验证包当成可刷的升级包。
+本次未增加运行版本号、未刷机；见[两端语音与状态](../docs/WORK-VOICE-AND-STATES.md)
+及[交接记录](../docs/WORK-VOICE-DEVICE-HANDOFF.md)。
+
 ## 目录
 
 - `main/`：板级驱动、设备客户端、USB、生产渲染器和刷新策略。

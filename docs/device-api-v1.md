@@ -459,3 +459,26 @@ PAIR125/PAIR150 波形及单次驱动。配套固件 `7e3d9e6` 已合入独立�
 原型已刷入 `0.0.26-region-pair150` 并确认开机联网，实际残影改善仍待实物验收。
 两套桌面预览均为 `0.0.26-paced`，仅表示目标像素；版本对应、软件检查和实测范围见
 [日常低干扰显示记录](QUIET-DISPLAY-2026-10-28.md)。
+
+
+### Additive work voice output (source candidate, 2026-11-02)
+
+Independent from assistant voice input/output, the optional host registers these
+routes behind the existing device token guard. No status JSON or preview changes.
+
+| Method / path | Result |
+| --- | --- |
+| GET /api/v1/device/work/voice | `{announcement:null}` or `{announcement:{id:"UUID"}}`; requires X-CodePulse-Device-Id |
+| GET /api/v1/device/work/voice/:id/audio | Binary PCM signed 16-bit LE, mono, 16000 Hz; x-codepulse-audio-rate:16000 |
+| POST /api/v1/device/work/voice/:id/ack | `{ok:true}` after successful playback; empty JSON body |
+
+All responses are no-store. Audio is capped at 640000 bytes; queues retain at most
+4 batches for 120 seconds, with at most 16 devices and 3 audio attempts per device.
+Resolved, disabled or expired alerts cannot be fetched (410). Clients must claim
+before fetching and acknowledge only after successful playback; repeat an ACK for
+the last played ID without playing again. Older hosts return 404 and older firmware
+does not call these routes. The source implementation requires verified audio-board
+configuration to run; compile-only images cannot drive audio GPIOs. No microphone,
+cloud key, assistant voice opt-in or additional port is required. The current local
+TTS adapter requires a Windows host with a matching system voice; hardware listening
+acceptance remains pending. See [work voice](WORK-VOICE-AND-STATES.md).

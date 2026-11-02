@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { InkApplyRequest, InkScreenStatus } from '@codepulse/shared'
+import type { InkApplyRequest, InkScreenStatus, YuanbaoKeyInput, YuanbaoTestResult } from '@codepulse/shared'
 import type { AssistantAudio, AssistantDraft, AssistantSecret, AssistantSettings, AssistantSnapshot, DeskTaskInput } from '@codepulse/shared'
 import type {
   ProductView, DesktopForm, ShellSnapshot, WorkbenchWindowState, PresentationTarget, DesktopLayout,
@@ -80,6 +80,10 @@ export interface CodePulseApi {
   refreshAmbient: () => Promise<AmbientSnapshot>
   showAmbient: (id: string) => Promise<AmbientSnapshot>
   dismissAmbient: () => Promise<AmbientSnapshot>
+  /** Saves 元宝搜索 credentials in the OS-encrypted key store; empty strings clear them. Never returns a key. */
+  setYuanbaoKey: (input: YuanbaoKeyInput) => Promise<AmbientSnapshot>
+  /** One live weather request (counted against the daily limit) to check the key and connectivity. */
+  testYuanbao: () => Promise<YuanbaoTestResult>
   previewAmbient: (id: string) => Promise<DeviceStatusV1>
   openAmbient: (id: string) => Promise<void>
   onAmbient: (cb: (snapshot: AmbientSnapshot) => void) => Unsubscribe

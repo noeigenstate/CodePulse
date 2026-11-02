@@ -69,63 +69,6 @@ export interface CalendarNextHoliday {
   ongoing: boolean
 }
 
-/** Optional, low-priority desk content. Credentials never cross back to the renderer. */
-export interface AmbientConfig {
-  version: 1
-  enabled: boolean
-  xEnabled: boolean
-  memeEnabled: boolean
-  conceptsEnabled: boolean
-  promptsEnabled: boolean
-  newsEnabled: boolean
-  petEnabled: boolean
-  petId: PetId
-  calendarEnabled: boolean
-  provider: 'twitterapi' | 'x'
-  accounts: string[]
-  keywords: string[]
-  exclude: string[]
-  minLikes: number
-  accountMinLikes: Record<string, number>
-  memeMinUps: number
-  memeCommunity: 'memes' | 'dankmemes' | 'ProgrammerHumor'
-  pollMinutes: number
-  gapMinutes: number
-  dailyLimit: number
-  dailyRequestLimit: number
-  displayMinutes: number
-  quietStart: number
-  quietEnd: number
-  idleOnly: boolean
-}
-export const DEFAULT_AMBIENT: AmbientConfig = {
-  version: 1,
-  enabled: false,
-  xEnabled: true,
-  memeEnabled: true,
-  conceptsEnabled: true,
-  promptsEnabled: false,
-  newsEnabled: false,
-  petEnabled: true,
-  petId: PET_IDS[0],
-  calendarEnabled: true,
-  provider: 'twitterapi',
-  accounts: ['Polymarket', 'elonmusk', 'OpenAI', 'AnthropicAI', 'GoogleDeepMind'],
-  keywords: [],
-  exclude: ['giveaway', 'airdrop', 'promo code'],
-  minLikes: 5000,
-  accountMinLikes: { elonmusk: 50000 },
-  memeMinUps: 1000,
-  memeCommunity: 'memes',
-  pollMinutes: 30,
-  gapMinutes: 90,
-  dailyLimit: 6,
-  dailyRequestLimit: 24,
-  displayMinutes: 10,
-  quietStart: 23,
-  quietEnd: 8,
-  idleOnly: true,
-}
 /** 元宝搜索 (Tencent Cloud WSA SearchPro) — features that feed desk cards. */
 export type YuanbaoTopic = 'weather' | 'gold' | 'stock' | 'tools' | 'holiday' | 'news'
 export interface YuanbaoConfig {
@@ -190,6 +133,66 @@ export interface YuanbaoTestResult {
   /** The parsed weather line on success. */
   cardText: string
   error: string
+}
+/** Optional, low-priority desk content. Credentials never cross back to the renderer. */
+export interface AmbientConfig {
+  version: 1
+  enabled: boolean
+  xEnabled: boolean
+  memeEnabled: boolean
+  conceptsEnabled: boolean
+  promptsEnabled: boolean
+  newsEnabled: boolean
+  petEnabled: boolean
+  petId: PetId
+  calendarEnabled: boolean
+  provider: 'twitterapi' | 'x'
+  accounts: string[]
+  keywords: string[]
+  exclude: string[]
+  minLikes: number
+  accountMinLikes: Record<string, number>
+  memeMinUps: number
+  memeCommunity: 'memes' | 'dankmemes' | 'ProgrammerHumor'
+  pollMinutes: number
+  gapMinutes: number
+  dailyLimit: number
+  dailyRequestLimit: number
+  displayMinutes: number
+  quietStart: number
+  quietEnd: number
+  idleOnly: boolean
+  /** 元宝搜索 features; see YuanbaoConfig. */
+  yuanbao: YuanbaoConfig
+}
+export const DEFAULT_AMBIENT: AmbientConfig = {
+  version: 1,
+  enabled: false,
+  xEnabled: true,
+  memeEnabled: true,
+  conceptsEnabled: true,
+  promptsEnabled: false,
+  newsEnabled: false,
+  petEnabled: true,
+  petId: PET_IDS[0],
+  calendarEnabled: true,
+  provider: 'twitterapi',
+  accounts: ['Polymarket', 'elonmusk', 'OpenAI', 'AnthropicAI', 'GoogleDeepMind'],
+  keywords: [],
+  exclude: ['giveaway', 'airdrop', 'promo code'],
+  minLikes: 5000,
+  accountMinLikes: { elonmusk: 50000 },
+  memeMinUps: 1000,
+  memeCommunity: 'memes',
+  pollMinutes: 30,
+  gapMinutes: 90,
+  dailyLimit: 6,
+  dailyRequestLimit: 24,
+  displayMinutes: 10,
+  quietStart: 23,
+  quietEnd: 8,
+  idleOnly: true,
+  yuanbao: DEFAULT_YUANBAO,
 }
 export interface AmbientCard {
   /** Optional production-rendered checklist; old firmware uses the text fallback. */
@@ -318,5 +321,31 @@ export function normalizeAmbient(value: unknown): AmbientConfig {
     quietStart: num('quietStart', 0, 23),
     quietEnd: num('quietEnd', 0, 23),
     idleOnly: bool('idleOnly'),
+    yuanbao: normalizeYuanbao(v.yuanbao),
+  }
+}
+
+const YUANBAO_STOCK = /^[a-z0-9]{1,10}\.(hk|sh|sz|us)$/
+/** Validates 元宝搜索 settings; unknown or malformed values fall back to the defaults. */
+export function normalizeYuanbao(value: unknown): YuanbaoConfig {
+  const v = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+  const bool = (key: keyof YuanbaoConfig) =>
+    typeof v[key] === 'boolean' ? (v[key] as boolean) : (DEFAULT_YUANBAO[key] as boolean)
+  const text = (key: 'city' | 'newsTopic', max: number) => {
+    const raw = typeof v[key] === 'string' ? (v[key] as string).replace(/\s+/g, ' ').trim().slice(0, max) : ''
+    return raw || DEFAULT_YUANBAO[key]
+  }
+  const list = (key: 'stocks' | 'tools') => (Array.isArray(v[key]) ? (v[key] as unknown[]) : DEFAULT_YUANBAO[key])
+  const stocks = [...new Set(list('stocks').filter((s): s is string => typeof s === 'string').map((s) => s.trim().toLowerCase()).filter((s) => YUANBAO_STOCK.test(s)))].slice(0, 3)
+  const tools = [...new Set(list('tools').filter((s): s is string => typeof s === 'string').map((s) => s.replace(/\s+/g, ' ').trim().slice(0, 40)).filter(Boolean))].slice(0, 4)
+  const limit = typeof v.dailyRequestLimit === 'number' && Number.isFinite(v.dailyRequestLimit)
+    ? Math.max(1, Math.min(200, Math.round(v.dailyRequestLimit))) : DEFAULT_YUANBAO.dailyRequestLimit
+  return {
+    enabled: bool('enabled'), weatherEnabled: bool('weatherEnabled'), city: text('city', 20),
+    goldEnabled: bool('goldEnabled'), goldBrand: bool('goldBrand'),
+    stocksEnabled: bool('stocksEnabled'), stocks: Array.isArray(v.stocks) ? stocks : [...DEFAULT_YUANBAO.stocks],
+    toolsEnabled: bool('toolsEnabled'), tools: Array.isArray(v.tools) ? tools : [...DEFAULT_YUANBAO.tools],
+    holidayEnabled: bool('holidayEnabled'), newsEnabled: bool('newsEnabled'), newsTopic: text('newsTopic', 20),
+    dailyRequestLimit: limit,
   }
 }

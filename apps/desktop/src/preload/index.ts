@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { AssistantAudio, AssistantDraft, AssistantSecret, AssistantSettings, AssistantSnapshot, DeskTaskInput } from '@codepulse/shared'
 import type {
   ProductView, DesktopForm, ShellSnapshot, WorkbenchWindowState, PresentationTarget, DesktopLayout,
-  InkDisplayPlan, HudAppearanceSettings, InkScreenStatus, InkApplyRequest,
+  InkDisplayPlan, HudAppearanceSettings, InkScreenStatus, InkApplyRequest, YuanbaoKeyInput, YuanbaoTestResult,
   AmbientConfig,
   AmbientCard,
   AmbientSnapshot,
@@ -84,6 +84,10 @@ const api = {
   refreshAmbient: (): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:ambient-refresh'),
   showAmbient: (id: string): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:ambient-show', id),
   dismissAmbient: (): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:ambient-dismiss'),
+  /** Saves 元宝搜索 credentials in the OS-encrypted key store; empty strings clear them. Never returns a key. */
+  setYuanbaoKey: (input: YuanbaoKeyInput): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:yuanbao-key', input),
+  /** One live weather request (counted against the daily limit) to check the key and connectivity. */
+  testYuanbao: (): Promise<YuanbaoTestResult> => ipcRenderer.invoke('codepulse:yuanbao-test'),
   previewAmbient: (id: string): Promise<DeviceStatusV1> => ipcRenderer.invoke('codepulse:ambient-preview', id),
   openAmbient: (id: string): Promise<void> => ipcRenderer.invoke('codepulse:ambient-open', id),
   onAmbient: (cb: (snapshot: AmbientSnapshot) => void): Unsubscribe => subscribe('codepulse:ambient-status', cb),

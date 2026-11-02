@@ -68,8 +68,21 @@ export class ProductShell {
     return this.snapshot()
   }
   setInkPlan(plan: unknown): ShellSnapshot {
-    this.commit({ inkPlan: normalizeInkPlan(plan) })
+    const prepared = this.prepareInkPlan(plan)
+    prepared.save()
+    prepared.commit()
+    this.refresh()
     return this.snapshot()
+  }
+  /** Stage disk writes separately so an ink apply can publish all three stores together. */
+  prepareInkPlan(plan: unknown) {
+    const previous = this.preferences
+    const next = { ...previous, inkPlan: normalizeInkPlan(plan) }
+    return {
+      save: () => this.save(next),
+      rollback: () => this.save(previous),
+      commit: () => { this.preferences = next },
+    }
   }
   setHudSettings(patch: unknown): ShellSnapshot {
     const raw = patch && typeof patch === 'object' ? (patch as Record<string, unknown>) : {}

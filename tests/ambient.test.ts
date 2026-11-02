@@ -490,9 +490,9 @@ test('manual selection works while auto is off or busy, but shared HUD attention
   f.service.tick()
   f.state('IDLE')
   assert.equal(
-    f.service.current(),
-    undefined,
-    'dismissed attention overlay does not return unexpectedly',
+    f.service.current()?.id,
+    local.id,
+    'temporary content resumes before its original deadline after an alert clears',
   )
   assert.equal(pauseReason(config, snapshot('ERROR', false), noon), '')
   assert.equal(pauseReason(config, snapshot('ERROR', true), noon), '先处理 Agent 提醒')

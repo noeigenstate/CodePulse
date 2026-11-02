@@ -44,6 +44,8 @@ export interface DeviceServerConfig {
 
 /** {@link startDeviceServer} 选项。 */
 export interface DeviceServerOptions {
+  /** A successful authenticated status read, including conditional and long-poll responses. */
+  onStatusRead?: () => void
   /** Optional local assistant endpoints. Omitted hosts retain the read-only contract. */
   registerAssistantRoutes?: (app: FastifyInstance) => void | Promise<void>
   /** Optional host presentation projection, shared with desktop configuration previews. */
@@ -189,6 +191,7 @@ export async function startDeviceServer(options: DeviceServerOptions): Promise<D
     reply.header('x-codepulse-protocol-version', String(DEVICE_PROTOCOL_VERSION))
     reply.header('cache-control', 'private, no-cache, max-age=0, must-revalidate')
     reply.header('etag', etag)
+    options.onStatusRead?.()
     if (etagMatches(conditional, etag)) return reply.code(304).send()
     return status
   })

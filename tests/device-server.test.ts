@@ -23,6 +23,49 @@ afterEach(async () => {
   await Promise.all(openServers.splice(0).map((server) => server.close()))
 })
 
+test('status-read tracking counts authenticated 200, 304 and long-poll returns only', async () => {
+  let reads = 0
+  const server = await startDeviceServer({ hub: new StatusHub(), host: '127.0.0.1', port: 0,
+    authToken: TOKEN, serverId: 'status-read-test', publishMdns: false, onStatusRead: () => reads++ })
+  openServers.push(server)
+  await server.app.inject({ method: 'GET', url: DEVICE_HEALTH_PATH })
+  await server.app.inject({ method: 'GET', url: DEVICE_STATUS_PATH })
+  await server.app.inject({ method: 'GET', url: DEVICE_STATUS_PATH, headers: { [DEVICE_AUTH_HEADER]: 'wrong' } })
+  assert.equal(reads, 0)
+  const headers = { [DEVICE_AUTH_HEADER]: TOKEN }
+  const initial = await server.app.inject({ method: 'GET', url: DEVICE_STATUS_PATH, headers })
+  assert.equal(initial.statusCode, 200)
+  assert.equal(reads, 1)
+  const conditional = { ...headers, 'if-none-match': initial.headers.etag as string }
+  const unchanged = await server.app.inject({ method: 'GET', url: DEVICE_STATUS_PATH, headers: conditional })
+  assert.equal(unchanged.statusCode, 304)
+  assert.equal(reads, 2)
+  const polling = server.app.inject({ method: 'GET', url: DEVICE_STATUS_PATH,
+    headers: { ...conditional, 'x-codepulse-wait-ms': '20' } })
+  assert.equal(reads, 2, 'tracking waits for the long-poll response')
+  assert.equal((await polling).statusCode, 304)
+  assert.equal(reads, 3)
+  await server.app.inject({ method: 'GET', url: DEVICE_STATUS_PATH, headers: { ...headers, 'x-codepulse-wait-ms': '-1' } })
+  assert.equal(reads, 3)
+})
+test('status-read tracking also counts a long poll woken by a changed projection', async () => {
+  let reads = 0, config = normalizeDeviceDisplay({ mode: 'hud' })
+  const server = await startDeviceServer({ hub: new StatusHub(), host: '127.0.0.1', port: 0,
+    getDisplayConfig: () => config, authToken: TOKEN, serverId: 'status-read-wake', publishMdns: false,
+    onStatusRead: () => reads++ })
+  openServers.push(server)
+  const initial = await server.app.inject({ method: 'GET', url: DEVICE_STATUS_PATH, headers: { [DEVICE_AUTH_HEADER]: TOKEN } })
+  const pending = server.app.inject({ method: 'GET', url: DEVICE_STATUS_PATH, headers: {
+    [DEVICE_AUTH_HEADER]: TOKEN, 'if-none-match': initial.headers.etag as string, 'x-codepulse-wait-ms': '1000',
+  } })
+  await pause(20)
+  assert.equal(reads, 1)
+  config = normalizeDeviceDisplay({ mode: 'usage' })
+  server.notifyChanged()
+  assert.equal((await pending).statusCode, 200)
+  assert.equal(reads, 2)
+})
+
 test('LAN device server is read-only, authenticated, and supports conditional GET', async () => {
   const hub = new StatusHub()
   const server = await startDeviceServer({

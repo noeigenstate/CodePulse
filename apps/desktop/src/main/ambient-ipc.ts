@@ -22,7 +22,11 @@ export function registerAmbientIpc(
   )
   ipc.handle('codepulse:ambient-get', () => runtime.service.snapshot())
   ipc.handle('codepulse:ambient-set', (_event, config: unknown) =>
-    runtime.service.configure(config),
+    runtime.service.configure({
+      ...(config && typeof config === 'object' && !Array.isArray(config) ? config : {}),
+      enabled: runtime.service.getConfig().enabled,
+      displayMinutes: runtime.service.getConfig().displayMinutes,
+    }),
   )
   ipc.handle('codepulse:ambient-key', (_event, provider: AmbientConfig['provider'], key: unknown) =>
     runtime.setKey(provider, key),

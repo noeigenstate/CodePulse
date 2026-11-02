@@ -185,6 +185,12 @@ function NumberRule({ label, hint, value, min, max, disabled, onCommit }: {
   )
 }
 
+/** Same title the main process puts in InkScreenStatus.showing for a card. */
+function cardTitle(card: AmbientCard): string {
+  const firstLine = card.text.split(/\r?\n/)[0]?.trim() ?? ''
+  return (firstLine ? `${card.source} · ${firstLine}` : card.source).slice(0, 80)
+}
+
 /** One-line label for an item in the middle list; the preview carries the content itself. */
 function itemLabel(card: AmbientCard): string {
   if (card.pet) return petProfile(card.pet.id).name
@@ -452,6 +458,11 @@ export function AmbientPanel({
       {snapshot?.collecting ? '正在检查…' : '检查新内容'}
     </button>
   )
+  // The corner tag says whether the selected item is the one on the e-ink screen now (title as the status builds it).
+  const onScreen =
+    Boolean(selectedCard) &&
+    ink?.showing.kind === 'ambient' &&
+    ink.showing.title === cardTitle(selectedCard!)
   const selectedCanOpen = Boolean(selectedCard?.url)
   const selectedRemovable = selectedCard && (selectedCard.kind === 'image' || selectedCard.kind === 'note')
   const hasSettings = category === 'pet' || category === 'news' || category === 'social'
@@ -867,6 +878,8 @@ export function AmbientPanel({
                     sample={Boolean(preview)}
                     live={!preview}
                     fit
+                    compact
+                    cornerTag={onScreen ? '当前画面' : '预览'}
                   />
                 ) : (
                   <p className="ambient-empty">正在读取画面…</p>

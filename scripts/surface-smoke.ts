@@ -473,7 +473,7 @@ app.whenReady().then(async()=>{
     const openSettings=async()=>{if(!await main!.webContents.executeJavaScript(`Boolean(document.querySelector('.ambient-settings')?.open)`))await click(main!,'.ambient-settings > summary')}
     const previewReady=()=>until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .device-preview')?.getAttribute('data-render-state')==='ready'`),'ambient preview renderer')
     assert.deepEqual(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ambient-catlist [data-cat]')).map(b=>b.querySelector('span').textContent)`), ['概念卡','思考实验','像素宠物','日历','科技热议','X 与 meme','我的图片与便签'], 'category order')
-    for (const gone of ['保存推送设置','预览画面','当前目标画面','规则修改后立即保存','图片拖进此页即可导入']) assert.equal(await main.webContents.executeJavaScript(`document.body.innerText.includes(${JSON.stringify(gone)})`), false, 'removed copy is gone: '+gone)
+    for (const gone of ['保存推送设置','预览画面','当前目标画面','规则修改后立即保存','图片拖进此页即可导入','内容预览','400 × 300','仅供预览','预览说明','2 倍检查']) assert.equal(await main.webContents.executeJavaScript(`document.body.innerText.includes(${JSON.stringify(gone)})`), false, 'removed copy is gone: '+gone)
     assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.ambient-panel select[aria-label="选择内容"]')`), null, 'no item dropdown')
     // The social row switch is the existing xEnabled / memeEnabled rule pair.
     await click(main,'[data-rule=social] .ambient-switch')
@@ -491,6 +491,7 @@ app.whenReady().then(async()=>{
     await click(main,'.ambient-item');await previewReady()
     await capture('updates')
     await category('concept');await previewReady()
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.ambient-panel .device-preview-tag')?.textContent`),'预览','an item that is not on the screen is tagged 预览')
     // Reference for the pet page: where the display button sits for a normal category at scroll top.
     const conceptFirstScreen = await main.webContents.executeJavaScript(`(() => {
       for(let e=document.querySelector('.ambient-panel');e;e=e.parentElement)e.scrollTop=0;
@@ -501,6 +502,7 @@ app.whenReady().then(async()=>{
     assert.equal(ambient.current()?.kind, 'concept')
     assert.equal(ambient.current()?.manual, true)
     await until(()=>main!.webContents.executeJavaScript(`document.querySelector('[data-feedback=content]').textContent.includes('已临时展示')`), 'temporary display confirmed')
+    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .device-preview-tag')?.textContent==='当前画面'`),'the item on the screen is tagged 当前画面')
     assert.equal(await main.webContents.executeJavaScript(`(() => {
       document.querySelector('.ambient-temp').scrollIntoView({block:'center'});
       const r=document.querySelector('[data-feedback=content]').getBoundingClientRect();

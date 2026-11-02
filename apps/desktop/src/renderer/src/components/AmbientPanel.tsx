@@ -16,6 +16,7 @@ import './ambient-panel.css'
 import { useScreenTarget } from '../lib/useScreenTarget.js'
 import { useInkStatus } from '../lib/useInkStatus.js'
 import { inkPlanChip } from '../lib/inkStatusText.js'
+import { categoryProblem, refreshSummary } from '../lib/ambientStatus.js'
 
 /** Tail of the calendar info line: the break going on, or how far away the next one is. */
 function nextHolidayText(next: CalendarNextHoliday | undefined): string {
@@ -135,9 +136,6 @@ const RULE_FLAG: Partial<Record<Category, 'conceptsEnabled' | 'promptsEnabled' |
   news: 'newsEnabled',
 }
 const SAVE_DELAY_MS = 400
-/** Source problems worth showing inside their own category; neutral states stay silent. */
-const PROBLEM = /待配置|无法|失败|上限|错误/
-
 type NumberField =
   | 'minLikes'
   | 'memeMinUps'
@@ -185,12 +183,6 @@ function NumberRule({ label, hint, value, min, max, disabled, onCommit }: {
   )
 }
 
-/** Same title the main process puts in InkScreenStatus.showing for a card. */
-function cardTitle(card: AmbientCard): string {
-  const firstLine = card.text.split(/\r?\n/)[0]?.trim() ?? ''
-  return (firstLine ? `${card.source} · ${firstLine}` : card.source).slice(0, 80)
-}
-
 /** One-line label for an item in the middle list; the preview carries the content itself. */
 function itemLabel(card: AmbientCard): string {
   if (card.pet) return petProfile(card.pet.id).name
@@ -209,7 +201,7 @@ export function AmbientPanel({
   product?: import('./ProductFrame.js').ProductNavigation
   locale?: import('../lib/i18n.js').Locale
 }): JSX.Element {
-  const { target } = useScreenTarget(active)
+  const { target, error: targetError, retry: retryTarget } = useScreenTarget(active)
   const ink = useInkStatus()
   const online = ink?.connection === 'connected'
   const [snapshot, setSnapshot] = useState<AmbientSnapshot>()
@@ -231,6 +223,10 @@ export function AmbientPanel({
   const draftRef = useRef(draft)
   draftRef.current = draft
   const previewedId = useRef('')
+  // Only the newest preview request may land; a slower, older answer is dropped.
+  const previewSeq = useRef(0)
+  const [refreshNote, setRefreshNote] = useState('')
+  const refreshTimer = useRef<ReturnType<typeof setTimeout>>()
   const saveTimer = useRef<ReturnType<typeof setTimeout>>()
   const flashTimer = useRef<ReturnType<typeof setTimeout>>()
   const unsaved = useRef(false)
@@ -267,6 +263,7 @@ export function AmbientPanel({
       stop()
       clearTimeout(saveTimer.current)
       clearTimeout(flashTimer.current)
+      clearTimeout(refreshTimer.current)
     }
   }, [])
 
@@ -330,13 +327,15 @@ export function AmbientPanel({
   async function showPreview(card: AmbientCard) {
     // Marked before the request so a failed preview is not retried on every snapshot update.
     previewedId.current = card.id
+    const seq = ++previewSeq.current
     setMessageScope('content')
     setMessage('')
+    setSelectedId(card.id)
     try {
-      setSelectedId(card.id)
-      setPreview(await window.codepulse.previewAmbient(card.id))
+      const next = await window.codepulse.previewAmbient(card.id)
+      if (seq === previewSeq.current) setPreview(next)
     } catch {
-      setMessage('这条内容已过期，请刷新候选。')
+      if (seq === previewSeq.current) setMessage('这条内容已过期，请刷新候选。')
     }
   }
   async function importFiles(files: File[]) {
@@ -345,8 +344,8 @@ export function AmbientPanel({
     setBusy(true)
     setMessage('')
     let imported = 0
+    let last: AmbientCard | undefined
     try {
-      let last: AmbientCard | undefined
       for (const file of files) {
         if (file.size > 8000000 || !/\.(png|jpe?g)$/i.test(file.name))
           throw new Error('请选择 8 MB 内的 PNG / JPEG 图片')
@@ -355,23 +354,36 @@ export function AmbientPanel({
       }
       setCategory('local')
       setSnapshot(await window.codepulse.getAmbient())
-      if (last) {
-        previewedId.current = last.id
-        setSelectedId(last.id)
-        setPreview(await window.codepulse.previewAmbient(last.id))
-      }
+      if (last) await selectImported(last)
       setMessage(`已导入 ${imported} 张图片`)
     } catch (error) {
       const detail = error instanceof Error ? error.message.split('Error: ').pop()! : ''
-      setMessage(
-        /^(请选择|图片|仅支持)/.test(detail)
-          ? detail
-          : '图片导入失败，请试用 PNG / JPEG 静态图片。',
-      )
+      const reason = /^(请选择|图片|仅支持)/.test(detail) ? detail : '图片导入失败，请试用 PNG / JPEG 静态图片。'
+      // Pictures imported before the failure are real: show them and say which one failed.
+      if (imported > 0) {
+        setCategory('local')
+        try {
+          setSnapshot(await window.codepulse.getAmbient())
+          if (last) await selectImported(last)
+        } catch {
+          // The list refreshes on the next update.
+        }
+        setMessage(`已导入 ${imported} 张，第 ${imported + 1} 张失败：${reason}`)
+      } else {
+        setMessage(reason)
+      }
     } finally {
       setBusy(false)
       if (fileInput.current) fileInput.current.value = ''
     }
+  }
+  /** Select a freshly imported card and preview it, unless another request has overtaken this one. */
+  async function selectImported(card: AmbientCard) {
+    previewedId.current = card.id
+    const seq = ++previewSeq.current
+    setSelectedId(card.id)
+    const next = await window.codepulse.previewAmbient(card.id)
+    if (seq === previewSeq.current) setPreview(next)
   }
   async function addNote() {
     setMessageScope('content')
@@ -382,9 +394,7 @@ export function AmbientPanel({
       setCategory('local')
       setNote('')
       setSnapshot(await window.codepulse.getAmbient())
-      previewedId.current = card.id
-      setSelectedId(card.id)
-      setPreview(await window.codepulse.previewAmbient(card.id))
+      await selectImported(card)
     } catch {
       setMessage('便签保存失败，请填写 1–120 字的内容。')
     } finally {
@@ -418,15 +428,8 @@ export function AmbientPanel({
           display: target.status.display ? { ...target.status.display, page: 0 } : preview.display,
         }
       : preview
-  const sourceProblem = (id: Category): string => {
-    const status = snapshot?.sourceStatus
-    if (!status) return ''
-    const bad = (text?: string) => (text && PROBLEM.test(text) ? text : '')
-    if (id === 'social') return (draft.xEnabled ? bad(status.x) : '') || (draft.memeEnabled ? bad(status.meme) : '')
-    if (id === 'news') return draft.newsEnabled ? bad(status.news) : ''
-    return ''
-  }
-  const problem = sourceProblem(category)
+  const enabledSources = { x: draft.xEnabled, meme: draft.memeEnabled, news: draft.newsEnabled }
+  const problem = categoryProblem(category, snapshot?.sourceStatus, enabledSources)
   const chip = product ? inkPlanChip(product.shell.inkPlan, 'ambient', ink?.connection, locale) : undefined
   const openPlaylist = (): void => {
     if (product) void product.navigate('control').then(() => product.selectTarget('ink'))
@@ -448,21 +451,40 @@ export function AmbientPanel({
       {label}
     </label>
   )
+  async function refreshNow() {
+    const before = new Set(snapshot?.cards.map((c) => c.id))
+    const show = (text: string) => {
+      setRefreshNote(text)
+      clearTimeout(refreshTimer.current)
+      refreshTimer.current = setTimeout(() => setRefreshNote(''), 4000)
+    }
+    setBusy(true)
+    setRefreshNote('')
+    try {
+      const state = await window.codepulse.refreshAmbient()
+      setSnapshot(state)
+      show(refreshSummary(category, before, state.cards, categoryProblem(category, state.sourceStatus, enabledSources)))
+    } catch {
+      show('检查未完成，请稍后重试')
+    } finally {
+      setBusy(false)
+    }
+  }
   const refreshButton = (
     <button
       type="button"
       className="product-button"
       disabled={busy || !snapshot || snapshot.collecting}
-      onClick={() => void action(() => window.codepulse.refreshAmbient(), '', 'settings')}
+      onClick={() => void refreshNow()}
     >
       {snapshot?.collecting ? '正在检查…' : '检查新内容'}
     </button>
   )
-  // The corner tag says whether the selected item is the one on the e-ink screen now (title as the status builds it).
+  // The corner tag says whether the previewed card is the one on the e-ink screen now (projected card ids).
   const onScreen =
-    Boolean(selectedCard) &&
-    ink?.showing.kind === 'ambient' &&
-    ink.showing.title === cardTitle(selectedCard!)
+    Boolean(preview?.ambient?.id) &&
+    (ink?.showing.kind === 'ambient' || ink?.showing.kind === 'todos') &&
+    ink.showing.id === preview?.ambient?.id
   const selectedCanOpen = Boolean(selectedCard?.url)
   const selectedRemovable = selectedCard && (selectedCard.kind === 'image' || selectedCard.kind === 'note')
   const hasSettings = category === 'pet' || category === 'news' || category === 'social'
@@ -533,6 +555,8 @@ export function AmbientPanel({
                       setPreview(undefined)
                       setMessage('')
                       previewedId.current = ''
+                      previewSeq.current += 1
+                      setRefreshNote('')
                     }}
                   >
                     <span>{label}</span>
@@ -584,8 +608,8 @@ export function AmbientPanel({
               <h2>{CATEGORIES.find((c) => c.id === category)!.label}</h2>
               {problem && <span className="page-chip is-warn">{problem}</span>}
             </div>
-            <span className={`page-saved ${savedFlash ? 'is-shown' : ''}`} role="status">
-              {savedFlash ? '已保存' : ''}
+            <span className={`page-saved ${savedFlash || refreshNote ? 'is-shown' : ''}`} role="status">
+              {refreshNote || (savedFlash ? '已保存' : '')}
             </span>
           </div>
           {saveFailed && (
@@ -641,6 +665,7 @@ export function AmbientPanel({
                         void action(async () => {
                           const s = await window.codepulse.removeAmbient(selectedCard.id)
                           setPreview(undefined)
+                          previewSeq.current += 1
                           previewedId.current = ''
                           setSelectedId('')
                           return s
@@ -881,6 +906,13 @@ export function AmbientPanel({
                     compact
                     cornerTag={onScreen ? '当前画面' : '预览'}
                   />
+                ) : targetError ? (
+                  <p className="ambient-empty" role="alert">
+                    预览暂不可用
+                    <button type="button" className="product-button is-compact" onClick={retryTarget}>
+                      重试
+                    </button>
+                  </p>
                 ) : (
                   <p className="ambient-empty">正在读取画面…</p>
                 )}

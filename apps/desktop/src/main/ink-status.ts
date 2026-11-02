@@ -39,7 +39,7 @@ export function computeInkStatus(input: InkStatusInput): InkScreenStatus {
   // Match selectDeskContent: a manual ambient card owns the screen ahead of manual todos.
   const temporary: InkScreenStatus['temporary'] =
     ambient ? { ...ambient, kind: 'ambient' } : todo ? { ...todo, kind: 'todos' } : null
-  const showing: InkScreenStatus['showing'] = card ? { kind, title: inkCardTitle(card) } : { kind: 'work' }
+  const showing: InkScreenStatus['showing'] = card ? { kind, title: inkCardTitle(card), id: card.id } : { kind: 'work' }
   let slotNote = ''
   if (temporary && showing.kind === 'work') slotNote = '授权或异常提醒优先，临时展示暂停'
   else if (!temporary && current === 'ambient' && showing.kind === 'work') {

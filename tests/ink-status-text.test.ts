@@ -94,6 +94,12 @@ test('slotNote joins the title of a connected pill and never a stopped service',
   assert.ok(!inkPillText(make({ connection: 'server-off', slotNote: note }), NOW, 'zh').title.includes(note))
 })
 
+test('a whitespace-only slotNote adds nothing to the title', () => {
+  const plain = inkPillText(make({}), NOW, 'zh').title
+  assert.equal(inkPillText(make({ slotNote: '   ' }), NOW, 'zh').title, plain)
+  assert.ok(!plain.endsWith(' · '))
+})
+
 test('minutes never go negative once a deadline has passed', () => {
   const pill = inkPillText(
     make({ showing: { kind: 'ambient', title: 'x' }, temporary: { kind: 'ambient', title: 'x', until: NOW - 1000 } }),

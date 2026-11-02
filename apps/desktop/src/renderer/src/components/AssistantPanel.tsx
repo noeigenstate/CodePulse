@@ -211,11 +211,9 @@ export function AssistantPanel({ active, locale = 'zh' }: {
           </span>
         }
       />
-      {message && (
-        <p className="desk-assistant-status" role="status">
-          {message}
-        </p>
-      )}
+      <p className="desk-assistant-status" role="status">
+        {message}
+      </p>
       {error && (
         <p className="desk-assistant-error" role="alert">
           {error}

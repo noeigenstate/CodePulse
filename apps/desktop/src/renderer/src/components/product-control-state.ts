@@ -37,3 +37,23 @@ export function inkControlChanges(
       : []),
   ]
 }
+
+export interface InkBaseline {
+  plan: InkDisplayPlan
+  display: DeviceDisplayConfig
+}
+
+/**
+ * The offline baseline: what the device last had. While a device is connected it follows the saved
+ * state; once it is gone the baseline stays put (or, if the page opened offline, is taken from the
+ * first saved state), so offline changes that auto-apply are still counted until the device
+ * connects or the changes return to the baseline.
+ */
+export function nextInkBaseline(
+  previous: InkBaseline | undefined,
+  state: { connected: boolean; saving: boolean; plan: InkDisplayPlan; display?: DeviceDisplayConfig },
+): InkBaseline | undefined {
+  if (!state.display) return previous
+  if (state.connected) return state.saving ? previous : { plan: state.plan, display: state.display }
+  return previous ?? { plan: state.plan, display: state.display }
+}

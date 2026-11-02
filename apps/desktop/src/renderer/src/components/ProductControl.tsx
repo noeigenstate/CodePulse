@@ -22,7 +22,7 @@ import type { DeviceProvisioningCopy, Locale } from '../lib/i18n.js'
 import type { CliToolType } from '../lib/dashboardSettings.js'
 import { useInkStatus } from '../lib/useInkStatus.js'
 import { PageHeader } from './PageHeader.js'
-import { inkPlanChoice, selectInkPlan, inkControlChanges } from './product-control-state.js'
+import { inkPlanChoice, selectInkPlan, inkControlChanges, nextInkBaseline, type InkBaseline } from './product-control-state.js'
 import './product-control.css'
 import './device-display.css'
 
@@ -480,6 +480,18 @@ function InkControlWorkspace({
   const display = filterDisplay(displayDraft)
   const pending = inkControlChanges(plan, display, savedPlan, displaySnap?.config)
   const count = pending.length
+  // Offline changes auto-apply (the count above drops to zero), but they stay pending for the device.
+  const baselineRef = useRef<InkBaseline>()
+  baselineRef.current = nextInkBaseline(baselineRef.current, {
+    connected,
+    saving,
+    plan: savedPlan,
+    display: displaySnap?.config,
+  })
+  const offlineCount = baselineRef.current
+    ? inkControlChanges(plan, display, baselineRef.current.plan, baselineRef.current.display).length
+    : count
+  const shownCount = connected ? count : offlineCount
   const signature = JSON.stringify([plan, display])
   const applyAll = useCallback(async () => {
     if (busyRef.current || !savedDisplayRef.current) return
@@ -864,7 +876,7 @@ function InkControlWorkspace({
           ))}
           <option value="fixed">{zh ? '只显示工作画面' : 'Work screen only'}</option>
         </select>
-        {count > 0 && (
+        {shownCount > 0 && (
           <footer className="product-config-actions" aria-live="polite">
             <strong>
               {connected
@@ -872,8 +884,8 @@ function InkControlWorkspace({
                   ? `${count} 项未应用`
                   : `${count} pending changes`
                 : zh
-                  ? '连接后自动应用'
-                  : 'Applies on connection'}
+                  ? `${shownCount} 项改动，连接后自动应用`
+                  : `${shownCount} changes · applied on connection`}
             </strong>
             {connected && (
               <button

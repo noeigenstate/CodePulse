@@ -46,6 +46,7 @@ test('showing follows the final projection, including empty todo lists', () => {
   assert.deepEqual(computeInkStatus({ ...base, projected: { ambient: card } }).showing, {
     kind: 'ambient',
     title: `${card.source} · ${card.text}`,
+    id: 'card',
   })
   assert.equal(
     computeInkStatus({ ...base, projected: { ambient: { ...card, items: [] } } }).showing.kind,
@@ -115,4 +116,10 @@ test('one status timer wakes at connection expiry, temporary expiry and slot bou
   runtime.stop()
   context.mock.timers.tick(300000)
   assert.equal(advances, 3)
+})
+test('showing carries the projected card id for ambient and todo cards, and none for the work screen', () => {
+  assert.equal(computeInkStatus({ ...base, projected: { ambient: card } }).showing.kind === 'ambient' && (computeInkStatus({ ...base, projected: { ambient: card } }).showing as { id?: string }).id, 'card')
+  const todos = computeInkStatus({ ...base, projected: { ambient: { ...card, id: 'todo-card', items: [] } } }).showing as { kind: string; id?: string }
+  assert.deepEqual([todos.kind, todos.id], ['todos', 'todo-card'])
+  assert.deepEqual(computeInkStatus({ ...base }).showing, { kind: 'work' })
 })

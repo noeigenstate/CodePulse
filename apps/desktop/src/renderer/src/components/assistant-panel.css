@@ -259,6 +259,10 @@
   font-size: var(--fs-sm);
   line-height: 20px;
 }
+.desk-assistant-status:empty {
+  height: 0;
+  overflow: hidden;
+}
 .desk-assistant-status {
   margin: 0;
   font-size: var(--fs-sm);

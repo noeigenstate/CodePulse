@@ -229,7 +229,9 @@
   overflow-wrap: anywhere;
 }
 .ambient-message:empty {
-  display: none;
+  min-height: 0;
+  height: 0;
+  overflow: hidden;
 }
 .ambient-empty {
   margin: 0;

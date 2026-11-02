@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useInkStatus } from '../lib/useInkStatus.js'
 import { useNow } from '../lib/useNow.js'
 import { inkPillText } from '../lib/inkStatusText.js'
@@ -13,9 +13,20 @@ export function InkStatusPill({ locale, onOpen }: { locale: Locale; onOpen: () =
   const status = useInkStatus()
   const now = useNow(15000)
   const [failed, setFailed] = useState(false)
-  if (!status) return null
-  const zh = locale === 'zh'
-  const pill = inkPillText(status, now, locale)
+  const [announcement, setAnnouncement] = useState('')
+  const zhText = locale === 'zh'
+  const pill = status ? inkPillText(status, now, locale) : undefined
+  const stateKey = pill?.state
+  const previousState = useRef<string>()
+  // A polite live region: only a change of state (connected, disconnected, temporary, service off) is announced, never the countdown.
+  useEffect(() => {
+    if (!pill || stateKey === previousState.current) return
+    if (previousState.current !== undefined) setAnnouncement(`${pill.prefix} ${pill.label}`)
+    previousState.current = stateKey
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stateKey])
+  if (!status || !pill) return null
+  const zh = zhText
   const open = zh ? '打开 控制 › 墨水屏' : 'Open Control › E-paper'
   const back = zh ? '回到工作画面' : 'Back to work screen'
   const end = (): void => {
@@ -24,6 +35,9 @@ export function InkStatusPill({ locale, onOpen }: { locale: Locale; onOpen: () =
   }
   return (
     <div className="ink-pill-wrap">
+      <span className="page-sr" role="status" aria-live="polite">
+        {announcement}
+      </span>
       <div className="ink-pill" data-state={pill.state}>
         <button type="button" className="ink-pill-main" onClick={onOpen} title={pill.title} aria-label={`${pill.title}。${open}`}>
           <span className={`ink-pill-dot is-${pill.dot}`} aria-hidden="true" />

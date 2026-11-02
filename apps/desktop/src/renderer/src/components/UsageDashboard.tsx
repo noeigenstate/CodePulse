@@ -15,6 +15,7 @@ import { formatRelative } from '../lib/format.js'
 import { formatModelName } from '../lib/modelName.js'
 import { AgentLogo } from './AgentLogo.js'
 import { PageHeader } from './PageHeader.js'
+import { InfoTip } from './InfoTip.js'
 import { projectLabels, sessionTitle } from '../lib/redact.js'
 import './usage-dashboard.css'
 
@@ -155,8 +156,9 @@ function DashboardBody({
           label={copy.kpiCost}
           hint={
             t.unpricedTokens > 0
-              ? copy.unpriced.replace('{tokens}', formatTokenCount(t.unpricedTokens))
-              : undefined
+              ? `${copy.costHint}
+${copy.unpriced.replace('{tokens}', formatTokenCount(t.unpricedTokens))}`
+              : copy.costHint
           }
           value={formatUsd(t.costUsd)}
           delta={delta(t.costUsd, data.previous.costUsd)}
@@ -295,7 +297,6 @@ function DashboardBody({
         <div className="usage-card-head">
           <div>
             <h2 className="usage-h2">{copy.roundsTitle}</h2>
-            <p className="usage-muted usage-card-sub">{copy.roundsHint}</p>
           </div>
         </div>
         <table className="usage-table usage-rounds-table" aria-label={copy.roundsTitle}>
@@ -361,7 +362,6 @@ function DashboardBody({
         </table>
       </section>
 
-      <p className="usage-footnote">{copy.footnote.replace('{date}', data.pricingAsOf)}</p>
     </div>
   )
 }
@@ -386,11 +386,7 @@ function Kpi({
     <div className="usage-card usage-kpi">
       <p className="usage-kpi-label">
         {label}
-        {hint && (
-          <span className="usage-info" title={hint} aria-label={hint} role="img">
-            ⓘ
-          </span>
-        )}
+        {hint && <InfoTip text={hint} />}
       </p>
       <p className="usage-kpi-value">{value}</p>
       <p className="usage-kpi-delta">

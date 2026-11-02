@@ -259,6 +259,11 @@
   font-size: var(--fs-sm);
   line-height: 20px;
 }
+.desk-assistant-temp {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
 .desk-assistant-status:empty {
   height: 0;
   overflow: hidden;

@@ -125,7 +125,7 @@
   width: 36px;
   height: 20px;
   box-sizing: border-box;
-  border: 1px solid var(--ink-subtle);
+  border: 1px solid var(--switch-off);
   border-radius: var(--r-pill);
   background: var(--surface-muted);
   transition: background var(--motion), border-color var(--motion);
@@ -138,7 +138,7 @@
   width: 12px;
   height: 12px;
   border-radius: var(--r-pill);
-  background: var(--ink-subtle);
+  background: var(--switch-off);
   transition: transform var(--motion), background var(--motion);
 }
 .ambient-switch[aria-checked='true']::before {
@@ -151,6 +151,18 @@
 }
 .ambient-switch:disabled {
   opacity: 0.4;
+}
+.ambient-manual-tag {
+  flex: none;
+  min-width: 44px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  background: var(--surface-muted);
+  color: var(--ink-muted);
+  font-size: var(--fs-xs);
+  line-height: 20px;
+  text-align: center;
 }
 .ambient-pacing {
   margin-top: 12px;
@@ -220,6 +232,9 @@
 }
 .ambient-temp {
   align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 .ambient-message {
   min-height: 20px;

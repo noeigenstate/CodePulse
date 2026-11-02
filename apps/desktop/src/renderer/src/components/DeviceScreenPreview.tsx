@@ -397,35 +397,38 @@ export function DeviceScreenPreview({
       data-render-state={state}
       data-pixel-ratio={scale.k}
     >
-      {compact && (
+      {compact && (heading || headerActions) && (
         <div className="device-preview-header">
           {heading && <h2>{heading}</h2>}
-          <div className="device-preview-header-actions">
-            {headerActions}
-            <button
-              ref={menuTrigger}
-              type="button"
-              className="product-button device-preview-more"
-              aria-label="预览选项"
-              title="预览选项"
-              aria-haspopup="dialog"
-              aria-expanded={menuOpen}
-              aria-controls={menuId}
-              onClick={toggleMenu}
-            >
-              ⋯
-            </button>
-          </div>
+          <div className="device-preview-header-actions">{headerActions}</div>
         </div>
       )}
       {!compact && !collapsibleOptions && toolbar}
-      <div className={`device-preview-picture${compact && cornerTag ? ' has-tag' : ''}`}>
-        {compact && cornerTag && (
-          <span className="device-preview-tag" role="status">
-            {cornerTag}
-          </span>
-        )}
+      <div className="device-preview-picture">
         <div ref={scroll} className="device-preview-scroll" aria-busy={state === 'loading'}>
+          <div className={compact ? 'device-preview-stagebox' : undefined}>
+            {compact && (
+              <div className="device-preview-framebar">
+                {cornerTag && (
+                  <span className="device-preview-tag" role="status">
+                    {cornerTag}
+                  </span>
+                )}
+                <button
+                  ref={menuTrigger}
+                  type="button"
+                  className="product-button device-preview-more"
+                  aria-label="预览选项"
+                  title="预览选项"
+                  aria-haspopup="dialog"
+                  aria-expanded={menuOpen}
+                  aria-controls={menuId}
+                  onClick={toggleMenu}
+                >
+                  ⋯
+                </button>
+              </div>
+            )}
           <div ref={frame} className="device-preview-frame" style={{ width: scale.cssWidth }}>
             <canvas
               ref={canvas}
@@ -442,6 +445,7 @@ export function DeviceScreenPreview({
             >
               {description}
             </canvas>
+          </div>
           </div>
         </div>
       </div>

@@ -160,7 +160,8 @@ export interface UsageCopy {
   colAvgRounds: string
   noPrice: string
   roundsTitle: string
-  roundsHint: string
+  /** Tooltip on the cost figure: what the dollar amount means. */
+  costHint: string
   roundsUnit: string
   untitled: string
   /** Marker that replaces the first prompt in the rounds list until the user reveals it. */
@@ -171,7 +172,6 @@ export interface UsageCopy {
   colTool: string
   emptyTitle: string
   emptyBody: string
-  footnote: string
 }
 
 /** Localized content for an idle dashboard and the intentional all-tools-hidden state. */
@@ -473,7 +473,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
       colAvgRounds: '平均每会话轮次',
       noPrice: '无官方价格',
       roundsTitle: '问题修复轮次',
-      roundsHint: '标题默认隐藏首条提示，避免泄露路径或密钥；已识别的敏感片段会打码。一个会话视为一个问题。',
+      costHint: '按官方 API 价格折算成美元',
       roundsUnit: '轮',
       untitled: '无标题',
       titleHidden: '首条提示已隐藏',
@@ -483,8 +483,6 @@ const UI_COPY: Record<Locale, UiCopy> = {
       colTool: '工具',
       emptyTitle: '这个时间段还没有用量',
       emptyBody: '在 Claude Code、Codex 或 OpenCode 里工作后，这里会自动统计。',
-      footnote:
-        '费用按各模型官方 API 列表价折算（价格核对于 {date}），输入、缓存写入、缓存读取、输出分别计价；订阅套餐实际并不按此计费。数据读取自本机 CLI 日志，不会上传。',
     },
   },
   en: {
@@ -694,8 +692,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
       colAvgRounds: 'Avg rounds / session',
       noPrice: 'No official price',
       roundsTitle: 'Rounds per problem',
-      roundsHint:
-        'First prompts are hidden by default so paths and keys do not leak; recognised secrets are masked even when shown. Each conversation counts as one problem.',
+      costHint: 'Converted to US dollars at official API prices',
       roundsUnit: 'rounds',
       untitled: 'Untitled',
       titleHidden: 'first prompt hidden',
@@ -705,8 +702,6 @@ const UI_COPY: Record<Locale, UiCopy> = {
       colTool: 'Tool',
       emptyTitle: 'No usage in this period',
       emptyBody: 'Work in Claude Code, Codex or OpenCode and it shows up here automatically.',
-      footnote:
-        'Cost uses each model’s official API list price (checked {date}), billing input, cache writes, cache reads and output separately; subscription plans are not billed this way. Read from local CLI logs; nothing is uploaded.',
     },
   },
 }

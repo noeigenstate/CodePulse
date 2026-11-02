@@ -17,6 +17,7 @@ import { useScreenTarget } from '../lib/useScreenTarget.js'
 import { useInkStatus } from '../lib/useInkStatus.js'
 import { inkPlanChip } from '../lib/inkStatusText.js'
 import { categoryProblem, refreshSummary } from '../lib/ambientStatus.js'
+import { toggleSocialRow, type SocialPair } from '../lib/ambientSocial.js'
 
 /** Tail of the calendar info line: the break going on, or how far away the next one is. */
 function nextHolidayText(next: CalendarNextHoliday | undefined): string {
@@ -225,6 +226,8 @@ export function AmbientPanel({
   const previewedId = useRef('')
   // Only the newest preview request may land; a slower, older answer is dropped.
   const previewSeq = useRef(0)
+  // The pair behind the 「X 与 meme」 row switch while it is off.
+  const rememberedSocial = useRef<SocialPair>()
   const [refreshNote, setRefreshNote] = useState('')
   const refreshTimer = useRef<ReturnType<typeof setTimeout>>()
   const saveTimer = useRef<ReturnType<typeof setTimeout>>()
@@ -562,6 +565,7 @@ export function AmbientPanel({
                     <span>{label}</span>
                     <span className="ambient-cat-count">{count} 条</span>
                   </button>
+                  {id === 'local' && <span className="ambient-manual-tag">仅手动</span>}
                   {(flag || id === 'social') && (
                     <button
                       type="button"
@@ -570,11 +574,16 @@ export function AmbientPanel({
                       aria-checked={rowOn(id)}
                       aria-label={`自动挑选 ${label}`}
                       disabled={!snapshot}
-                      onClick={() =>
-                        id === 'social'
-                          ? editMany({ xEnabled: !rowOn(id), memeEnabled: !rowOn(id) })
-                          : edit(flag!, !draft[flag!])
-                      }
+                      onClick={() => {
+                        if (id !== 'social') return edit(flag!, !draft[flag!])
+                        const next = toggleSocialRow(
+                          { xEnabled: draft.xEnabled, memeEnabled: draft.memeEnabled },
+                          rememberedSocial.current,
+                          Boolean(snapshot?.hasKey),
+                        )
+                        rememberedSocial.current = next.remembered
+                        editMany(next.patch)
+                      }}
                     />
                   )}
                 </li>
@@ -916,21 +925,29 @@ export function AmbientPanel({
                 ) : (
                   <p className="ambient-empty">正在读取画面…</p>
                 )}
-                <span className="tip-wrap ambient-temp" title={tempReason}>
+                <span className="ambient-temp">
                   <button
                     type="button"
                     className="product-button primary"
-                    disabled={busy || !selectedCard || !online}
-                    onClick={() =>
-                      selectedCard &&
+                    aria-disabled={busy || !selectedCard || !online}
+                    aria-describedby={tempReason ? 'ambient-temp-reason' : undefined}
+                    title={tempReason}
+                    onClick={() => {
+                      // aria-disabled keeps the button focusable so its reason can be read; the click is ignored.
+                      if (busy || !selectedCard || !online) return
                       void action(async () => {
                         const state = await window.codepulse.showAmbient(selectedCard.id)
                         return state
                       }, '已临时展示，10 分钟后自动回到节目单。')
-                    }
+                    }}
                   >
                     临时展示 10 分钟
                   </button>
+                  {tempReason && (
+                    <span id="ambient-temp-reason" className="page-sr">
+                      {tempReason}
+                    </span>
+                  )}
                 </span>
                 <p className="ambient-message" data-feedback="content" role="status">
                   {messageScope === 'content' ? message : ''}

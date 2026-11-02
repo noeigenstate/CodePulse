@@ -580,8 +580,8 @@ function InkControlWorkspace({
       : 'Sample'
     : !connected
       ? zh
-        ? '未连接'
-        : 'Disconnected'
+        ? '预览'
+        : 'Preview'
       : ink?.temporary && ink.showing.kind !== 'work'
         ? zh
           ? '临时展示'
@@ -594,12 +594,12 @@ function InkControlWorkspace({
       {ink && !connected && (
         <button
           type="button"
-          className="product-button primary"
+          className={`product-button${connectOpen ? '' : ' primary'}`}
           aria-expanded={connectOpen}
           aria-controls="ink-provisioning"
           onClick={() => setConnectOpen((open) => !open)}
         >
-          {zh ? '连接设备' : 'Connect device'}
+          {connectOpen ? (zh ? '收起' : 'Collapse') : zh ? '连接设备' : 'Connect device'}
         </button>
       )}
       {ink?.temporary && (

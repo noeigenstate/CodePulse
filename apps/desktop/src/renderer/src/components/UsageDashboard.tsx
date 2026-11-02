@@ -155,8 +155,9 @@ function DashboardBody({
           label={copy.kpiCost}
           hint={
             t.unpricedTokens > 0
-              ? copy.unpriced.replace('{tokens}', formatTokenCount(t.unpricedTokens))
-              : undefined
+              ? `${copy.costHint}
+${copy.unpriced.replace('{tokens}', formatTokenCount(t.unpricedTokens))}`
+              : copy.costHint
           }
           value={formatUsd(t.costUsd)}
           delta={delta(t.costUsd, data.previous.costUsd)}
@@ -295,7 +296,6 @@ function DashboardBody({
         <div className="usage-card-head">
           <div>
             <h2 className="usage-h2">{copy.roundsTitle}</h2>
-            <p className="usage-muted usage-card-sub">{copy.roundsHint}</p>
           </div>
         </div>
         <table className="usage-table usage-rounds-table" aria-label={copy.roundsTitle}>
@@ -361,7 +361,6 @@ function DashboardBody({
         </table>
       </section>
 
-      <p className="usage-footnote">{copy.footnote.replace('{date}', data.pricingAsOf)}</p>
     </div>
   )
 }

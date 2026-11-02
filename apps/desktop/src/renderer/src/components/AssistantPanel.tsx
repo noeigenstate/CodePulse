@@ -194,20 +194,29 @@ export function AssistantPanel({ active, locale = 'zh' }: {
       <PageHeader
         title="待办与助手"
         actions={
-          <span className="tip-wrap" title={online ? undefined : '连接设备后可临时展示'}>
+          <span className="desk-assistant-temp">
             <button
               type="button"
               className="product-button"
-              disabled={!snapshot || working || !online}
-              onClick={() =>
+              aria-disabled={!snapshot || working || !online}
+              aria-describedby={online ? undefined : 'desk-temp-reason'}
+              title={online ? undefined : '连接设备后可临时展示'}
+              onClick={() => {
+                // aria-disabled keeps the button focusable so its reason can be read; the click is ignored.
+                if (!snapshot || working || !online) return
                 void run(async () => {
                   await window.codepulse.showDeskTasksOnInk()
                   setMessage('已临时展示待办，10 分钟后自动回到节目单；工作紧急提醒优先。')
                 })
-              }
+              }}
             >
               临时展示到墨水屏
             </button>
+            {!online && (
+              <span id="desk-temp-reason" className="page-sr">
+                连接设备后可临时展示
+              </span>
+            )}
           </span>
         }
       />

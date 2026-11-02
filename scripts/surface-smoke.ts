@@ -177,6 +177,15 @@ app.whenReady().then(async()=>{
       assert.equal(bad.size,0,label+': canvas pixels outside {white, black, red} at dpr '+box.dpr+' css '+box.w+'x'+box.h+' (first at x,y): '+JSON.stringify([...bad])+' box '+JSON.stringify({left,top,width,height,size}))
     }
     await capture('control-desktop')
+    // The live workbench keeps room for a full agent panel (header, quota, a session card) and scrolls inside the stage.
+    for (const [width,height] of [[720,480],[1024,768]] as const) {
+      main.setContentSize(width,height); await wait(450)
+      const stage=await main.webContents.executeJavaScript(`(() => {const s=document.querySelector('.product-console-live-stage'),m=s.querySelector('main'),p=m.querySelector(':scope > .grid > *');return {stage:s.getBoundingClientRect().height,panel:p.getBoundingClientRect().height,scroll:m.scrollHeight-m.clientHeight,overflow:document.documentElement.scrollWidth-window.innerWidth}})()`) as {stage:number;panel:number;scroll:number;overflow:number}
+      assert.ok(stage.stage>=480&&stage.panel>=420,'workbench stage keeps a usable height at '+width+': '+JSON.stringify(stage))
+      assert.ok(stage.overflow<=1,'no horizontal page scroll on the desktop tab at '+width)
+      await capture('control-desktop-'+width)
+    }
+    main.setContentSize(1120,780); await wait(350)
     // The e-ink state lives in one sidebar pill; there is no banner and no live-console footer.
     assert.equal(await main.webContents.executeJavaScript(`Boolean(document.querySelector('.ink-status, .ink-status-slot'))`),false,'no status banner')
     assert.match(await main.webContents.executeJavaScript(`document.querySelector('.product-rail .ink-pill-main')?.textContent??''`),/墨水屏/,'sidebar pill shows the e-ink state')
@@ -225,10 +234,10 @@ app.whenReady().then(async()=>{
     await click(main,'[data-view=control]');await click(main,'#endpoint-ink')
     inkConnected=false;publishInk();await wait()
     assert.equal(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.product-control button')).filter(b=>b.getClientRects().length&&b.textContent.trim()==='连接设备').length`),1,'one connect owner in the preview header')
-    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.device-preview-tag').textContent`),'未连接')
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.device-preview-tag').textContent`),'预览')
     await button(main,'连接设备')
     assert.ok(await main.webContents.executeJavaScript(`Boolean(document.querySelector('#ink-provisioning'))`),'connect reveals the existing provisioning panel')
-    await button(main,'连接设备')
+    await button(main,'收起')
     assert.equal(await main.webContents.executeJavaScript(`Boolean(document.querySelector('#ink-provisioning'))`),false)
     await selectPlayback('5')
     assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.product-config-actions strong').textContent`),'1 项改动，连接后自动应用')
@@ -491,11 +500,24 @@ app.whenReady().then(async()=>{
     await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.page-saved')?.textContent==='已保存'`),'saved confirmation')
     assert.equal(ambient.current(), undefined, 'saving rules does not select content')
     await click(main,'[data-rule=social] .ambient-switch')
-    await until(()=>ambient.snapshot().config.xEnabled&&ambient.snapshot().config.memeEnabled,'row switch turns both back on')
+    await until(()=>ambient.snapshot().config.xEnabled&&!ambient.snapshot().config.memeEnabled,'row switch restores the remembered pair (X only), not both')
     await category('social');await openSettings()
     for (const label of ['保存密钥','清除密钥','检查新内容']) assert.ok(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ambient-settings button')).some(b=>b.textContent.trim()===${JSON.stringify(label)})`), 'X settings keep '+label)
     await click(main,'.ambient-group[aria-label=Meme] .page-switch input')
-    await until(()=>ambient.snapshot().config.memeEnabled===false,'meme switch inside settings saves')
+    await until(()=>ambient.snapshot().config.memeEnabled===true,'meme switch inside settings saves')
+    // Meme only: turning the row off and on again must never re-enable X.
+    await click(main,'.ambient-group[aria-label="X 贴文"] .page-switch input')
+    await until(()=>!ambient.snapshot().config.xEnabled&&ambient.snapshot().config.memeEnabled,'meme-only state')
+    await click(main,'[data-rule=social] .ambient-switch')
+    await until(()=>!ambient.snapshot().config.xEnabled&&!ambient.snapshot().config.memeEnabled,'row off from meme-only')
+    await click(main,'[data-rule=social] .ambient-switch')
+    await until(()=>!ambient.snapshot().config.xEnabled&&ambient.snapshot().config.memeEnabled,'row on restores meme only; X stays off')
+    // Back to the fixture state: X on, meme off.
+    await click(main,'.ambient-group[aria-label="X 贴文"] .page-switch input')
+    await click(main,'.ambient-group[aria-label=Meme] .page-switch input')
+    await until(()=>ambient.snapshot().config.xEnabled&&!ambient.snapshot().config.memeEnabled,'fixture state restored')
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('[data-rule=local] .ambient-manual-tag')?.textContent`),'仅手动','the manual-only category carries a tag instead of a switch')
+    assert.equal(await main.webContents.executeJavaScript(`Boolean(document.querySelector('[data-rule=local] .ambient-switch'))`),false)
     await button(main,'检查新内容')
     await until(()=>ambient.snapshot().cards.filter(c=>c.kind==='x').length===1,'content fixture')
     await click(main,'.ambient-item');await previewReady()

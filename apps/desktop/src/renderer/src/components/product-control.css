@@ -59,7 +59,7 @@
 .ink-work-lock { flex:none; margin-left:auto; color:var(--ink-muted); }
 .ink-work-options { margin:0 0 12px; padding:0; border:0; }
 .ink-switch { position:relative; width:40px; height:32px; flex:none; border:0; border-radius:999px; background:transparent; }
-.ink-switch::before { content:''; position:absolute; width:32px; height:20px; left:4px; top:6px; border:1px solid var(--ink-subtle); background:var(--surface-muted); border-radius:999px; transition:background-color var(--motion); }
+.ink-switch::before { content:''; position:absolute; width:32px; height:20px; left:4px; top:6px; border:1px solid var(--switch-off); background:var(--surface-muted); border-radius:999px; transition:background-color var(--motion); }
 .ink-switch::after { content:''; position:absolute; width:12px; height:12px; left:8px; top:10px; border-radius:999px; background:var(--ink-muted); transition:transform var(--motion); }
 .ink-switch[aria-checked='true']::before { background:var(--surface-selected); border-color:var(--ink); }
 .ink-switch[aria-checked='true']::after { transform:translateX(12px); background:var(--ink); }
@@ -84,13 +84,14 @@
 .ink-playback-select { display:block; width:100%; margin-top:16px; }
 .ink-action-error { margin:12px 0 0; font-size:13px; line-height:20px; color:var(--ink); }
 .ink-action-error button { margin-left:8px; }
-.product-console-live-stage { display:flex; flex-direction:column; min-height:400px; height:560px; max-height:70vh; overflow:hidden; border:1px solid var(--line); border-radius:14px; background:var(--surface-solid); }
+.product-console-live-stage { display:flex; flex-direction:column; min-height:480px; height:clamp(480px,80vh,720px); max-height:none; overflow:hidden; border:1px solid var(--line); border-radius:14px; background:var(--surface-solid); }
 .product-control button:focus-visible,.product-control summary:focus-visible,.product-control input:focus-visible,.product-control select:focus-visible { outline:2px solid var(--ink); outline-offset:4px; }
 /* The session list scrolls inside the stage; the footer strip stays reachable below it. */
 .product-console-live-stage > .flex-1 { min-height:0; }
+/* Each agent panel keeps room for its header, quota and one full session card; the list scrolls inside the stage. */
+.product-console-live-stage main > .grid { height:auto; min-height:100%; grid-auto-rows:minmax(420px,1fr); }
 @media (max-width:1100px) {
   .ink-control-workspace,.product-config-grid { grid-template-columns:minmax(0,1fr); }
-  .product-console-live-stage { height:480px; }
 }
 @media (max-width:600px) {
   .product-control { padding:16px; }

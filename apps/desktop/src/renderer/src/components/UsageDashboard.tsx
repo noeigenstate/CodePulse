@@ -74,7 +74,6 @@ export function UsageDashboard({ locale, copy, onClose, active = true, embedded 
         )}
         <PageHeader
           title={copy.title}
-          subtitle={copy.subtitle}
           actions={
             <>
               <div className="page-segmented" role="group" aria-label={copy.title}>
@@ -154,14 +153,15 @@ function DashboardBody({
       <section className="usage-kpis">
         <Kpi
           label={copy.kpiCost}
+          hint={
+            t.unpricedTokens > 0
+              ? copy.unpriced.replace('{tokens}', formatTokenCount(t.unpricedTokens))
+              : undefined
+          }
           value={formatUsd(t.costUsd)}
           delta={delta(t.costUsd, data.previous.costUsd)}
           copy={copy}
-          foot={
-            t.unpricedTokens > 0
-              ? copy.unpriced.replace('{tokens}', formatTokenCount(t.unpricedTokens))
-              : copy.requests.replace('{n}', t.requests.toLocaleString())
-          }
+          foot={copy.requests.replace('{n}', t.requests.toLocaleString())}
         />
         <Kpi
           label={copy.kpiTokens}
@@ -368,12 +368,15 @@ function DashboardBody({
 
 function Kpi({
   label,
+  hint,
   value,
   delta: change,
   foot,
   copy,
 }: {
   label: string
+  /** Extra caveat, shown as a tooltip on an info mark instead of a line of text. */
+  hint?: string
   value: string
   delta: number | undefined
   foot: ReactNode
@@ -381,7 +384,14 @@ function Kpi({
 }): JSX.Element {
   return (
     <div className="usage-card usage-kpi">
-      <p className="usage-kpi-label">{label}</p>
+      <p className="usage-kpi-label">
+        {label}
+        {hint && (
+          <span className="usage-info" title={hint} aria-label={hint} role="img">
+            ⓘ
+          </span>
+        )}
+      </p>
       <p className="usage-kpi-value">{value}</p>
       <p className="usage-kpi-delta">
         {change === undefined ? (
@@ -465,13 +475,16 @@ function ToolCard({
         <div className="min-w-0">
           <p className="truncate font-semibold text-ink">{AGENT_DISPLAY_NAMES[agent.agentType]}</p>
           <p className="usage-muted truncate">
-            {copy.topModel}: {topModel ? formatModelName(topModel) : '—'}
+            {topModel ? formatModelName(topModel) : '—'}
           </p>
         </div>
       </div>
       <p className="usage-tool-cost">{formatUsd(agent.costUsd)}</p>
-      <ShareBar value={share} agent={agent.agentType} />
-      <p className="usage-muted mt-1.5">{copy.costShare.replace('{pct}', formatPct(share))}</p>
+      <ShareBar
+        value={share}
+        agent={agent.agentType}
+        label={copy.costShare.replace('{pct}', formatPct(share))}
+      />
       <dl className="usage-tool-stats">
         <div>
           <dt>{copy.colTokens}</dt>
@@ -490,9 +503,22 @@ function ToolCard({
   )
 }
 
-function ShareBar({ value, agent }: { value: number; agent?: AgentType }): JSX.Element {
+function ShareBar({
+  value,
+  agent,
+  label,
+}: {
+  value: number
+  agent?: AgentType
+  /** Percentage text kept in the title and aria-label instead of on screen. */
+  label?: string
+}): JSX.Element {
   return (
-    <div className="usage-share" aria-hidden="true">
+    <div
+      className="usage-share"
+      title={label}
+      {...(label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true })}
+    >
       <span data-agent={agent} style={{ width: `${Math.max(0, Math.min(1, value)) * 100}%` }} />
     </div>
   )

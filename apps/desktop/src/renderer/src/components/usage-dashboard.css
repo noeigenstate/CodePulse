@@ -509,3 +509,16 @@
     transition: none;
   }
 }
+
+.usage-info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+  margin: -8px -4px -8px 0;
+  vertical-align: middle;
+  color: var(--ink-muted);
+  font-size: var(--fs-sm);
+  cursor: help;
+}

@@ -259,11 +259,11 @@
   font-size: var(--fs-sm);
   line-height: 20px;
 }
-.desk-assistant-footer {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 8px;
+.desk-assistant-status {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: 20px;
+  color: var(--ink-muted);
 }
 @media (max-width: 1050px) {
   .desk-assistant-columns {

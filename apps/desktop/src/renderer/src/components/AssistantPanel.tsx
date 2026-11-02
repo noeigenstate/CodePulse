@@ -9,11 +9,10 @@ import type {
 import { recordDeskVoice, playDeskVoice, type DeskRecording } from '../lib/assistantAudio.js'
 import { PageHeader } from './PageHeader.js'
 import { formatDue } from '../lib/dueText.js'
-import { inkPlanChip } from '../lib/inkStatusText.js'
 import { useInkStatus } from '../lib/useInkStatus.js'
 import './assistant-panel.css'
 
-export function AssistantPanel({ active, product, locale = 'zh' }: {
+export function AssistantPanel({ active, locale = 'zh' }: {
   active: boolean
   /** ia-refactor contract: shell state (applied playlist) and navigation to 控制 › 节目单. */
   product?: import('./ProductFrame.js').ProductNavigation
@@ -25,10 +24,6 @@ export function AssistantPanel({ active, product, locale = 'zh' }: {
   const [message, setMessage] = useState('')
   const ink = useInkStatus()
   const online = ink?.connection === 'connected'
-  const chip = product ? inkPlanChip(product.shell.inkPlan, 'todos', ink?.connection, locale) : undefined
-  const openPlaylist = (): void => {
-    if (product) void product.navigate('control').then(() => product.selectTarget('ink'))
-  }
   const [title, setTitle] = useState(''),
     [notes, setNotes] = useState(''),
     [due, setDue] = useState(''),
@@ -188,6 +183,8 @@ export function AssistantPanel({ active, product, locale = 'zh' }: {
           () => visible.current && alive.current && audioAllowed.current.output,
         )
     })
+  const pendingCount = snapshot?.tasks.filter((t) => t.status === 'pending').length ?? 0
+  const doneCount = (snapshot?.tasks.length ?? 0) - pendingCount
   const tasks =
     snapshot?.tasks.filter((t) =>
       filter === 'pending' ? t.status === 'pending' : t.status !== 'pending',
@@ -196,10 +193,8 @@ export function AssistantPanel({ active, product, locale = 'zh' }: {
     <div className="desk-assistant">
       <PageHeader
         title="待办与助手"
-        subtitle={<span role="status">{message || '记下要做的事，让提醒留在桌边。数据保存在这台电脑。'}</span>}
         actions={
-          <>
-            {!online && <span className="page-muted">连接设备后可临时展示</span>}
+          <span className="tip-wrap" title={online ? undefined : '连接设备后可临时展示'}>
             <button
               type="button"
               className="product-button"
@@ -213,9 +208,14 @@ export function AssistantPanel({ active, product, locale = 'zh' }: {
             >
               临时展示到墨水屏
             </button>
-          </>
+          </span>
         }
       />
+      {message && (
+        <p className="desk-assistant-status" role="status">
+          {message}
+        </p>
+      )}
       {error && (
         <p className="desk-assistant-error" role="alert">
           {error}
@@ -223,12 +223,6 @@ export function AssistantPanel({ active, product, locale = 'zh' }: {
       )}
       <div className="desk-assistant-columns">
         <section className="desk-assistant-card" aria-label="待办列表">
-          <div className="desk-assistant-card-title">
-            <h2>我的待办</h2>
-            <span>
-              {snapshot?.tasks.filter((t) => t.status === 'pending').length ?? 0} 项待完成
-            </span>
-          </div>
           <form
             onSubmit={(e) => {
               e.preventDefault()
@@ -248,7 +242,7 @@ export function AssistantPanel({ active, product, locale = 'zh' }: {
             </label>
             <div className="desk-task-form-row">
               <label>
-                提醒时间 <small>可留空</small>
+                提醒时间
                 <input type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} />
               </label>
               <button className="primary" disabled={working || !snapshot || !title.trim()}>
@@ -281,21 +275,17 @@ export function AssistantPanel({ active, product, locale = 'zh' }: {
           </form>
           <div className="desk-task-filters" role="group" aria-label="待办筛选">
             <button aria-pressed={filter === 'pending'} onClick={() => setFilter('pending')}>
-              待完成
+              待完成 {pendingCount}
             </button>
             <button aria-pressed={filter === 'completed'} onClick={() => setFilter('completed')}>
-              已完成与取消
+              已完成 {doneCount}
             </button>
           </div>
           <div className="desk-task-list">
             {!snapshot ? (
               <p>正在打开本地待办…</p>
             ) : !tasks.length ? (
-              <p className="desk-assistant-muted">
-                {filter === 'pending'
-                  ? '暂时没有待办，给今天留一点空白。'
-                  : '完成的事项会保留在这里。'}
-              </p>
+              <p className="desk-assistant-muted">没有待办</p>
             ) : (
               tasks.map((task) => (
                 <article
@@ -351,13 +341,6 @@ export function AssistantPanel({ active, product, locale = 'zh' }: {
           </div>
         </section>
         <section className="desk-assistant-card" aria-label="文字与语音助手">
-          <div className="desk-assistant-card-title">
-            <h2>说一句，或写下来</h2>
-            <span>{snapshot?.credentials.llmKey ? 'AI 已配置' : '本地规则可用'}</span>
-          </div>
-          <p className="desk-assistant-muted">
-            例如“10分钟后提醒我喝水”。AI 提出的修改会先列出来，确认后保存。
-          </p>
           <form
             onSubmit={(e) => {
               e.preventDefault()
@@ -370,7 +353,7 @@ export function AssistantPanel({ active, product, locale = 'zh' }: {
               value={input}
               maxLength={4000}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="待办：读完这一章，或者描述你想安排的事情"
+              placeholder="例如：10 分钟后提醒我喝水；或 待办：读完这一章"
             />
             <div className="desk-assistant-actions">
               <button
@@ -451,14 +434,14 @@ export function AssistantPanel({ active, product, locale = 'zh' }: {
               </div>
             ))}
           </details>
-          <p className="desk-assistant-muted">
-            语音只在你点击录音后采集。识别会发送本次录音；AI
-            会发送输入、近期对话和部分待办与记忆至所选服务商。普通待办无需联网。
-          </p>
         </section>
       </div>
       <details className="desk-assistant-card desk-assistant-settings">
         <summary>助手、语音与提醒设置</summary>
+        <p className="desk-assistant-muted">
+            语音只在你点击录音后采集。识别会发送本次录音；AI
+            会发送输入、近期对话和部分待办与记忆至所选服务商。普通待办无需联网。
+        </p>
         {settings && snapshot && (
           <>
             <div className="desk-assistant-settings-grid">
@@ -615,15 +598,6 @@ export function AssistantPanel({ active, product, locale = 'zh' }: {
           </>
         )}
       </details>
-      <p className="page-muted desk-assistant-footer">
-        待办是否出现在墨水屏：在{' '}
-        {product ? (
-          <button type="button" className="page-link" onClick={openPlaylist}>控制 › 节目单</button>
-        ) : (
-          '控制 › 节目单'
-        )}{' '}
-        设置{chip && <span className={`page-chip ${chip.included ? 'is-on' : ''}`}>{chip.text}</span>}
-      </p>
     </div>
   )
 }

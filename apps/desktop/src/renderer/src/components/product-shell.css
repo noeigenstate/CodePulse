@@ -58,12 +58,13 @@
 .ink-status-link:hover { background: var(--surface-selected); }
 .ink-status-note { margin: 0; padding-left: 28px; font-size: var(--fs-xs); line-height: 16px; color: var(--ink-muted); }
 .product-button.is-compact { position: relative; min-height: var(--h-button-compact); padding: 0 12px; font-size: var(--fs-xs); }
-/* Visually 28px, but the hit area is 32px. */
-.product-button.is-compact::after { content: ''; position: absolute; inset: -2px 0; }
+/* Visually 28px; the hit area extends 3px above and below (34px), so rounding at any device scale still
+   leaves at least 32px. */
+.product-button.is-compact::after { content: ''; position: absolute; inset: -3px 0; }
 /* Disclosure indicator: turns down when the section is open. */
 .desk-assistant summary, .ambient-panel summary { list-style: none; gap: 8px; }
 .desk-assistant summary::-webkit-details-marker, .ambient-panel summary::-webkit-details-marker { display: none; }
-.desk-assistant summary::before, .ambient-panel summary::before { content: ''; flex: none; width: 6px; height: 6px; margin: 0 4px 2px 2px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform var(--motion); }
+.desk-assistant summary::before, .ambient-panel summary::before { content: ''; display: inline-block; vertical-align: middle; flex: none; width: 6px; height: 6px; margin: 0 4px 2px 2px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform var(--motion); }
 .desk-assistant details[open] > summary::before, .ambient-panel details[open] > summary::before { transform: rotate(45deg); }
 @media (prefers-reduced-motion: reduce) { .app-shell *, .app-shell *::before, .app-shell *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; } }
 

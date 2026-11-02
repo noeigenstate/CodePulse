@@ -64,18 +64,18 @@ export function applyInk(
   const { plan, display } = validateRequest(request)
   const previousDisplay = deps.readDisplay()
   const shell = deps.shell.prepareInkPlan(plan)
-  const ambient = deps.ambient.prepareConfiguration({
-    ...deps.ambient.getConfig(),
-    enabled: plan.mode === 'cycle' && plan.items.includes('ambient'),
-    displayMinutes: plan.intervalMinutes,
-  })
+  const ambientConfig = deps.ambient.getConfig()
+  const enabled = plan.mode === 'cycle' && plan.items.includes('ambient')
+  const ambient = ambientConfig.enabled === enabled && ambientConfig.displayMinutes === plan.intervalMinutes
+    ? undefined
+    : deps.ambient.prepareConfiguration({ ...ambientConfig, enabled, displayMinutes: plan.intervalMinutes })
   const stages = [
     shell,
     {
       save: () => deps.writeDisplay(display),
       rollback: () => deps.writeDisplay(previousDisplay),
     },
-    ambient,
+    ...(ambient ? [ambient] : []),
   ]
   const completed: typeof stages = []
   try {
@@ -97,15 +97,15 @@ export function applyInk(
   }
   // All synchronous durable writes succeeded. Memory and notifications follow together.
   shell.commit()
-  ambient.commit()
+  ambient?.commit()
   deps.committed()
   return { shell: deps.shell.snapshot(), display: deps.displaySnapshot() }
 }
 
 export function endInkTemporary(
-  ambient: Pick<AmbientService, 'dismiss'>,
+  ambient: Pick<AmbientService, 'dismissTemporary'>,
   assistant?: Pick<AssistantService, 'clearTemporaryInk'>,
 ): void {
-  ambient.dismiss()
+  ambient.dismissTemporary()
   assistant?.clearTemporaryInk()
 }

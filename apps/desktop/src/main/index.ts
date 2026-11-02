@@ -288,7 +288,6 @@ function wireHub(): void {
 
   hub.on('status', (snapshot: StatusSnapshot) => {
     ambientRuntime?.service.tick()
-    inkStatusRuntime?.refresh()
     pendingStatusSnapshot = snapshot
     if (statusFlushTimer) return
     statusFlushTimer = setTimeout(() => {
@@ -298,6 +297,7 @@ function wireHub(): void {
       if (!next) return
       updateTrayIfChanged(next)
       broadcast('codepulse:status', next)
+      inkStatusRuntime?.refresh()
     }, STATUS_COALESCE_MS)
     statusFlushTimer.unref?.()
   })
@@ -421,7 +421,7 @@ function registerIpc(): void {
     notifyInkDisplayChanged()
     return inkScreenStatus()
   })
-  registerAssistantIpc(ipcMain, () => assistantRuntime, () => deviceDisplaySnapshot().status, () => ambientRuntime?.service.dismiss())
+  registerAssistantIpc(ipcMain, () => assistantRuntime, () => deviceDisplaySnapshot().status, () => ambientRuntime?.service.dismissTemporary())
   registerProductIpc(ipcMain, productShell!, screenWorkbench!, plan => applyInkRequest({
     plan: normalizeInkPlan(plan), display: deviceDisplaySnapshot().config,
   }).shell)
@@ -705,7 +705,7 @@ async function bootstrap(): Promise<void> {
         registerAssistantRoutes: assistantRuntime ? app => registerAssistantRoutes(app, assistantRuntime!.service) : undefined,
         projectStatus: projectDeviceDisplay,
         getDisplayConfig: () => readDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json')),
-        onStatusRead: () => { inkLastSeenAt = Date.now(); inkStatusRuntime?.refresh() },
+        onStatusRead: () => { inkLastSeenAt = Date.now(); inkStatusRuntime?.statusRead(inkLastSeenAt) },
         host: deviceConfig.host,
         port: deviceConfig.port,
         authToken: deviceConfig.authToken,

@@ -47,6 +47,12 @@ const day = (now: number) => {
   const d = new Date(now)
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
 }
+/** Changes that invalidate fetched content or the selected automatic card. Pacing is separate. */
+const SOURCE_FIELDS = [
+  'xEnabled', 'memeEnabled', 'conceptsEnabled', 'promptsEnabled', 'newsEnabled', 'petEnabled',
+  'petId', 'calendarEnabled', 'provider', 'accounts', 'keywords', 'exclude', 'minLikes',
+  'accountMinLikes', 'memeMinUps', 'memeCommunity',
+] as const satisfies readonly (keyof AmbientConfig)[]
 export class AmbientService {
   private config: AmbientConfig
   private history: AmbientHistory
@@ -128,15 +134,18 @@ export class AmbientService {
   prepareConfiguration(input: unknown) {
     const config = normalizeAmbient(input)
     const previous = this.config
+    const sourceChanged = SOURCE_FIELDS.some(field => JSON.stringify(config[field]) !== JSON.stringify(previous[field]))
     return {
       save: () => this.deps.save(config, this.history),
       rollback: () => this.deps.save(previous, this.history),
       commit: () => {
         this.config = config
-        this.generation++
-        this.cards = []
-        if (!this.manual) this.active = undefined
-        this.nextCheckAt = 0
+        if (sourceChanged) {
+          this.generation++
+          this.cards = []
+          if (!this.manual) this.active = undefined
+          this.nextCheckAt = 0
+        }
       },
     }
   }
@@ -153,9 +162,6 @@ export class AmbientService {
         (!plan && this.deps.automaticAllowed?.() === false)) return null
     const reason = pauseReason(config, this.deps.status(), now)
     if (reason && reason !== '安静时段') return null // A user's next action or idle time cannot be predicted.
-    if (!config.conceptsEnabled && !config.promptsEnabled && !config.petEnabled &&
-        !config.calendarEnabled && !config.memeEnabled && !config.newsEnabled &&
-        !(config.xEnabled && this.deps.key(config.provider))) return null
     const end = new Date(now)
     end.setHours(24, 0, 0, 0)
     let at = Math.max(now, this.history.lastShown ? this.history.lastShown + config.gapMinutes * 60000 : now)
@@ -169,7 +175,10 @@ export class AmbientService {
       } else if (plan && inkFeatureAt(plan, at) !== 'ambient') {
         const dwell = plan.intervalMinutes * 60000
         at = (Math.floor(at / dwell) + 1) * dwell
-      } else return at
+      } else {
+        return this.allCards().some(card => qualifies(card, config, at) &&
+          !this.history.seen[card.id] && !this.history.seen[contentKey(card)]) ? at : null
+      }
     }
     return null
   }
@@ -309,6 +318,9 @@ export class AmbientService {
     this.manual = false
     this.changed()
     return this.snapshot()
+  }
+  dismissTemporary() {
+    return this.manual ? this.dismiss() : this.snapshot()
   }
   show(id?: string) {
     this.resetDay()

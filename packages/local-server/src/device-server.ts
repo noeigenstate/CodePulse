@@ -191,7 +191,11 @@ export async function startDeviceServer(options: DeviceServerOptions): Promise<D
     reply.header('x-codepulse-protocol-version', String(DEVICE_PROTOCOL_VERSION))
     reply.header('cache-control', 'private, no-cache, max-age=0, must-revalidate')
     reply.header('etag', etag)
-    options.onStatusRead?.()
+    try {
+      options.onStatusRead?.()
+    } catch {
+      // A host UI observer must not turn an authenticated read into a failed device request.
+    }
     if (etagMatches(conditional, etag)) return reply.code(304).send()
     return status
   })

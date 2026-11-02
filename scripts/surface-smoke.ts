@@ -72,6 +72,7 @@ app.whenReady().then(async()=>{
     hub.ingest({id:'shell-fixture',source:'codex',eventType:'session_start',externalSessionId:'shell-ui',workspacePath:'F:/example/codepulse',timestamp:Date.now()})
     const before=JSON.stringify(hub.snapshot().agents)
     let config: DeviceDisplayConfig={...DEFAULT_DEVICE_DISPLAY,agents:[...DEFAULT_DEVICE_DISPLAY.agents]}
+    let inkConnected = true
     let main: BrowserWindow | undefined
     const host=resolve(process.env.CODEPULSE_SMOKE_ASSETS ?? 'apps/desktop')
     const broadcast=(channel:string,payload:unknown)=>BrowserWindow.getAllWindows().forEach(w=>w.webContents.send(channel,payload))
@@ -116,7 +117,7 @@ app.whenReady().then(async()=>{
       automaticAllowed:()=>inkFeatureAt(product.snapshot().inkPlan,Date.now())==='todos'})
     const device=(draft?:DeviceDisplayConfig)=>({config,status:withAmbient(projector(hud.snapshot(),draft??config),draft?undefined:selectDeskContent(assistant.inkCard(hud.snapshot()),ambient.current())),serverAvailable:false})
     // A synthetic authenticated device exercises connected drafts without binding a server.
-    const inkSnapshot=()=>computeInkStatus({plan:product.snapshot().inkPlan,now:Date.now(),lastSeenAt:Date.now(),serverEnabled:true,
+    const inkSnapshot=()=>computeInkStatus({plan:product.snapshot().inkPlan,now:Date.now(),lastSeenAt:inkConnected?Date.now():null,serverEnabled:true,
       projected:device().status,ambientTemporary:ambient.temporaryInk(),assistantUntil:assistant.temporaryInkUntil(),
       ambientPausedReason:ambient.snapshot().pausedReason,nextAutoAt:ambient.nextAutoAt()})
     publishInk=()=>{broadcast('codepulse:ink-status',inkSnapshot());broadcast('codepulse:device-display',device())}
@@ -154,6 +155,10 @@ app.whenReady().then(async()=>{
     await main.webContents.reload(); await wait(900)
     await until(()=>main!.webContents.executeJavaScript(`Boolean(document.querySelector('.product-control'))`),'control reload')
     const capture=async(name:string)=>{await wait(350);writeFileSync(join(output,name+'.png'),(await main!.webContents.capturePage()).toPNG())}
+    const selectPlayback=async(value:string)=>{
+      await main!.webContents.executeJavaScript(`(() => {const s=document.querySelector('.ink-playback-select');s.value=${JSON.stringify(value)};s.dispatchEvent(new Event('change',{bubbles:true}))})()`)
+      await wait()
+    }
     // Every physical pixel under the preview canvas, edges included, must be paper, ink or red:
     // a fractional canvas size or phase resamples the last row/column into blends like #E1AFB1.
     const assertCanvasPure=async(label:string,selector='.ambient-panel .device-preview canvas.device-screen')=>{
@@ -189,6 +194,42 @@ app.whenReady().then(async()=>{
     assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.product-targets').length`),0)
     await click(main,'[data-view=control]');await click(main,'#endpoint-ink')
     await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.product-control .device-preview')?.getAttribute('data-render-state')==='ready'`),'ink draft preview')
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.product-control .page-header p,.product-tabs-label,.ink-empty-card,.ink-preview-card .device-preview-footnote').length`),0,'control removes static explanatory chrome')
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.ink-config .product-config-actions').length`),0,'synced playlist has no apply area')
+    const beforePlayback=structuredClone(product.snapshot().inkPlan)
+    await selectPlayback('fixed')
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.product-config-actions strong').textContent`),'1 项未应用')
+    assert.equal(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ink-config [role=switch]')).every(b=>b.disabled)`),true)
+    await button(main,'应用')
+    assert.equal(product.snapshot().inkPlan.mode,'single')
+    assert.equal(product.snapshot().inkPlan.fixed,'work')
+    assert.deepEqual(product.snapshot().inkPlan.items,beforePlayback.items)
+    assert.equal(product.snapshot().inkPlan.intervalMinutes,beforePlayback.intervalMinutes)
+    await selectPlayback('5')
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.product-config-actions strong').textContent`),'1 项未应用','combined mode/dwell count once')
+    await selectPlayback('15');await button(main,'应用')
+    await click(main,'button[role=switch][aria-label="待办与提醒加入节目单"]')
+    assert.equal(product.snapshot().view,'control','playlist switches never navigate')
+    assert.deepEqual(product.snapshot().inkPlan.items,beforePlayback.items,'membership stays a draft')
+    await click(main,'button[role=switch][aria-label="待办与提醒加入节目单"]')
+    await click(main,'.ink-row-main[aria-label="桌边内容"]');assert.equal(product.snapshot().view,'ambient')
+    await click(main,'[data-view=control]');await click(main,'#endpoint-ink')
+    await click(main,'.ink-row-main[aria-label="待办与提醒"]');assert.equal(product.snapshot().view,'assistant')
+    await click(main,'[data-view=control]');await click(main,'#endpoint-ink')
+    inkConnected=false;publishInk();await wait()
+    assert.equal(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.product-control button')).filter(b=>b.getClientRects().length&&b.textContent.trim()==='连接设备').length`),1,'one connect owner in the preview header')
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.device-preview-tag').textContent`),'未连接')
+    await button(main,'连接设备')
+    assert.ok(await main.webContents.executeJavaScript(`Boolean(document.querySelector('#ink-provisioning'))`),'connect reveals the existing provisioning panel')
+    await button(main,'连接设备')
+    assert.equal(await main.webContents.executeJavaScript(`Boolean(document.querySelector('#ink-provisioning'))`),false)
+    await selectPlayback('5')
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.product-config-actions strong').textContent`),'连接后自动应用')
+    await until(()=>product.snapshot().inkPlan.intervalMinutes===5,'offline changes auto-apply')
+    await until(()=>main!.webContents.executeJavaScript(`document.querySelectorAll('.ink-config .product-config-actions').length===0`),'offline saved changes hide the apply area')
+    inkConnected=true;publishInk();await wait()
+    await selectPlayback('15');await button(main,'应用')
+    await selectPlayback('5') // A real pending change keeps the footer present for the layout checks.
     const previewWidth=await main.webContents.executeJavaScript(`document.querySelector('.product-control .device-preview canvas').getBoundingClientRect().width`)
     assert.ok(previewWidth>0,'preview is shown at default window size')
     const layouts: unknown[] = []
@@ -196,7 +237,7 @@ app.whenReady().then(async()=>{
       const control = document.querySelector('.product-control');
       const stage = document.querySelector('.ink-control-workspace .product-preview-stage');
       const canvas = stage.querySelector('.device-preview-scroll canvas').getBoundingClientRect();
-      const apply = document.querySelector('.ink-config .product-config-actions').getBoundingClientRect();
+      const apply = document.querySelector('.ink-config .product-config-actions')?.getBoundingClientRect() ?? {top:0,bottom:0};
       return {viewport: [innerWidth,innerHeight], dpr: devicePixelRatio, canvas: [canvas.width,canvas.height], origin: [canvas.left,canvas.top],
         canvasBottom: canvas.bottom, applyBottom: apply.bottom, applyTop: apply.top,
         pageOverflow: control.scrollHeight-control.clientHeight,
@@ -220,47 +261,41 @@ app.whenReady().then(async()=>{
     }
     main.setContentSize(1120,780); await wait(250)
     {
-      // Give the preferred integer scale enough width, then bound the stage's height.
-      // Closing the actual options disclosure must lift that height cap without resizing the host.
-      const scale = async () => { const m = await geometry(); return {k: pixelRatio(m.canvas as number[],m.dpr as number), m} }
-      const originalZoom = main.webContents.getZoomFactor()
-      const originalDpr = await main.webContents.executeJavaScript('devicePixelRatio') as number
-      const stageStyle = await main.webContents.executeJavaScript(`document.querySelector('.ink-preview-card').style.cssText`) as string
+      // The menu is an overlay. Exercise a genuine height constraint independently of menu state.
+      const scale = async () => { const m=await geometry();return {k:pixelRatio(m.canvas as number[],m.dpr as number),m} }
+      const originalZoom=main.webContents.getZoomFactor()
+      const originalDpr=await main.webContents.executeJavaScript('devicePixelRatio') as number
+      const stageStyle=await main.webContents.executeJavaScript(`document.querySelector('.ink-preview-card').style.cssText`) as string
       try {
         main.setContentSize(1600,1000)
-        main.webContents.setZoomFactor(originalZoom * 2 / originalDpr)
+        main.webContents.setZoomFactor(originalZoom*2/originalDpr)
         await wait(350)
-        await main.webContents.executeJavaScript(`document.querySelector('.ink-preview-options').open=true`)
-        await wait(350)
-        const natural = await scale(), preferred = Math.round(natural.m.dpr as number)
-        assert.ok(preferred>=2,'fixture must have two or more available integer scales')
-        assert.equal(natural.k,preferred,'width allows the preferred scale before applying a height cap')
-        await main.webContents.executeJavaScript(`(() => {
+        const natural=await scale(),preferred=Math.round(natural.m.dpr as number)
+        assert.ok(preferred>=2,'fixture has at least two integer scales')
+        assert.equal(natural.k,preferred,'unconstrained stage reaches preferred integer scale')
+        const heights=await main.webContents.executeJavaScript(`(() => {
           const stage=document.querySelector('.ink-preview-card');
-          const height=stage.getBoundingClientRect().height;
-          stage.style.boxSizing='border-box';stage.style.height=(height-150/devicePixelRatio)+'px';
-          stage.style.overflow='hidden';
-        })()`)
-        await until(async()=>(await scale()).k<preferred,'bounded stage caps the preferred preview')
-        const before = await scale()
-        await main.webContents.executeJavaScript(`document.querySelector('.ink-preview-options').open=false`)
-        await wait(350)
-        const roomy = await scale()
-        writeFileSync(join(output,'cap-lift.json'),JSON.stringify({natural,before,roomy,preferred},null,2))
-        assert.equal(roomy.k,preferred,'closing options restores the preferred integer scale: '+JSON.stringify([before.k,roomy.k]))
-        assert.ok(roomy.k>before.k,'cap lifting must actually increase the scale')
-        assert.ok((roomy.m.previewOverflow as number)<=1,JSON.stringify(roomy.m))
-        await main.webContents.executeJavaScript(`document.querySelector('.ink-preview-options').open=true`)
-        await until(async()=>(await scale()).k===before.k,'reopening options restores the height cap')
+          const full=stage.getBoundingClientRect().height,short=full-150/devicePixelRatio;
+          stage.style.boxSizing='border-box';stage.style.height=short+'px';stage.style.overflow='hidden';
+          return {full,short};
+        })()`) as {full:number;short:number}
+        await until(async()=>(await scale()).k<preferred,'real height constraint caps the preview')
+        const before=await scale()
+        await main.webContents.executeJavaScript(`document.querySelector('.ink-preview-card').style.height=${JSON.stringify(heights.full+'px')}`)
+        await until(async()=>(await scale()).k===preferred,'restoring real room lifts the cap')
+        const roomy=await scale()
+        assert.ok(roomy.k>before.k,'cap recovery must actually increase the scale')
+        await main.webContents.executeJavaScript(`document.querySelector('.ink-preview-card').style.height=${JSON.stringify(heights.short+'px')}`)
+        await until(async()=>(await scale()).k===before.k,'restricting real room restores the cap')
         const back=await scale()
-        assert.ok((back.m.previewOverflow as number)<=1,JSON.stringify(back.m))
-        for(const measured of [before.m,roomy.m,back.m]) assertWholePixels(measured.canvas as number[],measured.dpr as number,1,'height cap preserves whole physical pixels',measured.origin as number[])
-        writeFileSync(join(output,'cap-lift.json'),JSON.stringify({natural,before,roomy,back,preferred},null,2))
+        for(const measured of [before.m,roomy.m,back.m]) {
+          assert.ok(measured.previewOverflow<=1,JSON.stringify(measured))
+          assertWholePixels(measured.canvas as number[],measured.dpr as number,1,'height cap preserves integer pixels',measured.origin as number[])
+        }
+        writeFileSync(join(output,'cap-lift.json'),JSON.stringify({natural,before,roomy,back,preferred,heights},null,2))
       } finally {
-        await main.webContents.executeJavaScript(`document.querySelector('.ink-preview-card').style.cssText=${JSON.stringify(stageStyle)};document.querySelector('.ink-preview-options').open=false`)
-        main.webContents.setZoomFactor(originalZoom)
-        main.setContentSize(1120,780)
-        await wait(350)
+        await main.webContents.executeJavaScript(`document.querySelector('.ink-preview-card').style.cssText=${JSON.stringify(stageStyle)}`)
+        main.webContents.setZoomFactor(originalZoom);main.setContentSize(1120,780);await wait(350)
       }
     }
     for (const zoom of [1.25,1.5,2,1]) {
@@ -273,10 +308,39 @@ app.whenReady().then(async()=>{
       assert.equal(measured.configOverflow,0,'the playlist does not clip content behind a sticky footer')
     }
     await wait(250)
-    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.ink-preview-options').open`),false,'preview options start collapsed')
-    await click(main,'.ink-preview-options > summary')
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.device-preview-more').getAttribute('aria-expanded')`),'false','preview menu starts closed')
+    const beforeMenu=await geometry()
+    await button(main,'⋯')
+    const withMenu=await geometry()
+    assert.deepEqual(withMenu.canvas,beforeMenu.canvas,'opening the portal menu cannot change integer scale')
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.device-preview-menu')?.getAttribute('role')`),'dialog')
+    main.webContents.sendInputEvent({type:'keyDown',keyCode:'Escape'})
+    await until(()=>main!.webContents.executeJavaScript(`!document.querySelector('.device-preview-menu')`),'Escape closes the preview menu')
+    assert.equal(await main.webContents.executeJavaScript(`document.activeElement?.getAttribute('aria-label')`),'预览选项','menu Escape restores its trigger focus')
+    assert.deepEqual((await geometry()).canvas,beforeMenu.canvas,'closing the portal menu cannot change integer scale')
+    {
+      // Place the same trigger near the small window's bottom to exercise measured upward placement.
+      const originalStyle=await main.webContents.executeJavaScript(`document.querySelector('.device-preview-more').style.cssText`) as string
+      try {
+        main.setContentSize(720,480);await wait(350)
+        await main.webContents.executeJavaScript(`Object.assign(document.querySelector('.device-preview-more').style,{position:'fixed',right:'16px',bottom:'16px',top:'auto',zIndex:'101'})`)
+        await button(main,'⋯')
+        const box=await main.webContents.executeJavaScript(`(() => {
+          const m=document.querySelector('.device-preview-menu').getBoundingClientRect(),a=document.querySelector('.device-preview-more').getBoundingClientRect();
+          return {top:m.top,bottom:m.bottom,left:m.left,right:m.right,gap:a.top-m.bottom,width:innerWidth,height:innerHeight};
+        })()`) as {top:number;bottom:number;left:number;right:number;gap:number;width:number;height:number}
+        assert.ok(box.top>=15&&box.bottom<=box.height-15&&box.left>=15&&box.right<=box.width-15,'small-window menu stays inside the viewport: '+JSON.stringify(box))
+        assert.ok(Math.abs(box.gap-8)<=1,'upward menu uses its measured height and an 8px gap: '+JSON.stringify(box))
+        writeFileSync(join(output,'preview-menu-small.json'),JSON.stringify(box,null,2))
+      } finally {
+        main.webContents.sendInputEvent({type:'keyDown',keyCode:'Escape'});await wait()
+        await main.webContents.executeJavaScript(`document.querySelector('.device-preview-more').style.cssText=${JSON.stringify(originalStyle)}`)
+        main.setContentSize(1120,780);await wait(350)
+      }
+    }
+    await button(main,'⋯')
     const beforeInspect = JSON.stringify(config)
-    await button(main,'2 倍检查')
+    await button(main,'2×')
     assert.ok(await main.webContents.executeJavaScript(`Boolean(document.querySelector('.ink-control-workspace dialog[open]'))`))
     const inspectSize=await main.webContents.executeJavaScript(`(() => { const r=document.querySelector('dialog[open] canvas').getBoundingClientRect(); return [r.width,r.height] })()`)
     assertWholePixels(inspectSize,await main.webContents.executeJavaScript('devicePixelRatio'),2,'inspection uses a deliberate whole-pixel zoom of at least 2x')
@@ -284,36 +348,38 @@ app.whenReady().then(async()=>{
     await capture('ink-inspector')
     await button(main,'关闭检查')
     assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('dialog[open]').length`),0)
-    assert.equal(await main.webContents.executeJavaScript(`document.activeElement?.textContent`),'2 倍检查','inspection restores keyboard focus')
+    assert.equal(await main.webContents.executeJavaScript(`document.activeElement?.getAttribute('aria-label')`),'预览选项','inspection restores the menu trigger focus')
     assert.equal(JSON.stringify(config),beforeInspect,'inspection never applies device settings')
     await click(main,'.ink-work-options summary')
     const normalPixels = await main.webContents.executeJavaScript(`Array.from(document.querySelector('.ink-control-workspace .device-preview-scroll canvas').getContext('2d').getImageData(0,0,400,300).data)`)
     await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ink-config label')).find(l=>l.textContent.includes('反色显示')).querySelector('input').click()`)
     assert.equal(config.inverted,false,'connected changes stay drafts')
     assert.deepEqual(await main.webContents.executeJavaScript(`Array.from(document.querySelector('.ink-control-workspace .device-preview-scroll canvas').getContext('2d').getImageData(0,0,400,300).data)`),normalPixels,'live preview keeps the applied target')
-    await button(main,'应用到设备')
+    await button(main,'应用')
     await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ink-control-workspace .device-preview-scroll canvas').getContext('2d').getImageData(0,0,1,1).data[0]===0`),'applied inverted pixels')
     const invertedPixels = await main.webContents.executeJavaScript(`Array.from(document.querySelector('.ink-control-workspace .device-preview-scroll canvas').getContext('2d').getImageData(0,0,400,300).data)`)
     assert.deepEqual(invertedPixels, normalPixels.map((v:number,i:number)=>i%4===3?v:255-v),'apply updates the production pixels')
     await capture('ink-inverted')
     await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ink-config label')).find(l=>l.textContent.includes('反色显示')).querySelector('input').click()`)
-    await button(main,'应用到设备')
+    await button(main,'应用')
     const beforeSamples=JSON.stringify(config)
+    await button(main,'⋯')
     await button(main,'9 任务')
-    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.ink-preview-caption').textContent`),'样例 · 不是设备画面')
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.device-preview-tag').textContent`),'样例')
     assert.equal(JSON.stringify(config),beforeSamples,'sample selection never applies synthetic content')
     await capture('ink-dense')
-    await button(main,'2 倍检查'); await capture('ink-dense-inspector')
+    await button(main,'2×'); await capture('ink-dense-inspector')
     main.webContents.sendInputEvent({type:'keyDown',keyCode:'Escape'})
     await until(()=>main!.webContents.executeJavaScript(`document.querySelectorAll('dialog[open]').length===0`),'Escape closes the inspection')
-    await button(main,'实时')
+    await button(main,'⋯');await button(main,'实时')
+    main.webContents.sendInputEvent({type:'keyDown',keyCode:'Escape'});await wait()
     writeFileSync(join(output,'layout.json'),JSON.stringify(layouts,null,2))
     await capture('control-ink')
     await button(main,'用量看板');assert.equal(config.mode,'hud')
     await button(main,'专注模式');await button(main,'返回控制台')
     assert.equal(product.snapshot().target,'ink')
     assert.ok(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.product-control .ink-config button')).some(b=>b.textContent==='用量看板' && b.getAttribute('aria-pressed')==='true')`))
-    await button(main,'应用到设备');assert.equal(config.mode,'usage')
+    await button(main,'应用');assert.equal(config.mode,'usage')
     await click(main,'#endpoint-hud')
     await until(()=>main!.webContents.executeJavaScript(`Boolean(document.querySelector('.product-control .hud-preview .project-deck-shell'))`),'real HUD preview')
     await capture('control-hud')
@@ -332,17 +398,17 @@ app.whenReady().then(async()=>{
     await until(()=>product.snapshot().target==='ink','delayed target saved'); await wait(300)
     targetDelay = 0
     await main.webContents.executeJavaScript(`(() => {
-      const note = document.querySelector('.ink-control-workspace .device-preview-footnote');
-      window.__previewNotes = [note.textContent];
-      window.__previewObserver = new MutationObserver(() => window.__previewNotes.push(note.textContent));
-      window.__previewObserver.observe(note, {subtree:true, childList:true, characterData:true});
+      const preview = document.querySelector('.ink-control-workspace .device-preview');
+      window.__previewStates = [preview.getAttribute('data-render-state')];
+      window.__previewObserver = new MutationObserver(() => window.__previewStates.push(preview.getAttribute('data-render-state')));
+      window.__previewObserver.observe(preview, {attributes:true,attributeFilter:['data-render-state']});
     })()`)
     const activeReads = readCount('get-device-display'), contentReads = readCount('ambient-get')
     for (let i = 0; i < 40; i++) broadcast('codepulse:status',hub.snapshot())
     await wait(400)
     assert.equal(readCount('get-device-display')-activeReads,1,'burst of agent updates coalesces to one preview read')
     assert.equal(readCount('ambient-get'),contentReads,'work refresh does not reload X/meme')
-    assert.ok(await main.webContents.executeJavaScript(`window.__previewObserver.disconnect(); window.__previewNotes.every(note=>!note.includes('正在生成画面'))`),'background frames preserve the preview explanation')
+    assert.ok(await main.webContents.executeJavaScript(`window.__previewObserver.disconnect(); window.__previewStates.every(state=>state==='ready')`),'background frames remain ready without flashing loading states')
     targetDelay = 500
     await main.webContents.executeJavaScript("document.querySelector('#endpoint-hud').click()")
     await wait(30)
@@ -413,9 +479,10 @@ app.whenReady().then(async()=>{
     // Reference for the pet page: where the display button sits for a normal category at scroll top.
     const conceptFirstScreen = await main.webContents.executeJavaScript(`(() => {
       for(let e=document.querySelector('.ambient-panel');e;e=e.parentElement)e.scrollTop=0;
-      const r=Array.from(document.querySelectorAll('button')).find(b=>b.getClientRects().length&&b.textContent.trim()==='临时展示到墨水屏 · 10 分钟').getBoundingClientRect();
-      return {top:r.top,bottom:r.bottom,height:window.innerHeight}
-    })()`) as {top:number;bottom:number;height:number}
+      const button=Array.from(document.querySelectorAll('button')).find(b=>b.getClientRects().length&&b.textContent.trim()==='临时展示到墨水屏 · 10 分钟');
+      const r=button.getBoundingClientRect(),card=button.closest('.ambient-card').getBoundingClientRect();
+      return {top:r.top,bottom:r.bottom,height:window.innerHeight,contentTop:r.top-card.top}
+    })()`) as {top:number;bottom:number;height:number;contentTop:number}
     await button(main, '临时展示到墨水屏 · 10 分钟')
     assert.equal(ambient.current()?.kind, 'concept')
     assert.equal(ambient.current()?.manual, true)
@@ -466,12 +533,13 @@ app.whenReady().then(async()=>{
     // The primary action stays on the first screen at the default 1120 x 780 window, like other categories.
     const firstScreen = await main.webContents.executeJavaScript(`(() => {
       for(let e=document.querySelector('.ambient-panel');e;e=e.parentElement)e.scrollTop=0;
-      const r=Array.from(document.querySelectorAll('button')).find(b=>b.getClientRects().length&&b.textContent.trim()==='临时展示到墨水屏 · 10 分钟').getBoundingClientRect();
-      return {top:r.top,bottom:r.bottom,height:window.innerHeight}
-    })()`) as {top:number;bottom:number;height:number}
+      const button=Array.from(document.querySelectorAll('button')).find(b=>b.getClientRects().length&&b.textContent.trim()==='临时展示到墨水屏 · 10 分钟');
+      const r=button.getBoundingClientRect(),card=button.closest('.ambient-card').getBoundingClientRect();
+      return {top:r.top,bottom:r.bottom,height:window.innerHeight,contentTop:r.top-card.top}
+    })()`) as {top:number;bottom:number;height:number;contentTop:number}
     writeFileSync(join(output,'first-screen.json'),JSON.stringify({concept:conceptFirstScreen,pet:firstScreen}))
     // Five pet cards with real thumbnails need a little more height than the one-line concept row.
-    assert.ok(firstScreen.top<=conceptFirstScreen.top+96,'pet page keeps the display button close to the concept page: '+JSON.stringify({pet:firstScreen,concept:conceptFirstScreen}))
+    assert.ok(firstScreen.contentTop<=conceptFirstScreen.contentTop+96,'pet controls retain their 96px content budget independently of the global status banner: '+JSON.stringify({pet:firstScreen,concept:conceptFirstScreen}))
     await click(main,'.ambient-pet-option:nth-child(2)')
     assert.deepEqual(await petChecked(), ['false','true','false','false','false'], 'selection moves to the second pet')
     await until(async()=>{const s=await petStats();return s.state==='ready'&&s.hash!==firstPet.hash&&s.red>0},'second pet preview')
@@ -583,18 +651,28 @@ app.whenReady().then(async()=>{
     await button(main,'确认执行');await until(()=>assistantStore.list().length===2,'assistant confirmation persists')
     assert.ok(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.desk-assistant button')).find(b=>b.textContent==='开始录音').disabled`),'microphone is opt-in')
     await capture('assistant')
-    await click(main,'[data-view=control]');await click(main,'#endpoint-ink');await button(main,'轮播')
+    await click(main,'[data-view=control]');await click(main,'#endpoint-ink');await selectPlayback('15')
     const previousPlan=structuredClone(product.snapshot().inkPlan)
     ambient.dismiss()
     await click(main,'button[role=switch][aria-label="待办与提醒加入节目单"]')
     assert.deepEqual(product.snapshot().inkPlan,previousPlan,'todo configuration remains a draft')
-    await button(main,'应用到设备')
+    await button(main,'应用')
     assert.equal(product.snapshot().inkPlan.mode,'cycle')
     assert.deepEqual(product.snapshot().inkPlan.items,['work','ambient','todos'])
     assistant.showOnInk();publishInk()
     await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ink-control-workspace .device-preview').getAttribute('data-render-state')==='ready'`),'production todo preview')
     assert.equal(device().status.ambient?.items?.length,2,'temporary todo display uses the production checklist')
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.device-preview-tag').textContent`),'临时展示')
     await capture('control-todos')
+    const beforeTemporaryEnd=structuredClone(product.snapshot().inkPlan)
+    main.setContentSize(720,480);await wait(350)
+    await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ink-preview-card button')).find(b=>b.textContent.trim()==='回到工作画面').scrollIntoView({block:'center'})`)
+    assert.equal(await main.webContents.executeJavaScript(`(() => {const b=Array.from(document.querySelectorAll('.ink-preview-card button')).find(b=>b.textContent.trim()==='回到工作画面');const r=b.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&!b.classList.contains('primary')})()`),true,'temporary exit stays reachable in the narrow window')
+    await click(main,'.ink-preview-card [data-ink-temporary-end]')
+    assert.equal(assistant.temporaryInkUntil(),0)
+    assert.deepEqual(product.snapshot().inkPlan,beforeTemporaryEnd,'header temporary exit does not rewrite the playlist')
+    assert.equal(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ink-preview-card button')).some(b=>b.textContent.trim()==='回到工作画面')`),false)
+    main.setContentSize(1120,780);await wait(350)
     assert.equal(JSON.stringify(hub.snapshot().agents),before,'assistant work never acknowledges programming tasks')
     hub.ingest({id:'shell-attention',source:'codex',eventType:'permission_request',externalSessionId:'shell-ui',workspacePath:'F:/example/codepulse',toolName:'shell',timestamp:Date.now()})
     const attentionState=JSON.stringify(hub.snapshot().agents)
@@ -605,7 +683,7 @@ app.whenReady().then(async()=>{
     // The expected unauthorized native-window rejection is visible to Electron's console.
     const unexpected=errors.filter(e=>!e.includes('Only the screen window'))
     assert.deepEqual(unexpected,[])
-    writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,views:5,assistantTasks:true,todoPlan:true,focusRoundTrip:true,consolidatedNavigation:true,fixedPixelResize:true,inspectionPixelEquality:true,visibleApply:true,stablePreviewNotes:true,invertedStyle:true,conceptCard:true,thoughtPrompt:true,personalNote:true,imageDrop:true,pixelPet:true,calendar:true,hudCoexistence:true,largePreview:true,independentScreen:true,draftPreserved:true,settingsShortcuts:true,globalAttention:true,canonicalStatePreserved:true,nativePinApplied,errors:unexpected},null,2))
+    writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,views:5,assistantTasks:true,todoPlan:true,focusRoundTrip:true,consolidatedNavigation:true,fixedPixelResize:true,inspectionPixelEquality:true,visibleApply:true,stablePreviewFrames:true,previewMenuStable:true,previewCapRecovery:true,playlistSelect:true,rowSwitchIsolation:true,connectionOwnership:true,pendingOnlyApply:true,temporaryExit:true,invertedStyle:true,conceptCard:true,thoughtPrompt:true,personalNote:true,imageDrop:true,pixelPet:true,calendar:true,hudCoexistence:true,largePreview:true,independentScreen:true,draftPreserved:true,settingsShortcuts:true,globalAttention:true,canonicalStatePreserved:true,nativePinApplied,errors:unexpected},null,2))
     assistant.stop();assistantStore.close();ambient.stop();BrowserWindow.getAllWindows().forEach(w=>w.destroy());screen.destroy();clearTimeout(deadline);app.exit(0)
   }catch(error){writeFileSync(join(output,'failure.txt'),(error instanceof Error ? error.stack : String(error))+'\n'+JSON.stringify(errors));clearTimeout(deadline);app.exit(1)}
 })

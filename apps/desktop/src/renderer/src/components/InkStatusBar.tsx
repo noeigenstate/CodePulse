@@ -1,54 +1,52 @@
 import { useState } from 'react'
 import { useInkStatus } from '../lib/useInkStatus.js'
 import { useNow } from '../lib/useNow.js'
-import { inkStatusText } from '../lib/inkStatusText.js'
+import { inkPillText } from '../lib/inkStatusText.js'
 import type { Locale } from '../lib/i18n.js'
 
 /**
- * The one e-ink status line shown at the top of every product page (not in focus mode).
- * All wording comes from {@link inkStatusText}; the state itself comes from the main process.
+ * The one e-ink status pill at the bottom of the sidebar (not shown in focus mode). Clicking it
+ * opens 控制 › 墨水屏; the ✕ only ends a temporary display. When the rail narrows it collapses to
+ * its dot, and the full text stays in the title and aria-label. Wording is {@link inkPillText}.
  */
-export function InkStatusBar({ locale, hideConnect, onConnect, onPlaylist }: {
-  locale: Locale
-  /** 控制 › 墨水屏 owns the connect button in its empty-state card. */
-  hideConnect: boolean
-  onConnect: () => void
-  onPlaylist: () => void
-}): JSX.Element | null {
+export function InkStatusPill({ locale, onOpen }: { locale: Locale; onOpen: () => void }): JSX.Element | null {
   const status = useInkStatus()
   const now = useNow(15000)
   const [failed, setFailed] = useState(false)
   if (!status) return null
   const zh = locale === 'zh'
-  const text = inkStatusText(status, now, locale)
-  const run = (): void => {
-    if (text.action === 'connect') onConnect()
-    else if (text.action === 'playlist') onPlaylist()
-    else if (text.action === 'end-temporary') {
-      setFailed(false)
-      void window.codepulse.endInkTemporary().catch(() => setFailed(true))
-    }
+  const pill = inkPillText(status, now, locale)
+  const open = zh ? '打开 控制 › 墨水屏' : 'Open Control › E-paper'
+  const back = zh ? '回到工作画面' : 'Back to work screen'
+  const end = (): void => {
+    setFailed(false)
+    void window.codepulse.endInkTemporary().catch(() => setFailed(true))
   }
-  const button = text.action && !(text.action === 'connect' && hideConnect)
   return (
-    <section className="ink-status" data-state={text.state} aria-label={zh ? '墨水屏状态' : 'E-paper status'}>
-      <div className="ink-status-row" role="status">
-        <span className={`ink-status-dot is-${text.dot}`} aria-hidden="true" />
-        <strong>{text.headline}</strong>
-        <span className="ink-status-messages">
-          {text.messages.map((message, index) => (
-            <span key={message} className={text.emphasis && index === 0 ? 'is-strong' : undefined}>{message}</span>
-          ))}
-        </span>
-        {button && text.action === 'playlist' && (
-          <button type="button" className="ink-status-link" onClick={run}>{text.actionLabel}</button>
-        )}
-        {button && text.action !== 'playlist' && (
-          <button type="button" className="product-button is-compact" onClick={run}>{text.actionLabel}</button>
+    <div className="ink-pill-wrap">
+      <div className="ink-pill" data-state={pill.state}>
+        <button type="button" className="ink-pill-main" onClick={onOpen} title={pill.title} aria-label={`${pill.title}。${open}`}>
+          <span className={`ink-pill-dot is-${pill.dot}`} aria-hidden="true" />
+          <span className="ink-pill-text">
+            <b>{pill.prefix}</b> {pill.label}
+          </span>
+          {pill.info && (
+            <span className="ink-pill-info" title={pill.info} aria-hidden="true">
+              ⓘ
+            </span>
+          )}
+        </button>
+        {pill.canEnd && (
+          <button type="button" className="ink-pill-end" onClick={end} title={back} aria-label={back}>
+            ✕
+          </button>
         )}
       </div>
-      {text.note && <p className="ink-status-note">{text.note}</p>}
-      {failed && <p className="ink-status-note" role="alert">{zh ? '未能回到工作画面，请重试。' : 'Could not return to the work screen. Try again.'}</p>}
-    </section>
+      {failed && (
+        <p className="ink-pill-error" role="alert">
+          {zh ? '未能回到工作画面，请重试。' : 'Could not return to the work screen.'}
+        </p>
+      )}
+    </div>
   )
 }

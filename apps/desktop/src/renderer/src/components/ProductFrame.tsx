@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { normalizeShellPreferences, type DesktopLayout, type HudAppearanceSettings, type InkDisplayPlan, type ProductView,
   type PresentationTarget, type ShellSnapshot, type StatusSnapshot } from '@codepulse/shared'
-import { InkStatusBar } from './InkStatusBar.js'
+import { InkStatusPill } from './InkStatusBar.js'
 import './product-shell.css'
 
 export const TARGET_NAMES = { desktop: ['桌面端', 'Desktop'], hud: ['HUD', 'HUD'], ink: ['墨水屏', 'E-paper'] } as const
@@ -102,15 +102,12 @@ export function ProductFrame({ product, locale, snapshot, children }: {
         <button type="button" data-view="settings" aria-label={zh ? '设置' : 'Settings'} aria-current={view === 'settings' ? 'page' : undefined} onClick={() => void product.navigate('settings')}>
           <ProductIcon name="settings"/><span>{zh ? '设置' : 'Settings'}</span>
         </button>
-        <small>{zh ? '本地服务 · 共用数据' : 'Local service · shared data'}</small></div>
+        {!focusMode && <InkStatusPill locale={zh ? 'zh' : 'en'}
+          onOpen={() => void product.navigate('control').then(() => product.selectTarget('ink'))}/>}</div>
     </aside>
     <div className="product-main">
       {focusMode && <header className="product-focusbar"><div className="product-brand"><span className="product-brand-mark"><ProductIcon name="work"/></span>CodePulse<small>{zh ? '专注模式' : 'Focus'}</small></div>
         <button ref={returnButton} type="button" className="product-button" onClick={() => void product.setFocus(false)}><ProductIcon name="expand"/>{zh ? '返回控制台' : 'Back to console'}</button></header>}
-      {!focusMode && <div className="ink-status-slot"><InkStatusBar locale={zh ? 'zh' : 'en'}
-        hideConnect={(view === 'control' || view === 'work') && product.target === 'ink'}
-        onConnect={() => void product.navigate('control').then(() => product.selectTarget('ink'))}
-        onPlaylist={() => void product.navigate('control').then(() => product.selectTarget('ink'))}/></div>}
       {product.error && <p className="product-attention" role="alert">{product.error}</p>}
       <main className="product-content">{children}</main>
     </div>

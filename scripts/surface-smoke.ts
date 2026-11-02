@@ -177,6 +177,10 @@ app.whenReady().then(async()=>{
       assert.equal(bad.size,0,label+': canvas pixels outside {white, black, red} at dpr '+box.dpr+' css '+box.w+'x'+box.h+' (first at x,y): '+JSON.stringify([...bad])+' box '+JSON.stringify({left,top,width,height,size}))
     }
     await capture('control-desktop')
+    // The e-ink state lives in one sidebar pill; there is no banner and no live-console footer.
+    assert.equal(await main.webContents.executeJavaScript(`Boolean(document.querySelector('.ink-status, .ink-status-slot'))`),false,'no status banner')
+    assert.match(await main.webContents.executeJavaScript(`document.querySelector('.product-rail .ink-pill-main')?.textContent??''`),/墨水屏/,'sidebar pill shows the e-ink state')
+    assert.equal(await main.webContents.executeJavaScript(`document.body.innerText.includes('助手分屏')||document.body.innerText.includes('本地服务')`),false,'footer strip and rail caption are gone')
     // Desktop has one live workbench and one focus entry; the stored layout stays compatible.
     assert.equal(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.product-control button')).filter(b=>b.textContent.includes('功能平铺')).length`),0)
     assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.product-control .page-header button').length`),1)
@@ -185,6 +189,7 @@ app.whenReady().then(async()=>{
     assert.equal(await main.webContents.executeJavaScript(`getComputedStyle(document.querySelector('.product-rail')).display`),'none')
     assert.ok(await main.webContents.executeJavaScript(`document.querySelector('.product-live-console').getClientRects().length > 0`))
     await capture('focus')
+    assert.equal(await main.webContents.executeJavaScript(`document.body.innerText.includes('助手分屏')`),false,'focus mode has no footer strip')
     await button(main,'返回控制台')
     assert.equal(product.snapshot().focusMode,false)
     assert.equal(product.snapshot().desktopLayout,'work')
@@ -462,50 +467,62 @@ app.whenReady().then(async()=>{
     await click(main,'[data-view=ambient]')
     assert.equal(product.snapshot().target,'ink')
     assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.product-targets').length`),0)
-    // Rules save by themselves: no save button, a transient 已保存, and saving never selects content.
-    assert.equal(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent.includes('保存推送设置'))`),false,'no save button for rules')
-    await click(main,'[data-rule=social] .ambient-subrules label:nth-child(2) input')
-    await until(()=>ambient.snapshot().config.memeEnabled===true,'rule change saves on its own')
+    // 桌边内容: one category list whose rows carry the *Enabled rules; rules save by themselves.
+    const TEMP='临时展示 10 分钟'
+    const category=(id:string)=>click(main!,`[data-cat=${id}]`)
+    const openSettings=async()=>{if(!await main!.webContents.executeJavaScript(`Boolean(document.querySelector('.ambient-settings')?.open)`))await click(main!,'.ambient-settings > summary')}
+    const previewReady=()=>until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .device-preview')?.getAttribute('data-render-state')==='ready'`),'ambient preview renderer')
+    assert.deepEqual(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ambient-catlist [data-cat]')).map(b=>b.querySelector('span').textContent)`), ['概念卡','思考实验','像素宠物','日历','科技热议','X 与 meme','我的图片与便签'], 'category order')
+    for (const gone of ['保存推送设置','预览画面','当前目标画面','规则修改后立即保存','图片拖进此页即可导入']) assert.equal(await main.webContents.executeJavaScript(`document.body.innerText.includes(${JSON.stringify(gone)})`), false, 'removed copy is gone: '+gone)
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.ambient-panel select[aria-label="选择内容"]')`), null, 'no item dropdown')
+    // The social row switch is the existing xEnabled / memeEnabled rule pair.
+    await click(main,'[data-rule=social] .ambient-switch')
+    await until(()=>!ambient.snapshot().config.xEnabled&&!ambient.snapshot().config.memeEnabled,'row switch saves on its own')
     await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.page-saved')?.textContent==='已保存'`),'saved confirmation')
     assert.equal(ambient.current(), undefined, 'saving rules does not select content')
-    await click(main,'[data-rule=social] .ambient-subrules label:nth-child(2) input')
-    await until(()=>ambient.snapshot().config.memeEnabled===false,'rule change saves back')
+    await click(main,'[data-rule=social] .ambient-switch')
+    await until(()=>ambient.snapshot().config.xEnabled&&ambient.snapshot().config.memeEnabled,'row switch turns both back on')
+    await category('social');await openSettings()
+    for (const label of ['保存密钥','清除密钥','检查新内容']) assert.ok(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ambient-settings button')).some(b=>b.textContent.trim()===${JSON.stringify(label)})`), 'X settings keep '+label)
+    await click(main,'.ambient-group[aria-label=Meme] .page-switch input')
+    await until(()=>ambient.snapshot().config.memeEnabled===false,'meme switch inside settings saves')
     await button(main,'检查新内容')
-    await until(()=>ambient.snapshot().cards.filter(c=>c.kind==='x').length===1,'content fixture');await button(main,'X 与 meme');await button(main,'预览画面')
-    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .device-preview')?.getAttribute('data-render-state')==='ready'`),'content renderer')
+    await until(()=>ambient.snapshot().cards.filter(c=>c.kind==='x').length===1,'content fixture')
+    await click(main,'.ambient-item');await previewReady()
     await capture('updates')
-    await button(main, '概念卡'); await button(main, '预览画面')
-    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .device-preview')?.getAttribute('data-render-state')==='ready'`),'concept canvas')
+    await category('concept');await previewReady()
     // Reference for the pet page: where the display button sits for a normal category at scroll top.
     const conceptFirstScreen = await main.webContents.executeJavaScript(`(() => {
       for(let e=document.querySelector('.ambient-panel');e;e=e.parentElement)e.scrollTop=0;
-      const button=Array.from(document.querySelectorAll('button')).find(b=>b.getClientRects().length&&b.textContent.trim()==='临时展示到墨水屏 · 10 分钟');
-      const r=button.getBoundingClientRect(),card=button.closest('.ambient-card').getBoundingClientRect();
-      return {top:r.top,bottom:r.bottom,height:window.innerHeight,contentTop:r.top-card.top}
-    })()`) as {top:number;bottom:number;height:number;contentTop:number}
-    await button(main, '临时展示到墨水屏 · 10 分钟')
+      const r=Array.from(document.querySelectorAll('button')).find(b=>b.getClientRects().length&&b.textContent.trim()===${JSON.stringify(TEMP)}).getBoundingClientRect();
+      return {top:r.top,bottom:r.bottom,height:window.innerHeight}
+    })()`) as {top:number;bottom:number;height:number}
+    await button(main, TEMP)
     assert.equal(ambient.current()?.kind, 'concept')
     assert.equal(ambient.current()?.manual, true)
-    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .ambient-stage-label').textContent.includes('当前目标画面')`), 'manual display leaves sample mode')
-    assert.match(await main.webContents.executeJavaScript(`document.querySelector('[data-feedback=content]').textContent`), /已临时展示到墨水屏/)
+    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('[data-feedback=content]').textContent.includes('已临时展示')`), 'temporary display confirmed')
     assert.equal(await main.webContents.executeJavaScript(`(() => {
-      const actions=document.querySelector('.ambient-display-actions');actions.scrollIntoView({block:'end'});
+      document.querySelector('.ambient-temp').scrollIntoView({block:'center'});
       const r=document.querySelector('[data-feedback=content]').getBoundingClientRect();
       return r.top>=0 && r.bottom<=window.innerHeight;
     })()`), true, 'content result is visible when its display button is visible')
     await capture('multimedia-concept')
-    await button(main, '思考实验'); await button(main, '预览画面'); await button(main, '临时展示到墨水屏 · 10 分钟')
+    await category('prompt');await previewReady();await button(main, TEMP)
     assert.equal(ambient.current()?.kind, 'prompt')
-    await button(main, '我的图片与便签')
+    await category('local')
     await main.webContents.executeJavaScript(`(() => { const t=document.querySelector('#ambient-note');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(t,'TEST NOTE — pause, then choose one useful task.');t.dispatchEvent(new Event('input',{bubbles:true})); })()`)
     await button(main, '保存并预览')
     await until(()=>ambient.snapshot().cards.some(c=>c.kind==='note'),'saved local note')
-    await button(main, '临时展示到墨水屏 · 10 分钟'); assert.equal(ambient.current()?.kind, 'note')
+    await previewReady();await button(main, TEMP); assert.equal(ambient.current()?.kind, 'note')
     await capture('multimedia-note')
     await button(main, '移除'); assert.equal(ambient.current(), undefined)
     const imageBytes = Array.from(nativeImage.createFromBitmap(Buffer.alloc(80*120*4, 255), {width:80,height:120}).toPNG())
     await main.webContents.executeJavaScript(`(() => {const transfer = new DataTransfer();transfer.items.add(new File([new Uint8Array(${JSON.stringify(imageBytes)})], 'TEST-portrait.png', {type:'image/png'}));document.querySelector('.ambient-panel').dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer}));})()`)
-    await until(()=>ambient.current()?.kind==='image','dragged image becomes current target')
+    await until(()=>ambient.snapshot().cards.some(c=>c.kind==='image'),'dragged image is imported')
+    assert.equal(ambient.current(), undefined, 'importing never changes the e-ink screen by itself')
+    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('[data-feedback=content]').textContent.includes('已导入 1 张图片')`),'import confirmed')
+    await previewReady();await button(main, TEMP)
+    assert.equal(ambient.current()?.kind,'image','the imported picture is shown on request')
     assert.equal(ambient.current()?.imageHex?.length,19968)
     await capture('multimedia-image')
     ambient.dismiss(); await wait(); assert.equal(ambient.current(), undefined)
@@ -523,7 +540,7 @@ app.whenReady().then(async()=>{
       for (const row of cells) { assert.equal(row.length,2); for (const e of row) assert.ok(e.text&&e.scrollWidth<=e.clientWidth,label+' text is not truncated: '+JSON.stringify(e)) }
     }
     const petChecked = () => main!.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ambient-pet-option')).map(b=>b.getAttribute('aria-checked'))`) as Promise<string[]>
-    await button(main, '像素宠物')
+    await category('pet');await openSettings();await previewReady()
     assert.deepEqual(await petChecked(), ['true','false','false','false','false'], 'first pet is chosen by default')
     assert.equal(await main.webContents.executeJavaScript(`document.querySelectorAll('.ambient-pet-option canvas').length`), 5, 'five pet thumbnails')
     await click(main,'.ambient-pet-option:nth-child(1)')
@@ -533,23 +550,21 @@ app.whenReady().then(async()=>{
     // The primary action stays on the first screen at the default 1120 x 780 window, like other categories.
     const firstScreen = await main.webContents.executeJavaScript(`(() => {
       for(let e=document.querySelector('.ambient-panel');e;e=e.parentElement)e.scrollTop=0;
-      const button=Array.from(document.querySelectorAll('button')).find(b=>b.getClientRects().length&&b.textContent.trim()==='临时展示到墨水屏 · 10 分钟');
-      const r=button.getBoundingClientRect(),card=button.closest('.ambient-card').getBoundingClientRect();
-      return {top:r.top,bottom:r.bottom,height:window.innerHeight,contentTop:r.top-card.top}
-    })()`) as {top:number;bottom:number;height:number;contentTop:number}
+      const r=Array.from(document.querySelectorAll('button')).find(b=>b.getClientRects().length&&b.textContent.trim()===${JSON.stringify(TEMP)}).getBoundingClientRect();
+      return {top:r.top,bottom:r.bottom,height:window.innerHeight}
+    })()`) as {top:number;bottom:number;height:number}
     writeFileSync(join(output,'first-screen.json'),JSON.stringify({concept:conceptFirstScreen,pet:firstScreen}))
     // Five pet cards with real thumbnails need a little more height than the one-line concept row.
-    assert.ok(firstScreen.contentTop<=conceptFirstScreen.contentTop+96,'pet controls retain their 96px content budget independently of the global status banner: '+JSON.stringify({pet:firstScreen,concept:conceptFirstScreen}))
+    assert.ok(Math.abs(firstScreen.top-conceptFirstScreen.top)<=24,'pet page keeps the display button where the concept page has it: '+JSON.stringify({pet:firstScreen,concept:conceptFirstScreen}))
     await click(main,'.ambient-pet-option:nth-child(2)')
     assert.deepEqual(await petChecked(), ['false','true','false','false','false'], 'selection moves to the second pet')
     await until(async()=>{const s=await petStats();return s.state==='ready'&&s.hash!==firstPet.hash&&s.red>0},'second pet preview')
     assert.match(await main.webContents.executeJavaScript(`document.querySelector('.ambient-pet-option[aria-checked=true]').textContent`), /已选/)
-    await button(main, '临时展示到墨水屏 · 10 分钟')
+    await button(main, TEMP)
     assert.equal(ambient.current()?.kind, 'pet')
     assert.equal(ambient.current()?.pet?.id, 'yaya')
     assert.ok(ambient.current()?.red, 'the pet on screen carries a red plane')
     assert.ok(withAmbient(device().status,ambient.current()).ambient?.red, 'device status exposes ambient.red')
-    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .ambient-stage-label').textContent.includes('当前目标画面')`), 'pet display leaves sample mode')
     await until(async()=>(await petStats()).red>0,'live target shows red')
     await assertPetTextFits('1120')
     await capture('multimedia-pet')
@@ -569,28 +584,25 @@ app.whenReady().then(async()=>{
     assert.deepEqual(await petChecked(), ['true','false','false','false','false'])
     await assertPetTextFits('1120 first pet chosen')
     ambient.dismiss(); await wait(); assert.equal(ambient.current(), undefined)
-    // Calendar: the last category opens on today's card, with its info line, firmware note and settings toggle.
-    assert.deepEqual(await main.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.ambient-tabs button')).map(b=>b.textContent.trim())`), ['概念卡','思考实验','像素宠物','日历','科技热议','X 与 meme','我的图片与便签'], 'category order matches the rule rows')
-    await button(main, '日历')
-    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .ambient-stage-label')?.textContent.includes('内容示例') && document.querySelector('.ambient-panel .device-preview')?.getAttribute('data-render-state')==='ready'`),'calendar preview')
+    // Calendar: a category with only its own switch, opening on today's card with its info line.
+    await category('calendar');await previewReady()
     const calendarPage = await main.webContents.executeJavaScript(`(() => ({
-      tabs:Array.from(document.querySelectorAll('.ambient-tabs button')).map(b=>b.getAttribute('aria-selected')),
-      info:document.querySelector('.ambient-calendar-info p')?.textContent??'',
+      selected:document.querySelector('.ambient-catlist li.is-current [data-cat]')?.getAttribute('data-cat'),
+      info:document.querySelector('.ambient-calendar-info')?.textContent??'',
       infoBox:(()=>{for(let e=document.querySelector('.ambient-panel');e;e=e.parentElement)e.scrollTop=0;const r=document.querySelector('.ambient-calendar-info')?.getBoundingClientRect();return r?{top:r.top,bottom:r.bottom,height:window.innerHeight}:null})(),
-      hint:document.querySelector('.ambient-calendar-info small')?.textContent??'',
-      picker:Boolean(document.querySelector('.ambient-pet-picker, .ambient-select-card')),
-      toggle:Boolean(document.querySelector('[data-rule=calendar] .page-switch input')),
-      note:document.querySelector('[data-rule=calendar]')?.textContent.includes('内置 2025–2026，联网自动更新')
-    }))()`) as {tabs:string[];info:string;infoBox:{top:number;bottom:number;height:number}|null;hint:string;picker:boolean;toggle:boolean;note:boolean}
-    assert.equal(calendarPage.tabs[3],'true','calendar tab is selected'); assert.equal(calendarPage.picker,false,'one card a day needs no picker')
+      hint:document.querySelector('.ambient-calendar-info')?.getAttribute('title')??'',
+      picker:Boolean(document.querySelector('.ambient-pet-picker')),
+      settings:Boolean(document.querySelector('.ambient-settings')),
+      toggle:Boolean(document.querySelector('[data-rule=calendar] .ambient-switch'))
+    }))()`) as {selected:string;info:string;infoBox:{top:number;bottom:number;height:number}|null;hint:string;picker:boolean;settings:boolean;toggle:boolean}
+    assert.equal(calendarPage.selected,'calendar','calendar category is selected'); assert.equal(calendarPage.picker,false,'one card a day needs no picker'); assert.equal(calendarPage.settings,false,'calendar has no extra options')
     assert.match(calendarPage.info,/^\d+月\d+日 周[一二三四五六日] · 农历.+ · 第\d+周/,'info line: date, lunar, week'); assert.match(calendarPage.hint,/固件 0\.0\.29/)
     assert.match(calendarPage.info,/(假期中|距 .+ 还有 \d+ 天|暂无下一个假日数据)$/,'info line ends with the next holiday or says there is none')
     assert.ok(calendarPage.infoBox&&calendarPage.infoBox.top>=0&&calendarPage.infoBox.bottom<=calendarPage.infoBox.height,'calendar info is on the first screen at 1120x780: '+JSON.stringify(calendarPage.infoBox))
-    assert.ok(calendarPage.toggle,'settings checkbox'); assert.ok(calendarPage.note,'settings note about holiday data')
-    await button(main, '临时展示到墨水屏 · 10 分钟')
+    assert.ok(calendarPage.toggle,'calendar keeps its own switch')
+    await button(main, TEMP)
     assert.equal(ambient.current()?.kind, 'calendar'); assert.equal(ambient.current()?.manual, true)
     assert.equal(withAmbient(device().status,ambient.current()).ambient?.layout,'calendar'); assert.ok(withAmbient(device().status,ambient.current()).ambient?.calendar,'device status exposes ambient.calendar')
-    await until(()=>main!.webContents.executeJavaScript(`document.querySelector('.ambient-panel .ambient-stage-label').textContent.includes('当前目标画面')`), 'calendar display leaves sample mode')
     await capture('multimedia-calendar')
     await assertCanvasPure('calendar 1120')
     for (const [width,height] of [[1440,900],[1024,768]] as const) {
@@ -602,7 +614,6 @@ app.whenReady().then(async()=>{
     }
     main.setContentSize(1120,780); await wait(350)
     ambient.dismiss(); await wait(); assert.equal(ambient.current(), undefined)
-    await button(main, 'X 与 meme')
     await click(main,'[data-view=settings]');assert.equal(await main.webContents.executeJavaScript(`document.body.textContent.includes('屏幕工作台')`),false,'settings no longer lists the screen workbench');await main.webContents.executeJavaScript(`window.codepulse.openSurface('screen')`);await wait()
     await until(()=>BrowserWindow.getAllWindows().some(w=>w.getTitle().includes('屏幕工作台')),'screen window')
     const screenWindow=BrowserWindow.getAllWindows().find(w=>w.getTitle().includes('屏幕工作台'))!
@@ -630,10 +641,13 @@ app.whenReady().then(async()=>{
     await click(main,'[data-view=settings]')
     assert.equal(await main.webContents.executeJavaScript(`Boolean(document.querySelector('.product-topbar'))`),false)
     assert.ok(await main.webContents.executeJavaScript(`Boolean(document.querySelector('.settings-embedded'))`))
-    await button(main,'桌边内容（X 与 meme）');assert.equal(product.snapshot().view,'ambient')
+    await click(main,'[data-view=ambient]');assert.equal(product.snapshot().view,'ambient')
     await click(main,'[data-view=settings]');await click(main,'.theme-swatch-dark');await wait(500)
     await click(main,'[data-view=control]');await capture('control-dark')
     main.setSize(720,600);await capture('compact')
+    // At a narrow width the pill collapses to its dot; the full text stays in title and aria-label, and the hit area stays 32px.
+    const narrowPill=await main.webContents.executeJavaScript(`(()=>{const b=document.querySelector('.product-rail .ink-pill-main'),r=b.getBoundingClientRect();return {text:getComputedStyle(b.querySelector('.ink-pill-text')).display,h:r.height,w:r.width,title:b.title,label:b.getAttribute('aria-label')}})()`) as {text:string;h:number;w:number;title:string;label:string}
+    assert.equal(narrowPill.text,'none','collapsed pill hides its text');assert.ok(narrowPill.h>=32&&narrowPill.w>=32,'collapsed pill keeps a 32px hit area: '+JSON.stringify(narrowPill));assert.ok(narrowPill.title.includes('墨水屏')&&narrowPill.label.includes('墨水屏'),'collapsed pill keeps its text in title and aria-label')
     assert.equal(await main.webContents.executeJavaScript(`document.documentElement.scrollWidth<=window.innerWidth`),true)
     assert.equal(JSON.stringify(hub.snapshot().agents),before,'UI actions preserve canonical task state')
     // Real assistant preload/IPC and an isolated database, without microphones or external calls.

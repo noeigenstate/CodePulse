@@ -1,4 +1,3 @@
-import { ProductModuleLinks } from './ProductModuleLinks.js'
 import { PageHeader } from './PageHeader.js'
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
 import type { Locale, SettingsCopy } from '../lib/i18n.js'
@@ -159,7 +158,6 @@ export function SettingsDialog({
         {embedded ? (
           <PageHeader
             title={copy.title}
-            subtitle={locale === 'zh' ? '界面、通知与各展示端共用的选项' : 'Appearance, notifications and options shared by every surface'}
           />
         ) : (
           <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
@@ -181,9 +179,6 @@ export function SettingsDialog({
           {onLocaleChange && (
             <section className="page-card">
               <h2>{locale === 'zh' ? '界面语言' : 'Language'}</h2>
-              <p className="page-card-sub">
-                {locale === 'zh' ? '切换桌面端与控制面板显示语言。' : 'Switch the display language for desktop and controls.'}
-              </p>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button
                   aria-pressed={locale === 'zh'}
@@ -206,7 +201,6 @@ export function SettingsDialog({
           )}
           <section className="page-card">
             <h2>{copy.theme}</h2>
-            <p className="page-card-sub">{copy.themeAutoHint}</p>
             <div className="mt-3 grid grid-cols-3 gap-2">
               <ThemeOption
                 active={theme === 'auto'}
@@ -231,7 +225,6 @@ export function SettingsDialog({
 
           <section className="page-card">
             <h2>{copy.notifications}</h2>
-            <p className="page-card-sub">{copy.notificationsHint}</p>
             <div className="mt-3 grid gap-2">
               <ToolToggle
                 checked={notificationsEnabled ?? false}
@@ -244,7 +237,6 @@ export function SettingsDialog({
 
           <section className="page-card">
             <h2>{copy.cliTools}</h2>
-            <p className="page-card-sub">{copy.cliToolsHint}</p>
             <div className="mt-3 grid gap-2">
               {CLI_TOOL_TYPES.map((tool) => (
                 <ToolToggle
@@ -259,7 +251,6 @@ export function SettingsDialog({
 
           <section className="page-card">
             <h2>{copy.mimoQuota}</h2>
-            <p className="page-card-sub">{copy.mimoQuotaHint}</p>
             <div className="mt-3 flex items-center justify-between gap-3">
               <p className="min-w-0 truncate font-medium text-ink">
                 {mimoLoggedIn === undefined
@@ -278,8 +269,6 @@ export function SettingsDialog({
               </button>
             </div>
           </section>
-
-          <ProductModuleLinks embedded={embedded} locale={locale} onOpen={embedded ? undefined : onClose} />
 
           <section className="page-card">
             <h2>{copy.updates}</h2>

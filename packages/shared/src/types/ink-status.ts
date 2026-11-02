@@ -12,7 +12,8 @@ export type InkConnection = 'connected' | 'disconnected' | 'server-off'
 /** What the e-ink screen renders now, or will render as soon as a device connects. */
 export type InkShowing =
   | { kind: 'work' }
-  | { kind: 'ambient' | 'todos'; title: string }
+  /** `id` is the projected card's id (the one the device compares), so a page can tell which card is on screen. */
+  | { kind: 'ambient' | 'todos'; title: string; id?: string }
 
 /**
  * Single source for "what is on the e-ink screen" across every desktop page.

@@ -23,3 +23,20 @@
 .device-preview-inspector header p,.device-inspector-caption { margin:4px 0 0; font-size:12px; color:var(--ink-muted,#666); }
 .device-inspector-viewport { min-height:0; overflow:auto; border:1px solid var(--line,#ccc); background:#fff; }
 .device-inspector-caption { flex:none; }
+
+/* Compact preview controls live in a body portal, outside the measured pixel stage. */
+.device-preview-header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px 16px; margin-bottom:12px; }
+.device-preview-header h2 { margin:0; font-size:16px; font-weight:600; line-height:24px; }
+.device-preview-header-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-left:auto; }
+.device-preview-more { display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px; padding:0; font-size:24px !important; }
+.device-preview-picture { position:relative; min-width:0; }
+.device-preview-picture.has-tag { padding-top:28px; }
+.device-preview-tag { position:absolute; top:0; right:0; padding:0 8px; border:1px solid var(--line); border-radius:999px; background:var(--surface-muted); color:var(--ink-muted); font-size:12px; font-weight:500; line-height:20px; }
+.device-preview-menu { position:fixed; z-index:100; box-sizing:border-box; overflow:auto; padding:16px; border:1px solid var(--line); border-radius:10px; background:var(--surface-solid); color:var(--ink); box-shadow:0 8px 24px #0002; }
+.device-preview-menu-row { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px; font-size:13px; color:var(--ink-muted); }
+.device-preview-menu-buttons { display:flex; gap:4px; }
+.device-preview-menu-buttons button { min-width:36px; min-height:36px; padding:4px 12px; border:1px solid var(--line); border-radius:6px; font-size:13px; font-weight:500; color:var(--ink); background:var(--surface-solid); }
+.device-preview-menu-buttons [aria-pressed='true'] { background:var(--surface-selected); box-shadow:inset 0 -2px var(--ink-muted); }
+.device-preview-menu button:hover { background:var(--surface-selected); }
+.device-preview-menu button:focus-visible,.device-preview-more:focus-visible { outline:2px solid var(--ink); outline-offset:4px; }
+@media (prefers-reduced-motion:reduce) { .device-preview-menu * { transition:none; animation:none; } }

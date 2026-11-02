@@ -4,7 +4,6 @@
 .product-control h3 { margin:20px 0 8px; font-size:var(--fs-sm); font-weight:var(--fw-strong); }
 .product-control .product-caption { margin:12px 0 0; font-size:var(--fs-sm); line-height:20px; color:var(--ink-muted); }
 .product-control .product-button { min-height:36px; border-radius:6px; font-size:14px; font-weight:500; }
-.product-tabs-label { margin:0 0 8px; font-size:13px; color:var(--ink-muted); }
 .product-surface-tabs { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-bottom:24px; }
 .product-surface-tabs > button { display:flex; align-items:center; gap:12px; min-width:0; padding:12px 16px; border:1px solid var(--line); border-radius:10px; background:var(--surface-solid); color:var(--ink-700); text-align:left; transition:background-color var(--motion); }
 .product-surface-tabs > button:hover { background:var(--surface-muted); }
@@ -16,7 +15,7 @@
 .product-control-surface { min-width:0; }
 .product-control-surface[hidden] { display:none; }
 .product-config-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(260px,320px); align-items:start; gap:24px; min-width:0; }
-.product-preview-stage,.product-config,.ink-empty-card,.ink-connection-panel { min-width:0; border:1px solid var(--line); border-radius:10px; background:var(--surface-solid); padding:20px; }
+.product-preview-stage,.product-config,.ink-connection-panel { min-width:0; border:1px solid var(--line); border-radius:10px; background:var(--surface-solid); padding:20px; }
 .product-preview-label { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:16px; font-size:13px; color:var(--ink-muted); }
 .product-preview-label > span:first-child { font-size:16px; font-weight:600; color:var(--ink); }
 .product-config-heading { display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-bottom:16px; }
@@ -41,11 +40,6 @@
 .product-feature-link:hover { color:var(--ink); }
 .ink-control-workspace { display:grid; grid-template-columns:minmax(0,1fr) minmax(320px,.9fr); align-items:start; gap:24px; }
 .ink-preview-column { display:flex; flex-direction:column; gap:16px; min-width:0; }
-.ink-empty-card { display:flex; align-items:flex-start; gap:16px; flex-wrap:wrap; }
-.ink-empty-card > div { flex:1 1 200px; }
-.ink-empty-card > .product-button { flex:none; }
-.ink-empty-card p { margin:8px 0 0; color:var(--ink-muted); font-size:13px; line-height:20px; }
-.ink-preview-caption { color:var(--ink-muted); font-size:13px; line-height:20px; margin:4px 0 16px; }
 .ink-preview-card .device-preview { margin-top:0; }
 .ink-preview-card .device-preview-frame { background:var(--surface-muted); border:1px solid var(--line); border-radius:10px; box-shadow:none; }
 .ink-preview-card .device-preview-scroll { margin-top:0; }
@@ -62,7 +56,7 @@
 .ink-playlist-text { flex:1; min-width:0; }
 .ink-playlist-text strong { display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-size:14px; font-weight:600; line-height:20px; }
 .ink-playlist-text > span { display:block; margin-top:4px; font-size:12px; color:var(--ink-muted); line-height:20px; overflow-wrap:anywhere; }
-.ink-work-lock { flex:none; margin-top:4px; color:var(--ink-muted); font-size:12px; }
+.ink-work-lock { flex:none; margin-left:auto; color:var(--ink-muted); }
 .ink-work-options { margin:0 0 12px; padding:0; border:0; }
 .ink-switch { position:relative; width:40px; height:32px; flex:none; border:0; border-radius:999px; background:transparent; }
 .ink-switch::before { content:''; position:absolute; width:32px; height:20px; left:4px; top:6px; border:1px solid var(--ink-subtle); background:var(--surface-muted); border-radius:999px; transition:background-color var(--motion); }
@@ -78,6 +72,18 @@
 .product-config-actions p { flex-basis:100%; margin:0; color:var(--ink); font-size:13px; line-height:20px; }
 .product-config-actions p button { margin-left:12px; }
 .product-desktop-panel { min-width:0; }
+.hud-workspace-header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px; }
+.hud-inline-config > h3:first-child { margin-top:0; }
+.ink-work-row { align-items:center; font-size:14px; font-weight:600; padding:12px 0; }
+.ink-work-row > svg { margin-top:0; }
+.ink-playlist-row.is-linked { align-items:center; padding:8px 0; gap:8px; cursor:pointer; }
+.ink-playlist-row.is-linked:hover { background:var(--surface-muted); }
+.ink-row-main { display:flex; align-items:center; gap:12px; flex:1; min-width:0; min-height:48px; padding:4px 0; background:transparent; color:inherit; text-align:left; }
+.ink-row-main > svg { flex:none; }
+.ink-row-chevron { flex:none; font-size:20px; line-height:24px; color:var(--ink-muted); }
+.ink-playback-select { display:block; width:100%; margin-top:16px; }
+.ink-action-error { margin:12px 0 0; font-size:13px; line-height:20px; color:var(--ink); }
+.ink-action-error button { margin-left:8px; }
 .product-console-live-stage { display:flex; flex-direction:column; min-height:400px; height:560px; max-height:70vh; overflow:hidden; border:1px solid var(--line); border-radius:14px; background:var(--surface-solid); }
 .product-control button:focus-visible,.product-control summary:focus-visible,.product-control input:focus-visible,.product-control select:focus-visible { outline:2px solid var(--ink); outline-offset:4px; }
 /* The session list scrolls inside the stage; the footer strip stays reachable below it. */
@@ -91,7 +97,7 @@
   .product-surface-tabs { gap:4px; }
   .product-surface-tabs > button { padding:12px 8px; gap:8px; flex-direction:column; align-items:flex-start; }
   .product-surface-tabs strong { font-size:13px; }
-  .product-preview-stage,.product-config,.ink-empty-card,.ink-connection-panel { padding:16px; }
+  .product-preview-stage,.product-config,.ink-connection-panel { padding:16px; }
   .ink-control-workspace { gap:16px; }
   .ink-work-lock { flex-shrink:1; }
 }

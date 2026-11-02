@@ -148,16 +148,6 @@ export function App(): JSX.Element {
         ),
     [allPanels, dashboardSettings.panelOrder, dashboardSettings.visibleTools],
   )
-  const visibleSessionCount = useMemo(
-    () =>
-      snapshot.agents.filter(
-        (agent) =>
-          !agent.taskHidden &&
-          dashboardSettings.visibleTools[agent.agentType] &&
-          (Boolean(agent.workspacePath) || Boolean(agent.externalSessionId)),
-      ).length,
-    [dashboardSettings.visibleTools, snapshot.agents],
-  )
   const allToolsHidden = useMemo(
     () => CLI_TOOL_TYPES.every((tool) => !dashboardSettings.visibleTools[tool]),
     [dashboardSettings.visibleTools],
@@ -294,8 +284,6 @@ export function App(): JSX.Element {
     <LiveConsole
       panels={panels}
       allToolsHidden={allToolsHidden}
-      sessionCount={visibleSessionCount}
-      updatedAt={snapshot.updatedAt}
       locale={locale}
       copy={copy}
       onAck={(agentType, workspacePath) => ack(agentType, workspacePath)}
@@ -438,8 +426,6 @@ function useScheduledTheme(preference: ThemePreference): ThemeMode {
 function LiveConsole({
   allToolsHidden,
   panels,
-  sessionCount,
-  updatedAt,
   locale,
   copy,
   onAck,
@@ -447,14 +433,11 @@ function LiveConsole({
 }: {
   allToolsHidden: boolean
   panels: AgentPanel[]
-  sessionCount: number
-  updatedAt: number
   locale: Locale
   copy: UiCopy
   onAck: (agentType: AgentType, workspacePath?: string) => void
   onReorder: (source: AgentType, target: AgentType) => void
 }): JSX.Element {
-  const now = useNow(30_000)
   const [dragging, setDragging] = useState<AgentType>()
   const [dropTarget, setDropTarget] = useState<AgentType>()
   const endDrag = useCallback((): void => {
@@ -503,22 +486,6 @@ function LiveConsole({
           )}
         </main>
       </div>
-      <footer className="footer-strip flex shrink-0 items-center justify-between gap-3 px-6 py-2.5">
-        <span>
-          {panels.length === 0
-            ? allToolsHidden
-              ? copy.emptyDashboard.settingsHiddenTitle
-              : copy.emptyDashboard.title
-            : locale === 'zh'
-              ? `${panels.length} 个助手分屏 · ${sessionCount} 个会话`
-              : `${panels.length} panels · ${sessionCount} sessions`}
-        </span>
-        <span className="tabular-nums">
-          {locale === 'zh'
-            ? `同步 ${formatRelative(updatedAt, now, locale)}`
-            : `Synced ${formatRelative(updatedAt, now, locale)}`}
-        </span>
-      </footer>
     </>
   )
 }

@@ -2,31 +2,38 @@ import type { InkConnection, InkDisplayPlan, InkFeatureId, InkScreenStatus } fro
 import type { Locale } from './i18n.js'
 
 /**
- * Pure wording for the global e-ink status bar. The bar renders whatever this returns, so the
- * four states (service off / not connected / connected / temporary) are testable without React.
+ * Pure wording for the e-ink status pill at the bottom of the sidebar. The pill renders whatever
+ * this returns, so every state (service off / not connected / connected / temporary) is testable
+ * without React.
  */
-export type InkBarState = 'server-off' | 'disconnected' | 'connected' | 'temporary'
-/** `connect` opens 控制 › 墨水屏, `playlist` opens the playlist, `end-temporary` returns to the work screen. */
-export type InkBarAction = 'connect' | 'playlist' | 'end-temporary'
+export type InkPillState = 'server-off' | 'disconnected' | 'connected' | 'temporary'
 
-export interface InkBarText {
-  state: InkBarState
+export interface InkPillText {
+  state: InkPillState
   /** Hollow = not connected, filled = connected, ring = a temporary display is on or paused. */
   dot: 'hollow' | 'filled' | 'ring'
-  headline: string
-  /** Muted detail messages shown after the headline; the first one is emphasised when `emphasis` is set. */
-  messages: string[]
-  emphasis: boolean
-  /** One extra muted line (the slot note), or ''. */
-  note: string
-  action: InkBarAction | null
-  actionLabel: string
+  /** Bold lead-in: 「墨水屏」 or 「临时展示」. */
+  prefix: string
+  /** The rest of the visible line, e.g. 「工作画面 · 14:30 桌边内容」. */
+  label: string
+  /** Full detail for the title tooltip (also the base of the aria-label). */
+  title: string
+  /** Tooltip carried by an ⓘ mark, only when the pill needs one (service off). */
+  info: string
+  /** The ✕ ends a temporary display. */
+  canEnd: boolean
 }
 
 const FEATURE_NAMES: Record<InkFeatureId, [string, string]> = {
   work: ['工作画面', 'Work screen'],
   ambient: ['桌边内容', 'Desk content'],
   todos: ['待办与提醒', 'Tasks & reminders'],
+}
+/** Short names for the one-line pill. */
+const SHORT_NAMES: Record<InkFeatureId, [string, string]> = {
+  work: ['工作画面', 'Work'],
+  ambient: ['桌边内容', 'Desk'],
+  todos: ['待办', 'Tasks'],
 }
 
 export function inkFeatureName(feature: InkFeatureId, locale: Locale): string {
@@ -54,62 +61,58 @@ export function showingText(status: InkScreenStatus, locale: Locale): string {
   return `${zh ? '正在显示：' : 'Showing: '}${title ? `${label} · ${title}` : label}`
 }
 
-export function inkStatusText(status: InkScreenStatus, now: number, locale: Locale): InkBarText {
+const SERVER_HINT = 'CODEPULSE_DEVICE_SERVER_ENABLED=1'
+
+export function inkPillText(status: InkScreenStatus, now: number, locale: Locale): InkPillText {
   const zh = locale === 'zh'
   const prefix = zh ? '墨水屏' : 'E-paper'
   const note = status.slotNote.trim()
-  const base = { emphasis: false, note, action: null as InkBarAction | null, actionLabel: '' }
+  const withNote = (text: string) => (note ? `${text} · ${note}` : text)
+  const short = (feature: InkFeatureId) => SHORT_NAMES[feature][zh ? 0 : 1]
   if (status.connection === 'server-off') {
-    return {
-      ...base, state: 'server-off', dot: 'hollow', note: '',
-      headline: zh ? `${prefix} · 设备服务未开启` : `${prefix} · device service is off`,
-      messages: [zh ? '启动时设置 CODEPULSE_DEVICE_SERVER_ENABLED=1' : 'Start with CODEPULSE_DEVICE_SERVER_ENABLED=1'],
-    }
+    const info = zh ? `启动时设置 ${SERVER_HINT}` : `Start with ${SERVER_HINT}`
+    const label = zh ? '服务未开启' : 'service off'
+    return { state: 'server-off', dot: 'hollow', prefix, label, title: `${prefix} ${label} · ${info}`, info, canEnd: false }
   }
   const temporary = status.temporary
   if (temporary) {
     const left = minutesLeft(temporary.until, now)
     // A temporary display that an alert hides still counts down: `showing` is the work screen then.
     const paused = status.showing.kind === 'work'
-    const title = temporary.title.trim() || (temporary.kind === 'todos' ? (zh ? '待办' : 'Tasks') : (zh ? '桌边内容' : 'Desk content'))
+    const name = temporary.title.trim() || (temporary.kind === 'todos' ? short('todos') : short('ambient'))
+    const lead = zh ? '临时展示' : 'Temporary'
+    const left_ = zh ? `剩 ${left} 分钟` : `${left} min left`
+    const label = paused ? (zh ? `已暂停 · ${left_}` : `paused · ${left_}`) : left_
     return {
-      ...base, state: 'temporary', dot: 'ring',
-      headline: paused
-        ? (zh ? `临时展示已暂停：${title}` : `Temporary display paused: ${title}`)
-        : (zh ? `正在临时展示：${title}` : `Temporary display: ${title}`),
-      messages: [zh ? `剩 ${left} 分钟` : `${left} min left`],
-      action: 'end-temporary', actionLabel: zh ? '回到工作画面' : 'Back to work screen',
+      state: 'temporary', dot: 'ring', prefix: lead, label,
+      title: withNote(`${lead}：${name} · ${label}`), info: '', canEnd: true,
     }
   }
   if (status.connection === 'disconnected') {
-    return {
-      ...base, state: 'disconnected', dot: 'hollow', note: '',
-      headline: zh ? `${prefix} · 未连接` : `${prefix} · not connected`,
-      messages: [zh ? '可先用预览配置，连接后自动同步' : 'You can configure the preview now; it syncs once a device connects'],
-      action: 'connect', actionLabel: zh ? '连接设备' : 'Connect device',
-    }
+    const label = zh ? '未连接' : 'not connected'
+    return { state: 'disconnected', dot: 'hollow', prefix, label, title: `${prefix} ${label}`, info: '', canEnd: false }
   }
-  const messages = [showingText(status, locale)]
+  const current = short(status.showing.kind === 'work' ? 'work' : status.showing.kind)
+  let label: string
+  let detail = showingText(status, locale)
   if (status.next) {
     const left = minutesLeft(status.next.at, now)
-    messages.push(zh
-      ? `下一项：${inkFeatureName(status.next.feature, locale)} · ${clockText(status.next.at)}（${left} 分钟后）`
-      : `Next: ${inkFeatureName(status.next.feature, locale)} · ${clockText(status.next.at)} (in ${left} min)`)
+    label = `${current} · ${clockText(status.next.at)} ${short(status.next.feature)}`
+    detail += zh
+      ? ` · 下一项：${inkFeatureName(status.next.feature, locale)} ${clockText(status.next.at)}（${left} 分钟后）`
+      : ` · Next: ${inkFeatureName(status.next.feature, locale)} ${clockText(status.next.at)} (in ${left} min)`
   } else if (status.mode === 'single') {
-    messages.push(zh ? '固定显示：工作画面' : 'Fixed: work screen')
+    label = zh ? '固定 · 工作画面' : 'Fixed · Work'
+    detail += zh ? ' · 固定显示工作画面' : ' · Fixed on the work screen'
   } else {
-    messages.push(zh ? '仅工作画面' : 'Work screen only')
+    label = zh ? '仅工作画面' : 'Work only'
+    detail += zh ? ' · 节目单里只有工作画面' : ' · The playlist has only the work screen'
   }
-  return {
-    ...base, state: 'connected', dot: 'filled', emphasis: true,
-    headline: zh ? `${prefix} · 已连接` : `${prefix} · connected`,
-    messages,
-    action: 'playlist', actionLabel: zh ? '节目单' : 'Playlist',
-  }
+  return { state: 'connected', dot: 'filled', prefix, label, title: withNote(`${prefix} ${label} · ${detail}`), info: '', canEnd: false }
 }
 
 /**
- * Read-only note on 桌边内容 / 待办 pages: is this feature in the applied playlist? Built from the
+ * Read-only chip on the 桌边内容 page: is desk content in the applied playlist? Built from the
  * applied plan (never a draft); when no device is connected the playlist takes effect on connect.
  */
 export function inkPlanChip(
@@ -121,11 +124,11 @@ export function inkPlanChip(
   const zh = locale === 'zh'
   const later = connection === 'connected' ? '' : zh ? '（连接后生效）' : ' (applies once connected)'
   if (plan.mode === 'single') {
-    return { included: false, text: (zh ? '固定显示工作画面时不出现' : 'Not shown while the work screen is fixed') + later }
+    return { included: false, text: (zh ? '只显示工作画面' : 'Work screen only') + later }
   }
   if (!plan.items.includes(feature)) return { included: false, text: zh ? '未加入节目单' : 'Not in the playlist' }
   return {
     included: true,
-    text: (zh ? `已在节目单中 · 每项 ${plan.intervalMinutes} 分钟` : `In the playlist · ${plan.intervalMinutes} min each`) + later,
+    text: (zh ? `轮播中 · 每 ${plan.intervalMinutes} 分钟` : `Rotating · every ${plan.intervalMinutes} min`) + later,
   }
 }

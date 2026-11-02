@@ -428,3 +428,43 @@
   outline: 2px solid var(--workstation-accent, var(--ink-subtle));
   outline-offset: 2px;
 }
+
+/* 元宝搜索 group label, key form and inline field error. */
+.ambient-group-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 40px;
+  padding: 0 8px;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--ink-muted);
+}
+.ambient-catlist li.ambient-group-label {
+  border-bottom: 0;
+  margin-top: 8px;
+}
+.ambient-yuanbao {
+  margin-top: 12px;
+}
+.ambient-yuanbao-mode {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ambient-yuanbao-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ambient-yuanbao-stats {
+  margin: 0;
+  font-size: var(--fs-xs);
+  line-height: 16px;
+  color: var(--ink-muted);
+}
+.ambient-field-error {
+  font-size: var(--fs-xs);
+  color: var(--warn);
+}

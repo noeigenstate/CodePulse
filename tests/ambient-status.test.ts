@@ -66,3 +66,21 @@ test('manual check result: new cards of the category, none, and the error append
   assert.equal(refreshSummary('news', before, after, ''), '没有新内容')
   assert.equal(refreshSummary('social', new Set(after.map((c) => c.id)), after, '来源限流，稍后自动重试'), '没有新内容；来源限流，稍后自动重试')
 })
+
+test('every card kind maps to its own category row, 元宝搜索 cards by topic', async () => {
+  const { cardCategory } = await import('../apps/desktop/src/renderer/src/lib/ambientStatus.js')
+  const of = (kind: AmbientCard['kind'], topic?: AmbientCard['topic']) => cardCategory({ kind, topic })
+  assert.deepEqual(['concept', 'prompt', 'pet', 'calendar', 'news'].map((kind) => of(kind as AmbientCard['kind'])), ['concept', 'prompt', 'pet', 'calendar', 'news'])
+  assert.deepEqual([of('x'), of('meme'), of('image'), of('note')], ['social', 'social', 'local', 'local'])
+  assert.equal(of('life', 'weather'), 'life')
+  assert.deepEqual([of('search', 'tools'), of('search', 'holiday'), of('search', 'news'), of('search')], ['tools', 'holiday', 'headlines', undefined])
+})
+
+test('a manual check of a 元宝搜索 category counts only that topic', () => {
+  const life = { id: 'l1', kind: 'life', topic: 'weather' } as AmbientCard
+  const tools = { id: 't1', kind: 'search', topic: 'tools' } as AmbientCard
+  const headline = { id: 'h1', kind: 'search', topic: 'news' } as AmbientCard
+  assert.equal(refreshSummary('tools', new Set(), [life, tools, headline], ''), '找到 1 条新内容')
+  assert.equal(refreshSummary('headlines', new Set(['h1']), [life, tools, headline], ''), '没有新内容')
+  assert.equal(refreshSummary('life', new Set(), [life, tools], '密钥错误'), '找到 1 条新内容；密钥错误')
+})

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import {
   DEFAULT_AMBIENT,
   normalizeAmbient,
@@ -8,16 +8,34 @@ import {
   type AmbientSnapshot,
   type CalendarNextHoliday,
   type DeviceStatusV1,
+  type YuanbaoConfig,
+  type YuanbaoStatus,
+  type YuanbaoTopic,
 } from '@codepulse/shared'
 import { DeviceScreenPreview } from './DeviceScreenPreview.js'
 import { PageHeader } from './PageHeader.js'
 import { InfoTip } from './InfoTip.js'
+import { YuanbaoSettings } from './YuanbaoSettings.js'
 import { planesToRgba } from '../device-preview/renderer.mjs'
 import './ambient-panel.css'
 import { useScreenTarget } from '../lib/useScreenTarget.js'
 import { useInkStatus } from '../lib/useInkStatus.js'
 import { inkPlanChip } from '../lib/inkStatusText.js'
-import { categoryProblem, refreshSummary } from '../lib/ambientStatus.js'
+import { cardCategory, categoryProblem, refreshSummary, type AmbientCategory } from '../lib/ambientStatus.js'
+import {
+  lifeRowOn,
+  lifeTripleOf,
+  parseStocks,
+  parseTools,
+  readRememberedLife,
+  rememberAfterLifeFlag,
+  setYuanbaoFlag,
+  toggleLifeRow,
+  withDerivedEnabled,
+  writeRememberedLife,
+  type LifeTriple,
+  type YuanbaoFlag,
+} from '../lib/yuanbaoRows.js'
 import { readRememberedSocial, rememberAfterFlag, toggleSocialRow, writeRememberedSocial, type SocialPair } from '../lib/ambientSocial.js'
 
 /** Tail of the calendar info line: the break going on, or how far away the next one is. */
@@ -119,7 +137,9 @@ function PetThumb({ card }: { card: AmbientCard }): JSX.Element {
   )
 }
 
-type Category = 'concept' | 'prompt' | 'pet' | 'calendar' | 'news' | 'social' | 'local'
+type Category = AmbientCategory
+type YuanbaoCategory = 'life' | 'tools' | 'holiday' | 'headlines'
+const isYuanbao = (id: Category): id is YuanbaoCategory => id === 'life' || id === 'tools' || id === 'holiday' || id === 'headlines'
 /** The list order is the page order: a category row is the category's own *Enabled rule. */
 const CATEGORIES: { id: Category; label: string }[] = [
   { id: 'concept', label: '概念卡' },
@@ -129,7 +149,23 @@ const CATEGORIES: { id: Category; label: string }[] = [
   { id: 'news', label: '科技热议' },
   { id: 'social', label: 'X 与 meme' },
   { id: 'local', label: '我的图片与便签' },
+  { id: 'life', label: '生活卡' },
+  { id: 'tools', label: '工具更新' },
+  { id: 'holiday', label: '假日公告' },
+  { id: 'headlines', label: '今日要闻' },
 ]
+/** Built-in samples shown (tagged 示例) while a 元宝搜索 category has no card yet. */
+const SAMPLES: Record<YuanbaoCategory, { topic: YuanbaoTopic; label: string }[]> = {
+  life: [
+    { topic: 'weather', label: '天气' },
+    { topic: 'gold', label: '金价' },
+    { topic: 'stock', label: '股价' },
+  ],
+  tools: [{ topic: 'tools', label: '工具更新' }],
+  holiday: [{ topic: 'holiday', label: '假日公告' }],
+  headlines: [{ topic: 'news', label: '今日要闻' }],
+}
+const HOLIDAY_STATE = { published: '已发布', pending: '尚未发布', synced: '已同步' } as const
 const RULE_FLAG: Partial<Record<Category, 'conceptsEnabled' | 'promptsEnabled' | 'petEnabled' | 'calendarEnabled' | 'newsEnabled'>> = {
   concept: 'conceptsEnabled',
   prompt: 'promptsEnabled',
@@ -229,6 +265,12 @@ export function AmbientPanel({
   const previewSeq = useRef(0)
   // The pair behind the 「X 与 meme」 row switch while it is off.
   const rememberedSocial = useRef<SocialPair | undefined>(readRememberedSocial(window.localStorage))
+  // The triple behind the 「生活卡」 row switch while it is off.
+  const rememberedLife = useRef<LifeTriple | undefined>(readRememberedLife(window.localStorage))
+  const [sampleTopic, setSampleTopic] = useState<YuanbaoTopic>()
+  const [stocksText, setStocksText] = useState('')
+  const [stocksError, setStocksError] = useState('')
+  const [toolsText, setToolsText] = useState('')
   const [refreshNote, setRefreshNote] = useState('')
   const refreshTimer = useRef<ReturnType<typeof setTimeout>>()
   const saveTimer = useRef<ReturnType<typeof setTimeout>>()
@@ -334,12 +376,28 @@ export function AmbientPanel({
     const seq = ++previewSeq.current
     setMessageScope('content')
     setMessage('')
+    setSampleTopic(undefined)
     setSelectedId(card.id)
     try {
       const next = await window.codepulse.previewAmbient(card.id)
       if (seq === previewSeq.current) setPreview(next)
     } catch {
       if (seq === previewSeq.current) setMessage('这条内容已过期，请刷新候选。')
+    }
+  }
+  /** A built-in sample for a 元宝搜索 topic: no network, no quota; tagged 示例 in the preview. */
+  async function previewSample(topic: YuanbaoTopic) {
+    previewedId.current = `sample:${topic}`
+    const seq = ++previewSeq.current
+    setMessageScope('content')
+    setMessage('')
+    setSelectedId('')
+    setSampleTopic(topic)
+    try {
+      const next = await window.codepulse.previewYuanbaoSample?.(topic)
+      if (seq === previewSeq.current) setPreview(next)
+    } catch {
+      if (seq === previewSeq.current) setPreview(undefined)
     }
   }
   async function importFiles(files: File[]) {
@@ -405,14 +463,7 @@ export function AmbientPanel({
       setBusy(false)
     }
   }
-  const cardsFor = (id: Category): AmbientCard[] =>
-    snapshot?.cards.filter((c) =>
-      id === 'local'
-        ? c.kind === 'image' || c.kind === 'note'
-        : id === 'social'
-          ? c.kind === 'x' || c.kind === 'meme'
-          : c.kind === id,
-    ) ?? []
+  const cardsFor = (id: Category): AmbientCard[] => snapshot?.cards.filter((c) => cardCategory(c) === id) ?? []
   const visibleCards = cardsFor(category)
   const selectedCard =
     category === 'pet'
@@ -425,6 +476,26 @@ export function AmbientPanel({
     if (active && snapshot && selectedCard && previewedId.current !== selectedCard.id) void showPreview(selectedCard)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, snapshot, selectedCard?.id])
+  useEffect(() => {
+    if (!active || !snapshot || !isYuanbao(category) || visibleCards.length > 0) return
+    const topic = sampleTopic ?? SAMPLES[category][0]!.topic
+    if (previewedId.current !== `sample:${topic}`) void previewSample(topic)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, snapshot, category, visibleCards.length, sampleTopic])
+  // `holiday` arrives with the host's next contract revision; read it defensively until then.
+  const yb = snapshot?.yuanbao as (YuanbaoStatus & { holiday?: { year: number; state: keyof typeof HOLIDAY_STATE } | null }) | undefined
+  const hasYbKey = Boolean(yb?.hasKey)
+  const ybConfig = draft.yuanbao
+  // Keep the text fields in step with the saved config unless the typed text already says the same.
+  useEffect(() => {
+    const parsed = parseStocks(stocksText)
+    if (!(parsed.ok && parsed.stocks.join() === ybConfig.stocks.join())) setStocksText(ybConfig.stocks.join(', '))
+    if (parseTools(toolsText).join() !== ybConfig.tools.join()) setToolsText(ybConfig.tools.join(', '))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ybConfig.stocks.join(), ybConfig.tools.join()])
+  /** Saves a 元宝搜索 change; `enabled` is always re-derived from the six feature flags. */
+  const editYuanbao = (patch: Partial<YuanbaoConfig>, delay = 0) =>
+    editMany({ yuanbao: withDerivedEnabled({ ...draftRef.current.yuanbao, ...patch }) }, delay)
   const previewStatus =
     preview && target
       ? {
@@ -433,7 +504,11 @@ export function AmbientPanel({
         }
       : preview
   const enabledSources = { x: draft.xEnabled, meme: draft.memeEnabled, news: draft.newsEnabled }
-  const problem = categoryProblem(category, snapshot?.sourceStatus, enabledSources)
+  const ybRowOn = (id: YuanbaoCategory): boolean =>
+    id === 'life' ? lifeRowOn(lifeTripleOf(ybConfig)) : id === 'tools' ? ybConfig.toolsEnabled : id === 'holiday' ? ybConfig.holidayEnabled : ybConfig.newsEnabled
+  const problem =
+    categoryProblem(category, snapshot?.sourceStatus, enabledSources) ||
+    (isYuanbao(category) && ybRowOn(category) && yb?.lastError ? yb.lastError : '')
   const chip = product ? inkPlanChip(product.shell.inkPlan, 'ambient', ink?.connection, locale) : undefined
   const openPlaylist = (): void => {
     if (product) void product.navigate('control').then(() => product.selectTarget('ink'))
@@ -500,10 +575,40 @@ export function AmbientPanel({
     ink.showing.id === preview?.ambient?.id
   const selectedCanOpen = Boolean(selectedCard?.url)
   const selectedRemovable = selectedCard && (selectedCard.kind === 'image' || selectedCard.kind === 'note')
-  const hasSettings = category === 'pet' || category === 'news' || category === 'social'
+  const hasSettings = ['pet', 'news', 'social', 'life', 'tools', 'headlines'].includes(category)
   const rowOn = (id: Category): boolean =>
-    id === 'social' ? draft.xEnabled || draft.memeEnabled : RULE_FLAG[id] ? draft[RULE_FLAG[id]!] : false
-  const tempReason = !online ? '连接设备后可临时展示' : !selectedCard ? '没有可展示的内容' : undefined
+    isYuanbao(id) ? ybRowOn(id) : id === 'social' ? draft.xEnabled || draft.memeEnabled : RULE_FLAG[id] ? draft[RULE_FLAG[id]!] : false
+  const holidayStatus = yb?.holiday ? `${yb.holiday.year} 放假安排：${HOLIDAY_STATE[yb.holiday.state]}` : ''
+  const toggleYuanbaoRow = (id: YuanbaoCategory) => {
+    if (!hasYbKey) return
+    if (id === 'life') {
+      const next = toggleLifeRow(lifeTripleOf(ybConfig), rememberedLife.current)
+      rememberedLife.current = next.remembered
+      writeRememberedLife(window.localStorage, next.remembered)
+      editYuanbao(next.patch)
+      return
+    }
+    const flag: YuanbaoFlag = id === 'tools' ? 'toolsEnabled' : id === 'holiday' ? 'holidayEnabled' : 'newsEnabled'
+    editMany({ yuanbao: setYuanbaoFlag(ybConfig, flag, !ybConfig[flag]) })
+  }
+  /** An individual weather / gold / stocks switch in 生活卡 设置: the latest choice replaces the row's memory. */
+  const lifeFlagSwitch = (flag: keyof LifeTriple, label: string) => (
+    <label className="page-switch">
+      <input
+        type="checkbox"
+        checked={ybConfig[flag]}
+        disabled={!hasYbKey}
+        onChange={(e) => {
+          const value = e.target.checked
+          rememberedLife.current = rememberAfterLifeFlag(lifeTripleOf(ybConfig), flag, value)
+          writeRememberedLife(window.localStorage, rememberedLife.current)
+          editMany({ yuanbao: setYuanbaoFlag(ybConfig, flag, value) })
+        }}
+      />
+      {label}
+    </label>
+  )
+  const tempReason = !online ? '连接设备后可临时展示' : sampleTopic ? '这是示例，有真实内容后才能临时展示' : !selectedCard ? '没有可展示的内容' : undefined
   return (
     <section
       className={'ambient-panel' + (dragging ? ' is-dragging' : '')}
@@ -556,7 +661,14 @@ export function AmbientPanel({
               const flag = RULE_FLAG[id]
               const count = id === 'pet' ? Math.min(1, cardsFor(id).length) : cardsFor(id).length
               return (
-                <li key={id} className={id === category ? 'is-current' : undefined} data-rule={id}>
+                <Fragment key={id}>
+                {id === 'life' && (
+                  <li className="ambient-group-label" role="presentation">
+                    <span>元宝搜索</span>
+                    {!hasYbKey && <InfoTip text="先在元宝搜索设置里填写密钥" label="为什么开关不可用" />}
+                  </li>
+                )}
+                <li className={id === category ? 'is-current' : undefined} data-rule={id}>
                   <button
                     type="button"
                     className="ambient-cat-main"
@@ -567,6 +679,7 @@ export function AmbientPanel({
                       if (id === category) return
                       setCategory(id)
                       setSelectedId('')
+                      setSampleTopic(undefined)
                       setPreview(undefined)
                       setMessage('')
                       previewedId.current = ''
@@ -578,6 +691,18 @@ export function AmbientPanel({
                     <span className="ambient-cat-count">{count} 条</span>
                   </button>
                   {id === 'local' && <span className="ambient-manual-tag">仅手动</span>}
+                  {isYuanbao(id) && (
+                    <button
+                      type="button"
+                      role="switch"
+                      className="ambient-switch"
+                      // Without a key nothing can run, so the switch reads off whatever the stored flags say.
+                      aria-checked={hasYbKey && rowOn(id)}
+                      aria-disabled={!snapshot || !hasYbKey}
+                      aria-label={`自动挑选 ${label}`}
+                      onClick={() => toggleYuanbaoRow(id)}
+                    />
+                  )}
                   {(flag || id === 'social') && (
                     <button
                       type="button"
@@ -599,9 +724,18 @@ export function AmbientPanel({
                     />
                   )}
                 </li>
+                </Fragment>
               )
             })}
           </ul>
+          <YuanbaoSettings
+            status={yb}
+            limit={ybConfig.dailyRequestLimit}
+            onLimit={(value) => editYuanbao({ dailyRequestLimit: value })}
+            onSnapshot={setSnapshot}
+            disabled={!snapshot}
+            limitField={(value, onCommit) => <NumberRule label="每日请求上限" value={value} min={1} max={200} onCommit={onCommit} />}
+          />
           <details className="ambient-details ambient-pacing">
             <summary>展示节奏</summary>
             <fieldset className="ambient-fieldset" disabled={!snapshot}>
@@ -641,7 +775,22 @@ export function AmbientPanel({
           <div className="ambient-inner">
             <div className="ambient-items-col">
               <ul className="ambient-items" aria-label="条目">
-                {items.length === 0 && <li className="ambient-empty">暂无内容</li>}
+                {items.length === 0 && !isYuanbao(category) && <li className="ambient-empty">暂无内容</li>}
+                {items.length === 0 &&
+                  isYuanbao(category) &&
+                  SAMPLES[category].map(({ topic, label }) => (
+                    <li key={topic}>
+                      <button
+                        type="button"
+                        className="ambient-item"
+                        data-sample={topic}
+                        aria-pressed={sampleTopic === topic}
+                        onClick={() => void previewSample(topic)}
+                      >
+                        示例 · {label}
+                      </button>
+                    </li>
+                  ))}
                 {items.map((card) => (
                   <li key={card.id}>
                     <button
@@ -660,6 +809,11 @@ export function AmbientPanel({
                 <p className="ambient-calendar-info" role="status" title="月历需要固件 0.0.29 以上，旧固件只显示一行文字">
                   {selectedCard.text}
                   {nextHolidayText(snapshot?.calendarNext)}
+                </p>
+              )}
+              {(category === 'calendar' || category === 'holiday') && holidayStatus && (
+                <p className="ambient-calendar-info" data-holiday-status role="status">
+                  {holidayStatus}
                 </p>
               )}
               {(selectedCanOpen || selectedRemovable) && (
@@ -747,6 +901,86 @@ export function AmbientPanel({
                       </div>
                     )}
                     {category === 'news' && <div className="ambient-actions">{refreshButton}</div>}
+                    {category === 'life' && (
+                      <>
+                        <section className="ambient-group" aria-label="天气">
+                          <h3>天气</h3>
+                          {lifeFlagSwitch('weatherEnabled', '显示天气')}
+                          <label className="page-field">
+                            城市
+                            <input
+                              value={ybConfig.city}
+                              maxLength={20}
+                              onChange={(e) => editYuanbao({ city: e.target.value }, SAVE_DELAY_MS)}
+                            />
+                          </label>
+                        </section>
+                        <section className="ambient-group" aria-label="金价">
+                          <h3>金价</h3>
+                          {lifeFlagSwitch('goldEnabled', '显示金价')}
+                          <label className="page-switch">
+                            <input
+                              type="checkbox"
+                              checked={ybConfig.goldBrand}
+                              onChange={(e) => editYuanbao({ goldBrand: e.target.checked })}
+                            />
+                            附品牌金价
+                          </label>
+                        </section>
+                        <section className="ambient-group" aria-label="股票">
+                          <h3>股票</h3>
+                          {lifeFlagSwitch('stocksEnabled', '显示股价')}
+                          <label className="page-field">
+                            代码（最多 3 个，逗号分隔）
+                            <input
+                              value={stocksText}
+                              aria-invalid={Boolean(stocksError)}
+                              placeholder="00700.hk"
+                              onChange={(e) => {
+                                setStocksText(e.target.value)
+                                const parsed = parseStocks(e.target.value)
+                                setStocksError(parsed.ok ? '' : parsed.error)
+                                if (parsed.ok) editYuanbao({ stocks: parsed.stocks }, SAVE_DELAY_MS)
+                              }}
+                            />
+                            {stocksError && (
+                              <span className="ambient-field-error" role="alert">
+                                {stocksError}
+                              </span>
+                            )}
+                          </label>
+                        </section>
+                        <div className="ambient-actions">{refreshButton}</div>
+                      </>
+                    )}
+                    {category === 'tools' && (
+                      <>
+                        <label className="page-field">
+                          工具名称（最多 4 个，逗号分隔）
+                          <input
+                            value={toolsText}
+                            onChange={(e) => {
+                              setToolsText(e.target.value)
+                              editYuanbao({ tools: parseTools(e.target.value) }, SAVE_DELAY_MS)
+                            }}
+                          />
+                        </label>
+                        <div className="ambient-actions">{refreshButton}</div>
+                      </>
+                    )}
+                    {category === 'headlines' && (
+                      <>
+                        <label className="page-field">
+                          话题
+                          <input
+                            value={ybConfig.newsTopic}
+                            maxLength={20}
+                            onChange={(e) => editYuanbao({ newsTopic: e.target.value }, SAVE_DELAY_MS)}
+                          />
+                        </label>
+                        <div className="ambient-actions">{refreshButton}</div>
+                      </>
+                    )}
                     {category === 'social' && (
                       <>
                         <section className="ambient-group" aria-label="X 贴文">
@@ -925,7 +1159,7 @@ export function AmbientPanel({
                     live={!preview}
                     fit
                     compact
-                    cornerTag={onScreen ? '当前画面' : '预览'}
+                    cornerTag={sampleTopic ? '示例' : onScreen ? '当前画面' : '预览'}
                   />
                 ) : targetError ? (
                   <p className="ambient-empty" role="alert">

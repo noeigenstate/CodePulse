@@ -459,6 +459,10 @@
 }
 .native-workstation::before { display:none; }
 .native-workstation .window-titlebar { background:var(--canvas); }
+/* The native caption-button overlay covers the title bar's right end and cannot draw its border, so the
+   separator lives on the frame below and spans the full width. */
+.native-workstation .window-titlebar { border-bottom-color:transparent; }
+.native-workstation .window-titlebar + .product-frame { border-top:1px solid var(--line); }
 .product-frame [hidden], .product-settings-page [hidden] { display:none !important; }
 .product-frame button:focus-visible, .product-frame summary:focus-visible, .product-frame input:focus-visible, .product-frame select:focus-visible, .product-frame textarea:focus-visible, .product-frame a:focus-visible {
   outline:2px solid var(--workstation-accent,#60738c); outline-offset:3px;

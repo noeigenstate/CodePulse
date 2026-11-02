@@ -643,21 +643,32 @@ function toolSentence(page: YuanbaoPage): string {
     if (stop >= 0 && stop < 40 && label && site.startsWith(label))
       body = body.slice(stop + 1).trim()
   }
+  // An e-ink line has no room for links, shell commands or page labels; a sentence must still
+  // say something once they are gone.
+  const clean = (sentence: string) =>
+    sentence
+      .replace(/https?:\/\/\S+/gi, '')
+      .replace(/(?:^|\s)(?:curl|wget|npm|npx|pnpm|yarn|brew|pip|winget|sudo)\s+\S.*$/i, '')
+      .replace(/^(?:资讯详情|摘要|导读|简介|正文|详情)\s*[：:]\s*/u, '')
+      .replace(/[\s|]+/g, ' ')
+      .trim()
+  const meaningful = (value: string) => (value.match(/[\p{Script=Han}A-Za-z0-9]/gu) ?? []).length >= 12
   return (
     body
       .split(/(?<=[。！？!?])\s*|(?<=\.)\s+/u)
-      .find((sentence) => {
-        const value = sentence.trim()
-        return (
-          value &&
+      .map(clean)
+      .find(
+        (value) =>
+          meaningful(value) &&
           value !== heading &&
           value !== site &&
-          !/^(?:从.{0,20}说起|关注我们|免责声明|版权声明)/u.test(value)
-        )
-      })
-      ?.trim() ?? ''
+          !/^(?:从.{0,20}说起|关注我们|免责声明|版权声明)/u.test(value) &&
+          !/(?:可以这样安装|安装方法|安装命令)[：:]?$/u.test(value),
+      ) ?? ''
   )
 }
+/** A version number in a title, e.g. v2.4 or 0.80.1. */
+const TOOL_VERSION = /(?:^|[^\d.])v?\d+\.\d+(?:\.\d+)?(?![\d.])/i
 export function toolCard(pages: YuanbaoPage[], tool: string, now: number): AmbientCard | undefined {
   const canonical = (value: string) => webText(value).replace(/\s/g, '').toLowerCase()
   const candidates = pages
@@ -672,7 +683,7 @@ export function toolCard(pages: YuanbaoPage[], tool: string, now: number): Ambie
         (!Number.isFinite(sourceTime(page.date, now)) ||
           (sourceTime(page.date, now) >= now - 3 * 86400000 &&
             sourceTime(page.date, now) <= now + 300000)) &&
-        Boolean(toolSentence(page)),
+        (Boolean(toolSentence(page)) || TOOL_VERSION.test(webText(page.title))),
     )
     .sort((a, b) => (sourceTime(b.date, now) || 0) - (sourceTime(a.date, now) || 0))
   const page = candidates[0]
@@ -684,11 +695,13 @@ export function toolCard(pages: YuanbaoPage[], tool: string, now: number): Ambie
   const suffix = `（${shortened(page.site || '网页', 16)} · ${date}）`
   const available = 120 - Array.from(prefix + suffix).length - 1
   const title = shortened(page.title, Math.min(36, Math.max(8, Math.floor(available * 0.4))))
-  const sentence = shortened(toolSentence(page), Math.min(60, available - Array.from(title).length))
+  const summary = toolSentence(page)
+  const sentence = summary ? shortened(summary, Math.min(60, available - Array.from(title).length)) : ''
   return makeCard(
     'tools',
     `search:tools:${tool.toLowerCase().replace(/\s+/g, '-')}:${hash(page.url).slice(0, 16)}`,
-    `${prefix}${title}：${sentence}${suffix}`,
+    // A versioned title is enough on its own when the page has no usable sentence.
+    `${prefix}${sentence ? `${title}：${sentence}` : title}${suffix}`,
     page,
     published,
     now,

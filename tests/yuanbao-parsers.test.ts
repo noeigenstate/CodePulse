@@ -61,7 +61,7 @@ test('TC3 signer matches the independently computed reference vector with UTF-8 
   )
   assert.equal(headers['X-TC-Version'], '2025-05-08')
   assert.equal(headers['X-TC-Action'], 'SearchPro')
-  assert.equal(headers.Host, 'wsa.tencentcloudapi.com')
+  assert.equal(new Headers(headers).has('host'), false)
   assert.equal(headers['X-TC-Region'], undefined)
   const next = signedYuanbaoHeaders(
     '{}',

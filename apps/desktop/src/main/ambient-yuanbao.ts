@@ -15,14 +15,21 @@ const record = (value: unknown): Record<string, unknown> =>
 const text = (value: unknown) => (typeof value === 'string' ? value : '')
 const take = (value: string, count: number) => Array.from(value).slice(0, count).join('')
 export function webText(value: unknown): string {
+  const entities: Record<string, string> = {
+    '&nbsp;': ' ',
+    '&#160;': ' ',
+    '&amp;': '&',
+    '&lt;': '<',
+    '&gt;': '>',
+    '&quot;': '"',
+    '&#39;': "'",
+  }
   return take(text(value), 12000)
+    .replace(
+      /&(?:nbsp|amp|lt|gt|quot);|&#(?:160|39);/gi,
+      (entity) => entities[entity.toLowerCase()]!,
+    )
     .replace(/<[^<>]{0,2000}>/g, ' ')
-    .replace(/&nbsp;|&#160;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
     .replace(/\[([^\[\]]{1,240})\]\([^()\n]{0,1000}\)/g, '$1')
     .replace(/[*_`#]/g, '')
     .replace(/[\u0000-\u001f\u007f]/g, ' ')
@@ -52,6 +59,7 @@ export function signedYuanbaoHeaders(
   payload: string,
   credentials: { secretId: string; secretKey: string },
   timestamp: number,
+  host = 'wsa.tencentcloudapi.com',
 ): Record<string, string> {
   const date = new Date(timestamp * 1000).toISOString().slice(0, 10)
   const scope = `${date}/wsa/tc3_request`
@@ -60,7 +68,7 @@ export function signedYuanbaoHeaders(
     'POST',
     '/',
     '',
-    `content-type:${contentType}\nhost:wsa.tencentcloudapi.com\nx-tc-action:searchpro\n`,
+    `content-type:${contentType}\nhost:${host}\nx-tc-action:searchpro\n`,
     'content-type;host;x-tc-action',
     hash(payload),
   ].join('\n')
@@ -70,7 +78,6 @@ export function signedYuanbaoHeaders(
   return {
     Authorization: `TC3-HMAC-SHA256 Credential=${credentials.secretId}/${scope}, SignedHeaders=content-type;host;x-tc-action, Signature=${signature}`,
     'Content-Type': contentType,
-    Host: 'wsa.tencentcloudapi.com',
     'X-TC-Action': 'SearchPro',
     'X-TC-Timestamp': String(timestamp),
     'X-TC-Version': '2025-05-08',
@@ -177,6 +184,8 @@ export class YuanbaoClient {
       transport: (url: string, init: RequestInit) => Promise<Response>
       now?: () => number
       timeout?: (ms: number) => AbortSignal
+      /** Trusted main-process injection for the loopback network-stack check. */
+      endpoints?: { tc3: string; apikey: string }
     },
   ) {}
   async search(
@@ -187,25 +196,27 @@ export class YuanbaoClient {
       payload = JSON.stringify(params)
     const tc3 = 'secretId' in credentials
     try {
-      const response = await this.deps.transport(
-        tc3 ? 'https://wsa.tencentcloudapi.com/' : 'https://api.wsa.cloud.tencent.com/SearchPro',
-        {
-          method: 'POST',
-          body: payload,
-          redirect: 'error',
-          signal: this.deps.timeout
-            ? this.deps.timeout(YUANBAO_TIMEOUT_MS)
-            : AbortSignal.timeout(YUANBAO_TIMEOUT_MS),
-          headers: tc3
-            ? signedYuanbaoHeaders(payload, credentials, Math.floor(started / 1000))
-            : {
-                'Content-Type': 'application/json; charset=utf-8',
-                Authorization: `Bearer ${credentials.apiKey}`,
-              },
-        },
+      const url = new URL(
+        tc3
+          ? (this.deps.endpoints?.tc3 ?? 'https://wsa.tencentcloudapi.com/')
+          : (this.deps.endpoints?.apikey ?? 'https://api.wsa.cloud.tencent.com/SearchPro'),
       )
+      const response = await this.deps.transport(url.href, {
+        method: 'POST',
+        body: payload,
+        redirect: 'error',
+        signal: this.deps.timeout
+          ? this.deps.timeout(YUANBAO_TIMEOUT_MS)
+          : AbortSignal.timeout(YUANBAO_TIMEOUT_MS),
+        headers: tc3
+          ? signedYuanbaoHeaders(payload, credentials, Math.floor(started / 1000), url.host)
+          : {
+              'Content-Type': 'application/json; charset=utf-8',
+              Authorization: `Bearer ${credentials.apiKey}`,
+            },
+      })
       const reader = response.body?.getReader()
-      if (!reader) throw Error('连接失败')
+      if (!reader) throw Error(yuanbaoError(undefined, response.status))
       const chunks: Uint8Array[] = []
       let bytes = 0
       try {
@@ -219,10 +230,13 @@ export class YuanbaoClient {
       } finally {
         await reader.cancel().catch(() => {})
       }
-      const raw = sanitizeYuanbaoResponse(
-        JSON.parse(Buffer.concat(chunks).toString('utf8')),
-        credentials,
-      )
+      let decoded: unknown
+      try {
+        decoded = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      } catch {
+        throw Error(yuanbaoError(undefined, response.status))
+      }
+      const raw = sanitizeYuanbaoResponse(decoded, credentials)
       const body = record(record(raw).Response),
         error = record(body.Error)
       const edition = ['lite', 'standard', 'flagship'].includes(text(body.Version))
@@ -274,7 +288,11 @@ export function parsePassage(passage: string): {
     if (!match) continue
     const key = match[2]!.trim(),
       value = match[3]!.trim()
-    if (['__proto__', 'constructor', 'prototype'].includes(key) || /(?:\.{3}|…+)\s*$/.test(value))
+    if (
+      ['__proto__', 'constructor', 'prototype'].includes(key) ||
+      value.endsWith('...') ||
+      value.endsWith('…')
+    )
       continue
     if (match[1]) {
       flush()

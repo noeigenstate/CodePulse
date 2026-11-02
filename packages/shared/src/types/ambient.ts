@@ -120,6 +120,7 @@ export interface YuanbaoStatus {
   limit: number
   lastLatencyMs: number | null
   lastError: string
+  errors: Partial<Record<YuanbaoTopic, string>>
   lastCheckedAt: number
   /** Edition reported by the API: 'lite' | 'standard' | 'flagship'. */
   edition: string | null

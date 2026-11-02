@@ -46,6 +46,7 @@ interface Dependencies {
   now?: () => number
   holidays: () => HolidayTable
   hasYear: (year: number) => boolean
+  scheduledAllowed?: () => boolean
   save: (cache: YuanbaoCache) => void
   saveLastResponse?: (raw: unknown) => void
   changed: () => void
@@ -140,8 +141,20 @@ export class YuanbaoSource {
   private collecting = false
   private stopped = false
   private generation = 0
+  private credentialTag: string
+  private errors: Record<string, string> = {}
+  private inputKeys: Set<string>
+  private inputReadyAt: Partial<Record<YuanbaoTopic, number>> = {}
   constructor(private deps: Dependencies) {
     this.cache = restore(sanitizeYuanbaoResponse(deps.cache, deps.credentials() ?? {}))
+    this.credentialTag = this.credentialsTag()
+    this.inputKeys = new Set(this.jobs().map((job) => job.key))
+  }
+  private credentialsTag(): string {
+    const key = this.deps.credentials()
+    return JSON.stringify(
+      key ? ('apiKey' in key ? [key.apiKey] : [key.secretId, key.secretKey]) : null,
+    )
   }
   private now() {
     return this.deps.now?.() ?? Date.now()
@@ -251,6 +264,10 @@ export class YuanbaoSource {
         this.cards().flatMap((card) => card.source.slice('元宝搜索 · '.length).split('、')),
       ),
     ]
+    const errors: YuanbaoStatus['errors'] = {}
+    for (const job of this.jobs()) {
+      if (this.errors[job.key]) errors[job.topic] = this.errors[job.key]
+    }
     return {
       hasKey: Boolean(key),
       authMode: key ? ('apiKey' in key ? 'apikey' : 'tc3') : null,
@@ -258,6 +275,7 @@ export class YuanbaoSource {
       limit: config.dailyRequestLimit,
       lastLatencyMs: this.cache.lastLatencyMs,
       lastError: this.cache.lastError,
+      errors,
       lastCheckedAt: this.cache.lastCheckedAt,
       edition: this.cache.edition,
       sources,
@@ -275,8 +293,13 @@ export class YuanbaoSource {
     }
   }
   credentialsChanged(): void {
+    const tag = this.credentialsTag()
+    if (tag === this.credentialTag) return
+    this.credentialTag = tag
     this.generation++
-    this.cache.checks = {}
+    // Key saves are not paid validation. Keep resource history and defer a full scheduled batch.
+    this.cache.checks['@credentials'] = this.now()
+    this.errors = {}
     this.cache.lastError = ''
     this.cache.lastLatencyMs = null
     this.cache.lastCheckedAt = 0
@@ -299,6 +322,9 @@ export class YuanbaoSource {
     const config = this.deps.config()
     if (
       this.stopped ||
+      !config.enabled ||
+      this.deps.scheduledAllowed?.() === false ||
+      this.now() < (this.inputReadyAt[job.topic] ?? -Infinity) ||
       !this.deps.credentials() ||
       !yuanbaoFeatureEnabled(config.yuanbao, job.topic) ||
       inQuietHours(config, this.now())
@@ -323,7 +349,16 @@ export class YuanbaoSource {
         this.persist()
         this.changed()
       }
-      for (const job of this.jobs()) {
+      // New city/tool/topic values inherit their topic's cadence. Capture the baseline so
+      // an initial batch may still collect every configured stock or tool once.
+      const checks = { ...this.cache.checks }
+      const jobs = this.jobs()
+      // Let debounced text edits settle, even before the first check. No extra timer or request.
+      for (const job of jobs) {
+        if (!this.inputKeys.has(job.key)) this.inputReadyAt[job.topic] = this.now() + 2000
+      }
+      this.inputKeys = new Set(jobs.map((job) => job.key))
+      for (const job of jobs) {
         // Yield the queue after each request, so a manual connection test does not wait for a whole batch.
         await this.serial(async () => {
           this.resetDay()
@@ -332,11 +367,17 @@ export class YuanbaoSource {
             this.cache.requests >= this.deps.config().yuanbao.dailyRequestLimit
           )
             return
-          const checked = this.cache.checks[job.key]
+          const checked = Math.max(
+            this.cache.checks[job.key] ?? -Infinity,
+            this.cache.checks['@credentials'] ?? -Infinity,
+            ...Object.entries(checks)
+              .filter(([key]) => key.startsWith(job.topic + ':'))
+              .map(([, at]) => at),
+          )
           const due =
             job.topic === 'holiday'
-              ? checked === undefined || localDay(checked) !== localDay(this.now())
-              : checked === undefined || this.now() - checked >= job.cadence
+              ? !Number.isFinite(checked) || localDay(checked) !== localDay(this.now())
+              : this.now() - checked >= job.cadence
           if (due) await this.request(job, false)
         })
       }
@@ -355,16 +396,24 @@ export class YuanbaoSource {
       return this.request(job, true)
     })
   }
+  private recordError(job: Job, manual: boolean, error: string): void {
+    if (manual) this.cache.lastError = error
+    if (!error) delete this.errors[job.key]
+    else if (!manual) this.errors[job.key] = error
+  }
   private async request(job: Job, manual: boolean): Promise<YuanbaoTestResult> {
     this.resetDay()
     const key = this.deps.credentials()
-    const failed = (error: string): YuanbaoTestResult => ({
-      ok: false,
-      latencyMs: this.cache.lastLatencyMs,
-      edition: this.cache.edition,
-      cardText: '',
-      error,
-    })
+    const failed = (error: string, report = true): YuanbaoTestResult => {
+      if (manual && report) this.cache.lastError = error
+      return {
+        ok: false,
+        latencyMs: this.cache.lastLatencyMs,
+        edition: this.cache.edition,
+        cardText: '',
+        error,
+      }
+    }
     if (this.stopped) return failed('服务已停止')
     if (!key) return failed('请先填写元宝搜索密钥')
     if (this.cache.requests >= this.deps.config().yuanbao.dailyRequestLimit)
@@ -391,13 +440,19 @@ export class YuanbaoSource {
     try {
       if (!this.deps.client) throw Error('连接失败')
       const result = await this.deps.client.search(job.params, key)
-      if (this.stopped || generation !== this.generation) return failed('设置已变化，请重新测试')
+      if (this.stopped || generation !== this.generation)
+        return failed('设置已变化，请重新测试', false)
       this.cache.lastLatencyMs = result.latencyMs
       this.cache.edition = ['lite', 'standard', 'flagship'].includes(String(result.edition))
         ? result.edition
         : null
-      this.cache.lastError = ''
-      if (manual) this.deps.saveLastResponse?.(sanitizeYuanbaoResponse(result.raw, key))
+      if (manual) {
+        try {
+          this.deps.saveLastResponse?.(sanitizeYuanbaoResponse(result.raw, key))
+        } catch {
+          /* Optional article export must not discard a successful paid response. */
+        }
+      }
       const now = this.now()
       const pages = sanitizeYuanbaoResponse(result.pages, key) as YuanbaoPage[]
       const card =
@@ -421,15 +476,25 @@ export class YuanbaoSource {
           .slice(-64)
         if (job.topic === 'holiday') this.cache.published[job.value] = true
       }
+      const error = card
+        ? card.score > 0
+          ? ''
+          : card.text
+        : job.topic === 'holiday'
+          ? ''
+          : '未找到可解析的数据'
+      this.recordError(job, manual, error)
       this.persist()
       return {
         ok: Boolean(card && card.score > 0),
         latencyMs: result.latencyMs,
         edition: result.edition,
         cardText: card?.text ?? '',
-        error: card ? (card.score > 0 ? '' : card.text) : '未找到可解析的数据',
+        error,
       }
     } catch (error) {
+      if (this.stopped || generation !== this.generation)
+        return failed('设置已变化，请重新测试', false)
       this.cache.lastLatencyMs =
         error instanceof YuanbaoRequestError ? error.latencyMs : Math.max(0, this.now() - started)
       if (error instanceof YuanbaoRequestError) {
@@ -443,7 +508,7 @@ export class YuanbaoSource {
         }
       }
       const message = error instanceof Error ? error.message : ''
-      this.cache.lastError = [
+      const publicError = [
         '密钥错误',
         '未开通或额度用完',
         '限流，稍后再试',
@@ -451,12 +516,13 @@ export class YuanbaoSource {
       ].includes(message)
         ? message
         : '连接失败'
+      this.recordError(job, manual, publicError)
       try {
         this.persist()
       } catch {
         /* Reservation was already saved before sending. */
       }
-      return failed(this.cache.lastError)
+      return failed(publicError)
     } finally {
       this.changed()
     }

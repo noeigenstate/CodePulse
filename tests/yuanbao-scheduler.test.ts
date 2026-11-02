@@ -240,7 +240,8 @@ test('failed calls consume reserved quota, do not retry and respect the next cad
   await f.source.tick()
   assert.equal(f.calls(), 1)
   assert.equal(f.source.snapshot().requestsToday, 1)
-  assert.equal(f.source.snapshot().lastError, '连接失败')
+  assert.equal(f.source.snapshot().errors.weather, '连接失败')
+  assert.equal(f.source.snapshot().lastError, '')
   f.setTime(now + 7200000)
   await f.source.tick()
   assert.equal(f.calls(), 2)
@@ -343,6 +344,7 @@ test('gold brand presentation updates cached cards and their device identity wit
 })
 test('queued obsolete symbols are skipped after settings change while a request is running', async () => {
   let config = normalizeAmbient({
+    enabled: true,
     quietStart: 0,
     quietEnd: 0,
     yuanbao: { enabled: true, weatherEnabled: true, stocksEnabled: true, stocks: ['00700.hk'] },
@@ -381,6 +383,7 @@ test('queued obsolete symbols are skipped after settings change while a request 
 })
 test('manual tests yield after the current background request instead of waiting for every feature', async () => {
   const config = normalizeAmbient({
+    enabled: true,
     quietStart: 0,
     quietEnd: 0,
     yuanbao: { enabled: true, weatherEnabled: true, toolsEnabled: true, tools: ['Codex'] },

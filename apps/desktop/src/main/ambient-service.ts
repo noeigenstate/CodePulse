@@ -93,6 +93,7 @@ export class AmbientService {
     this.yuanbao = new YuanbaoSource({ config: () => this.config, now: () => this.now(),
       credentials: deps.yuanbaoKey ?? (() => null), client: deps.yuanbaoClient, cache: deps.yuanbaoCache,
       holidays: () => this.holidays.table(), hasYear: year => this.holidays.hasYear(year),
+      scheduledAllowed: () => this.history.day !== day(this.now()) || this.history.shown < this.config.dailyLimit,
       save: deps.saveYuanbao ?? (() => {}), saveLastResponse: deps.saveYuanbaoResponse, changed: () => this.changed() })
   }
   private now() {
@@ -377,7 +378,6 @@ export class AmbientService {
   }
   tick() {
     if (this.stopped) return
-    void this.yuanbao.tick()
     this.resetDay()
     this.syncHolidays()
     if (this.active && (this.activeUntil <= this.now() || this.active.expiresAt <= this.now() || (!this.manual && !this.current()))) {
@@ -392,6 +392,7 @@ export class AmbientService {
       pauseReason(this.config, this.deps.status(), this.now()) === '安静时段'
     )
       return
+    void this.yuanbao.tick()
     if (this.now() >= this.nextCheckAt) void this.refresh()
     if (!this.active) this.show()
   }

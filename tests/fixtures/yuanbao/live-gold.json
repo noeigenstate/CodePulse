@@ -1,0 +1,10 @@
+{
+  "Response": {
+    "RequestId": "2147aa21-74bd-4abc-b001-38103e1cb87e",
+    "Version": "standard",
+    "Pages": [
+      "{\"title\":\"实物黄金价格_金投网\",\"site\":\"金投网\",\"url\":\"https://m.cngold.org/quote/gjs/swhj_city_460.html\",\"date\":\"2026-11-02 23:34:33\",\"vr\":true,\"vr_category\":\"gold\",\"passage\":\"# 详情：\\n\\n在售商家类型：金店\\n商家列表：\\n\\n品牌名称：周大福\\n商品：黄金\\n价格（元）：1173元/克\\n商家列表页面PC端地址：https://quote.cngold.org/gjs/swhj_zdf/city_460.html\\n商家列表页面无线端地址：https://m.cngold.org/quote/gjs/swhj_zdf/city_460.html\"}",
+      "{\"title\":\"今日现货黄金价格走势图_金投网\",\"site\":\"金投网\",\"url\":\"http://m.cngold.org/quote/gjs/gjhj_xhhj.html?key=au\",\"date\":\"2026-11-02 23:34:33\",\"vr\":true,\"vr_category\":\"gold\",\"passage\":\"# 转跳地址：http://m.cngold.org/quote/gjs/gjhj_xhhj.html?key=au\\n# 今日现货黄金价格走势图_金投网\\n# 贵金属名称：黄金\\n# 更新信息：\\n更新时间：1793633556\\n交易状态：on\\n# 行情信息：\\n\\n转跳地址：http://m.cngold.org/quote/gjs/gjhj_xhhj.html?key=au\\n价格值类型：国内价格(元/克)\\n最新信息：\\n价格：844.92\\n涨跌状态：up\\n价格单位：元/克\\n涨跌值：+16.62\\n涨跌幅：+2.01%\\n统计信息列表：\\n\\n价格值类型：最高\\n价格值：847.78\\n涨跌状态：up\\n\\n价格值类型：最低\\n价格值：829.39\\n涨跌状态：up\\n\\n价格值类型：昨收\\n价格值：828.31\\n涨跌状态：draw\\n\\n价格值类型：今开\\n价格值：829.46\\n涨跌状态：up\\n\\n\\n转跳地址：http://m.cngold.org/quote/gjs/gjhj_xhhj.html\\n价格值类型：国际价格(美元/盎司)\\n最新信息：\\n价格：3952.79\\n涨跌状态：up\\n价格单位：美元/盎司\\n涨跌值：+77.73\\n涨跌幅：+2.01%\\n统计信息列表：\\n\\n价格值类型：最高\\n价格值：3966.15\\n涨跌状态：up\\n\\n价格值类型：最低\\n价格值：3880.10\\n涨跌状态：up\\n\\n价格值类型：昨收\\n价格值：3875.06\\n涨跌状态：draw\\n\\n价格值类型：今开\\n价格值：3880.43\\n涨跌状态：up\\n\\n\\n# 数据来源：金投网...\"}"
+    ]
+  }
+}

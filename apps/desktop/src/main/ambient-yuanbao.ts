@@ -4,6 +4,14 @@ import type { HolidayTable } from './calendar/index.js'
 
 export const YUANBAO_TIMEOUT_MS = 8000
 export const YUANBAO_MAX_BYTES = 512000
+export const YUANBAO_TTL_MS: Readonly<Record<YuanbaoTopic, number>> = {
+  weather: 3 * 3600000,
+  gold: 3600000,
+  stock: 3600000,
+  tools: 24 * 3600000,
+  holiday: 7 * 24 * 3600000,
+  news: 3 * 3600000,
+}
 export type YuanbaoCredentials = { secretId: string; secretKey: string } | { apiKey: string }
 const hash = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex')
 const hmac = (key: string | Buffer, value: string) =>
@@ -265,8 +273,13 @@ export class YuanbaoClient {
         throw Error('请求超时')
       const message = error instanceof Error ? error.message : ''
       throw Error(
-        ['密钥错误', '未开通或额度用完', '限流，稍后再试', '参数不被当前版本支持', '请求超时'].includes(message) ||
-          message.startsWith('服务暂不可用（')
+        [
+          '密钥错误',
+          '未开通或额度用完',
+          '限流，稍后再试',
+          '参数不被当前版本支持',
+          '请求超时',
+        ].includes(message) || message.startsWith('服务暂不可用（')
           ? message
           : '连接失败',
       )
@@ -450,9 +463,8 @@ function makeCard(
   body: string,
   page: YuanbaoPage | undefined,
   publishedAt: number,
-  ttlHours: number,
+  fetchedAt: number,
   valid = true,
-  observedAt = publishedAt,
 ): AmbientCard {
   return {
     id,
@@ -463,7 +475,7 @@ function makeCard(
     url: safeUrl(page?.url ?? ''),
     publishedAt,
     // TTL bounds our observation; the provider timestamp stays intact, including a market's last quote.
-    expiresAt: observedAt + ttlHours * 3600000,
+    expiresAt: fetchedAt + YUANBAO_TTL_MS[topic],
     score: valid ? 1 : 0,
   }
 }
@@ -527,8 +539,6 @@ export function weatherCard(
       body,
       page,
       published,
-      3,
-      true,
       now,
     )
   }
@@ -570,9 +580,8 @@ export function goldCard(
     `国内现货金 ${cleanNumber(domestic['价格'])} 元/克 ${quoteChange(domestic)} · 国际 ${cleanNumber(international?.['价格'])} 美元/盎司${brandLine}`,
     page,
     published,
-    1,
-    cleanNumber(domestic['价格']) !== '—',
     now,
+    cleanNumber(domestic['价格']) !== '—',
   )
 }
 export function stockCard(pages: YuanbaoPage[], symbol: string, now: number): AmbientCard {
@@ -603,9 +612,8 @@ export function stockCard(pages: YuanbaoPage[], symbol: string, now: number): Am
         `${fields['股票名称'] || '—'} ${symbol.toUpperCase()} ${cleanNumber(fields['实时股价'])} ${quoteChange(fields)}${fields['交易状态'] || '—'} · 高 ${cleanNumber(fields['今日最高价'])} 低 ${cleanNumber(fields['今日最低价'])} · ${clockText}`,
         page,
         published,
-        1,
-        cleanNumber(fields['实时股价']) !== '—',
         now,
+        cleanNumber(fields['实时股价']) !== '—',
       )
     }
   }
@@ -615,8 +623,39 @@ export function stockCard(pages: YuanbaoPage[], symbol: string, now: number): Am
     `未找到 ${symbol.toUpperCase()} 的行情`,
     undefined,
     now,
-    1,
+    now,
     false,
+  )
+}
+function shortened(value: string, count: number): string {
+  return Array.from(value).length > count ? take(value, Math.max(0, count - 1)) + '…' : value
+}
+function toolSentence(page: YuanbaoPage): string {
+  const normalize = (value: string) => webText(value).replace(/､/g, '、')
+  const heading = normalize(page.title),
+    site = normalize(page.site)
+  let body = normalize(page.passage)
+  // Search passages often repeat the title and site before the actual article prose.
+  for (let i = 0; i < 4 && heading && body.toLowerCase().startsWith(heading.toLowerCase()); i++) {
+    body = body.slice(heading.length).replace(/^[\s|：:]+/, '')
+    const stop = body.indexOf('。'),
+      label = body.slice(0, stop).trim()
+    if (stop >= 0 && stop < 40 && label && site.startsWith(label))
+      body = body.slice(stop + 1).trim()
+  }
+  return (
+    body
+      .split(/(?<=[。！？!?])\s*|(?<=\.)\s+/u)
+      .find((sentence) => {
+        const value = sentence.trim()
+        return (
+          value &&
+          value !== heading &&
+          value !== site &&
+          !/^(?:从.{0,20}说起|关注我们|免责声明|版权声明)/u.test(value)
+        )
+      })
+      ?.trim() ?? ''
   )
 }
 export function toolCard(pages: YuanbaoPage[], tool: string, now: number): AmbientCard | undefined {
@@ -625,24 +664,33 @@ export function toolCard(pages: YuanbaoPage[], tool: string, now: number): Ambie
     .filter(
       (page) =>
         !page.vr &&
+        Boolean(safeUrl(page.url)) &&
         canonical(page.title + page.passage).includes(canonical(tool)) &&
-        /(?:\bv?\d+\.\d+(?:\.\d+)?\b|版本|release|更新)/i.test(page.title + page.passage),
+        /(?:\bv?\d+\.\d+(?:\.\d+)?\b|版本|release|更新|发布|changelog)/i.test(
+          page.title + page.passage,
+        ) &&
+        (!Number.isFinite(sourceTime(page.date, now)) ||
+          (sourceTime(page.date, now) >= now - 3 * 86400000 &&
+            sourceTime(page.date, now) <= now + 300000)) &&
+        Boolean(toolSentence(page)),
     )
     .sort((a, b) => (sourceTime(b.date, now) || 0) - (sourceTime(a.date, now) || 0))
   const page = candidates[0]
   if (!page || !safeUrl(page.url)) return undefined
   const updated = sourceTime(page.date, now),
     published = Number.isFinite(updated) ? updated : now
-  const prefix = canonical(page.title).includes(canonical(tool)) ? '' : `${tool} · `
-  const date = Number.isFinite(updated) ? zonedParts(updated).day : '日期未提供'
+  const prefix = `${webText(tool)} · `
+  const date = Number.isFinite(updated) ? zonedParts(updated).day.slice(5) : '日期未提供'
+  const suffix = `（${shortened(page.site || '网页', 16)} · ${date}）`
+  const available = 120 - Array.from(prefix + suffix).length - 1
+  const title = shortened(page.title, Math.min(36, Math.max(8, Math.floor(available * 0.4))))
+  const sentence = shortened(toolSentence(page), Math.min(60, available - Array.from(title).length))
   return makeCard(
     'tools',
     `search:tools:${tool.toLowerCase().replace(/\s+/g, '-')}:${hash(page.url).slice(0, 16)}`,
-    `${prefix}${page.title}（${page.site || '网页'} · ${date}）`,
+    `${prefix}${title}：${sentence}${suffix}`,
     page,
     published,
-    24,
-    true,
     now,
   )
 }
@@ -675,8 +723,6 @@ export function holidayCard(
     `${year} 年放假安排已发布 · 国务院办公厅 · ${Number.isFinite(updated) ? `${parts.month}月${parts.date}日` : '日期未提供'} · 日历将在数据源更新后自动同步`,
     page,
     published,
-    7 * 24,
-    true,
     now,
   )
 }
@@ -687,7 +733,10 @@ export function newsCard(pages: YuanbaoPage[], now: number): AmbientCard | undef
     .slice(0, 3)
   if (!top.length) return undefined
   const body = top
-    .map((page) => `${take(page.title, 28)}（${take(page.site || '网页', 8)}）`)
+    .map(
+      (page) =>
+        `${shortened(page.title.replace(/\s+--.*--.*$/, '').trim(), 28)}（${take(page.site || '网页', 8)}）`,
+    )
     .join(' · ')
   return makeCard(
     'news',
@@ -695,7 +744,7 @@ export function newsCard(pages: YuanbaoPage[], now: number): AmbientCard | undef
     body,
     { ...top[0]!, site: [...new Set(top.map((page) => page.site || '网页'))].join('、') },
     now,
-    3,
+    now,
   )
 }
 export function yuanbaoSample(topic: YuanbaoTopic, now = Date.now()): AmbientCard {
@@ -710,7 +759,7 @@ export function yuanbaoSample(topic: YuanbaoTopic, now = Date.now()): AmbientCar
   }
   if (typeof topic !== 'string' || !Object.hasOwn(samples, topic)) throw Error('示例类型无效')
   return {
-    ...makeCard(topic, `yuanbao-sample:${topic}`, samples[topic], undefined, now, 1, false),
+    ...makeCard(topic, `yuanbao-sample:${topic}`, samples[topic], undefined, now, now, false),
     source: '元宝搜索 · 示例',
   }
 }

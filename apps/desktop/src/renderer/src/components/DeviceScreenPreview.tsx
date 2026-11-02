@@ -186,7 +186,9 @@ function useWholePixelAlign(
     const dx = phase(rect.left),
       dy = phase(rect.top)
     if (Math.abs(dx * dpr) < 0.03 && Math.abs(dy * dpr) < 0.03) return
-    offset.current = { x: offset.current.x - dx, y: offset.current.y - dy }
+    // Whole-pixel translations have the same phase. Keep only the fractional offset so repeated
+    // resizes cannot drift the frame away from its controls while the canvas remains pixel-aligned.
+    offset.current = { x: phase(offset.current.x - dx), y: phase(offset.current.y - dy) }
     // A layout offset, not a transform: layout snaps the canvas to whole physical pixels, while a
     // fractional transform is applied after snapping and resamples every edge row and column.
     box.style.position = 'relative'

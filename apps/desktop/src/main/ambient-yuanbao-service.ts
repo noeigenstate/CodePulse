@@ -18,6 +18,7 @@ import {
   weatherCard,
   yuanbaoFeatureEnabled,
   yuanbaoGoldPresentation,
+  YUANBAO_TTL_MS,
   YuanbaoRequestError,
   sanitizeYuanbaoResponse,
   type YuanbaoPage,
@@ -85,7 +86,16 @@ const validCard = (value: unknown): value is AmbientCard => {
     ['weather', 'gold', 'stock', 'tools', 'holiday', 'news'].includes(String(card.topic))
   )
 }
-function restore(raw: unknown): YuanbaoCache {
+function uniqueJobs(entries: { key: string; card: AmbientCard }[], now: number) {
+  const unique = new Map<string, { key: string; card: AmbientCard }>()
+  for (const entry of entries) {
+    const current = unique.get(entry.key)
+    const real = (card: AmbientCard) => card.score > 0 && card.expiresAt > now
+    if (!current || !real(current.card) || real(entry.card)) unique.set(entry.key, entry)
+  }
+  return [...unique.values()].slice(-64)
+}
+function restore(raw: unknown, now: number): YuanbaoCache {
   const value = obj(raw)
   return {
     version: 1,
@@ -99,8 +109,8 @@ function restore(raw: unknown): YuanbaoCache {
           : [],
       ),
     ),
-    entries: (Array.isArray(value.entries) ? value.entries : [])
-      .flatMap((entry) => {
+    entries: uniqueJobs(
+      (Array.isArray(value.entries) ? value.entries : []).flatMap((entry) => {
         const item = obj(entry)
         if (typeof item.key !== 'string' || item.key.length >= 300 || !validCard(item.card))
           return []
@@ -121,8 +131,9 @@ function restore(raw: unknown): YuanbaoCache {
             },
           },
         ]
-      })
-      .slice(-64),
+      }),
+      now,
+    ),
     published: Object.fromEntries(
       Object.entries(obj(value.published)).flatMap(([year, found]) =>
         /^\d{4}$/.test(year) && found === true ? [[year, true] as const] : [],
@@ -148,7 +159,7 @@ export class YuanbaoSource {
   private inputKeys: Set<string>
   private inputReadyAt: Partial<Record<YuanbaoTopic, number>> = {}
   constructor(private deps: Dependencies) {
-    this.cache = restore(sanitizeYuanbaoResponse(deps.cache, deps.credentials() ?? {}))
+    this.cache = restore(sanitizeYuanbaoResponse(deps.cache, deps.credentials() ?? {}), this.now())
     this.credentialTag = this.credentialsTag()
     this.inputKeys = new Set(this.jobs().map((job) => job.key))
   }
@@ -198,7 +209,10 @@ export class YuanbaoSource {
     add('weather', config.city, 7200000, { Query: `${config.city}今天天气`, Mode: 1 })
     add('gold', '', 3600000, { Query: '今日金价', Mode: 1 })
     for (const symbol of config.stocks)
-      add('stock', symbol, 3600000, { Query: `${symbol.split('.')[0]!.toUpperCase()}股价`, Mode: 1 })
+      add('stock', symbol, 3600000, {
+        Query: `${symbol.split('.')[0]!.toUpperCase()}股价`,
+        Mode: 1,
+      })
     for (const tool of config.tools)
       add('tools', tool, 43200000, { Query: `${tool} 更新 发布 版本`, Mode: 2, Freshness: 'd3' })
     const year = holidayWatchYear(this.now())
@@ -467,7 +481,7 @@ export class YuanbaoSource {
       }
       const now = this.now()
       const pages = sanitizeYuanbaoResponse(result.pages, key) as YuanbaoPage[]
-      const card =
+      const parsed =
         job.topic === 'weather'
           ? weatherCard(pages, job.value, now)
           : job.topic === 'gold'
@@ -479,9 +493,13 @@ export class YuanbaoSource {
                 : job.topic === 'holiday'
                   ? holidayCard(pages, Number(job.value), now)
                   : newsCard(pages, now)
-      if (card) {
+      const card = parsed ? { ...parsed, expiresAt: now + YUANBAO_TTL_MS[job.topic] } : undefined
+      const real = this.cache.entries.find(
+        (entry) => entry.key === job.key && entry.card.score > 0 && entry.card.expiresAt > now,
+      )
+      if (card && (card.score > 0 || !real)) {
         this.cache.entries = [
-          ...this.cache.entries.filter((entry) => entry.card.id !== card.id),
+          ...this.cache.entries.filter((entry) => entry.key !== job.key),
           { key: job.key, card },
         ]
           .filter((entry) => entry.card.expiresAt > now)
@@ -494,7 +512,9 @@ export class YuanbaoSource {
           : card.text
         : job.topic === 'holiday'
           ? ''
-          : '未找到可解析的数据'
+          : job.topic === 'tools'
+            ? `近 3 天没有找到 ${job.value} 的更新`
+            : '未找到可解析的数据'
       this.recordError(job, manual, error)
       this.persist()
       return {
@@ -521,8 +541,13 @@ export class YuanbaoSource {
       }
       const message = error instanceof Error ? error.message : ''
       const publicError =
-        ['密钥错误', '未开通或额度用完', '限流，稍后再试', '参数不被当前版本支持', '请求超时'].includes(message) ||
-        message.startsWith('服务暂不可用（')
+        [
+          '密钥错误',
+          '未开通或额度用完',
+          '限流，稍后再试',
+          '参数不被当前版本支持',
+          '请求超时',
+        ].includes(message) || message.startsWith('服务暂不可用（')
           ? message
           : '连接失败'
       this.recordError(job, manual, publicError)

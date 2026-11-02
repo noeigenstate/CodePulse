@@ -114,7 +114,12 @@ function PetThumb({ card }: { card: AmbientCard }): JSX.Element {
   )
 }
 
-export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Element {
+export function AmbientPanel({ active = true }: {
+  active?: boolean
+  /** ia-refactor contract: shell state (applied playlist) and navigation to 控制 › 节目单. */
+  product?: import('./ProductFrame.js').ProductNavigation
+  locale?: import('../lib/i18n.js').Locale
+}): JSX.Element {
   const { target, error: targetError } = useScreenTarget(active)
   const [snapshot, setSnapshot] = useState<AmbientSnapshot>()
   const [draft, setDraft] = useState<AmbientConfig>({ ...DEFAULT_AMBIENT })

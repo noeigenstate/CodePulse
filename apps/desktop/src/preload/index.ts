@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { AssistantAudio, AssistantDraft, AssistantSecret, AssistantSettings, AssistantSnapshot, DeskTaskInput } from '@codepulse/shared'
 import type {
   ProductView, DesktopForm, ShellSnapshot, WorkbenchWindowState, PresentationTarget, DesktopLayout,
-  InkDisplayPlan, HudAppearanceSettings,
+  InkDisplayPlan, HudAppearanceSettings, InkScreenStatus, InkApplyRequest,
   AmbientConfig,
   AmbientCard,
   AmbientSnapshot,
@@ -59,6 +59,13 @@ const api = {
   setInkPlan: (plan: InkDisplayPlan): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-ink-plan', plan),
   setHudSettings: (patch: Partial<HudAppearanceSettings>): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-hud-settings', patch),
   setHudVisible: (visible: boolean): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-hud-visible', visible),
+  /** Single source for what the e-ink screen shows now; see InkScreenStatus. */
+  getInkStatus: (): Promise<InkScreenStatus> => ipcRenderer.invoke('codepulse:ink-status-get'),
+  onInkStatus: (cb: (status: InkScreenStatus) => void): Unsubscribe => subscribe('codepulse:ink-status', cb),
+  /** Applies the playlist and the work-screen details together; rejects without partial writes. */
+  applyInk: (request: InkApplyRequest): Promise<{ shell: ShellSnapshot; display: DeviceDisplaySnapshot }> => ipcRenderer.invoke('codepulse:ink-apply', request),
+  /** Ends any one-off display (desk card or todo list) without changing the playlist. */
+  endInkTemporary: (): Promise<InkScreenStatus> => ipcRenderer.invoke('codepulse:ink-temporary-end'),
   getHudPreview: (): Promise<StatusSnapshot | null> => ipcRenderer.invoke('codepulse:hud-preview'),
   setHudContentHeight: (height: number): Promise<boolean> => ipcRenderer.invoke('codepulse:set-hud-content-height', height),
   navigateProduct: (view: ProductView): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-navigate', view),

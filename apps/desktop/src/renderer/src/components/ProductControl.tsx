@@ -831,6 +831,8 @@ export function ProductControl({
   desktopPreview: ReactNode
   usagePreview: ReactNode
   active: boolean
+  /** Settings › 显示的 CLI (shared by all surfaces); surfaces offer only tools enabled here. */
+  cliVisibility?: Record<import('../lib/dashboardSettings.js').CliToolType, boolean>
 }): JSX.Element {
   const zh = locale === 'zh',
     target = product.target

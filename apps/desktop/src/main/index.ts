@@ -31,7 +31,7 @@ import {
   type UsageLedgerSnapshot,
 } from '@codepulse/shared'
 import { StatusHub } from '@codepulse/core'
-import { normalizeDeviceDisplay } from '@codepulse/shared'
+import { normalizeDeviceDisplay, normalizeInkPlan, type InkApplyRequest, type InkScreenStatus } from '@codepulse/shared'
 import { createDeviceDisplayProjector } from './device-display-projection.js'
 import { readDeviceDisplayConfig, writeDeviceDisplayConfig } from './device-display-settings.js'
 import {
@@ -365,7 +365,31 @@ function trackDeviceView(sender: Electron.WebContents): void {
   sender.once('destroyed', () => { deviceViews.delete(id); deviceLeases.release(id) })
 }
 
+// CONTRACT STUB (ia-refactor base): the core engineer replaces this with the real
+// computation in main/ink-status.ts (connection tracking, temporary displays, next slot, broadcasts).
+function inkScreenStatus(): InkScreenStatus {
+  const plan = productShell!.snapshot().inkPlan
+  return {
+    connection: deviceServer ? 'disconnected' : 'server-off', lastSeenAt: null, showing: { kind: 'work' }, temporary: null,
+    mode: plan.mode, current: inkFeatureAt(plan, Date.now()), next: null, slotNote: '', updatedAt: Date.now(),
+  }
+}
+
 function registerIpc(): void {
+  ipcMain.handle('codepulse:ink-status-get', () => inkScreenStatus())
+  ipcMain.handle('codepulse:ink-apply', (_event, request: InkApplyRequest) => {
+    const shell = productShell!.setInkPlan(normalizeInkPlan(request?.plan))
+    writeDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json'), request?.display)
+    deviceServer?.notifyChanged()
+    const display = deviceDisplaySnapshot()
+    broadcast('codepulse:device-display', display)
+    return { shell, display }
+  })
+  ipcMain.handle('codepulse:ink-temporary-end', () => {
+    ambientRuntime?.service.dismiss()
+    assistantRuntime?.service.clearTemporaryInk()
+    return inkScreenStatus()
+  })
   registerAssistantIpc(ipcMain, () => assistantRuntime, () => deviceDisplaySnapshot().status, () => ambientRuntime?.service.dismiss())
   registerProductIpc(ipcMain, productShell!, screenWorkbench!)
   ipcMain.handle('codepulse:hud-preview', () => hudSurface?.snapshot() ?? null)

@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+import type { InkApplyRequest, InkScreenStatus } from '@codepulse/shared'
 import type { AssistantAudio, AssistantDraft, AssistantSecret, AssistantSettings, AssistantSnapshot, DeskTaskInput } from '@codepulse/shared'
 import type {
   ProductView, DesktopForm, ShellSnapshot, WorkbenchWindowState, PresentationTarget, DesktopLayout,
@@ -54,6 +55,13 @@ export interface CodePulseApi {
   setInkPlan: (plan: InkDisplayPlan) => Promise<ShellSnapshot>
   setHudSettings: (patch: Partial<HudAppearanceSettings>) => Promise<ShellSnapshot>
   setHudVisible: (visible: boolean) => Promise<ShellSnapshot>
+  /** Single source for what the e-ink screen shows now; see InkScreenStatus. */
+  getInkStatus: () => Promise<InkScreenStatus>
+  onInkStatus: (cb: (status: InkScreenStatus) => void) => () => void
+  /** Applies the playlist and the work-screen details together; rejects without partial writes. */
+  applyInk: (request: InkApplyRequest) => Promise<{ shell: ShellSnapshot; display: DeviceDisplaySnapshot }>
+  /** Ends any one-off display (desk card or todo list) without changing the playlist. */
+  endInkTemporary: () => Promise<InkScreenStatus>
   getHudPreview: () => Promise<StatusSnapshot | null>
   setHudContentHeight: (height: number) => Promise<boolean>
   navigateProduct: (view: ProductView) => Promise<ShellSnapshot>

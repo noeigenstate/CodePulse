@@ -1,3 +1,18 @@
+/* ia-refactor design rules (docs: UI standard). Every product page uses these; values outside
+   them need a named exception. Sizes 12/13/14/16/20/24, weights 400/500/600, radii 6/10/14/pill,
+   buttons 36px (28px compact in rows), spacing 4/8/12/16/20/24/32/40, one 150ms transition. */
+.app-shell {
+  --fs-xs: 12px; --fs-sm: 13px; --fs-md: 14px; --fs-lg: 16px; --fs-xl: 20px; --fs-2xl: 24px;
+  --fw-regular: 400; --fw-medium: 500; --fw-strong: 600;
+  --r-control: 6px; --r-card: 10px; --r-region: 14px; --r-pill: 999px;
+  --h-button: 36px; --h-button-compact: 28px;
+  --motion: 150ms ease;
+}
+.page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+.page-header h1 { margin: 0; font-size: var(--fs-2xl); font-weight: var(--fw-strong); line-height: 32px; letter-spacing: 0; }
+.page-header p { margin: 4px 0 0; font-size: var(--fs-sm); line-height: 20px; color: var(--ink-muted); }
+.page-header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
 .product-frame {
   display: flex;
   flex: 1;

@@ -9,7 +9,12 @@ import type {
 import { recordDeskVoice, playDeskVoice, type DeskRecording } from '../lib/assistantAudio.js'
 import './assistant-panel.css'
 
-export function AssistantPanel({ active }: { active: boolean }): JSX.Element {
+export function AssistantPanel({ active }: {
+  active: boolean
+  /** ia-refactor contract: shell state (applied playlist) and navigation to 控制 › 节目单. */
+  product?: import('./ProductFrame.js').ProductNavigation
+  locale?: import('../lib/i18n.js').Locale
+}): JSX.Element {
   const [snapshot, setSnapshot] = useState<AssistantSnapshot>(),
     [error, setError] = useState(''),
     [working, setWorking] = useState(false)

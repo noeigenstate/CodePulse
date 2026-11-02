@@ -220,18 +220,48 @@ app.whenReady().then(async()=>{
     }
     main.setContentSize(1120,780); await wait(250)
     {
-      // A capped preview must grow again once the stage has room, and re-cap when the content returns.
+      // Give the preferred integer scale enough width, then bound the stage's height.
+      // Closing the actual options disclosure must lift that height cap without resizing the host.
       const scale = async () => { const m = await geometry(); return {k: pixelRatio(m.canvas as number[],m.dpr as number), m} }
-      const before = await scale(), preferred = Math.max(1,Math.round(before.m.dpr as number))
-      const toggle = (display: string) => main!.webContents.executeJavaScript(`document.querySelectorAll('.ink-control-workspace .device-preview-toolbar,.ink-control-workspace .device-preview-footnote').forEach(e=>e.style.display=${JSON.stringify(display)})`)
-      await toggle('none'); await wait(300)
-      const roomy = await scale()
-      assert.ok(roomy.k >= before.k && (before.k >= preferred || roomy.k > before.k),'cap lifts when the stage has room: '+JSON.stringify([before.k,roomy.k]))
-      assert.ok((roomy.m.previewOverflow as number) <= 1,JSON.stringify(roomy.m))
-      await toggle(''); await wait(300)
-      const back = await scale()
-      assert.equal(back.k,before.k,'cap returns with the content')
-      assert.ok((back.m.previewOverflow as number) <= 1,JSON.stringify(back.m))
+      const originalZoom = main.webContents.getZoomFactor()
+      const originalDpr = await main.webContents.executeJavaScript('devicePixelRatio') as number
+      const stageStyle = await main.webContents.executeJavaScript(`document.querySelector('.ink-preview-card').style.cssText`) as string
+      try {
+        main.setContentSize(1600,1000)
+        main.webContents.setZoomFactor(originalZoom * 2 / originalDpr)
+        await wait(350)
+        await main.webContents.executeJavaScript(`document.querySelector('.ink-preview-options').open=true`)
+        await wait(350)
+        const natural = await scale(), preferred = Math.round(natural.m.dpr as number)
+        assert.ok(preferred>=2,'fixture must have two or more available integer scales')
+        assert.equal(natural.k,preferred,'width allows the preferred scale before applying a height cap')
+        await main.webContents.executeJavaScript(`(() => {
+          const stage=document.querySelector('.ink-preview-card');
+          const height=stage.getBoundingClientRect().height;
+          stage.style.boxSizing='border-box';stage.style.height=(height-150/devicePixelRatio)+'px';
+          stage.style.overflow='hidden';
+        })()`)
+        await until(async()=>(await scale()).k<preferred,'bounded stage caps the preferred preview')
+        const before = await scale()
+        await main.webContents.executeJavaScript(`document.querySelector('.ink-preview-options').open=false`)
+        await wait(350)
+        const roomy = await scale()
+        writeFileSync(join(output,'cap-lift.json'),JSON.stringify({natural,before,roomy,preferred},null,2))
+        assert.equal(roomy.k,preferred,'closing options restores the preferred integer scale: '+JSON.stringify([before.k,roomy.k]))
+        assert.ok(roomy.k>before.k,'cap lifting must actually increase the scale')
+        assert.ok((roomy.m.previewOverflow as number)<=1,JSON.stringify(roomy.m))
+        await main.webContents.executeJavaScript(`document.querySelector('.ink-preview-options').open=true`)
+        await until(async()=>(await scale()).k===before.k,'reopening options restores the height cap')
+        const back=await scale()
+        assert.ok((back.m.previewOverflow as number)<=1,JSON.stringify(back.m))
+        for(const measured of [before.m,roomy.m,back.m]) assertWholePixels(measured.canvas as number[],measured.dpr as number,1,'height cap preserves whole physical pixels',measured.origin as number[])
+        writeFileSync(join(output,'cap-lift.json'),JSON.stringify({natural,before,roomy,back,preferred},null,2))
+      } finally {
+        await main.webContents.executeJavaScript(`document.querySelector('.ink-preview-card').style.cssText=${JSON.stringify(stageStyle)};document.querySelector('.ink-preview-options').open=false`)
+        main.webContents.setZoomFactor(originalZoom)
+        main.setContentSize(1120,780)
+        await wait(350)
+      }
     }
     for (const zoom of [1.25,1.5,2,1]) {
       main.webContents.setZoomFactor(zoom); await wait(300)

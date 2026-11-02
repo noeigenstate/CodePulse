@@ -82,7 +82,7 @@ function useAvailableSize(scroll: RefObject<HTMLElement>, frame: RefObject<HTMLE
     const mutations = new MutationObserver(measure)
     if (host) {
       observer.observe(host)
-      mutations.observe(host, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['class', 'style', 'hidden'] })
+      mutations.observe(host, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['class', 'style', 'hidden', 'open'] })
     }
     return () => { observer.disconnect(); mutations.disconnect(); measured.current = '' }
   }, [scroll, frame])

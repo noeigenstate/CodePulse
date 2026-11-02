@@ -347,7 +347,8 @@
   font-size: var(--fs-xs);
   line-height: 16px;
   color: var(--ink-muted);
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .ambient-pet-option[aria-checked='true'] {
   border-color: var(--ink);

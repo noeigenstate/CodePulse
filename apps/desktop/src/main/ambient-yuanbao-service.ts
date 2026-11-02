@@ -513,14 +513,11 @@ export class YuanbaoSource {
         }
       }
       const message = error instanceof Error ? error.message : ''
-      const publicError = [
-        '密钥错误',
-        '未开通或额度用完',
-        '限流，稍后再试',
-        '参数不被当前版本支持',
-      ].includes(message)
-        ? message
-        : '连接失败'
+      const publicError =
+        ['密钥错误', '未开通或额度用完', '限流，稍后再试', '参数不被当前版本支持', '请求超时'].includes(message) ||
+        message.startsWith('服务暂不可用（')
+          ? message
+          : '连接失败'
       this.recordError(job, manual, publicError)
       try {
         this.persist()

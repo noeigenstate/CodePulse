@@ -91,6 +91,8 @@ export function yuanbaoError(code: unknown, status?: number): string {
   if (value.startsWith('RequestLimitExceeded') || status === 429) return '限流，稍后再试'
   if (value.startsWith('InvalidParameter')) return '参数不被当前版本支持'
   if (status === 401 || status === 403) return '密钥错误'
+  // Show the service's own code (never request data) so failures are diagnosable.
+  if (/^[A-Za-z][\w.]{2,60}$/.test(value)) return `服务暂不可用（${value}）`
   return '连接失败'
 }
 /** Only response data reaches persistence. Exact credential values are also scrubbed if a server echoes them. */
@@ -249,7 +251,8 @@ export class YuanbaoClient {
           Math.max(0, (this.deps.now?.() ?? Date.now()) - started),
           edition,
         )
-      if (!Array.isArray(body.Pages)) throw Error('连接失败')
+      // No `Pages` means the search found nothing (e.g. no vertical card right now): an empty result,
+      // not a connection failure. The parsers then report 「未找到…」 for that topic.
       return {
         raw,
         pages: sanitizeYuanbaoResponse(yuanbaoPages(raw), credentials) as YuanbaoPage[],
@@ -258,9 +261,12 @@ export class YuanbaoClient {
       }
     } catch (error) {
       if (error instanceof YuanbaoRequestError) throw error
+      if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError'))
+        throw Error('请求超时')
       const message = error instanceof Error ? error.message : ''
       throw Error(
-        ['密钥错误', '未开通或额度用完', '限流，稍后再试', '参数不被当前版本支持'].includes(message)
+        ['密钥错误', '未开通或额度用完', '限流，稍后再试', '参数不被当前版本支持', '请求超时'].includes(message) ||
+          message.startsWith('服务暂不可用（')
           ? message
           : '连接失败',
       )

@@ -1,11 +1,19 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { MASK, projectLabels, redactSecrets, sessionTitle } from '../apps/desktop/src/renderer/src/lib/redact.js'
+import {
+  MASK,
+  projectLabels,
+  redactSecrets,
+  sessionTitle,
+} from '../apps/desktop/src/renderer/src/lib/redact.js'
 
 const copy = { hidden: '首条提示已隐藏', untitled: '未命名对话' }
 
 test('masks password assignments in quoted and bare forms', () => {
-  assert.equal(redactSecrets('连接 server 时 password: "hunter2"'), `连接 server 时 password: ${MASK}`)
+  assert.equal(
+    redactSecrets('连接 server 时 password: "hunter2"'),
+    `连接 server 时 password: ${MASK}`,
+  )
   assert.equal(redactSecrets("password='hunter2' next"), `password=${MASK} next`)
   assert.equal(redactSecrets('DB_PASSWORD=abc123 npm start'), `DB_PASSWORD=${MASK} npm start`)
   assert.equal(redactSecrets('{"password": "x y z"}'), `{"password": ${MASK}}`)
@@ -34,7 +42,10 @@ test('masks well-known key shapes', () => {
 })
 
 test('masks URL credentials and Chinese password phrases', () => {
-  assert.equal(redactSecrets('git clone https://bob:pw123@host/repo.git'), `git clone https://bob:${MASK}@host/repo.git`)
+  assert.equal(
+    redactSecrets('git clone https://bob:pw123@host/repo.git'),
+    `git clone https://bob:${MASK}@host/repo.git`,
+  )
   assert.equal(redactSecrets('数据库密码是 abc123，别外传'), `数据库密码是 ${MASK}，别外传`)
   assert.equal(redactSecrets('密码：abc123'), `密码：${MASK}`)
 })
@@ -46,9 +57,18 @@ test('leaves ordinary prompts alone', () => {
 })
 
 test('session titles are hidden by default and masked once revealed', () => {
-  assert.equal(sessionTitle('CodePulse', '修复墨水屏同步失败', false, copy), 'CodePulse · 首条提示已隐藏')
-  assert.equal(sessionTitle('api-gateway', '连接 server 时 password: "x"', false, copy), 'api-gateway · 首条提示已隐藏')
-  assert.equal(sessionTitle('api-gateway', '连接 server 时 password: "x"', true, copy), `api-gateway · 连接 server 时 password: ${MASK}`)
+  assert.equal(
+    sessionTitle('CodePulse', '修复墨水屏同步失败', false, copy),
+    'CodePulse · 首条提示已隐藏',
+  )
+  assert.equal(
+    sessionTitle('api-gateway', '连接 server 时 password: "x"', false, copy),
+    'api-gateway · 首条提示已隐藏',
+  )
+  assert.equal(
+    sessionTitle('api-gateway', '连接 server 时 password: "x"', true, copy),
+    `api-gateway · 连接 server 时 password: ${MASK}`,
+  )
   assert.equal(sessionTitle('p', undefined, false, copy), 'p · 未命名对话')
   assert.equal(sessionTitle('p', '   ', true, copy), 'p · 未命名对话')
 })
@@ -79,17 +99,35 @@ test('duplicates that share a parent folder need a longer tail', () => {
 })
 
 test('duplicates with empty paths keep their plain name', () => {
-  assert.deepEqual(projectLabels([{ name: 'x', path: '' }, { name: 'x', path: '' }]), ['x', 'x'])
+  assert.deepEqual(
+    projectLabels([
+      { name: 'x', path: '' },
+      { name: 'x', path: '' },
+    ]),
+    ['x', 'x'],
+  )
 })
 
 test('masks flag-style passwords, short names and curl credentials', () => {
-  assert.equal(redactSecrets('mysql --password hunter2 --host db'), `mysql --password ${MASK} --host db`)
+  assert.equal(
+    redactSecrets('mysql --password hunter2 --host db'),
+    `mysql --password ${MASK} --host db`,
+  )
   assert.equal(redactSecrets('run --token abc123 now'), `run --token ${MASK} now`)
   assert.equal(redactSecrets('pass=hunter2 next'), `pass=${MASK} next`)
   assert.equal(redactSecrets('pw: hunter2'), `pw: ${MASK}`)
-  assert.equal(redactSecrets('curl -u admin:hunter2 https://host/api'), `curl -u admin:${MASK} https://host/api`)
-  assert.equal(redactSecrets('curl --user admin:hunter2 https://host'), `curl --user admin:${MASK} https://host`)
-  assert.equal(redactSecrets('curl -u "admin:hunter2" https://host'), `curl -u "admin:${MASK}" https://host`)
+  assert.equal(
+    redactSecrets('curl -u admin:hunter2 https://host/api'),
+    `curl -u admin:${MASK} https://host/api`,
+  )
+  assert.equal(
+    redactSecrets('curl --user admin:hunter2 https://host'),
+    `curl --user admin:${MASK} https://host`,
+  )
+  assert.equal(
+    redactSecrets('curl -u "admin:hunter2" https://host'),
+    `curl -u "admin:${MASK}" https://host`,
+  )
 })
 
 test('masks Chinese password phrases without a colon and non-ASCII values', () => {

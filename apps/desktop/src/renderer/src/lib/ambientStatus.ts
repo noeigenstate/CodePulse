@@ -33,13 +33,16 @@ export function categoryProblem(
 ): string {
   if (!status) return ''
   const bad = (text?: string) => (isSourceProblem(text) ? (text as string) : '')
-  if (category === 'social') return (enabled.x ? bad(status.x) : '') || (enabled.meme ? bad(status.meme) : '')
+  if (category === 'social')
+    return (enabled.x ? bad(status.x) : '') || (enabled.meme ? bad(status.meme) : '')
   if (category === 'news') return enabled.news ? bad(status.news) : ''
   return ''
 }
 
 /** Which category row a card belongs to; 元宝搜索 cards split by their topic. */
-export function cardCategory(card: Pick<AmbientCard, 'kind' | 'topic'>): AmbientCategory | undefined {
+export function cardCategory(
+  card: Pick<AmbientCard, 'kind' | 'topic'>,
+): AmbientCategory | undefined {
   switch (card.kind) {
     case 'concept':
     case 'prompt':
@@ -56,7 +59,13 @@ export function cardCategory(card: Pick<AmbientCard, 'kind' | 'topic'>): Ambient
     case 'life':
       return 'life'
     case 'search':
-      return card.topic === 'tools' ? 'tools' : card.topic === 'holiday' ? 'holiday' : card.topic === 'news' ? 'headlines' : undefined
+      return card.topic === 'tools'
+        ? 'tools'
+        : card.topic === 'holiday'
+          ? 'holiday'
+          : card.topic === 'news'
+            ? 'headlines'
+            : undefined
     default:
       return undefined
   }
@@ -72,7 +81,9 @@ export function refreshSummary(
   after: AmbientCard[],
   problem: string,
 ): string {
-  const added = after.filter((card) => cardCategory(card) === category && !before.has(card.id)).length
+  const added = after.filter(
+    (card) => cardCategory(card) === category && !before.has(card.id),
+  ).length
   const found = added > 0 ? `找到 ${added} 条新内容` : '没有新内容'
   return problem ? `${found}；${problem}` : found
 }

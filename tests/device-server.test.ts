@@ -14,7 +14,11 @@ import {
   startDeviceServer,
   type DeviceServer,
 } from '@codepulse/local-server'
-import { DEVICE_PROTOCOL_VERSION, normalizeDeviceDisplay, type DeviceStatusV1 } from '@codepulse/shared'
+import {
+  DEVICE_PROTOCOL_VERSION,
+  normalizeDeviceDisplay,
+  type DeviceStatusV1,
+} from '@codepulse/shared'
 
 const TOKEN = 'd'.repeat(32)
 const openServers: DeviceServer[] = []
@@ -25,39 +29,79 @@ afterEach(async () => {
 
 test('status-read tracking counts authenticated 200, 304 and long-poll returns only', async () => {
   let reads = 0
-  const server = await startDeviceServer({ hub: new StatusHub(), host: '127.0.0.1', port: 0,
-    authToken: TOKEN, serverId: 'status-read-test', publishMdns: false, onStatusRead: () => reads++ })
+  const server = await startDeviceServer({
+    hub: new StatusHub(),
+    host: '127.0.0.1',
+    port: 0,
+    authToken: TOKEN,
+    serverId: 'status-read-test',
+    publishMdns: false,
+    onStatusRead: () => reads++,
+  })
   openServers.push(server)
   await server.app.inject({ method: 'GET', url: DEVICE_HEALTH_PATH })
   await server.app.inject({ method: 'GET', url: DEVICE_STATUS_PATH })
-  await server.app.inject({ method: 'GET', url: DEVICE_STATUS_PATH, headers: { [DEVICE_AUTH_HEADER]: 'wrong' } })
+  await server.app.inject({
+    method: 'GET',
+    url: DEVICE_STATUS_PATH,
+    headers: { [DEVICE_AUTH_HEADER]: 'wrong' },
+  })
   assert.equal(reads, 0)
   const headers = { [DEVICE_AUTH_HEADER]: TOKEN }
   const initial = await server.app.inject({ method: 'GET', url: DEVICE_STATUS_PATH, headers })
   assert.equal(initial.statusCode, 200)
   assert.equal(reads, 1)
   const conditional = { ...headers, 'if-none-match': initial.headers.etag as string }
-  const unchanged = await server.app.inject({ method: 'GET', url: DEVICE_STATUS_PATH, headers: conditional })
+  const unchanged = await server.app.inject({
+    method: 'GET',
+    url: DEVICE_STATUS_PATH,
+    headers: conditional,
+  })
   assert.equal(unchanged.statusCode, 304)
   assert.equal(reads, 2)
-  const polling = server.app.inject({ method: 'GET', url: DEVICE_STATUS_PATH,
-    headers: { ...conditional, 'x-codepulse-wait-ms': '20' } })
+  const polling = server.app.inject({
+    method: 'GET',
+    url: DEVICE_STATUS_PATH,
+    headers: { ...conditional, 'x-codepulse-wait-ms': '20' },
+  })
   assert.equal(reads, 2, 'tracking waits for the long-poll response')
   assert.equal((await polling).statusCode, 304)
   assert.equal(reads, 3)
-  await server.app.inject({ method: 'GET', url: DEVICE_STATUS_PATH, headers: { ...headers, 'x-codepulse-wait-ms': '-1' } })
+  await server.app.inject({
+    method: 'GET',
+    url: DEVICE_STATUS_PATH,
+    headers: { ...headers, 'x-codepulse-wait-ms': '-1' },
+  })
   assert.equal(reads, 3)
 })
 test('status-read tracking also counts a long poll woken by a changed projection', async () => {
-  let reads = 0, config = normalizeDeviceDisplay({ mode: 'hud' })
-  const server = await startDeviceServer({ hub: new StatusHub(), host: '127.0.0.1', port: 0,
-    getDisplayConfig: () => config, authToken: TOKEN, serverId: 'status-read-wake', publishMdns: false,
-    onStatusRead: () => reads++ })
+  let reads = 0,
+    config = normalizeDeviceDisplay({ mode: 'hud' })
+  const server = await startDeviceServer({
+    hub: new StatusHub(),
+    host: '127.0.0.1',
+    port: 0,
+    getDisplayConfig: () => config,
+    authToken: TOKEN,
+    serverId: 'status-read-wake',
+    publishMdns: false,
+    onStatusRead: () => reads++,
+  })
   openServers.push(server)
-  const initial = await server.app.inject({ method: 'GET', url: DEVICE_STATUS_PATH, headers: { [DEVICE_AUTH_HEADER]: TOKEN } })
-  const pending = server.app.inject({ method: 'GET', url: DEVICE_STATUS_PATH, headers: {
-    [DEVICE_AUTH_HEADER]: TOKEN, 'if-none-match': initial.headers.etag as string, 'x-codepulse-wait-ms': '1000',
-  } })
+  const initial = await server.app.inject({
+    method: 'GET',
+    url: DEVICE_STATUS_PATH,
+    headers: { [DEVICE_AUTH_HEADER]: TOKEN },
+  })
+  const pending = server.app.inject({
+    method: 'GET',
+    url: DEVICE_STATUS_PATH,
+    headers: {
+      [DEVICE_AUTH_HEADER]: TOKEN,
+      'if-none-match': initial.headers.etag as string,
+      'x-codepulse-wait-ms': '1000',
+    },
+  })
   await pause(20)
   assert.equal(reads, 1)
   config = normalizeDeviceDisplay({ mode: 'usage' })
@@ -162,31 +206,52 @@ test('device auth token is persisted separately from the local Hook token', asyn
 
 async function watchedServer() {
   const hub = new StatusHub()
-  const server = await startDeviceServer({ hub, host: '127.0.0.1', port: 0,
-    authToken: TOKEN, serverId: 'watch-test', publishMdns: false })
+  const server = await startDeviceServer({
+    hub,
+    host: '127.0.0.1',
+    port: 0,
+    authToken: TOKEN,
+    serverId: 'watch-test',
+    publishMdns: false,
+  })
   openServers.push(server)
-  const initial = await fetch(`${server.url}${DEVICE_STATUS_PATH}`, { headers: { [DEVICE_AUTH_HEADER]: TOKEN } })
+  const initial = await fetch(`${server.url}${DEVICE_STATUS_PATH}`, {
+    headers: { [DEVICE_AUTH_HEADER]: TOKEN },
+  })
   const etag = initial.headers.get('etag')!
   await initial.json()
   return { hub, server, etag }
 }
-const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 function watch(server: DeviceServer, etag: string, wait = '1000', signal?: AbortSignal) {
-  return fetch(`${server.url}${DEVICE_STATUS_PATH}`, { signal, headers: {
-    [DEVICE_AUTH_HEADER]: TOKEN, 'if-none-match': etag, 'x-codepulse-wait-ms': wait,
-  } })
+  return fetch(`${server.url}${DEVICE_STATUS_PATH}`, {
+    signal,
+    headers: {
+      [DEVICE_AUTH_HEADER]: TOKEN,
+      'if-none-match': etag,
+      'x-codepulse-wait-ms': wait,
+    },
+  })
 }
 test('watch returns a changed status promptly, but ignores unchanged hub events', async () => {
   const { hub, server, etag } = await watchedServer()
   let completed = false
-  const pending = watch(server, etag).then(r => { completed = true; return r })
+  const pending = watch(server, etag).then((r) => {
+    completed = true
+    return r
+  })
   await pause(60)
   hub.emit('status', hub.snapshot())
   await pause(60)
   assert.equal(completed, false)
   const changed = Date.now()
-  hub.ingest({ id: 'watch-event', source: 'codex', externalSessionId: 'watch-session',
-    eventType: 'permission_request', timestamp: changed })
+  hub.ingest({
+    id: 'watch-event',
+    source: 'codex',
+    externalSessionId: 'watch-session',
+    eventType: 'permission_request',
+    timestamp: changed,
+  })
   const response = await pending
   assert.equal(response.status, 200)
   assert.notEqual(response.headers.get('etag'), etag)
@@ -200,7 +265,9 @@ test('watch times out as 304; invalid headers and unauthenticated watches are re
   assert.ok(Date.now() - start >= 120)
   for (const value of ['-1', '1001', 'NaN', '1.5'])
     assert.equal((await watch(server, etag, value)).status, 400)
-  const noAuth = await fetch(`${server.url}${DEVICE_STATUS_PATH}`, { headers: { 'x-codepulse-wait-ms': '1000', 'if-none-match': etag } })
+  const noAuth = await fetch(`${server.url}${DEVICE_STATUS_PATH}`, {
+    headers: { 'x-codepulse-wait-ms': '1000', 'if-none-match': etag },
+  })
   assert.equal(noAuth.status, 401)
 })
 test('aborted watches release slots; server shutdown cancels active readers and hub listener', async () => {
@@ -208,7 +275,9 @@ test('aborted watches release slots; server shutdown cancels active readers and 
   for (let i = 0; i < 36; i++) {
     const abort = new AbortController()
     const pending = watch(server, etag, '1000', abort.signal).catch(() => undefined)
-    await pause(5); abort.abort(); await pending
+    await pause(5)
+    abort.abort()
+    await pending
   }
   await pause(25)
   assert.equal((await watch(server, etag, '10')).status, 304)
@@ -217,31 +286,47 @@ test('aborted watches release slots; server shutdown cancels active readers and 
   const start = Date.now()
   const closing = server.close()
   const response = await pending
-  assert.equal(response.status, 503); await response.json()
+  assert.equal(response.status, 503)
+  await response.json()
   assert.equal(hub.listenerCount('status'), 0)
-  assert.ok(Date.now() - start < 700, 'reader must release promptly; idle TCP keep-alive may close later')
+  assert.ok(
+    Date.now() - start < 700,
+    'reader must release promptly; idle TCP keep-alive may close later',
+  )
   await closing
 })
 test('a stale ETag returns current data immediately even when a watch is requested', async () => {
   const { server } = await watchedServer()
   const start = Date.now()
   const response = await watch(server, 'W/"outdated"')
-  assert.equal(response.status, 200); await response.json()
+  assert.equal(response.status, 200)
+  await response.json()
   assert.ok(Date.now() - start < 500)
 })
 
 test('saving a display configuration wakes the same authenticated watch without a hub event', async () => {
   const hub = new StatusHub()
   let config = normalizeDeviceDisplay({ mode: 'hud' })
-  const server = await startDeviceServer({ hub, getDisplayConfig: () => config,
-    host: '127.0.0.1', port: 0, authToken: TOKEN, serverId: 'config-watch', publishMdns: false })
+  const server = await startDeviceServer({
+    hub,
+    getDisplayConfig: () => config,
+    host: '127.0.0.1',
+    port: 0,
+    authToken: TOKEN,
+    serverId: 'config-watch',
+    publishMdns: false,
+  })
   openServers.push(server)
-  const initial = await fetch(`${server.url}${DEVICE_STATUS_PATH}`, { headers: { [DEVICE_AUTH_HEADER]: TOKEN } })
-  const etag = initial.headers.get('etag')!; await initial.json()
+  const initial = await fetch(`${server.url}${DEVICE_STATUS_PATH}`, {
+    headers: { [DEVICE_AUTH_HEADER]: TOKEN },
+  })
+  const etag = initial.headers.get('etag')!
+  await initial.json()
   const pending = watch(server, etag)
   await pause(60)
   config = normalizeDeviceDisplay({ mode: 'usage' })
-  const start = Date.now(); server.notifyChanged()
+  const start = Date.now()
+  server.notifyChanged()
   const updated = await pending
   assert.equal(updated.status, 200)
   assert.equal((await updated.json()).display.mode, 'usage')

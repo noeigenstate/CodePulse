@@ -9,7 +9,13 @@ import type { Locale } from '../lib/i18n.js'
  * opens 控制 › 墨水屏; the ✕ only ends a temporary display. When the rail narrows it collapses to
  * its dot, and the full text stays in the title and aria-label. Wording is {@link inkPillText}.
  */
-export function InkStatusPill({ locale, onOpen }: { locale: Locale; onOpen: () => void }): JSX.Element | null {
+export function InkStatusPill({
+  locale,
+  onOpen,
+}: {
+  locale: Locale
+  onOpen: () => void
+}): JSX.Element | null {
   const status = useInkStatus()
   const now = useNow(15000)
   const [failed, setFailed] = useState(false)
@@ -39,7 +45,13 @@ export function InkStatusPill({ locale, onOpen }: { locale: Locale; onOpen: () =
         {announcement}
       </span>
       <div className="ink-pill" data-state={pill.state}>
-        <button type="button" className="ink-pill-main" onClick={onOpen} title={pill.title} aria-label={`${pill.title}。${open}`}>
+        <button
+          type="button"
+          className="ink-pill-main"
+          onClick={onOpen}
+          title={pill.title}
+          aria-label={`${pill.title}。${open}`}
+        >
           <span className={`ink-pill-dot is-${pill.dot}`} aria-hidden="true" />
           <span className="ink-pill-text">
             <b>{pill.prefix}</b> {pill.label}
@@ -51,7 +63,13 @@ export function InkStatusPill({ locale, onOpen }: { locale: Locale; onOpen: () =
           )}
         </button>
         {pill.canEnd && (
-          <button type="button" className="ink-pill-end" onClick={end} title={back} aria-label={back}>
+          <button
+            type="button"
+            className="ink-pill-end"
+            onClick={end}
+            title={back}
+            aria-label={back}
+          >
             ✕
           </button>
         )}

@@ -22,7 +22,13 @@ import type { DeviceProvisioningCopy, Locale } from '../lib/i18n.js'
 import type { CliToolType } from '../lib/dashboardSettings.js'
 import { useInkStatus } from '../lib/useInkStatus.js'
 import { PageHeader } from './PageHeader.js'
-import { inkPlanChoice, selectInkPlan, inkControlChanges, nextInkBaseline, type InkBaseline } from './product-control-state.js'
+import {
+  inkPlanChoice,
+  selectInkPlan,
+  inkControlChanges,
+  nextInkBaseline,
+  type InkBaseline,
+} from './product-control-state.js'
 import './product-control.css'
 import './device-display.css'
 import { WorkVoiceSettingsPanel } from './WorkVoiceSettings.js'
@@ -1042,7 +1048,11 @@ export function ProductControl({
           <div className="product-desktop-panel">
             <div className="product-console-live-stage">{desktopContent.current}</div>
             <div className="product-desktop-options">
-              <WorkVoiceSettingsPanel locale={locale} target="desktop" active={active && target === 'desktop'} />
+              <WorkVoiceSettingsPanel
+                locale={locale}
+                target="desktop"
+                active={active && target === 'desktop'}
+              />
               <WorkStateGuide locale={locale} />
             </div>
           </div>

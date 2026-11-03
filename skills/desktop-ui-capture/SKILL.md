@@ -6,6 +6,7 @@ description: Use when you need screenshots or measurements of the running CodePu
 # Capturing the running desktop UI
 
 ## Start it so it can be driven
+
 - Port 17888 must be free: one backend only. If CodePulse is already running and you did not start it, ask before restarting it.
 - On Windows PowerShell 5.1, `scripts/start-desktop.ps1` aborts as soon as pnpm writes to stderr. Run the same steps yourself:
   1. In Bash: `pnpm build`, then `pnpm --filter @codepulse/desktop rebuild:electron`.
@@ -13,6 +14,7 @@ description: Use when you need screenshots or measurements of the running CodePu
 - The debugging port only listens on 127.0.0.1. It closes when the app restarts normally.
 
 ## Drive and capture over CDP (Node 22+ has a global WebSocket)
+
 - Find the page in `http://127.0.0.1:9333/json` whose title is `CodePulse`, then connect to its `webSocketDebuggerUrl`.
 - Before capturing, send `Page.enable`, `Page.bringToFront`, `Emulation.setFocusEmulationEnabled {enabled:true}` and `Page.setWebLifecycleState {state:'active'}`. Without them, `Page.captureScreenshot` hangs when another window covers the app.
 - Size the view with `Emulation.setDeviceMetricsOverride`, and clear it afterwards.
@@ -25,10 +27,12 @@ description: Use when you need screenshots or measurements of the running CodePu
 - Selecting a surface card persists `shell.target`. Restore the user's selection (for example `#endpoint-ink`) when done.
 
 ## Window screenshots without CDP
+
 - GDI `PrintWindow` crops the window unless the capturing process first calls `SetProcessDPIAware()`.
 - A full-screen `CopyFromScreen` captures whatever window is on top. Avoid it.
 
 ## Theme colours that live outside CSS
+
 - The Windows caption buttons (minimize/maximize/close) are a native overlay. Their colours come from
   `apps/desktop/src/main/window-chrome.ts`, not CSS, and must equal the `.app-shell.native-workstation`
   `--canvas` / `--ink` tokens (light and dark) in `components/product-shell.css`.
@@ -39,5 +43,6 @@ description: Use when you need screenshots or measurements of the running CodePu
   short under the buttons.
 
 ## Rules
+
 - Never kill browsers or Electron by image name: the user's own windows die too. Stop only the PID you started.
 - Keep captures in `.tmpshots/` (gitignored). Usage pages can show prompt text, so never paste their raw text into a commit, issue or skill.

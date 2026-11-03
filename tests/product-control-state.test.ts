@@ -79,14 +79,36 @@ test('offline baseline follows a connected device, then stays put while changes 
   // Changing back to the baseline clears the count.
   assert.deepEqual(inkControlChanges(at15, display, baseline!.plan, baseline!.display), [])
   // A connected device mid-save does not move the baseline; once idle it follows the saved plan.
-  assert.deepEqual(nextInkBaseline(baseline, { connected: true, saving: true, plan: at5, display })?.plan, at15)
-  assert.deepEqual(nextInkBaseline(baseline, { connected: true, saving: false, plan: at5, display })?.plan, at5)
+  assert.deepEqual(
+    nextInkBaseline(baseline, { connected: true, saving: true, plan: at5, display })?.plan,
+    at15,
+  )
+  assert.deepEqual(
+    nextInkBaseline(baseline, { connected: true, saving: false, plan: at5, display })?.plan,
+    at5,
+  )
 })
 
 test('a page opened while disconnected takes its baseline from the first saved state and waits for the display', () => {
-  assert.equal(nextInkBaseline(undefined, { connected: false, saving: false, plan: DEFAULT_INK_PLAN }), undefined)
-  const first = nextInkBaseline(undefined, { connected: false, saving: false, plan: DEFAULT_INK_PLAN, display: DEFAULT_DEVICE_DISPLAY })
+  assert.equal(
+    nextInkBaseline(undefined, { connected: false, saving: false, plan: DEFAULT_INK_PLAN }),
+    undefined,
+  )
+  const first = nextInkBaseline(undefined, {
+    connected: false,
+    saving: false,
+    plan: DEFAULT_INK_PLAN,
+    display: DEFAULT_DEVICE_DISPLAY,
+  })
   assert.deepEqual(first?.plan, DEFAULT_INK_PLAN)
   const other = selectInkPlan(DEFAULT_INK_PLAN, '30')
-  assert.equal(nextInkBaseline(first, { connected: false, saving: false, plan: other, display: DEFAULT_DEVICE_DISPLAY }), first)
+  assert.equal(
+    nextInkBaseline(first, {
+      connected: false,
+      saving: false,
+      plan: other,
+      display: DEFAULT_DEVICE_DISPLAY,
+    }),
+    first,
+  )
 })

@@ -15,7 +15,15 @@ import {
   writeRememberedLife,
 } from '../apps/desktop/src/renderer/src/lib/yuanbaoRows.js'
 
-const off = { ...DEFAULT_YUANBAO, weatherEnabled: false, goldEnabled: false, stocksEnabled: false, toolsEnabled: false, holidayEnabled: false, newsEnabled: false }
+const off = {
+  ...DEFAULT_YUANBAO,
+  weatherEnabled: false,
+  goldEnabled: false,
+  stocksEnabled: false,
+  toolsEnabled: false,
+  holidayEnabled: false,
+  newsEnabled: false,
+}
 
 class MemoryStorage {
   readonly values = new Map<string, string>()
@@ -32,21 +40,44 @@ class MemoryStorage {
 
 test('enabled is the OR of the six feature flags on every save', () => {
   assert.equal(deriveYuanbaoEnabled(off), false)
-  for (const flag of ['weatherEnabled', 'goldEnabled', 'stocksEnabled', 'toolsEnabled', 'holidayEnabled', 'newsEnabled'] as const) {
+  for (const flag of [
+    'weatherEnabled',
+    'goldEnabled',
+    'stocksEnabled',
+    'toolsEnabled',
+    'holidayEnabled',
+    'newsEnabled',
+  ] as const) {
     const on = setYuanbaoFlag(off, flag, true)
     assert.equal(on.enabled, true, flag)
     assert.equal(setYuanbaoFlag(on, flag, false).enabled, false, flag + ' off again')
   }
-  assert.equal(withDerivedEnabled({ ...off, enabled: true }).enabled, false, 'a stale true is corrected')
-  assert.equal(withDerivedEnabled({ ...off, newsEnabled: true, enabled: false }).enabled, true, 'a stale false is corrected')
+  assert.equal(
+    withDerivedEnabled({ ...off, enabled: true }).enabled,
+    false,
+    'a stale true is corrected',
+  )
+  assert.equal(
+    withDerivedEnabled({ ...off, newsEnabled: true, enabled: false }).enabled,
+    true,
+    'a stale false is corrected',
+  )
   const twoOn = setYuanbaoFlag(setYuanbaoFlag(off, 'toolsEnabled', true), 'newsEnabled', true)
-  assert.equal(setYuanbaoFlag(twoOn, 'toolsEnabled', false).enabled, true, 'one feature still on keeps it enabled')
+  assert.equal(
+    setYuanbaoFlag(twoOn, 'toolsEnabled', false).enabled,
+    true,
+    'one feature still on keeps it enabled',
+  )
 })
 
 test('the 生活卡 row restores exactly the remembered triple and never enables a sub-feature that was off', () => {
   const goldOnly = { weatherEnabled: false, goldEnabled: true, stocksEnabled: false }
   const offTriple = toggleLifeRow(goldOnly, undefined)
-  assert.deepEqual(offTriple.patch, { weatherEnabled: false, goldEnabled: false, stocksEnabled: false })
+  assert.deepEqual(offTriple.patch, {
+    weatherEnabled: false,
+    goldEnabled: false,
+    stocksEnabled: false,
+  })
   assert.deepEqual(offTriple.remembered, goldOnly)
   assert.deepEqual(toggleLifeRow(offTriple.patch, offTriple.remembered).patch, goldOnly)
   const weatherStocks = { weatherEnabled: true, goldEnabled: false, stocksEnabled: true }
@@ -56,16 +87,39 @@ test('the 生活卡 row restores exactly the remembered triple and never enables
 
 test('with nothing remembered the row turns on weather only', () => {
   const none = { weatherEnabled: false, goldEnabled: false, stocksEnabled: false }
-  assert.deepEqual(toggleLifeRow(none, undefined).patch, { weatherEnabled: true, goldEnabled: false, stocksEnabled: false })
-  assert.deepEqual(toggleLifeRow(none, none).patch, { weatherEnabled: true, goldEnabled: false, stocksEnabled: false }, 'an all-off memory is not a memory')
+  assert.deepEqual(toggleLifeRow(none, undefined).patch, {
+    weatherEnabled: true,
+    goldEnabled: false,
+    stocksEnabled: false,
+  })
+  assert.deepEqual(
+    toggleLifeRow(none, none).patch,
+    { weatherEnabled: true, goldEnabled: false, stocksEnabled: false },
+    'an all-off memory is not a memory',
+  )
   assert.equal(lifeRowOn({ weatherEnabled: false, goldEnabled: false, stocksEnabled: true }), true)
 })
 
 test('an individual toggle replaces the memory, and all-off forgets it', () => {
   const triple = { weatherEnabled: true, goldEnabled: true, stocksEnabled: false }
-  assert.deepEqual(rememberAfterLifeFlag(triple, 'goldEnabled', false), { weatherEnabled: true, goldEnabled: false, stocksEnabled: false })
-  assert.deepEqual(rememberAfterLifeFlag(triple, 'stocksEnabled', true), { weatherEnabled: true, goldEnabled: true, stocksEnabled: true })
-  assert.equal(rememberAfterLifeFlag({ weatherEnabled: true, goldEnabled: false, stocksEnabled: false }, 'weatherEnabled', false), undefined)
+  assert.deepEqual(rememberAfterLifeFlag(triple, 'goldEnabled', false), {
+    weatherEnabled: true,
+    goldEnabled: false,
+    stocksEnabled: false,
+  })
+  assert.deepEqual(rememberAfterLifeFlag(triple, 'stocksEnabled', true), {
+    weatherEnabled: true,
+    goldEnabled: true,
+    stocksEnabled: true,
+  })
+  assert.equal(
+    rememberAfterLifeFlag(
+      { weatherEnabled: true, goldEnabled: false, stocksEnabled: false },
+      'weatherEnabled',
+      false,
+    ),
+    undefined,
+  )
 })
 
 test('the remembered triple persists across restarts and ignores malformed storage', () => {
@@ -76,7 +130,13 @@ test('the remembered triple persists across restarts and ignores malformed stora
   assert.deepEqual(readRememberedLife(storage), goldStocks)
   writeRememberedLife(storage, undefined)
   assert.equal(readRememberedLife(storage), undefined)
-  for (const raw of ['nope', '[]', 'null', '{"weatherEnabled":true}', '{"weatherEnabled":1,"goldEnabled":true,"stocksEnabled":true}']) {
+  for (const raw of [
+    'nope',
+    '[]',
+    'null',
+    '{"weatherEnabled":true}',
+    '{"weatherEnabled":1,"goldEnabled":true,"stocksEnabled":true}',
+  ]) {
     storage.setItem(LIFE_TRIPLE_KEY, raw)
     assert.equal(readRememberedLife(storage), undefined, raw)
   }
@@ -94,7 +154,10 @@ test('the remembered triple persists across restarts and ignores malformed stora
 })
 
 test('stocks accept up to three <code>.<market> symbols and report the format otherwise', () => {
-  assert.deepEqual(parseStocks('00700.hk, 600519.SH aapl.us'), { ok: true, stocks: ['00700.hk', '600519.sh', 'aapl.us'] })
+  assert.deepEqual(parseStocks('00700.hk, 600519.SH aapl.us'), {
+    ok: true,
+    stocks: ['00700.hk', '600519.sh', 'aapl.us'],
+  })
   assert.deepEqual(parseStocks(''), { ok: true, stocks: [] })
   assert.deepEqual(parseStocks('00700.hk，00700.hk'), { ok: true, stocks: ['00700.hk'] })
   assert.deepEqual(parseStocks('00700'), { ok: false, error: '格式：00700.hk' })

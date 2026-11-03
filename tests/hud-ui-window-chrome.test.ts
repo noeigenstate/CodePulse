@@ -65,7 +65,10 @@ test('default HUD renders a project-first single lane with an optional compact g
   assert.match(appSource, /showUsageStrip/)
   assert.match(appSource, /setHudContentHeight/)
   assert.match(appSource, /formatRelative\(card\.updatedAt, now, locale\)/)
-  assert.match(appSource, /onAck\(card\.agentType, group\.workspacePath, agent\.externalSessionId\)/)
+  assert.match(
+    appSource,
+    /onAck\(card\.agentType, group\.workspacePath, agent\.externalSessionId\)/,
+  )
   assert.doesNotMatch(appSource, /formatRelative\(group\.updatedAt, now, locale\)/)
   assert.match(settings, /projectLayout: 'list'/)
   assert.match(css, /project-deck-grid[\s\S]*?repeat\(2, minmax\(0, 1fr\)\)/)

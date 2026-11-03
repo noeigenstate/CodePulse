@@ -277,7 +277,10 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
     void codexReadState?.start()
     const initialSync = sessionSync?.start()
     if (options.waitForInitialSync !== false) await initialSync
-    else void initialSync?.catch((error) => console.error('[codepulse] initial session scan failed', error))
+    else
+      void initialSync?.catch((error) =>
+        console.error('[codepulse] initial session scan failed', error),
+      )
     // Do not hold desktop startup on an optional CLI protocol. The service has
     // bounded retries and updates Hub asynchronously after the window is ready.
     void codexQuotaStart

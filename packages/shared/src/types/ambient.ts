@@ -200,7 +200,18 @@ export interface AmbientCard {
   /** Optional production-rendered checklist; old firmware uses the text fallback. */
   items?: { title: string; meta: string; overdue: boolean }[]
   id: string
-  kind: 'x' | 'meme' | 'concept' | 'prompt' | 'note' | 'image' | 'news' | 'pet' | 'calendar' | 'life' | 'search'
+  kind:
+    | 'x'
+    | 'meme'
+    | 'concept'
+    | 'prompt'
+    | 'note'
+    | 'image'
+    | 'news'
+    | 'pet'
+    | 'calendar'
+    | 'life'
+    | 'search'
   /** 元宝搜索 cards only: which feature produced it ('life' kind: weather/gold/stock; 'search' kind: tools/holiday/news). */
   topic?: YuanbaoTopic
   source: string
@@ -334,20 +345,45 @@ export function normalizeYuanbao(value: unknown): YuanbaoConfig {
   const bool = (key: keyof YuanbaoConfig) =>
     typeof v[key] === 'boolean' ? (v[key] as boolean) : (DEFAULT_YUANBAO[key] as boolean)
   const text = (key: 'city' | 'newsTopic', max: number) => {
-    const raw = typeof v[key] === 'string' ? (v[key] as string).replace(/\s+/g, ' ').trim().slice(0, max) : ''
+    const raw =
+      typeof v[key] === 'string' ? (v[key] as string).replace(/\s+/g, ' ').trim().slice(0, max) : ''
     return raw || DEFAULT_YUANBAO[key]
   }
-  const list = (key: 'stocks' | 'tools') => (Array.isArray(v[key]) ? (v[key] as unknown[]) : DEFAULT_YUANBAO[key])
-  const stocks = [...new Set(list('stocks').filter((s): s is string => typeof s === 'string').map((s) => s.trim().toLowerCase()).filter((s) => YUANBAO_STOCK.test(s)))].slice(0, 3)
-  const tools = [...new Set(list('tools').filter((s): s is string => typeof s === 'string').map((s) => s.replace(/\s+/g, ' ').trim().slice(0, 40)).filter(Boolean))].slice(0, 4)
-  const limit = typeof v.dailyRequestLimit === 'number' && Number.isFinite(v.dailyRequestLimit)
-    ? Math.max(1, Math.min(200, Math.round(v.dailyRequestLimit))) : DEFAULT_YUANBAO.dailyRequestLimit
+  const list = (key: 'stocks' | 'tools') =>
+    Array.isArray(v[key]) ? (v[key] as unknown[]) : DEFAULT_YUANBAO[key]
+  const stocks = [
+    ...new Set(
+      list('stocks')
+        .filter((s): s is string => typeof s === 'string')
+        .map((s) => s.trim().toLowerCase())
+        .filter((s) => YUANBAO_STOCK.test(s)),
+    ),
+  ].slice(0, 3)
+  const tools = [
+    ...new Set(
+      list('tools')
+        .filter((s): s is string => typeof s === 'string')
+        .map((s) => s.replace(/\s+/g, ' ').trim().slice(0, 40))
+        .filter(Boolean),
+    ),
+  ].slice(0, 4)
+  const limit =
+    typeof v.dailyRequestLimit === 'number' && Number.isFinite(v.dailyRequestLimit)
+      ? Math.max(1, Math.min(200, Math.round(v.dailyRequestLimit)))
+      : DEFAULT_YUANBAO.dailyRequestLimit
   return {
-    enabled: bool('enabled'), weatherEnabled: bool('weatherEnabled'), city: text('city', 20),
-    goldEnabled: bool('goldEnabled'), goldBrand: bool('goldBrand'),
-    stocksEnabled: bool('stocksEnabled'), stocks: Array.isArray(v.stocks) ? stocks : [...DEFAULT_YUANBAO.stocks],
-    toolsEnabled: bool('toolsEnabled'), tools: Array.isArray(v.tools) ? tools : [...DEFAULT_YUANBAO.tools],
-    holidayEnabled: bool('holidayEnabled'), newsEnabled: bool('newsEnabled'), newsTopic: text('newsTopic', 20),
+    enabled: bool('enabled'),
+    weatherEnabled: bool('weatherEnabled'),
+    city: text('city', 20),
+    goldEnabled: bool('goldEnabled'),
+    goldBrand: bool('goldBrand'),
+    stocksEnabled: bool('stocksEnabled'),
+    stocks: Array.isArray(v.stocks) ? stocks : [...DEFAULT_YUANBAO.stocks],
+    toolsEnabled: bool('toolsEnabled'),
+    tools: Array.isArray(v.tools) ? tools : [...DEFAULT_YUANBAO.tools],
+    holidayEnabled: bool('holidayEnabled'),
+    newsEnabled: bool('newsEnabled'),
+    newsTopic: text('newsTopic', 20),
     dailyRequestLimit: limit,
   }
 }

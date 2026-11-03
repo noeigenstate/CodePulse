@@ -37,9 +37,14 @@ export function computeInkStatus(input: InkStatusInput): InkScreenStatus {
     input.ambientTemporary && input.ambientTemporary.until > now ? input.ambientTemporary : null
   const todo = input.assistantUntil > now ? { title: '待办', until: input.assistantUntil } : null
   // Match selectDeskContent: a manual ambient card owns the screen ahead of manual todos.
-  const temporary: InkScreenStatus['temporary'] =
-    ambient ? { ...ambient, kind: 'ambient' } : todo ? { ...todo, kind: 'todos' } : null
-  const showing: InkScreenStatus['showing'] = card ? { kind, title: inkCardTitle(card), id: card.id } : { kind: 'work' }
+  const temporary: InkScreenStatus['temporary'] = ambient
+    ? { ...ambient, kind: 'ambient' }
+    : todo
+      ? { ...todo, kind: 'todos' }
+      : null
+  const showing: InkScreenStatus['showing'] = card
+    ? { kind, title: inkCardTitle(card), id: card.id }
+    : { kind: 'work' }
   let slotNote = ''
   if (temporary && showing.kind === 'work') slotNote = '授权或异常提醒优先，临时展示暂停'
   else if (!temporary && current === 'ambient' && showing.kind === 'work') {
@@ -85,10 +90,14 @@ export class InkStatusRuntime {
       now?: () => number
     },
   ) {}
-  private now(): number { return this.options.now?.() ?? Date.now() }
+  private now(): number {
+    return this.options.now?.() ?? Date.now()
+  }
   private readInput(): Omit<InkStatusInput, 'now'> {
     const input = this.options.read()
-    return this.lastStatusReadAt === undefined ? input : { ...input, lastSeenAt: this.lastStatusReadAt }
+    return this.lastStatusReadAt === undefined
+      ? input
+      : { ...input, lastSeenAt: this.lastStatusReadAt }
   }
   snapshot(): InkScreenStatus {
     return computeInkStatus({ ...this.readInput(), now: this.now() })
@@ -98,22 +107,31 @@ export class InkStatusRuntime {
     if (this.stopped) return
     this.lastStatusReadAt = at
     const now = this.now()
-    if (!this.input || this.publishedConnection !== 'connected' ||
-        (this.status?.next && this.status.next.at <= now) ||
-        (this.status?.temporary && this.status.temporary.until <= now)) { this.refresh(); return }
+    if (
+      !this.input ||
+      this.publishedConnection !== 'connected' ||
+      (this.status?.next && this.status.next.at <= now) ||
+      (this.status?.temporary && this.status.temporary.until <= now)
+    ) {
+      this.refresh()
+      return
+    }
     this.input = { ...this.input, lastSeenAt: at }
     this.schedule()
   }
   private schedule(retryAt?: number): void {
     if (this.stopped) return
-    const now = this.now(), input = this.input
+    const now = this.now(),
+      input = this.input
     if (retryAt !== undefined) this.retryAt = retryAt
     const deadlines = [
-      this.status?.next?.at, this.status?.temporary?.until,
+      this.status?.next?.at,
+      this.status?.temporary?.until,
       // Only a future eligibility change is a useful wake-up. Critical expiry/slot timers remain exact.
       input?.nextAutoAt && input.nextAutoAt > now + 1000 ? input.nextAutoAt : undefined,
       input?.serverEnabled && input.lastSeenAt !== null && input.lastSeenAt <= now
-        ? input.lastSeenAt + INK_CONNECTED_WINDOW_MS : undefined,
+        ? input.lastSeenAt + INK_CONNECTED_WINDOW_MS
+        : undefined,
       this.retryAt,
     ].filter((at): at is number => typeof at === 'number' && at > now)
     const deadline = deadlines.length ? Math.min(...deadlines) : undefined
@@ -128,8 +146,13 @@ export class InkStatusRuntime {
       this.retryAt = undefined
       let advanceFailed = false
       this.refreshing = true
-      try { this.options.advance?.() } catch { advanceFailed = true }
-      finally { this.refreshing = false }
+      try {
+        this.options.advance?.()
+      } catch {
+        advanceFailed = true
+      } finally {
+        this.refreshing = false
+      }
       this.refresh()
       if (advanceFailed) this.schedule(this.now() + 1000)
     }, deadline - now)

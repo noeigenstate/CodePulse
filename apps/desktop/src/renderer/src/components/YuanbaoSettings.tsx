@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react'
-import type { AmbientSnapshot, YuanbaoAuthMode, YuanbaoStatus, YuanbaoTestResult } from '@codepulse/shared'
+import type {
+  AmbientSnapshot,
+  YuanbaoAuthMode,
+  YuanbaoStatus,
+  YuanbaoTestResult,
+} from '@codepulse/shared'
 import { InfoTip } from './InfoTip.js'
 import { syncAuthMode } from '../lib/yuanbaoStatus.js'
 
@@ -8,7 +13,14 @@ import { syncAuthMode } from '../lib/yuanbaoStatus.js'
  * process: each field submits once and is cleared in the same tick, nothing is echoed back, and the
  * placeholder says 「已保存」 only when the host reports a saved key.
  */
-export function YuanbaoSettings({ status, limit, onLimit, onSnapshot, disabled, limitField }: {
+export function YuanbaoSettings({
+  status,
+  limit,
+  onLimit,
+  onSnapshot,
+  disabled,
+  limitField,
+}: {
   status: YuanbaoStatus | undefined
   limit: number
   onLimit: (value: number) => void
@@ -20,7 +32,10 @@ export function YuanbaoSettings({ status, limit, onLimit, onSnapshot, disabled, 
   const [mode, setMode] = useState<YuanbaoAuthMode>(status?.authMode ?? 'tc3')
   const [touched, setTouched] = useState(false)
   // The saved mode wins until the user picks one themselves (the first snapshot usually arrives after mount).
-  useEffect(() => setMode((current) => syncAuthMode(current, touched, status?.authMode)), [status?.authMode, touched])
+  useEffect(
+    () => setMode((current) => syncAuthMode(current, touched, status?.authMode)),
+    [status?.authMode, touched],
+  )
   const [secretId, setSecretId] = useState('')
   const [secretKey, setSecretKey] = useState('')
   const [apiKey, setApiKey] = useState('')
@@ -34,12 +49,16 @@ export function YuanbaoSettings({ status, limit, onLimit, onSnapshot, disabled, 
     setSecretKey('')
     setApiKey('')
   }
-  const canSave = mode === 'tc3' ? Boolean(secretId.trim() && secretKey.trim()) : Boolean(apiKey.trim())
+  const canSave =
+    mode === 'tc3' ? Boolean(secretId.trim() && secretKey.trim()) : Boolean(apiKey.trim())
 
   async function save() {
     if (!canSave || busy) return
     // Take the values and empty the fields before anything is awaited.
-    const input = mode === 'tc3' ? { secretId: secretId.trim(), secretKey: secretKey.trim() } : { apiKey: apiKey.trim() }
+    const input =
+      mode === 'tc3'
+        ? { secretId: secretId.trim(), secretKey: secretKey.trim() }
+        : { apiKey: apiKey.trim() }
     clearFields()
     setBusy(true)
     setNote('')
@@ -57,7 +76,11 @@ export function YuanbaoSettings({ status, limit, onLimit, onSnapshot, disabled, 
     setBusy(true)
     setNote('')
     try {
-      onSnapshot(await window.codepulse.setYuanbaoKey(mode === 'tc3' ? { secretId: '', secretKey: '' } : { apiKey: '' }))
+      onSnapshot(
+        await window.codepulse.setYuanbaoKey(
+          mode === 'tc3' ? { secretId: '', secretKey: '' } : { apiKey: '' },
+        ),
+      )
       setTest(undefined)
       setNote('已清除')
     } catch {
@@ -75,7 +98,13 @@ export function YuanbaoSettings({ status, limit, onLimit, onSnapshot, disabled, 
       setTest(await window.codepulse.testYuanbao())
       onSnapshot(await window.codepulse.getAmbient())
     } catch {
-      setTest({ ok: false, latencyMs: null, edition: null, cardText: '', error: '测试未完成，请重试' })
+      setTest({
+        ok: false,
+        latencyMs: null,
+        edition: null,
+        cardText: '',
+        error: '测试未完成，请重试',
+      })
     } finally {
       setBusy(false)
     }
@@ -168,10 +197,20 @@ export function YuanbaoSettings({ status, limit, onLimit, onSnapshot, disabled, 
             <button type="submit" className="product-button" disabled={!canSave || busy}>
               保存
             </button>
-            <button type="button" className="product-button" disabled={!savedHere || busy} onClick={() => void clear()}>
+            <button
+              type="button"
+              className="product-button"
+              disabled={!savedHere || busy}
+              onClick={() => void clear()}
+            >
               清除
             </button>
-            <button type="button" className="product-button" disabled={!hasKey || busy} onClick={() => void runTest()}>
+            <button
+              type="button"
+              className="product-button"
+              disabled={!hasKey || busy}
+              onClick={() => void runTest()}
+            >
               测试连接
             </button>
           </div>
@@ -179,7 +218,11 @@ export function YuanbaoSettings({ status, limit, onLimit, onSnapshot, disabled, 
         {limitField(limit, onLimit)}
         <p className="ambient-message" data-feedback="yuanbao" role="status">
           {note ||
-            (test ? (test.ok ? `连接正常 · ${test.latencyMs ?? '—'} ms · ${test.edition ?? '—'} · ${test.cardText}` : test.error) : status?.lastError ?? '')}
+            (test
+              ? test.ok
+                ? `连接正常 · ${test.latencyMs ?? '—'} ms · ${test.edition ?? '—'} · ${test.cardText}`
+                : test.error
+              : (status?.lastError ?? ''))}
         </p>
         {stats.length > 0 && (
           <p className="ambient-yuanbao-stats" role="status">

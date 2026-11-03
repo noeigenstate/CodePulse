@@ -6,3 +6,10 @@ firmware/build*/
 firmware/tmp/
 .toolchains/
 .tmpshots/
+# Byte-compared fixtures, generated tables and embedded-owned firmware notes keep their own layout.
+firmware/preview/fixtures/
+firmware/doc/
+firmware/experiments/
+firmware/README.md
+docs/fixtures/
+**/*.generated.ts

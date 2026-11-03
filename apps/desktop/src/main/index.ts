@@ -17,7 +17,18 @@ import { HudSurface } from './hud-surface.js'
 import { readFileSync, writeFileSync, unlinkSync } from 'node:fs'
 import { homedir, networkInterfaces } from 'node:os'
 import { join } from 'node:path'
-import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, powerMonitor, shell, screen, type Rectangle } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  Notification,
+  powerMonitor,
+  shell,
+  screen,
+  type Rectangle,
+} from 'electron'
 import {
   type Agent,
   type AgentType,
@@ -33,7 +44,12 @@ import {
   type UsageLedgerSnapshot,
 } from '@codepulse/shared'
 import { StatusHub } from '@codepulse/core'
-import { normalizeDeviceDisplay, normalizeInkPlan, type InkApplyRequest, type InkScreenStatus } from '@codepulse/shared'
+import {
+  normalizeDeviceDisplay,
+  normalizeInkPlan,
+  type InkApplyRequest,
+  type InkScreenStatus,
+} from '@codepulse/shared'
 import { createDeviceDisplayProjector } from './device-display-projection.js'
 import { readDeviceDisplayConfig, writeDeviceDisplayConfig } from './device-display-settings.js'
 import {
@@ -201,8 +217,11 @@ function setDesktopFocus(focus: boolean): void {
     consoleWasMaximized = win.isMaximized()
     if (consoleWasMaximized) win.unmaximize()
     const area = screen.getDisplayMatching(consoleBounds).workArea
-    const width = Math.min(820, area.width), height = Math.min(740, area.height)
-    win.setBounds({ width, height,
+    const width = Math.min(820, area.width),
+      height = Math.min(740, area.height)
+    win.setBounds({
+      width,
+      height,
       x: Math.max(area.x, Math.min(consoleBounds.x, area.x + area.width - width)),
       y: Math.max(area.y, Math.min(consoleBounds.y, area.y + area.height - height)),
     })
@@ -245,7 +264,9 @@ function createWindow(): void {
     },
   })
 
-  mainWindow.on('ready-to-show', () => { if (standardVisible) mainWindow?.show() })
+  mainWindow.on('ready-to-show', () => {
+    if (standardVisible) mainWindow?.show()
+  })
   mainWindow.on('focus', () => {
     scheduleFocusSync()
   })
@@ -350,31 +371,72 @@ function setWindowTheme(value: unknown, targetWindow: BrowserWindow | null): Win
 }
 
 let deviceProjector: ReturnType<typeof createDeviceDisplayProjector> | undefined
-function projectDeviceDisplay(snapshot: StatusSnapshot, config?: import('@codepulse/shared').DeviceDisplayConfig, includeAmbient = true) {
-  deviceProjector ??= createDeviceDisplayProjector(join(app.getPath('userData'), 'device-thread-order.json'),
-    () => console.warn('[codepulse] device display order could not be saved; retaining in-memory positions'))
+function projectDeviceDisplay(
+  snapshot: StatusSnapshot,
+  config?: import('@codepulse/shared').DeviceDisplayConfig,
+  includeAmbient = true,
+) {
+  deviceProjector ??= createDeviceDisplayProjector(
+    join(app.getPath('userData'), 'device-thread-order.json'),
+    () =>
+      console.warn(
+        '[codepulse] device display order could not be saved; retaining in-memory positions',
+      ),
+  )
   // Both preview and LAN transport consume the same retained, dismissed and ordered HUD source.
   const work = hudSurface?.snapshot() ?? snapshot
-  return withAmbient(deviceProjector(work, config), includeAmbient ? selectDeskContent(assistantRuntime?.service.inkCard(work), ambientRuntime?.service.current(work)) : undefined)
+  return withAmbient(
+    deviceProjector(work, config),
+    includeAmbient
+      ? selectDeskContent(
+          assistantRuntime?.service.inkCard(work),
+          ambientRuntime?.service.current(work),
+        )
+      : undefined,
+  )
 }
 
 function deviceDisplaySnapshot(preview?: unknown) {
   const config = readDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json'))
-  return { config, status: projectDeviceDisplay(hub.snapshot(), preview === undefined ? config : normalizeDeviceDisplay(preview), preview === undefined), serverAvailable: Boolean(deviceServer) }
+  return {
+    config,
+    status: projectDeviceDisplay(
+      hub.snapshot(),
+      preview === undefined ? config : normalizeDeviceDisplay(preview),
+      preview === undefined,
+    ),
+    serverAvailable: Boolean(deviceServer),
+  }
 }
 
 const deviceViews = new Set<number>()
-const deviceLeases = new DeviceViewLeases(active => {
-  if (!deviceUsb) return
-  if (active && !shutdownStarted) deviceUsb.startScanning(); else deviceUsb.stopScanning()
-  updateDeviceProvisioning({ scanning: active && !shutdownStarted,
-    phase: deviceProvisioning.phase === 'idle' || deviceProvisioning.phase === 'scanning' ? (active ? 'scanning' : 'idle') : deviceProvisioning.phase })
-}, () => { void deviceUsb?.cancelProvisioning().catch(() => {}) })
+const deviceLeases = new DeviceViewLeases(
+  (active) => {
+    if (!deviceUsb) return
+    if (active && !shutdownStarted) deviceUsb.startScanning()
+    else deviceUsb.stopScanning()
+    updateDeviceProvisioning({
+      scanning: active && !shutdownStarted,
+      phase:
+        deviceProvisioning.phase === 'idle' || deviceProvisioning.phase === 'scanning'
+          ? active
+            ? 'scanning'
+            : 'idle'
+          : deviceProvisioning.phase,
+    })
+  },
+  () => {
+    void deviceUsb?.cancelProvisioning().catch(() => {})
+  },
+)
 function trackDeviceView(sender: Electron.WebContents): void {
   if (deviceViews.has(sender.id)) return
   const id = sender.id
   deviceViews.add(id)
-  sender.once('destroyed', () => { deviceViews.delete(id); deviceLeases.release(id) })
+  sender.once('destroyed', () => {
+    deviceViews.delete(id)
+    deviceLeases.release(id)
+  })
 }
 
 function inkStatusInput() {
@@ -401,14 +463,21 @@ function notifyInkDisplayChanged(): void {
 }
 function applyInkRequest(request: unknown) {
   return applyInk(request, {
-    shell: productShell!, ambient: ambientRuntime!.service,
-    readDisplay: () => readDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json')),
-    writeDisplay: display => writeDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json'), display),
+    shell: productShell!,
+    ambient: ambientRuntime!.service,
+    readDisplay: () =>
+      readDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json')),
+    writeDisplay: (display) =>
+      writeDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json'), display),
     displaySnapshot: () => deviceDisplaySnapshot(),
     committed: () => {
       // Tick may select a card synchronously; do not publish any intermediate state.
       inkUpdateBatch++
-      try { ambientRuntime?.service.tick() } finally { inkUpdateBatch-- }
+      try {
+        ambientRuntime?.service.tick()
+      } finally {
+        inkUpdateBatch--
+      }
       broadcast('codepulse:shell-status', productShell!.snapshot())
       broadcast('codepulse:ambient-status', ambientRuntime!.service.snapshot())
       notifyInkDisplayChanged()
@@ -418,22 +487,49 @@ function applyInkRequest(request: unknown) {
 
 function registerIpc(): void {
   ipcMain.handle('codepulse:ink-status-get', () => inkScreenStatus())
-  ipcMain.handle('codepulse:ink-apply', (_event, request: InkApplyRequest) => applyInkRequest(request))
+  ipcMain.handle('codepulse:ink-apply', (_event, request: InkApplyRequest) =>
+    applyInkRequest(request),
+  )
   ipcMain.handle('codepulse:ink-temporary-end', () => {
     inkUpdateBatch++
-    try { endInkTemporary(ambientRuntime!.service, assistantRuntime?.service) } finally { inkUpdateBatch-- }
+    try {
+      endInkTemporary(ambientRuntime!.service, assistantRuntime?.service)
+    } finally {
+      inkUpdateBatch--
+    }
     broadcast('codepulse:ambient-status', ambientRuntime!.service.snapshot())
-    if (assistantRuntime) broadcast('codepulse:assistant-status', assistantRuntime.service.snapshot())
+    if (assistantRuntime)
+      broadcast('codepulse:assistant-status', assistantRuntime.service.snapshot())
     notifyInkDisplayChanged()
     return inkScreenStatus()
   })
-  registerAssistantIpc(ipcMain, () => assistantRuntime, () => deviceDisplaySnapshot().status, () => ambientRuntime?.service.dismissTemporary())
-  registerProductIpc(ipcMain, productShell!, screenWorkbench!, plan => applyInkRequest({
-    plan: normalizeInkPlan(plan), display: deviceDisplaySnapshot().config,
-  }).shell)
+  registerAssistantIpc(
+    ipcMain,
+    () => assistantRuntime,
+    () => deviceDisplaySnapshot().status,
+    () => ambientRuntime?.service.dismissTemporary(),
+  )
+  registerProductIpc(
+    ipcMain,
+    productShell!,
+    screenWorkbench!,
+    (plan) =>
+      applyInkRequest({
+        plan: normalizeInkPlan(plan),
+        display: deviceDisplaySnapshot().config,
+      }).shell,
+  )
   ipcMain.handle('codepulse:hud-preview', () => hudSurface?.snapshot() ?? null)
-  registerAmbientIpc(ipcMain, ambientRuntime!, () => deviceDisplaySnapshot().status, url => shell.openExternal(url), () => assistantRuntime?.service.clearTemporaryInk())
-  ipcMain.handle('codepulse:get-device-display', (_event, preview: unknown) => deviceDisplaySnapshot(preview))
+  registerAmbientIpc(
+    ipcMain,
+    ambientRuntime!,
+    () => deviceDisplaySnapshot().status,
+    (url) => shell.openExternal(url),
+    () => assistantRuntime?.service.clearTemporaryInk(),
+  )
+  ipcMain.handle('codepulse:get-device-display', (_event, preview: unknown) =>
+    deviceDisplaySnapshot(preview),
+  )
   ipcMain.handle('codepulse:set-device-display', (_event, input: unknown) => {
     writeDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json'), input)
     deviceServer?.notifyChanged()
@@ -445,11 +541,14 @@ function registerIpc(): void {
   ipcMain.handle('codepulse:get-status', (event) =>
     hudSurface?.owns(event.sender) ? hudSurface.snapshot() : hub.snapshot(),
   )
-  ipcMain.handle('codepulse:ack', (event, agent: AgentType, workspacePath?: string, session?: string) => {
-    if (hudSurface?.owns(event.sender)) hudSurface.acknowledge(agent, workspacePath, session)
-    else hub.acknowledge(agent, workspacePath)
-    return true
-  })
+  ipcMain.handle(
+    'codepulse:ack',
+    (event, agent: AgentType, workspacePath?: string, session?: string) => {
+      if (hudSurface?.owns(event.sender)) hudSurface.acknowledge(agent, workspacePath, session)
+      else hub.acknowledge(agent, workspacePath)
+      return true
+    },
+  )
   ipcMain.handle('codepulse:work-voice-get', () => workVoice!.snapshot())
   const voiceTarget = (value: unknown): 'desktop' | 'ink' => {
     if (value !== 'desktop' && value !== 'ink') throw Error('Unknown voice output')
@@ -457,13 +556,19 @@ function registerIpc(): void {
   }
   ipcMain.handle('codepulse:work-voice-set', (_event, target: unknown, value: unknown) => {
     const selected = voiceTarget(target)
-    const settings = writeWorkVoiceTarget(join(app.getPath('userData'), 'work-voice-settings.json'), selected, value)
+    const settings = writeWorkVoiceTarget(
+      join(app.getPath('userData'), 'work-voice-settings.json'),
+      selected,
+      value,
+    )
     return workVoice!.configure(selected, settings[selected])
   })
   ipcMain.handle('codepulse:work-voice-test', (_event, target: unknown, locale: unknown) =>
     workVoice!.test(voiceTarget(target), locale === 'en' ? 'en' : 'zh'),
   )
-  ipcMain.handle('codepulse:work-voice-stop', (_event, target: unknown) => workVoice!.stopSpeaking(voiceTarget(target)))
+  ipcMain.handle('codepulse:work-voice-stop', (_event, target: unknown) =>
+    workVoice!.stopSpeaking(voiceTarget(target)),
+  )
   ipcMain.handle('codepulse:get-notifications', () => notificationsEnabled)
   ipcMain.handle('codepulse:set-notifications', (_event, enabled: unknown) => {
     notificationsEnabled = writeNotificationsEnabled(notificationSettingsPath(), enabled)
@@ -529,13 +634,13 @@ function registerIpc(): void {
     return false
   })
   ipcMain.handle('codepulse:get-device-provisioning', () => deviceProvisioning)
-  ipcMain.handle('codepulse:start-device-scan', event => {
+  ipcMain.handle('codepulse:start-device-scan', (event) => {
     if (!deviceUsb) return deviceProvisioning
     trackDeviceView(event.sender)
     deviceLeases.start(event.sender.id)
     return deviceProvisioning
   })
-  ipcMain.handle('codepulse:stop-device-scan', event => {
+  ipcMain.handle('codepulse:stop-device-scan', (event) => {
     deviceLeases.stop(event.sender.id)
     return deviceProvisioning
   })
@@ -596,9 +701,11 @@ function registerIpc(): void {
         phase: errorCode === 'cancelled' ? 'cancelled' : 'error',
         errorCode,
       })
-    } finally { deviceLeases.finish(event.sender.id) }
+    } finally {
+      deviceLeases.finish(event.sender.id)
+    }
   })
-  ipcMain.handle('codepulse:cancel-device-provisioning', event => {
+  ipcMain.handle('codepulse:cancel-device-provisioning', (event) => {
     deviceLeases.cancelFor(event.sender.id)
     return deviceProvisioning
   })
@@ -607,8 +714,10 @@ function registerIpc(): void {
 async function bootstrap(): Promise<void> {
   Menu.setApplicationMenu(null)
   notificationsEnabled = readNotificationsEnabled(notificationSettingsPath())
-  workVoice = new WorkVoiceRuntime(readWorkVoiceTargets(join(app.getPath('userData'), 'work-voice-settings.json')),
-    snapshot => broadcast('codepulse:work-voice', snapshot))
+  workVoice = new WorkVoiceRuntime(
+    readWorkVoiceTargets(join(app.getPath('userData'), 'work-voice-settings.json')),
+    (snapshot) => broadcast('codepulse:work-voice', snapshot),
+  )
 
   const dbPath = join(app.getPath('userData'), 'codepulse.sqlite')
   try {
@@ -626,8 +735,12 @@ async function bootstrap(): Promise<void> {
 
   // Both presentations ship with this host, in development and inside app.asar.
   hudSurface = new HudSurface(
-    hub, join(__dirname, '../hud'), join(app.getPath('userData'), 'hud-workspaces.json'),
-    () => { if (!shutdownStarted) productShell?.refresh() },
+    hub,
+    join(__dirname, '../hud'),
+    join(app.getPath('userData'), 'hud-workspaces.json'),
+    () => {
+      if (!shutdownStarted) productShell?.refresh()
+    },
     () => {
       if (shutdownStarted) return
       notifyInkDisplayChanged()
@@ -635,21 +748,39 @@ async function bootstrap(): Promise<void> {
   )
   hudSurface.registerIpc()
   screenWorkbench = new ScreenWorkbenchWindow({
-    preload: join(__dirname, '../preload/index.js'), renderer: join(__dirname, '../renderer/index.html'),
-    icon: appIconPath(), devUrl: process.env.ELECTRON_RENDERER_URL,
+    preload: join(__dirname, '../preload/index.js'),
+    renderer: join(__dirname, '../renderer/index.html'),
+    icon: appIconPath(),
+    devUrl: process.env.ELECTRON_RENDERER_URL,
   })
   const shellStore = shellPreferenceStore(join(app.getPath('userData'), 'product-shell.json'))
-  productShell = new ProductShell(shellStore.read(), shellStore.write, {
-    hudAvailable: () => Boolean(hudSurface), hudVisible: () => hudSurface?.isVisible() ?? false,
-    focusMode: setDesktopFocus, standard: showWindow, hud: () => hudSurface?.open(mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : undefined),
-    screen: () => screenWorkbench?.open(), hideStandard: () => { standardVisible = false; mainWindow?.hide() }, hideHud: () => hudSurface?.hide(),
-    hudSettingsChanged: (settings) => hudSurface?.syncSettings(settings),
-  }, state => {
-    if (inkUpdateBatch) return
-    broadcast('codepulse:shell-status', state)
-    ambientRuntime?.service.tick()
-    notifyInkDisplayChanged()
-  })
+  productShell = new ProductShell(
+    shellStore.read(),
+    shellStore.write,
+    {
+      hudAvailable: () => Boolean(hudSurface),
+      hudVisible: () => hudSurface?.isVisible() ?? false,
+      focusMode: setDesktopFocus,
+      standard: showWindow,
+      hud: () =>
+        hudSurface?.open(
+          mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : undefined,
+        ),
+      screen: () => screenWorkbench?.open(),
+      hideStandard: () => {
+        standardVisible = false
+        mainWindow?.hide()
+      },
+      hideHud: () => hudSurface?.hide(),
+      hudSettingsChanged: (settings) => hudSurface?.syncSettings(settings),
+    },
+    (state) => {
+      if (inkUpdateBatch) return
+      broadcast('codepulse:shell-status', state)
+      ambientRuntime?.service.tick()
+      notifyInkDisplayChanged()
+    },
+  )
   hudSurface.syncSettings(productShell.snapshot().hudSettings)
   ambientRuntime = createAmbientRuntime(app.getPath('userData'), {
     status: () => hudSurface?.snapshot() ?? hub.snapshot(),
@@ -664,37 +795,62 @@ async function bootstrap(): Promise<void> {
   const initialPlan = productShell.snapshot().inkPlan
   const ambientConfig = ambientRuntime.service.getConfig()
   const initialEnabled = initialPlan.mode === 'cycle' && initialPlan.items.includes('ambient')
-  if (ambientConfig.enabled !== initialEnabled || ambientConfig.displayMinutes !== initialPlan.intervalMinutes) {
-    try { ambientRuntime.service.configure({ ...ambientConfig, enabled: initialEnabled, displayMinutes: initialPlan.intervalMinutes }) }
-    catch { console.warn('[codepulse] saved ambient settings could not follow the playlist') }
+  if (
+    ambientConfig.enabled !== initialEnabled ||
+    ambientConfig.displayMinutes !== initialPlan.intervalMinutes
+  ) {
+    try {
+      ambientRuntime.service.configure({
+        ...ambientConfig,
+        enabled: initialEnabled,
+        displayMinutes: initialPlan.intervalMinutes,
+      })
+    } catch {
+      console.warn('[codepulse] saved ambient settings could not follow the playlist')
+    }
   }
   ambientRuntime.service.start()
   try {
     assistantRuntime = createAssistantRuntime(app.getPath('userData'), {
-      automaticAllowed: () => inkFeatureAt(productShell!.snapshot().inkPlan, Date.now()) === 'todos',
+      automaticAllowed: () =>
+        inkFeatureAt(productShell!.snapshot().inkPlan, Date.now()) === 'todos',
       changed: () => {
         if (inkUpdateBatch) return
-        if (assistantRuntime) broadcast('codepulse:assistant-status', assistantRuntime.service.snapshot())
+        if (assistantRuntime)
+          broadcast('codepulse:assistant-status', assistantRuntime.service.snapshot())
         notifyInkDisplayChanged()
       },
-      notify: title => {
+      notify: (title) => {
         if (!Notification.isSupported()) return false
-        const notification = new Notification({title:'CodePulse · 待办提醒',body:title,silent:true})
-        notification.on('click', () => { productShell?.navigate('assistant'); showWindow() })
+        const notification = new Notification({
+          title: 'CodePulse · 待办提醒',
+          body: title,
+          silent: true,
+        })
+        notification.on('click', () => {
+          productShell?.navigate('assistant')
+          showWindow()
+        })
         notification.show()
         return true
       },
     })
     assistantRuntime.service.start()
   } catch {
-    console.error('[codepulse] local assistant storage unavailable; existing work and usage remain available')
+    console.error(
+      '[codepulse] local assistant storage unavailable; existing work and usage remain available',
+    )
   }
   inkStatusRuntime = new InkStatusRuntime({
     read: inkStatusInput,
-    publish: status => broadcast('codepulse:ink-status', status),
+    publish: (status) => broadcast('codepulse:ink-status', status),
     advance: () => {
       inkUpdateBatch++
-      try { ambientRuntime?.service.tick() } finally { inkUpdateBatch-- }
+      try {
+        ambientRuntime?.service.tick()
+      } finally {
+        inkUpdateBatch--
+      }
       if (ambientRuntime) broadcast('codepulse:ambient-status', ambientRuntime.service.snapshot())
       deviceServer?.notifyChanged()
       broadcast('codepulse:device-display', deviceDisplaySnapshot())
@@ -707,7 +863,11 @@ async function bootstrap(): Promise<void> {
   try {
     // Binding/authentication must finish before hooks or LAN startup. Historical
     // hydration continues through Hub events and must not keep the UI/LAN offline.
-    server = await startLocalServer({ hub, mimoCookieProvider: provideMimoCookie, waitForInitialSync: false })
+    server = await startLocalServer({
+      hub,
+      mimoCookieProvider: provideMimoCookie,
+      waitForInitialSync: false,
+    })
     localServerReady = true
     console.log(`[codepulse] local server listening on ${server.url}`)
     console.log(
@@ -724,11 +884,17 @@ async function bootstrap(): Promise<void> {
     try {
       deviceServer = await startDeviceServer({
         hub,
-        registerWorkVoiceRoutes: app => registerWorkVoiceRoutes(app, workVoice!.delivery),
-        registerAssistantRoutes: assistantRuntime ? app => registerAssistantRoutes(app, assistantRuntime!.service) : undefined,
+        registerWorkVoiceRoutes: (app) => registerWorkVoiceRoutes(app, workVoice!.delivery),
+        registerAssistantRoutes: assistantRuntime
+          ? (app) => registerAssistantRoutes(app, assistantRuntime!.service)
+          : undefined,
         projectStatus: projectDeviceDisplay,
-        getDisplayConfig: () => readDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json')),
-        onStatusRead: () => { inkLastSeenAt = Date.now(); inkStatusRuntime?.statusRead(inkLastSeenAt) },
+        getDisplayConfig: () =>
+          readDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json')),
+        onStatusRead: () => {
+          inkLastSeenAt = Date.now()
+          inkStatusRuntime?.statusRead(inkLastSeenAt)
+        },
         host: deviceConfig.host,
         port: deviceConfig.port,
         authToken: deviceConfig.authToken,

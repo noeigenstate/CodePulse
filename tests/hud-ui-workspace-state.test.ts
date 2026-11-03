@@ -2,7 +2,10 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { TurnState } from '@codepulse/shared'
 import {
-  buildAgentPanels, buildWorkspaceAgentGroups, collectQuotaMeters, latestQuotaToken,
+  buildAgentPanels,
+  buildWorkspaceAgentGroups,
+  collectQuotaMeters,
+  latestQuotaToken,
 } from '../apps/hud/src/renderer/src/lib/displayAgents.js'
 
 // Backend retention/acknowledgement is covered by the canonical host suites.
@@ -50,7 +53,6 @@ test('display panels collapse nested workspace cards into the project root', () 
   assert.equal(panels[0]?.workspaces[0]?.name, 'gitlab_single_pipe')
 })
 
-
 test('display panels keep an unread nested result visible ahead of newer active work', () => {
   const panels = buildAgentPanels([
     {
@@ -80,7 +82,6 @@ test('display panels keep an unread nested result visible ahead of newer active 
   assert.equal(panels[0]?.workspaces[0]?.agent.state, TurnState.DONE)
   assert.equal(panels[0]?.workspaces[0]?.agent.unread, true)
 })
-
 
 test('display panels expose pathless HUD alerts instead of leaving an unexplained orange tray', () => {
   const panels = buildAgentPanels([
@@ -113,7 +114,6 @@ test('display panels expose pathless HUD alerts instead of leaving an unexplaine
   assert.equal(panels[0]?.workspaces[0]?.workspacePath, undefined)
   assert.equal(panels[0]?.workspaces[0]?.agent.state, TurnState.ERROR)
 })
-
 
 test('display panels do not collapse Desktop projects under the user profile path', () => {
   const panels = buildAgentPanels([
@@ -154,7 +154,6 @@ test('display panels do not collapse Desktop projects under the user profile pat
   assert.equal(metal?.agent.state, TurnState.TOOL_RUNNING)
 })
 
-
 test('display panels keep the newest verified model config for duplicate workspace sessions', () => {
   const panels = buildAgentPanels([
     {
@@ -191,7 +190,6 @@ test('display panels keep the newest verified model config for duplicate workspa
   assert.equal(card?.model, 'gpt-5.6-terra')
   assert.equal(card?.reasoningEffort, 'ultra')
 })
-
 
 test('display agents are grouped by workspace with a shared token', () => {
   const groups = buildWorkspaceAgentGroups([
@@ -246,7 +244,6 @@ test('display agents are grouped by workspace with a shared token', () => {
   assert.equal(groups.find((group) => group.workspacePath === 'E:/project/a')?.token?.total, 1200)
 })
 
-
 test('display panels group slash and backslash variants into one project', () => {
   const panels = buildAgentPanels([
     {
@@ -279,12 +276,10 @@ test('display panels group slash and backslash variants into one project', () =>
   assert.equal(codexPanel?.workspaces[0]?.agent.token?.contextUsedPercent, 12)
 })
 
-
 test('display panels omit agent shells when there are no projects', () => {
   const panels = buildAgentPanels([])
   assert.equal(panels.length, 0)
 })
-
 
 test('display panels only include agents that have active projects', () => {
   const panels = buildAgentPanels([
@@ -322,7 +317,6 @@ test('display panels only include agents that have active projects', () => {
   )
 })
 
-
 test('display panels keep quota-only agent after projects are hidden', () => {
   const panels = buildAgentPanels([
     {
@@ -350,7 +344,6 @@ test('display panels keep quota-only agent after projects are hidden', () => {
   assert.equal(panels[0]?.workspaces.length, 0)
   assert.equal(panels[0]?.quotaToken?.rateLimits?.fiveHour?.usedPercent, 40)
 })
-
 
 test('display panels do not show pathless agents as unknown project cards', () => {
   const panels = buildAgentPanels([
@@ -398,7 +391,6 @@ test('display panels do not show pathless agents as unknown project cards', () =
   assert.equal(codex?.quotaToken?.rateLimits?.sevenDay?.usedPercent, 12)
 })
 
-
 test('display panels keep Codex projects inside one panel', () => {
   const panels = buildAgentPanels([
     {
@@ -439,7 +431,6 @@ test('display panels keep Codex projects inside one panel', () => {
     'E:/project/b',
   ])
 })
-
 
 test('display panels keep Claude and Codex five-hour quotas separate', () => {
   const panels = buildAgentPanels([
@@ -492,7 +483,6 @@ test('display panels keep Claude and Codex five-hour quotas separate', () => {
   assert.equal(codexPanel?.quotaToken?.rateLimits?.fiveHour?.resetsAt, 2_000)
 })
 
-
 test('latest quota token uses the newest rate-limit payload', () => {
   const quota = latestQuotaToken([
     {
@@ -531,7 +521,6 @@ test('latest quota token uses the newest rate-limit payload', () => {
 
   assert.equal(quota?.rateLimits?.fiveHour?.usedPercent, 36)
 })
-
 
 test('latest quota token prefers the active model quota when model sessions overlap', () => {
   const quota = latestQuotaToken(
@@ -577,7 +566,6 @@ test('latest quota token prefers the active model quota when model sessions over
   assert.equal(quota?.rateLimits?.fiveHour?.usedPercent, 82)
   assert.equal(quota?.rateLimits?.sevenDay?.usedPercent, 12)
 })
-
 
 test('collectQuotaMeters prefers higher same-window weekly % over active stale session', () => {
   const future = Math.floor(Date.now() / 1000) + 86_400
@@ -626,7 +614,6 @@ test('collectQuotaMeters prefers higher same-window weekly % over active stale s
 
   assert.equal(meters[0]?.token.rateLimits?.sevenDay?.usedPercent, 35)
 })
-
 
 test('collectQuotaMeters prefers a newer weekly period over an older high percentage', () => {
   const nowSeconds = Math.floor(Date.now() / 1000)
@@ -686,7 +673,6 @@ test('collectQuotaMeters prefers a newer weekly period over an older high percen
   assert.equal(meters[0]?.token.rateLimits?.sevenDay?.usedPercent, 5)
 })
 
-
 test('collectQuotaMeters absorbs minor reset drift within one weekly period', () => {
   const futureSeconds = Math.floor(Date.now() / 1000) + 6 * 86_400
   // Straddle the old Math.round(... / 5 minutes) boundary by only two seconds.
@@ -736,7 +722,6 @@ test('collectQuotaMeters absorbs minor reset drift within one weekly period', ()
   assert.equal(meters[0]?.token.rateLimits?.sevenDay?.usedPercent, 35)
 })
 
-
 test('collectQuotaMeters keeps a soft-reset zero over an expired same-period high', () => {
   const expiredReset = Math.floor(Date.now() / 1000) - 60
   const meters = collectQuotaMeters(
@@ -784,7 +769,6 @@ test('collectQuotaMeters keeps a soft-reset zero over an expired same-period hig
 
   assert.equal(meters[0]?.token.rateLimits?.sevenDay?.usedPercent, 0)
 })
-
 
 test('collectQuotaMeters ignores hidden five-hour resets when choosing Codex weekly usage', () => {
   const weeklyReset = Math.floor(Date.now() / 1000) + 30 * 60
@@ -836,7 +820,6 @@ test('collectQuotaMeters ignores hidden five-hour resets when choosing Codex wee
   assert.equal(meters[0]?.token.rateLimits?.sevenDay?.usedPercent, 35)
 })
 
-
 test('latest quota token selects the matching bucket when one token carries multiple Codex buckets', () => {
   const quota = latestQuotaToken(
     [
@@ -880,7 +863,6 @@ test('latest quota token selects the matching bucket when one token carries mult
   assert.equal(quota?.rateLimits?.sevenDay?.usedPercent, 16)
 })
 
-
 test('latest quota token ignores Spark-only payload while the active model is non-Spark', () => {
   const quota = latestQuotaToken(
     [
@@ -910,7 +892,6 @@ test('latest quota token ignores Spark-only payload while the active model is no
   assert.equal(quota, undefined)
 })
 
-
 test('latest quota token accepts Spark quota when the active Codex model is Spark', () => {
   const quota = latestQuotaToken(
     [
@@ -939,7 +920,6 @@ test('latest quota token accepts Spark quota when the active Codex model is Spar
   assert.equal(quota?.rateLimits?.fiveHour?.usedPercent, 2)
   assert.equal(quota?.rateLimits?.sevenDay?.usedPercent, 1)
 })
-
 
 test('collectQuotaMeters stacks default weekly and Spark only when both models are active', () => {
   const dualBuckets = {
@@ -1011,7 +991,6 @@ test('collectQuotaMeters stacks default weekly and Spark only when both models a
   assert.equal(meters[1]?.token.rateLimitName, 'GPT-5.3-Codex-Spark')
 })
 
-
 test('collectQuotaMeters hides Spark while an active non-Spark model is running (gpt-5.6-sol)', () => {
   const meters = collectQuotaMeters(
     [
@@ -1064,7 +1043,6 @@ test('collectQuotaMeters hides Spark while an active non-Spark model is running 
     /spark|bengalfox/i,
   )
 })
-
 
 test('collectQuotaMeters does not show twin weekly bars from Spark + default for non-Spark models', () => {
   const meters = collectQuotaMeters(
@@ -1138,7 +1116,6 @@ test('collectQuotaMeters does not show twin weekly bars from Spark + default for
   assert.equal(meters[0]?.token.rateLimits?.sevenDay?.usedPercent, 43)
 })
 
-
 test('collectQuotaMeters follows the latest model and hides stale Spark after switching to weekly models', () => {
   const dualBuckets = {
     codex: {
@@ -1209,7 +1186,6 @@ test('collectQuotaMeters follows the latest model and hides stale Spark after sw
   assert.doesNotMatch(meters[0]?.token.rateLimitName ?? '', /Spark/i)
 })
 
-
 test('collectQuotaMeters shows only Spark weekly when only Spark was used', () => {
   const meters = collectQuotaMeters(
     [
@@ -1253,7 +1229,6 @@ test('collectQuotaMeters shows only Spark weekly when only Spark was used', () =
   assert.equal(meters[0]?.token.rateLimits?.sevenDay?.usedPercent, 5)
 })
 
-
 test('collectQuotaMeters shows only default weekly for non-Spark gpt-5.3 models', () => {
   const meters = collectQuotaMeters(
     [
@@ -1295,7 +1270,6 @@ test('collectQuotaMeters shows only default weekly for non-Spark gpt-5.3 models'
   assert.equal(meters[0]?.id, 'codex')
   assert.equal(meters[0]?.token.rateLimits?.sevenDay?.usedPercent, 22)
 })
-
 
 test('latest quota token prefers the freshest recent payload', () => {
   const quota = latestQuotaToken([
@@ -1343,7 +1317,6 @@ test('latest quota token prefers the freshest recent payload', () => {
   assert.equal(quota?.rateLimits?.sevenDay?.usedPercent, 0)
 })
 
-
 test('latest quota token accepts fresh zero quota with reset metadata', () => {
   const quota = latestQuotaToken([
     {
@@ -1389,7 +1362,6 @@ test('latest quota token accepts fresh zero quota with reset metadata', () => {
   assert.equal(quota?.rateLimits?.fiveHour?.usedPercent, 0)
   assert.equal(quota?.rateLimits?.sevenDay?.usedPercent, 0)
 })
-
 
 test('latest quota token skips empty zero-only rate-limit payloads', () => {
   const quota = latestQuotaToken([

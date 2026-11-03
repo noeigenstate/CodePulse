@@ -1,9 +1,28 @@
 /// <reference types="vite/client" />
-import type { InkApplyRequest, InkScreenStatus, YuanbaoKeyInput, YuanbaoTestResult, YuanbaoTopic } from '@codepulse/shared'
-import type { AssistantAudio, AssistantDraft, AssistantSecret, AssistantSettings, AssistantSnapshot, DeskTaskInput } from '@codepulse/shared'
 import type {
-  ProductView, DesktopForm, ShellSnapshot, WorkbenchWindowState, PresentationTarget, DesktopLayout,
-  InkDisplayPlan, HudAppearanceSettings,
+  InkApplyRequest,
+  InkScreenStatus,
+  YuanbaoKeyInput,
+  YuanbaoTestResult,
+  YuanbaoTopic,
+} from '@codepulse/shared'
+import type {
+  AssistantAudio,
+  AssistantDraft,
+  AssistantSecret,
+  AssistantSettings,
+  AssistantSnapshot,
+  DeskTaskInput,
+} from '@codepulse/shared'
+import type {
+  ProductView,
+  DesktopForm,
+  ShellSnapshot,
+  WorkbenchWindowState,
+  PresentationTarget,
+  DesktopLayout,
+  InkDisplayPlan,
+  HudAppearanceSettings,
   AmbientConfig,
   AmbientCard,
   AmbientSnapshot,
@@ -15,7 +34,9 @@ import type {
   DeviceProvisioningRequest,
   DeviceProvisioningSnapshot,
   StatusSnapshot,
-  WorkVoiceSettings, WorkVoiceTargetsSnapshot, WorkVoiceTarget,
+  WorkVoiceSettings,
+  WorkVoiceTargetsSnapshot,
+  WorkVoiceTarget,
   UiLocale,
   UpdateDownloadProgress,
   UpdateInfo,
@@ -43,7 +64,7 @@ export interface CodePulseApi {
   forgetDeskMemory: (id: string) => Promise<AssistantSnapshot>
   interpretAssistant: (text: string) => Promise<AssistantDraft>
   applyAssistantDraft: (id: string) => Promise<AssistantSnapshot>
-  listenAssistant: (pcm: Uint8Array) => Promise<{text:string;draft:AssistantDraft}>
+  listenAssistant: (pcm: Uint8Array) => Promise<{ text: string; draft: AssistantDraft }>
   speakAssistant: (text: string) => Promise<AssistantAudio>
   showDeskTasksOnInk: () => Promise<AssistantSnapshot>
   hideDeskTasksOnInk: () => Promise<AssistantSnapshot>
@@ -60,14 +81,19 @@ export interface CodePulseApi {
   getInkStatus: () => Promise<InkScreenStatus>
   onInkStatus: (cb: (status: InkScreenStatus) => void) => () => void
   /** Applies the playlist and the work-screen details together; rejects without partial writes. */
-  applyInk: (request: InkApplyRequest) => Promise<{ shell: ShellSnapshot; display: DeviceDisplaySnapshot }>
+  applyInk: (
+    request: InkApplyRequest,
+  ) => Promise<{ shell: ShellSnapshot; display: DeviceDisplaySnapshot }>
   /** Ends any one-off display (desk card or todo list) without changing the playlist. */
   endInkTemporary: () => Promise<InkScreenStatus>
   getHudPreview: () => Promise<StatusSnapshot | null>
   setHudContentHeight: (height: number) => Promise<boolean>
   navigateProduct: (view: ProductView) => Promise<ShellSnapshot>
   selectDesktopForm: (form: DesktopForm) => Promise<ShellSnapshot>
-  openSurface: (surface: 'standard' | 'hud' | 'screen', view?: ProductView) => Promise<ShellSnapshot>
+  openSurface: (
+    surface: 'standard' | 'hud' | 'screen',
+    view?: ProductView,
+  ) => Promise<ShellSnapshot>
   onShell: (cb: (snapshot: ShellSnapshot) => void) => Unsubscribe
   setWorkbenchWindow: (patch: Partial<WorkbenchWindowState>) => Promise<WorkbenchWindowState>
   onWorkbenchWindow: (cb: (state: WorkbenchWindowState) => void) => Unsubscribe
@@ -94,7 +120,10 @@ export interface CodePulseApi {
   getStatus: () => Promise<StatusSnapshot>
   ack: (agent: AgentType, workspacePath?: string) => Promise<boolean>
   getWorkVoice: () => Promise<WorkVoiceTargetsSnapshot>
-  setWorkVoice: (target: WorkVoiceTarget, settings: WorkVoiceSettings) => Promise<WorkVoiceTargetsSnapshot>
+  setWorkVoice: (
+    target: WorkVoiceTarget,
+    settings: WorkVoiceSettings,
+  ) => Promise<WorkVoiceTargetsSnapshot>
   testWorkVoice: (target: WorkVoiceTarget, locale: UiLocale) => Promise<WorkVoiceTargetsSnapshot>
   stopWorkVoice: (target: WorkVoiceTarget) => Promise<WorkVoiceTargetsSnapshot>
   onWorkVoice: (cb: (snapshot: WorkVoiceTargetsSnapshot) => void) => () => void

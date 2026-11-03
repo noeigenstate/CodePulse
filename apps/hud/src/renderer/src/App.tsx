@@ -145,15 +145,24 @@ export function App(): JSX.Element {
     () => reconcileTaskOrder(orderedProjects.panels, taskOrder),
     [orderedProjects.panels, taskOrder],
   )
-  const commonPanels = useMemo(() => snapshot.workOrder ? buildWorkPresentation(snapshot).panels : null, [snapshot])
-  const allPanels = legacyView ? orderedProjects.panels : commonPanels ?? orderedTasks.panels
+  const commonPanels = useMemo(
+    () => (snapshot.workOrder ? buildWorkPresentation(snapshot).panels : null),
+    [snapshot],
+  )
+  const allPanels = legacyView ? orderedProjects.panels : (commonPanels ?? orderedTasks.panels)
   const panels = useMemo(
     // Display preferences only filter renderer panels; hook delivery and disk sync keep running.
-    () => allPanels.filter((panel) => isHudTool(panel.agentType) && dashboardSettings.visibleTools[panel.agentType]),
+    () =>
+      allPanels.filter(
+        (panel) => isHudTool(panel.agentType) && dashboardSettings.visibleTools[panel.agentType],
+      ),
     [allPanels, dashboardSettings.visibleTools],
   )
   const visibleSessionCount = useMemo(
-    () => snapshot.agents.filter((agent) => isHudTool(agent.agentType) && dashboardSettings.visibleTools[agent.agentType]).length,
+    () =>
+      snapshot.agents.filter(
+        (agent) => isHudTool(agent.agentType) && dashboardSettings.visibleTools[agent.agentType],
+      ).length,
     [dashboardSettings.visibleTools, snapshot.agents],
   )
   const allToolsHidden = useMemo(

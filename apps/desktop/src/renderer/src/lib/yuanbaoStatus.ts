@@ -11,7 +11,10 @@ const ROW_TOPICS: Record<YuanbaoRowId, YuanbaoTopic[]> = {
 }
 
 /** The error to show inside a 元宝搜索 row: only its own topics' errors, never the global one. */
-export function yuanbaoRowError(row: YuanbaoRowId, errors: Partial<Record<YuanbaoTopic, string>> | undefined): string {
+export function yuanbaoRowError(
+  row: YuanbaoRowId,
+  errors: Partial<Record<YuanbaoTopic, string>> | undefined,
+): string {
   for (const topic of ROW_TOPICS[row]) {
     const text = errors?.[topic]?.trim()
     if (text) return text

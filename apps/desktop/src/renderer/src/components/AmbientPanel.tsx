@@ -22,7 +22,12 @@ import { useScreenTarget } from '../lib/useScreenTarget.js'
 import { useInkStatus } from '../lib/useInkStatus.js'
 import { inkPlanChip } from '../lib/inkStatusText.js'
 import { yuanbaoRowError } from '../lib/yuanbaoStatus.js'
-import { cardCategory, categoryProblem, refreshSummary, type AmbientCategory } from '../lib/ambientStatus.js'
+import {
+  cardCategory,
+  categoryProblem,
+  refreshSummary,
+  type AmbientCategory,
+} from '../lib/ambientStatus.js'
 import {
   lifeRowOn,
   lifeTripleOf,
@@ -37,7 +42,13 @@ import {
   type LifeTriple,
   type YuanbaoFlag,
 } from '../lib/yuanbaoRows.js'
-import { readRememberedSocial, rememberAfterFlag, toggleSocialRow, writeRememberedSocial, type SocialPair } from '../lib/ambientSocial.js'
+import {
+  readRememberedSocial,
+  rememberAfterFlag,
+  toggleSocialRow,
+  writeRememberedSocial,
+  type SocialPair,
+} from '../lib/ambientSocial.js'
 
 /** Tail of the calendar info line: the break going on, or how far away the next one is. */
 function nextHolidayText(next: CalendarNextHoliday | undefined): string {
@@ -140,7 +151,8 @@ function PetThumb({ card }: { card: AmbientCard }): JSX.Element {
 
 type Category = AmbientCategory
 type YuanbaoCategory = 'life' | 'tools' | 'holiday' | 'headlines'
-const isYuanbao = (id: Category): id is YuanbaoCategory => id === 'life' || id === 'tools' || id === 'holiday' || id === 'headlines'
+const isYuanbao = (id: Category): id is YuanbaoCategory =>
+  id === 'life' || id === 'tools' || id === 'holiday' || id === 'headlines'
 /** The list order is the page order: a category row is the category's own *Enabled rule. */
 const CATEGORIES: { id: Category; label: string }[] = [
   { id: 'concept', label: '概念卡' },
@@ -167,7 +179,12 @@ const SAMPLES: Record<YuanbaoCategory, { topic: YuanbaoTopic; label: string }[]>
   headlines: [{ topic: 'news', label: '今日要闻' }],
 }
 const HOLIDAY_STATE = { published: '已发布', pending: '尚未发布', synced: '已同步' } as const
-const RULE_FLAG: Partial<Record<Category, 'conceptsEnabled' | 'promptsEnabled' | 'petEnabled' | 'calendarEnabled' | 'newsEnabled'>> = {
+const RULE_FLAG: Partial<
+  Record<
+    Category,
+    'conceptsEnabled' | 'promptsEnabled' | 'petEnabled' | 'calendarEnabled' | 'newsEnabled'
+  >
+> = {
   concept: 'conceptsEnabled',
   prompt: 'promptsEnabled',
   pet: 'petEnabled',
@@ -186,7 +203,15 @@ type NumberField =
   | 'quietEnd'
 
 /** A number that is only committed on blur or Enter, so typing "30" never saves "3" first. */
-function NumberRule({ label, hint, value, min, max, disabled, onCommit }: {
+function NumberRule({
+  label,
+  hint,
+  value,
+  min,
+  max,
+  disabled,
+  onCommit,
+}: {
   label: string
   hint?: string
   value: number
@@ -412,7 +437,10 @@ export function AmbientPanel({
       for (const file of files) {
         if (file.size > 8000000 || !/\.(png|jpe?g)$/i.test(file.name))
           throw new Error('请选择 8 MB 内的 PNG / JPEG 图片')
-        last = await window.codepulse.importAmbientImage(new Uint8Array(await file.arrayBuffer()), file.name)
+        last = await window.codepulse.importAmbientImage(
+          new Uint8Array(await file.arrayBuffer()),
+          file.name,
+        )
         imported += 1
       }
       setCategory('local')
@@ -421,7 +449,9 @@ export function AmbientPanel({
       setMessage(`已导入 ${imported} 张图片`)
     } catch (error) {
       const detail = error instanceof Error ? error.message.split('Error: ').pop()! : ''
-      const reason = /^(请选择|图片|仅支持)/.test(detail) ? detail : '图片导入失败，请试用 PNG / JPEG 静态图片。'
+      const reason = /^(请选择|图片|仅支持)/.test(detail)
+        ? detail
+        : '图片导入失败，请试用 PNG / JPEG 静态图片。'
       // Pictures imported before the failure are real: show them and say which one failed.
       if (imported > 0) {
         setCategory('local')
@@ -464,7 +494,8 @@ export function AmbientPanel({
       setBusy(false)
     }
   }
-  const cardsFor = (id: Category): AmbientCard[] => snapshot?.cards.filter((c) => cardCategory(c) === id) ?? []
+  const cardsFor = (id: Category): AmbientCard[] =>
+    snapshot?.cards.filter((c) => cardCategory(c) === id) ?? []
   const visibleCards = cardsFor(category)
   const selectedCard =
     category === 'pet'
@@ -474,7 +505,8 @@ export function AmbientPanel({
   const items = category === 'pet' ? (selectedCard ? [selectedCard] : []) : visibleCards
   // Opening a category (or choosing a pet) previews its selected item without another click.
   useEffect(() => {
-    if (active && snapshot && selectedCard && previewedId.current !== selectedCard.id) void showPreview(selectedCard)
+    if (active && snapshot && selectedCard && previewedId.current !== selectedCard.id)
+      void showPreview(selectedCard)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, snapshot, selectedCard?.id])
   useEffect(() => {
@@ -484,7 +516,9 @@ export function AmbientPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, snapshot, category, visibleCards.length, sampleTopic])
   // `holiday` arrives with the host's next contract revision; read it defensively until then.
-  const yb = snapshot?.yuanbao as (YuanbaoStatus & { holiday?: { year: number; state: keyof typeof HOLIDAY_STATE } | null }) | undefined
+  const yb = snapshot?.yuanbao as
+    | (YuanbaoStatus & { holiday?: { year: number; state: keyof typeof HOLIDAY_STATE } | null })
+    | undefined
   const hasYbKey = Boolean(yb?.hasKey)
   // Per-topic errors arrive with the host's next contract revision; read them defensively until then.
   const ybErrors = (yb as { errors?: Partial<Record<YuanbaoTopic, string>> } | undefined)?.errors
@@ -492,8 +526,10 @@ export function AmbientPanel({
   // Keep the text fields in step with the saved config unless the typed text already says the same.
   useEffect(() => {
     const parsed = parseStocks(stocksText)
-    if (!(parsed.ok && parsed.stocks.join() === ybConfig.stocks.join())) setStocksText(ybConfig.stocks.join(', '))
-    if (parseTools(toolsText).join() !== ybConfig.tools.join()) setToolsText(ybConfig.tools.join(', '))
+    if (!(parsed.ok && parsed.stocks.join() === ybConfig.stocks.join()))
+      setStocksText(ybConfig.stocks.join(', '))
+    if (parseTools(toolsText).join() !== ybConfig.tools.join())
+      setToolsText(ybConfig.tools.join(', '))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ybConfig.stocks.join(), ybConfig.tools.join()])
   /** Saves a 元宝搜索 change; `enabled` is always re-derived from the six feature flags. */
@@ -508,15 +544,30 @@ export function AmbientPanel({
       : preview
   const enabledSources = { x: draft.xEnabled, meme: draft.memeEnabled, news: draft.newsEnabled }
   const ybRowOn = (id: YuanbaoCategory): boolean =>
-    id === 'life' ? lifeRowOn(lifeTripleOf(ybConfig)) : id === 'tools' ? ybConfig.toolsEnabled : id === 'holiday' ? ybConfig.holidayEnabled : ybConfig.newsEnabled
+    id === 'life'
+      ? lifeRowOn(lifeTripleOf(ybConfig))
+      : id === 'tools'
+        ? ybConfig.toolsEnabled
+        : id === 'holiday'
+          ? ybConfig.holidayEnabled
+          : ybConfig.newsEnabled
   const problem =
     categoryProblem(category, snapshot?.sourceStatus, enabledSources) ||
     (isYuanbao(category) && ybRowOn(category) ? yuanbaoRowError(category, ybErrors) : '')
-  const chip = product ? inkPlanChip(product.shell.inkPlan, 'ambient', ink?.connection, locale) : undefined
+  const chip = product
+    ? inkPlanChip(product.shell.inkPlan, 'ambient', ink?.connection, locale)
+    : undefined
   const openPlaylist = (): void => {
     if (product) void product.navigate('control').then(() => product.selectTarget('ink'))
   }
-  const number = (name: NumberField, label: string, min: number, max: number, disabled = false, hint?: string) => (
+  const number = (
+    name: NumberField,
+    label: string,
+    min: number,
+    max: number,
+    disabled = false,
+    hint?: string,
+  ) => (
     <NumberRule
       label={label}
       hint={hint}
@@ -534,7 +585,11 @@ export function AmbientPanel({
         checked={draft[flag]}
         onChange={(e) => {
           const value = e.target.checked
-          rememberedSocial.current = rememberAfterFlag({ xEnabled: draft.xEnabled, memeEnabled: draft.memeEnabled }, flag, value)
+          rememberedSocial.current = rememberAfterFlag(
+            { xEnabled: draft.xEnabled, memeEnabled: draft.memeEnabled },
+            flag,
+            value,
+          )
           writeRememberedSocial(window.localStorage, rememberedSocial.current)
           edit(flag, value)
         }}
@@ -554,7 +609,14 @@ export function AmbientPanel({
     try {
       const state = await window.codepulse.refreshAmbient()
       setSnapshot(state)
-      show(refreshSummary(category, before, state.cards, categoryProblem(category, state.sourceStatus, enabledSources)))
+      show(
+        refreshSummary(
+          category,
+          before,
+          state.cards,
+          categoryProblem(category, state.sourceStatus, enabledSources),
+        ),
+      )
     } catch {
       show('检查未完成，请稍后重试')
     } finally {
@@ -577,11 +639,20 @@ export function AmbientPanel({
     (ink?.showing.kind === 'ambient' || ink?.showing.kind === 'todos') &&
     ink.showing.id === preview?.ambient?.id
   const selectedCanOpen = Boolean(selectedCard?.url)
-  const selectedRemovable = selectedCard && (selectedCard.kind === 'image' || selectedCard.kind === 'note')
+  const selectedRemovable =
+    selectedCard && (selectedCard.kind === 'image' || selectedCard.kind === 'note')
   const hasSettings = ['pet', 'news', 'social', 'life', 'tools', 'headlines'].includes(category)
   const rowOn = (id: Category): boolean =>
-    isYuanbao(id) ? ybRowOn(id) : id === 'social' ? draft.xEnabled || draft.memeEnabled : RULE_FLAG[id] ? draft[RULE_FLAG[id]!] : false
-  const holidayStatus = yb?.holiday ? `${yb.holiday.year} 放假安排：${HOLIDAY_STATE[yb.holiday.state]}` : ''
+    isYuanbao(id)
+      ? ybRowOn(id)
+      : id === 'social'
+        ? draft.xEnabled || draft.memeEnabled
+        : RULE_FLAG[id]
+          ? draft[RULE_FLAG[id]!]
+          : false
+  const holidayStatus = yb?.holiday
+    ? `${yb.holiday.year} 放假安排：${HOLIDAY_STATE[yb.holiday.state]}`
+    : ''
   const toggleYuanbaoRow = (id: YuanbaoCategory) => {
     if (!hasYbKey) return
     if (id === 'life') {
@@ -591,7 +662,8 @@ export function AmbientPanel({
       editYuanbao(next.patch)
       return
     }
-    const flag: YuanbaoFlag = id === 'tools' ? 'toolsEnabled' : id === 'holiday' ? 'holidayEnabled' : 'newsEnabled'
+    const flag: YuanbaoFlag =
+      id === 'tools' ? 'toolsEnabled' : id === 'holiday' ? 'holidayEnabled' : 'newsEnabled'
     editMany({ yuanbao: setYuanbaoFlag(ybConfig, flag, !ybConfig[flag]) })
   }
   /** An individual weather / gold / stocks switch in 生活卡 设置: the latest choice replaces the row's memory. */
@@ -611,7 +683,13 @@ export function AmbientPanel({
       {label}
     </label>
   )
-  const tempReason = !online ? '连接设备后可临时展示' : sampleTopic ? '这是示例，有真实内容后才能临时展示' : !selectedCard ? '没有可展示的内容' : undefined
+  const tempReason = !online
+    ? '连接设备后可临时展示'
+    : sampleTopic
+      ? '这是示例，有真实内容后才能临时展示'
+      : !selectedCard
+        ? '没有可展示的内容'
+        : undefined
   return (
     <section
       className={'ambient-panel' + (dragging ? ' is-dragging' : '')}
@@ -651,7 +729,12 @@ export function AmbientPanel({
               ) : (
                 <span className="page-chip">{chip.text}</span>
               ))}
-            <button type="button" className="product-button" disabled={busy} onClick={() => fileInput.current?.click()}>
+            <button
+              type="button"
+              className="product-button"
+              disabled={busy}
+              onClick={() => fileInput.current?.click()}
+            >
               选择图片
             </button>
           </>
@@ -665,68 +748,70 @@ export function AmbientPanel({
               const count = id === 'pet' ? Math.min(1, cardsFor(id).length) : cardsFor(id).length
               return (
                 <Fragment key={id}>
-                {id === 'life' && (
-                  <li className="ambient-group-label" role="presentation">
-                    <span>元宝搜索</span>
-                    {!hasYbKey && <InfoTip text="先在元宝搜索设置里填写密钥" label="为什么开关不可用" />}
-                  </li>
-                )}
-                <li className={id === category ? 'is-current' : undefined} data-rule={id}>
-                  <button
-                    type="button"
-                    className="ambient-cat-main"
-                    data-cat={id}
-                    aria-pressed={id === category}
-                    onClick={() => {
-                      // Re-selecting the current category keeps its selection and preview.
-                      if (id === category) return
-                      setCategory(id)
-                      setSelectedId('')
-                      setSampleTopic(undefined)
-                      setPreview(undefined)
-                      setMessage('')
-                      previewedId.current = ''
-                      previewSeq.current += 1
-                      setRefreshNote('')
-                    }}
-                  >
-                    <span>{label}</span>
-                    <span className="ambient-cat-count">{count} 条</span>
-                  </button>
-                  {id === 'local' && <span className="ambient-manual-tag">仅手动</span>}
-                  {isYuanbao(id) && (
-                    <button
-                      type="button"
-                      role="switch"
-                      className="ambient-switch"
-                      // Without a key nothing can run, so the switch reads off whatever the stored flags say.
-                      aria-checked={hasYbKey && rowOn(id)}
-                      aria-disabled={!snapshot || !hasYbKey}
-                      aria-label={`自动挑选 ${label}`}
-                      onClick={() => toggleYuanbaoRow(id)}
-                    />
+                  {id === 'life' && (
+                    <li className="ambient-group-label" role="presentation">
+                      <span>元宝搜索</span>
+                      {!hasYbKey && (
+                        <InfoTip text="先在元宝搜索设置里填写密钥" label="为什么开关不可用" />
+                      )}
+                    </li>
                   )}
-                  {(flag || id === 'social') && (
+                  <li className={id === category ? 'is-current' : undefined} data-rule={id}>
                     <button
                       type="button"
-                      role="switch"
-                      className="ambient-switch"
-                      aria-checked={rowOn(id)}
-                      aria-label={`自动挑选 ${label}`}
-                      disabled={!snapshot}
+                      className="ambient-cat-main"
+                      data-cat={id}
+                      aria-pressed={id === category}
                       onClick={() => {
-                        if (id !== 'social') return edit(flag!, !draft[flag!])
-                        const next = toggleSocialRow(
-                          { xEnabled: draft.xEnabled, memeEnabled: draft.memeEnabled },
-                          rememberedSocial.current,
-                        )
-                        rememberedSocial.current = next.remembered
-                        writeRememberedSocial(window.localStorage, next.remembered)
-                        editMany(next.patch)
+                        // Re-selecting the current category keeps its selection and preview.
+                        if (id === category) return
+                        setCategory(id)
+                        setSelectedId('')
+                        setSampleTopic(undefined)
+                        setPreview(undefined)
+                        setMessage('')
+                        previewedId.current = ''
+                        previewSeq.current += 1
+                        setRefreshNote('')
                       }}
-                    />
-                  )}
-                </li>
+                    >
+                      <span>{label}</span>
+                      <span className="ambient-cat-count">{count} 条</span>
+                    </button>
+                    {id === 'local' && <span className="ambient-manual-tag">仅手动</span>}
+                    {isYuanbao(id) && (
+                      <button
+                        type="button"
+                        role="switch"
+                        className="ambient-switch"
+                        // Without a key nothing can run, so the switch reads off whatever the stored flags say.
+                        aria-checked={hasYbKey && rowOn(id)}
+                        aria-disabled={!snapshot || !hasYbKey}
+                        aria-label={`自动挑选 ${label}`}
+                        onClick={() => toggleYuanbaoRow(id)}
+                      />
+                    )}
+                    {(flag || id === 'social') && (
+                      <button
+                        type="button"
+                        role="switch"
+                        className="ambient-switch"
+                        aria-checked={rowOn(id)}
+                        aria-label={`自动挑选 ${label}`}
+                        disabled={!snapshot}
+                        onClick={() => {
+                          if (id !== 'social') return edit(flag!, !draft[flag!])
+                          const next = toggleSocialRow(
+                            { xEnabled: draft.xEnabled, memeEnabled: draft.memeEnabled },
+                            rememberedSocial.current,
+                          )
+                          rememberedSocial.current = next.remembered
+                          writeRememberedSocial(window.localStorage, next.remembered)
+                          editMany(next.patch)
+                        }}
+                      />
+                    )}
+                  </li>
                 </Fragment>
               )
             })}
@@ -737,7 +822,15 @@ export function AmbientPanel({
             onLimit={(value) => editYuanbao({ dailyRequestLimit: value })}
             onSnapshot={setSnapshot}
             disabled={!snapshot}
-            limitField={(value, onCommit) => <NumberRule label="每日请求上限" value={value} min={1} max={200} onCommit={onCommit} />}
+            limitField={(value, onCommit) => (
+              <NumberRule
+                label="每日请求上限"
+                value={value}
+                min={1}
+                max={200}
+                onCommit={onCommit}
+              />
+            )}
           />
           <details className="ambient-details ambient-pacing">
             <summary>展示节奏</summary>
@@ -760,13 +853,19 @@ export function AmbientPanel({
             </fieldset>
           </details>
         </div>
-        <div className="ambient-card ambient-detail" aria-label={CATEGORIES.find((c) => c.id === category)!.label}>
+        <div
+          className="ambient-card ambient-detail"
+          aria-label={CATEGORIES.find((c) => c.id === category)!.label}
+        >
           <div className="page-card-head">
             <div className="ambient-detail-title">
               <h2>{CATEGORIES.find((c) => c.id === category)!.label}</h2>
               {problem && <span className="page-chip is-warn">{problem}</span>}
             </div>
-            <span className={`page-saved ${savedFlash || refreshNote ? 'is-shown' : ''}`} role="status">
+            <span
+              className={`page-saved ${savedFlash || refreshNote ? 'is-shown' : ''}`}
+              role="status"
+            >
               {refreshNote || (savedFlash ? '已保存' : '')}
             </span>
           </div>
@@ -778,7 +877,9 @@ export function AmbientPanel({
           <div className="ambient-inner">
             <div className="ambient-items-col">
               <ul className="ambient-items" aria-label="条目">
-                {items.length === 0 && !isYuanbao(category) && <li className="ambient-empty">暂无内容</li>}
+                {items.length === 0 && !isYuanbao(category) && (
+                  <li className="ambient-empty">暂无内容</li>
+                )}
                 {items.length === 0 &&
                   isYuanbao(category) &&
                   SAMPLES[category].map(({ topic, label }) => (
@@ -809,7 +910,11 @@ export function AmbientPanel({
                 ))}
               </ul>
               {category === 'calendar' && selectedCard?.calendar && (
-                <p className="ambient-calendar-info" role="status" title="月历需要固件 0.0.29 以上，旧固件只显示一行文字">
+                <p
+                  className="ambient-calendar-info"
+                  role="status"
+                  title="月历需要固件 0.0.29 以上，旧固件只显示一行文字"
+                >
                   {selectedCard.text}
                   {nextHolidayText(snapshot?.calendarNext)}
                 </p>
@@ -866,7 +971,12 @@ export function AmbientPanel({
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
                   />
-                  <button type="button" className="product-button" disabled={busy || !note.trim()} onClick={() => void addNote()}>
+                  <button
+                    type="button"
+                    className="product-button"
+                    disabled={busy || !note.trim()}
+                    onClick={() => void addNote()}
+                  >
                     保存并预览
                   </button>
                   <small>{note.length} / 120</small>
@@ -978,7 +1088,9 @@ export function AmbientPanel({
                           <input
                             value={ybConfig.newsTopic}
                             maxLength={20}
-                            onChange={(e) => editYuanbao({ newsTopic: e.target.value }, SAVE_DELAY_MS)}
+                            onChange={(e) =>
+                              editYuanbao({ newsTopic: e.target.value }, SAVE_DELAY_MS)
+                            }
                           />
                         </label>
                         <div className="ambient-actions">{refreshButton}</div>
@@ -996,7 +1108,9 @@ export function AmbientPanel({
                                 <select
                                   value={draft.provider}
                                   disabled={!draft.xEnabled}
-                                  onChange={(e) => edit('provider', e.target.value as AmbientConfig['provider'])}
+                                  onChange={(e) =>
+                                    edit('provider', e.target.value as AmbientConfig['provider'])
+                                  }
                                 >
                                   <option value="twitterapi">TwitterAPI.io · 第三方按量付费</option>
                                   <option value="x">X 官方 API · 按量付费</option>
@@ -1011,7 +1125,8 @@ export function AmbientPanel({
                                     value={key}
                                     disabled={!draft.xEnabled}
                                     placeholder={
-                                      snapshot?.hasKey && snapshot.config.provider === draft.provider
+                                      snapshot?.hasKey &&
+                                      snapshot.config.provider === draft.provider
                                         ? '已保存，留空保留'
                                         : '填入对应来源的 API 密钥'
                                     }
@@ -1025,7 +1140,10 @@ export function AmbientPanel({
                                   onClick={() =>
                                     void action(
                                       async () => {
-                                        const state = await window.codepulse.setAmbientKey(draft.provider, key)
+                                        const state = await window.codepulse.setAmbientKey(
+                                          draft.provider,
+                                          key,
+                                        )
                                         setKey('')
                                         return state
                                       },
@@ -1057,7 +1175,9 @@ export function AmbientPanel({
                               <input
                                 value={draft.accounts.join(', ')}
                                 disabled={!draft.xEnabled}
-                                onChange={(e) => edit('accounts', e.target.value.split(/[,，\s]+/), SAVE_DELAY_MS)}
+                                onChange={(e) =>
+                                  edit('accounts', e.target.value.split(/[,，\s]+/), SAVE_DELAY_MS)
+                                }
                               />
                             </label>
                             <div className="ambient-fields">
@@ -1067,7 +1187,11 @@ export function AmbientPanel({
                                   value={draft.keywords.join(', ')}
                                   disabled={!draft.xEnabled}
                                   onChange={(e) =>
-                                    edit('keywords', e.target.value.split(/[,，]/).map((s) => s.trimStart()), SAVE_DELAY_MS)
+                                    edit(
+                                      'keywords',
+                                      e.target.value.split(/[,，]/).map((s) => s.trimStart()),
+                                      SAVE_DELAY_MS,
+                                    )
                                   }
                                 />
                               </label>
@@ -1077,7 +1201,11 @@ export function AmbientPanel({
                                   value={draft.exclude.join(', ')}
                                   disabled={!draft.xEnabled}
                                   onChange={(e) =>
-                                    edit('exclude', e.target.value.split(/[,，]/).map((s) => s.trimStart()), SAVE_DELAY_MS)
+                                    edit(
+                                      'exclude',
+                                      e.target.value.split(/[,，]/).map((s) => s.trimStart()),
+                                      SAVE_DELAY_MS,
+                                    )
                                   }
                                 />
                               </label>
@@ -1104,7 +1232,9 @@ export function AmbientPanel({
                                   <NumberRule
                                     key={account}
                                     label={`@${account}`}
-                                    value={draft.accountMinLikes[account.toLowerCase()] ?? draft.minLikes}
+                                    value={
+                                      draft.accountMinLikes[account.toLowerCase()] ?? draft.minLikes
+                                    }
                                     min={0}
                                     max={1000000}
                                     disabled={!draft.xEnabled}
@@ -1131,7 +1261,10 @@ export function AmbientPanel({
                                   value={draft.memeCommunity}
                                   disabled={!draft.memeEnabled}
                                   onChange={(e) =>
-                                    edit('memeCommunity', e.target.value as AmbientConfig['memeCommunity'])
+                                    edit(
+                                      'memeCommunity',
+                                      e.target.value as AmbientConfig['memeCommunity'],
+                                    )
                                   }
                                 >
                                   <option value="memes">r/memes</option>
@@ -1167,7 +1300,11 @@ export function AmbientPanel({
                 ) : targetError ? (
                   <p className="ambient-empty" role="alert">
                     预览暂不可用
-                    <button type="button" className="product-button is-compact" onClick={retryTarget}>
+                    <button
+                      type="button"
+                      className="product-button is-compact"
+                      onClick={retryTarget}
+                    >
                       重试
                     </button>
                   </p>

@@ -82,7 +82,9 @@ export class StatusHub extends EventEmitter {
   private presentationRetention?: (agent: Readonly<AgentRuntimeState>, now: number) => boolean
   private presentationOnly = new Set<string>()
 
-  setPresentationRetention(keep?: (agent: Readonly<AgentRuntimeState>, now: number) => boolean): void {
+  setPresentationRetention(
+    keep?: (agent: Readonly<AgentRuntimeState>, now: number) => boolean,
+  ): void {
     this.presentationRetention = keep
   }
 
@@ -327,12 +329,13 @@ export class StatusHub extends EventEmitter {
 
    */
   snapshot(now = Date.now()): StatusSnapshot {
-    const agents = [...this.agents.entries()].flatMap(([key, agent]) => {
-      if (!this.presentationOnly.has(key)) return [agent]
-      // Match the ordinary expiry view without destroying rows still needed
-      // by a longer-lived surface or clearing its unread result.
-      return hasRetainedQuota(agent.token) ? [{ ...agent, taskHidden: true, unread: false }] : []
-    })
+    const agents = [...this.agents.entries()]
+      .flatMap(([key, agent]) => {
+        if (!this.presentationOnly.has(key)) return [agent]
+        // Match the ordinary expiry view without destroying rows still needed
+        // by a longer-lived surface or clearing its unread result.
+        return hasRetainedQuota(agent.token) ? [{ ...agent, taskHidden: true, unread: false }] : []
+      })
       .map((agent) => this.usageStability.projectAgent(agent))
       .sort(compareRuntimeState)
     return buildStatusSnapshot(agents, now)
@@ -365,9 +368,12 @@ export class StatusHub extends EventEmitter {
       if (agent.agentType !== agentType || workspaceKey(agent.workspacePath) !== workspace) continue
       // Metadata-only rows have no work clock. Their first observation may still
       // resolve a workspace lookup without becoming activity on any surface.
-      const order = latest && agent.lastEventAt === 0 && latest.lastEventAt === 0
-        ? (latest.terminalAt ?? 0) - (agent.terminalAt ?? 0) || compareRuntimeState(agent, latest)
-        : latest ? compareRuntimeState(agent, latest) : -1
+      const order =
+        latest && agent.lastEventAt === 0 && latest.lastEventAt === 0
+          ? (latest.terminalAt ?? 0) - (agent.terminalAt ?? 0) || compareRuntimeState(agent, latest)
+          : latest
+            ? compareRuntimeState(agent, latest)
+            : -1
       if (order < 0) latest = agent
     }
     return latest ? this.usageStability.projectAgent(latest) : undefined

@@ -13,7 +13,10 @@ import { formatDue } from '../lib/dueText.js'
 import { useInkStatus } from '../lib/useInkStatus.js'
 import './assistant-panel.css'
 
-export function AssistantPanel({ active, locale = 'zh' }: {
+export function AssistantPanel({
+  active,
+  locale = 'zh',
+}: {
   active: boolean
   /** ia-refactor contract: shell state (applied playlist) and navigation to 控制 › 节目单. */
   product?: import('./ProductFrame.js').ProductNavigation
@@ -381,7 +384,9 @@ export function AssistantPanel({ active, locale = 'zh' }: {
                 <div key={i} className="desk-draft-task">
                   <strong>{task.title}</strong>
                   <small>
-                    {task.dueAt ? formatDue(task.dueAt, Date.now(), locale) : '仅添加待办，不设置提醒'}
+                    {task.dueAt
+                      ? formatDue(task.dueAt, Date.now(), locale)
+                      : '仅添加待办，不设置提醒'}
                   </small>
                 </div>
               ))}
@@ -441,8 +446,8 @@ export function AssistantPanel({ active, locale = 'zh' }: {
       <details className="desk-assistant-card desk-assistant-settings">
         <summary>助手、语音与提醒设置</summary>
         <p className="desk-assistant-muted">
-            语音只在你点击录音后采集。识别会发送本次录音；AI
-            会发送输入、近期对话和部分待办与记忆至所选服务商。普通待办无需联网。
+          语音只在你点击录音后采集。识别会发送本次录音；AI
+          会发送输入、近期对话和部分待办与记忆至所选服务商。普通待办无需联网。
         </p>
         {settings && snapshot && (
           <>

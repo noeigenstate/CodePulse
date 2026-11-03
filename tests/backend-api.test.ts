@@ -30,20 +30,39 @@ afterEach(async () => {
 
 test('desktop bootstrap serves immediately while initial hydration is delayed and receives later data', async (t) => {
   let release!: () => void
-  const hydration = new Promise<void>(resolve => { release = resolve })
+  const hydration = new Promise<void>((resolve) => {
+    release = resolve
+  })
   const hub = new StatusHub()
-  t.mock.method(SessionSyncService.prototype, 'start', () => hydration.then(() => {
-    hub.ingest({ id: 'late-scan', source: 'codex', eventType: 'session_start', timestamp: Date.now(), workspacePath: 'F:/example/late' })
-  }))
+  t.mock.method(SessionSyncService.prototype, 'start', () =>
+    hydration.then(() => {
+      hub.ingest({
+        id: 'late-scan',
+        source: 'codex',
+        eventType: 'session_start',
+        timestamp: Date.now(),
+        workspacePath: 'F:/example/late',
+      })
+    }),
+  )
   t.mock.method(CodexReadStateSync.prototype, 'start', async () => {})
   let server: LocalServer | undefined
   try {
-    server = await withTimeout(startLocalServer({ hub, host: HOST, port: 0, authToken: false,
-      disableCodexAppServer: true, waitForInitialSync: false }), 'desktop startup waited on hydration')
+    server = await withTimeout(
+      startLocalServer({
+        hub,
+        host: HOST,
+        port: 0,
+        authToken: false,
+        disableCodexAppServer: true,
+        waitForInitialSync: false,
+      }),
+      'desktop startup waited on hydration',
+    )
     const address = server.app.server.address()
     assert.ok(address && typeof address !== 'string')
     const base = `http://${HOST}:${address.port}`
-    assert.equal((await getJsonBody<{ok: boolean}>(base, '/api/health')).ok, true)
+    assert.equal((await getJsonBody<{ ok: boolean }>(base, '/api/health')).ok, true)
     assert.equal((await getJsonBody<StatusSnapshot>(base, '/api/status')).agents.length, 0)
     release()
     await hydration

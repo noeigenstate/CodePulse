@@ -107,7 +107,7 @@ export class HolidayStore {
     return this.merged
   }
   hasYear(year: number): boolean {
-    return Object.keys(this.merged).some(date => date.startsWith(`${year}-`))
+    return Object.keys(this.merged).some((date) => date.startsWith(`${year}-`))
   }
   /** Next break for the local day of `now`, rebuilt only when the day or the table changes. */
   next(now: number): CalendarNextHoliday | undefined {

@@ -118,8 +118,15 @@ test('one status timer wakes at connection expiry, temporary expiry and slot bou
   assert.equal(advances, 3)
 })
 test('showing carries the projected card id for ambient and todo cards, and none for the work screen', () => {
-  assert.equal(computeInkStatus({ ...base, projected: { ambient: card } }).showing.kind === 'ambient' && (computeInkStatus({ ...base, projected: { ambient: card } }).showing as { id?: string }).id, 'card')
-  const todos = computeInkStatus({ ...base, projected: { ambient: { ...card, id: 'todo-card', items: [] } } }).showing as { kind: string; id?: string }
+  assert.equal(
+    computeInkStatus({ ...base, projected: { ambient: card } }).showing.kind === 'ambient' &&
+      (computeInkStatus({ ...base, projected: { ambient: card } }).showing as { id?: string }).id,
+    'card',
+  )
+  const todos = computeInkStatus({
+    ...base,
+    projected: { ambient: { ...card, id: 'todo-card', items: [] } },
+  }).showing as { kind: string; id?: string }
   assert.deepEqual([todos.kind, todos.id], ['todos', 'todo-card'])
   assert.deepEqual(computeInkStatus({ ...base }).showing, { kind: 'work' })
 })

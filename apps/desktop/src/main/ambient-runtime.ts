@@ -43,10 +43,13 @@ export function createAmbientRuntime(
     renameSync(file + '.tmp', file)
   }
   const yuanbaoKeys = new YuanbaoKeyStore({
-    available: () => safeStorage.isEncryptionAvailable() &&
+    available: () =>
+      safeStorage.isEncryptionAvailable() &&
       (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend?.() !== 'basic_text'),
-    encrypt: value => safeStorage.encryptString(value), decrypt: value => safeStorage.decryptString(value),
-    read: () => read(keysPath), write: value => write(keysPath, value),
+    encrypt: (value) => safeStorage.encryptString(value),
+    decrypt: (value) => safeStorage.decryptString(value),
+    read: () => read(keysPath),
+    write: (value) => write(keysPath, value),
   })
   const yuanbaoPath = join(directory, 'yuanbao-cache.json')
   const service = new AmbientService({
@@ -62,8 +65,8 @@ export function createAmbientRuntime(
     yuanbaoKey: () => yuanbaoKeys.get(),
     yuanbaoClient: new YuanbaoClient({ transport: net.fetch.bind(net) }),
     yuanbaoCache: read(yuanbaoPath),
-    saveYuanbao: cache => write(yuanbaoPath, cache),
-    saveYuanbaoResponse: raw => {
+    saveYuanbao: (cache) => write(yuanbaoPath, cache),
+    saveYuanbaoResponse: (raw) => {
       const path = join(directory, 'yuanbao-last-response.json')
       writeFileSync(path + '.tmp', yuanbaoResponseJson(raw), { encoding: 'utf8', mode: 0o600 })
       renameSync(path + '.tmp', path)
@@ -74,7 +77,10 @@ export function createAmbientRuntime(
             const dir = join(directory, 'yuanbao-debug')
             mkdirSync(dir, { recursive: true })
             const path = join(dir, `${topic.replace(/[^a-z]/g, '')}.json`)
-            writeFileSync(path + '.tmp', yuanbaoResponseJson(raw), { encoding: 'utf8', mode: 0o600 })
+            writeFileSync(path + '.tmp', yuanbaoResponseJson(raw), {
+              encoding: 'utf8',
+              mode: 0o600,
+            })
             renameSync(path + '.tmp', path)
           },
         }

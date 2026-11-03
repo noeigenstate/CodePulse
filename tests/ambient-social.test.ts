@@ -44,7 +44,11 @@ test('turning the row off remembers the pair and turning it on restores it exact
 test('with nothing remembered the row turns on meme only, never X', () => {
   const none = { xEnabled: false, memeEnabled: false }
   assert.deepEqual(toggleSocialRow(none, undefined).patch, { xEnabled: false, memeEnabled: true })
-  assert.deepEqual(toggleSocialRow(none, none).patch, { xEnabled: false, memeEnabled: true }, 'an all-off memory is not a memory')
+  assert.deepEqual(
+    toggleSocialRow(none, none).patch,
+    { xEnabled: false, memeEnabled: true },
+    'an all-off memory is not a memory',
+  )
 })
 
 test('the remembered pair survives a restart through storage', () => {
@@ -56,7 +60,10 @@ test('the remembered pair survives a restart through storage', () => {
   // A new session reads it back and the row restores X-only exactly.
   const restored = readRememberedSocial(storage)
   assert.deepEqual(restored, { xEnabled: true, memeEnabled: false })
-  assert.deepEqual(toggleSocialRow({ xEnabled: false, memeEnabled: false }, restored).patch, { xEnabled: true, memeEnabled: false })
+  assert.deepEqual(toggleSocialRow({ xEnabled: false, memeEnabled: false }, restored).patch, {
+    xEnabled: true,
+    memeEnabled: false,
+  })
   writeRememberedSocial(storage, undefined)
   assert.equal(readRememberedSocial(storage), undefined)
 })
@@ -64,15 +71,25 @@ test('the remembered pair survives a restart through storage', () => {
 test('with no stored memory (even when an X key is saved) the first turn-on is meme only', () => {
   const storage = new MemoryStorage()
   assert.equal(readRememberedSocial(storage), undefined)
-  assert.deepEqual(toggleSocialRow({ xEnabled: false, memeEnabled: false }, readRememberedSocial(storage)).patch, {
-    xEnabled: false,
-    memeEnabled: true,
-  })
+  assert.deepEqual(
+    toggleSocialRow({ xEnabled: false, memeEnabled: false }, readRememberedSocial(storage)).patch,
+    {
+      xEnabled: false,
+      memeEnabled: true,
+    },
+  )
 })
 
 test('malformed or unavailable storage is ignored', () => {
   const storage = new MemoryStorage()
-  for (const raw of ['not json', '[]', 'null', '{"xEnabled":true}', '{"xEnabled":"yes","memeEnabled":false}', '42']) {
+  for (const raw of [
+    'not json',
+    '[]',
+    'null',
+    '{"xEnabled":true}',
+    '{"xEnabled":"yes","memeEnabled":false}',
+    '42',
+  ]) {
     storage.setItem(SOCIAL_PAIR_KEY, raw)
     assert.equal(readRememberedSocial(storage), undefined, raw)
   }
@@ -96,7 +113,13 @@ test('individual X/meme toggles replace the remembered pair, so the row never re
   remembered = rememberAfterFlag({ xEnabled: false, memeEnabled: true }, 'memeEnabled', false)
   assert.equal(remembered, undefined)
   // Row on again: nothing remembered -> meme only, never X.
-  assert.deepEqual(toggleSocialRow({ xEnabled: false, memeEnabled: false }, remembered).patch, { xEnabled: false, memeEnabled: true })
+  assert.deepEqual(toggleSocialRow({ xEnabled: false, memeEnabled: false }, remembered).patch, {
+    xEnabled: false,
+    memeEnabled: true,
+  })
   // Turning X on individually is remembered as the user's choice.
-  assert.deepEqual(rememberAfterFlag({ xEnabled: false, memeEnabled: false }, 'xEnabled', true), { xEnabled: true, memeEnabled: false })
+  assert.deepEqual(rememberAfterFlag({ xEnabled: false, memeEnabled: false }, 'xEnabled', true), {
+    xEnabled: true,
+    memeEnabled: false,
+  })
 })

@@ -5,7 +5,10 @@ import { inkAllowsAmbient } from '../apps/desktop/src/main/ambient-plan.js'
 import { collectNews } from '../apps/desktop/src/main/ambient-sources.js'
 test('fixed plans and bounded cycle slots select the intended content', () => {
   assert.equal(inkAllowsAmbient({ ...DEFAULT_INK_PLAN, mode: 'single', fixed: 'work' }, 0), false)
-  assert.equal(inkAllowsAmbient({ ...DEFAULT_INK_PLAN, mode: 'single', fixed: 'ambient' }, 0), false)
+  assert.equal(
+    inkAllowsAmbient({ ...DEFAULT_INK_PLAN, mode: 'single', fixed: 'ambient' }, 0),
+    false,
+  )
   assert.equal(inkAllowsAmbient(DEFAULT_INK_PLAN, 0), false)
   assert.equal(inkAllowsAmbient(DEFAULT_INK_PLAN, 15 * 60000), true)
   assert.equal(inkAllowsAmbient(DEFAULT_INK_PLAN, 30 * 60000), false)

@@ -51,19 +51,19 @@ HUD 没有第二套状态机：与标准桌面、设备共用 11 个 TurnState�
 另外有 5 个视觉层级 quiet / active / notice / action / fault，
 7 个整体托盘状态；未读是独立标记，不是又一个轮次状态。
 
-| 内部状态 | 中文统一名称 | English | 意义 / 主要来源 |
-| --- | --- | --- | --- |
-| IDLE | 空闲 | Idle | 无活动任务、会话初始化 |
-| PROMPT_SUBMITTED | 处理中 | Processing | 用户提交；hook 或原生会话恢复 |
-| THINKING | 处理中 | Processing | 模型生成、工具结束后继续 |
-| TOOL_RUNNING | 执行工具 | Using tools | PreToolUse、原生工具活动 |
-| WAITING_PERMISSION | 等待授权 | Awaiting approval | 需要批准操作；确认的授权事件 |
-| WAITING_USER_INPUT | 等待输入 | Awaiting input | 回答问题、澄清、表单填写 |
-| DONE | 已完成 | Done | Stop 或原生终结记录，未读时另作强调 |
-| ERROR | 执行失败 | Failed | 明确的轮次失败，不是一次普通工具失败 |
-| TIMEOUT | 疑似卡住 | Possibly stuck | 本机 watchdog 推断，不等于确认失败 |
-| USAGE_LIMITED | 额度受限 | Usage limited | 适配器识别的用量限制 |
-| CANCELLED | 已取消 | Cancelled | 取消事件或原生取消记录 |
+| 内部状态           | 中文统一名称 | English           | 意义 / 主要来源                      |
+| ------------------ | ------------ | ----------------- | ------------------------------------ |
+| IDLE               | 空闲         | Idle              | 无活动任务、会话初始化               |
+| PROMPT_SUBMITTED   | 处理中       | Processing        | 用户提交；hook 或原生会话恢复        |
+| THINKING           | 处理中       | Processing        | 模型生成、工具结束后继续             |
+| TOOL_RUNNING       | 执行工具     | Using tools       | PreToolUse、原生工具活动             |
+| WAITING_PERMISSION | 等待授权     | Awaiting approval | 需要批准操作；确认的授权事件         |
+| WAITING_USER_INPUT | 等待输入     | Awaiting input    | 回答问题、澄清、表单填写             |
+| DONE               | 已完成       | Done              | Stop 或原生终结记录，未读时另作强调  |
+| ERROR              | 执行失败     | Failed            | 明确的轮次失败，不是一次普通工具失败 |
+| TIMEOUT            | 疑似卡住     | Possibly stuck    | 本机 watchdog 推断，不等于确认失败   |
+| USAGE_LIMITED      | 额度受限     | Usage limited     | 适配器识别的用量限制                 |
+| CANCELLED          | 已取消       | Cancelled         | 取消事件或原生取消记录               |
 
 “手动操作”一般就是上表两个 WAITING 状态。高频批准命令仍是等待授权；
 回答“你要选 A 还是 B”才是等待输入。二者都在等人，不该混成执行失败。

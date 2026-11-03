@@ -114,7 +114,10 @@ export class HudSurface {
       'codepulse:dismiss-project-card',
       (_event, type: unknown, workspace?: string, session?: string) => {
         const changed = this.projection.dismiss(
-          this.hub.snapshotForPresentation(), type, workspace, session,
+          this.hub.snapshotForPresentation(),
+          type,
+          workspace,
+          session,
         )
         this.broadcast('codepulse:status', this.hub.snapshot())
         if (changed) this.workChanged()
@@ -123,7 +126,10 @@ export class HudSurface {
     )
     ipcMain.handle('codepulse:set-result-retention', (_event, minutes: unknown) => {
       const changed = this.projection.setRetention(minutes)
-      if (changed) { this.broadcast('codepulse:status', this.hub.snapshot()); this.workChanged() }
+      if (changed) {
+        this.broadcast('codepulse:status', this.hub.snapshot())
+        this.workChanged()
+      }
       return changed
     })
     ipcMain.handle('codepulse:set-mute', (_event, value: unknown) => {
@@ -134,8 +140,19 @@ export class HudSurface {
     })
   }
 
-  isVisible(): boolean { return !!this.window && !this.window.isDestroyed() && this.window.isVisible() && !this.window.isMinimized() }
-  hide(): void { this.visible = false; this.window?.hide(); this.visibilityChanged() }
+  isVisible(): boolean {
+    return (
+      !!this.window &&
+      !this.window.isDestroyed() &&
+      this.window.isVisible() &&
+      !this.window.isMinimized()
+    )
+  }
+  hide(): void {
+    this.visible = false
+    this.window?.hide()
+    this.visibilityChanged()
+  }
 
   syncSettings(settings: HudAppearanceSettings): void {
     this.latestSettings = settings
@@ -204,13 +221,16 @@ export class HudSurface {
       this.visible = false
       this.visibilityChanged()
     })
-    void window.loadFile(this.renderer).then(() => {
-      reveal(window)
-      console.log('[codepulse] HUD shown on client display', display.id, window.getBounds())
-    }).catch(error => {
-      console.error('[codepulse] HUD renderer failed to load', error)
-      if (!window.isDestroyed()) window.destroy()
-    })
+    void window
+      .loadFile(this.renderer)
+      .then(() => {
+        reveal(window)
+        console.log('[codepulse] HUD shown on client display', display.id, window.getBounds())
+      })
+      .catch((error) => {
+        console.error('[codepulse] HUD renderer failed to load', error)
+        if (!window.isDestroyed()) window.destroy()
+      })
   }
 
   private openSettings(): void {

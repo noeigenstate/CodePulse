@@ -10,14 +10,14 @@ they are not current restrictions on publishing to main. See [REPOSITORY.md](REP
 
 ## Ownership and build
 
-| Area | Responsibility |
-| --- | --- |
-| apps/desktop/src/main | One Electron process, StatusHub, native session reads, collectors, hooks, device service and windows |
-| apps/desktop/src/renderer | Standard desktop and independent screen workbench |
-| apps/hud/src/renderer | Existing HUD appearance, task cards, ordering and acknowledgement controls |
-| apps/hud/src/preload | HUD IPC bridge to the same host; no second server or collector |
-| packages | Shared model, adapters, local server, storage and hooks |
-| Both device-preview directories | Identical committed firmware renderer assets, checked before every build |
+| Area                            | Responsibility                                                                                       |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| apps/desktop/src/main           | One Electron process, StatusHub, native session reads, collectors, hooks, device service and windows |
+| apps/desktop/src/renderer       | Standard desktop and independent screen workbench                                                    |
+| apps/hud/src/renderer           | Existing HUD appearance, task cards, ordering and acknowledgement controls                           |
+| apps/hud/src/preload            | HUD IPC bridge to the same host; no second server or collector                                       |
+| packages                        | Shared model, adapters, local server, storage and hooks                                              |
+| Both device-preview directories | Identical committed firmware renderer assets, checked before every build                             |
 
 Install with `pnpm install --frozen-lockfile`, build with `pnpm build`, and launch
 with `pnpm start`. The root build includes HUD automatically. `pnpm dist:win`
@@ -48,7 +48,7 @@ dependency directory for validation while another checkout is running.
 ## Existing split checkouts
 
 The old HUD and standard-host working trees can remain in place for rollback;
-this branch replaces their *build dependency*, not their local files or history.
+this branch replaces their _build dependency_, not their local files or history.
 Keep unpublished changes in those trees until their transfer has been reviewed.
 Use this branch for future desktop/HUD work. Do not run the old HUD backend
 alongside this host. Stop only CodePulse via its tray before switching builds.

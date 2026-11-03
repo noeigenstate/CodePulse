@@ -17,17 +17,29 @@ const LOOSE = `[^\\s,;:，。；、！？!?"'“”‘’()（）\\[\\]【】<>�
  */
 const RULES: [RegExp, string][] = [
   // Authorization: Bearer abc / Authorization=Basic abc / authorization: abc
-  [new RegExp(`\\b(authorization)(["']?\\s*[:=]\\s*)(?:(?:bearer|basic|token)\\s+)?${VALUE}`, 'gi'), `$1$2${MASK}`],
+  [
+    new RegExp(
+      `\\b(authorization)(["']?\\s*[:=]\\s*)(?:(?:bearer|basic|token)\\s+)?${VALUE}`,
+      'gi',
+    ),
+    `$1$2${MASK}`,
+  ],
   // https://user:pass@host
   [/(:\/\/[^\s:/@]{1,100}:)[^\s@/]{1,200}(@)/g, `$1${MASK}$2`],
   // curl -u admin:hunter2 / --user admin:hunter2
   [/(^|\s)(-u\s+|--user[\s=]+)(["']?)([^\s:'"]{1,100}):[^\s'"]{1,200}/g, `$1$2$3$4:${MASK}`],
   // password: "x", token=abc, api_key: 'abc', DB_PASSWORD=abc, "secret": "abc"; the word may sit inside a longer name
-  [new RegExp(`((?:${SECRET_WORDS})[A-Za-z0-9_.-]{0,32})(["']?\\s*[:=]\\s*)${VALUE}`, 'gi'), `$1$2${MASK}`],
+  [
+    new RegExp(`((?:${SECRET_WORDS})[A-Za-z0-9_.-]{0,32})(["']?\\s*[:=]\\s*)${VALUE}`, 'gi'),
+    `$1$2${MASK}`,
+  ],
   // pass=abc / pw: abc (short words need a word boundary, or "bypass: true" would be masked)
   [new RegExp(`\\b(pass|pw)(["']?\\s*[:=]\\s*)${VALUE}`, 'gi'), `$1$2${MASK}`],
   // --password hunter2 / --token abc
-  [/(--?(?:password|passwd|passphrase|pass|pwd|pw|token|secret|api-?key|apikey|access-?key)\s+)(?!-)\S{1,200}/gi, `$1${MASK}`],
+  [
+    /(--?(?:password|passwd|passphrase|pass|pwd|pw|token|secret|api-?key|apikey|access-?key)\s+)(?!-)\S{1,200}/gi,
+    `$1${MASK}`,
+  ],
   // "password is hunter2"
   [/\b(password|passcode|token|secret)(\s+is\s+)\S{1,200}/gi, `$1$2${MASK}`],
   // 密码是xxx / 密码：xxx / 口令=xxx / 密码 xxx / 我的密码xxx; the value runs to the next space or punctuation
@@ -36,14 +48,20 @@ const RULES: [RegExp, string][] = [
   [/\b(bearer\s+)[A-Za-z0-9._~+/=-]{6,}/gi, `$1${MASK}`],
   // Well-known key shapes.
   [/\bsk-[A-Za-z0-9_-]{8,}/g, MASK],
-  [/\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{16,}|\bgithub_pat_[A-Za-z0-9_]{20,}|\bglpat-[A-Za-z0-9_-]{16,}/g, MASK],
+  [
+    /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{16,}|\bgithub_pat_[A-Za-z0-9_]{20,}|\bglpat-[A-Za-z0-9_-]{16,}/g,
+    MASK,
+  ],
   [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, MASK],
   [/\bAKIA[0-9A-Z]{16}\b/g, MASK],
   [/\bAIza[A-Za-z0-9_-]{30,}/g, MASK],
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}/g, MASK],
   // Any other long mixed letter+digit run with no separators reads as a key. Starting only at the
   // beginning of a run (and bounding the look-aheads) keeps this linear on long dashed runs.
-  [/(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]{0,80}\d)(?=[A-Za-z0-9_-]{0,80}[A-Za-z])[A-Za-z0-9_-]{32,}/g, MASK],
+  [
+    /(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]{0,80}\d)(?=[A-Za-z0-9_-]{0,80}[A-Za-z])[A-Za-z0-9_-]{32,}/g,
+    MASK,
+  ],
 ]
 
 /** Replace anything that looks like a credential with a mask, leaving the surrounding words. */

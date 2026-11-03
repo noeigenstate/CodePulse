@@ -145,14 +145,20 @@ export async function startDeviceServer(options: DeviceServerOptions): Promise<D
   // snapshot so a transition cannot fall between the comparison and listener.
   const readers = new Set<() => void>()
   let stopped = false
-  const notifyChanged = () => { for (const wake of [...readers]) wake() }
+  const notifyChanged = () => {
+    for (const wake of [...readers]) wake()
+  }
   options.hub.on('status', notifyChanged)
   app.addHook('preClose', async () => {
     stopped = true
     options.hub.off('status', notifyChanged)
     notifyChanged()
   })
-  const snapshot = () => (options.projectStatus ?? toDeviceStatusV1)(options.hub.snapshot(), options.getDisplayConfig?.())
+  const snapshot = () =>
+    (options.projectStatus ?? toDeviceStatusV1)(
+      options.hub.snapshot(),
+      options.getDisplayConfig?.(),
+    )
 
   app.get(DEVICE_STATUS_PATH, async (request, reply) => {
     const rawWait = request.headers['x-codepulse-wait-ms']
@@ -168,14 +174,20 @@ export async function startDeviceServer(options: DeviceServerOptions): Promise<D
           clearTimeout(timer)
           readers.delete(wake)
           reply.raw.off('close', onClose)
-          if (error) reject(error); else resolve()
+          if (error) reject(error)
+          else resolve()
         }
         const wake = () => {
           try {
-            if (stopped) { finish(); return }
+            if (stopped) {
+              finish()
+              return
+            }
             status = snapshot()
             if (!etagMatches(conditional, `W/"${status.revision}"`)) finish()
-          } catch (error) { finish(error) }
+          } catch (error) {
+            finish(error)
+          }
         }
         const onClose = () => finish()
         const timer = setTimeout(() => finish(), waitMs)
@@ -185,7 +197,10 @@ export async function startDeviceServer(options: DeviceServerOptions): Promise<D
         if (reply.raw.destroyed) finish()
       })
     }
-    if (reply.raw.destroyed) { reply.hijack(); return reply }
+    if (reply.raw.destroyed) {
+      reply.hijack()
+      return reply
+    }
     if (stopped) return reply.code(503).send({ error: 'server_closing' })
     // Re-read after the await: merge changes received during the same turn.
     status = snapshot()

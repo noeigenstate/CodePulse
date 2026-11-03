@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { syncAuthMode, yuanbaoRowError } from '../apps/desktop/src/renderer/src/lib/yuanbaoStatus.js'
+import {
+  syncAuthMode,
+  yuanbaoRowError,
+} from '../apps/desktop/src/renderer/src/lib/yuanbaoStatus.js'
 
 test('each row shows only its own topics error', () => {
   const errors = { weather: '密钥错误', tools: '限流，稍后再试', news: '连接失败' }
@@ -12,8 +15,15 @@ test('each row shows only its own topics error', () => {
 
 test('生活卡 covers weather, gold and stock, in that order', () => {
   assert.equal(yuanbaoRowError('life', { stock: '参数不被当前版本支持' }), '参数不被当前版本支持')
-  assert.equal(yuanbaoRowError('life', { gold: '未开通或额度用完', stock: '连接失败' }), '未开通或额度用完')
-  assert.equal(yuanbaoRowError('life', { tools: '连接失败', holiday: '连接失败', news: '连接失败' }), '', 'other topics never leak into 生活卡')
+  assert.equal(
+    yuanbaoRowError('life', { gold: '未开通或额度用完', stock: '连接失败' }),
+    '未开通或额度用完',
+  )
+  assert.equal(
+    yuanbaoRowError('life', { tools: '连接失败', holiday: '连接失败', news: '连接失败' }),
+    '',
+    'other topics never leak into 生活卡',
+  )
 })
 
 test('a missing or blank error map falls back to nothing', () => {

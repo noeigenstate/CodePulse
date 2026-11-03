@@ -431,23 +431,23 @@ export function DeviceScreenPreview({
                 </button>
               </div>
             )}
-          <div ref={frame} className="device-preview-frame" style={{ width: scale.cssWidth }}>
-            <canvas
-              ref={canvas}
-              width={400}
-              height={300}
-              className="device-screen"
-              style={{
-                width: scale.cssWidth,
-                height: scale.cssHeight,
-                visibility: state === 'error' ? 'hidden' : 'visible',
-              }}
-              role="img"
-              aria-label={description}
-            >
-              {description}
-            </canvas>
-          </div>
+            <div ref={frame} className="device-preview-frame" style={{ width: scale.cssWidth }}>
+              <canvas
+                ref={canvas}
+                width={400}
+                height={300}
+                className="device-screen"
+                style={{
+                  width: scale.cssWidth,
+                  height: scale.cssHeight,
+                  visibility: state === 'error' ? 'hidden' : 'visible',
+                }}
+                role="img"
+                aria-label={description}
+              >
+                {description}
+              </canvas>
+            </div>
           </div>
         </div>
       </div>

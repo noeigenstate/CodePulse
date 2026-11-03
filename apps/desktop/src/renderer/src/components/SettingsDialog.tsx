@@ -143,22 +143,28 @@ export function SettingsDialog({
 
   return (
     <div
-      className={embedded ? 'product-settings-page' : 'settings-backdrop absolute inset-0 z-[60] flex items-center justify-center px-4'}
+      className={
+        embedded
+          ? 'product-settings-page'
+          : 'settings-backdrop absolute inset-0 z-[60] flex items-center justify-center px-4'
+      }
       onMouseDown={embedded ? undefined : closeOnBackdrop}
       role="presentation"
     >
       <section
         aria-label={copy.title}
         aria-modal={embedded ? undefined : true}
-        className={embedded ? 'settings-dialog settings-embedded flex w-full flex-col' : 'settings-dialog flex max-h-[min(90vh,52rem)] w-full max-w-2xl flex-col'}
+        className={
+          embedded
+            ? 'settings-dialog settings-embedded flex w-full flex-col'
+            : 'settings-dialog flex max-h-[min(90vh,52rem)] w-full max-w-2xl flex-col'
+        }
         ref={dialogRef}
         role={embedded ? undefined : 'dialog'}
         tabIndex={-1}
       >
         {embedded ? (
-          <PageHeader
-            title={copy.title}
-          />
+          <PageHeader title={copy.title} />
         ) : (
           <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
             <h2 className="text-lg font-semibold text-ink">{copy.title}</h2>
@@ -275,9 +281,7 @@ export function SettingsDialog({
             <div className="mt-3 flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="font-medium text-ink">{copy.currentVersion}</p>
-                <p className="page-card-sub truncate">
-                  {appVersion ? `v${appVersion}` : '—'}
-                </p>
+                <p className="page-card-sub truncate">{appVersion ? `v${appVersion}` : '—'}</p>
               </div>
               <button
                 className="product-button"

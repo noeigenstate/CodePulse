@@ -89,7 +89,8 @@ test('dashboard settings persist changes and apply the selected root theme', () 
       codex: true,
       claude_code: false,
       grok: true,
-      kimi: false, antigravity: true,
+      kimi: false,
+      antigravity: true,
       opencode: true,
     },
     panelOrder: ['opencode', 'claude_code', 'codex', 'grok', 'kimi', 'antigravity'] as Array<
@@ -108,7 +109,14 @@ test('dashboard settings persist automatic theme selection', () => {
   const storage = new MemoryStorage()
   const next = {
     theme: 'auto' as const,
-    visibleTools: { codex: true, claude_code: true, grok: true, kimi: true, antigravity: true, opencode: true },
+    visibleTools: {
+      codex: true,
+      claude_code: true,
+      grok: true,
+      kimi: true,
+      antigravity: true,
+      opencode: true,
+    },
     panelOrder: [...DEFAULT_PANEL_ORDER],
   }
 
@@ -131,7 +139,14 @@ test('dashboard settings retain safe in-memory defaults when storage is unavaila
   assert.doesNotThrow(() =>
     writeDashboardSettings(unavailableStorage, {
       theme: 'dark',
-      visibleTools: { codex: true, claude_code: true, grok: true, kimi: true, antigravity: true, opencode: true },
+      visibleTools: {
+        codex: true,
+        claude_code: true,
+        grok: true,
+        kimi: true,
+        antigravity: true,
+        opencode: true,
+      },
       panelOrder: [...DEFAULT_PANEL_ORDER],
     }),
   )

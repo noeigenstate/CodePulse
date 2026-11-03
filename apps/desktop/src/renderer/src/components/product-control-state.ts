@@ -51,7 +51,12 @@ export interface InkBaseline {
  */
 export function nextInkBaseline(
   previous: InkBaseline | undefined,
-  state: { connected: boolean; saving: boolean; plan: InkDisplayPlan; display?: DeviceDisplayConfig },
+  state: {
+    connected: boolean
+    saving: boolean
+    plan: InkDisplayPlan
+    display?: DeviceDisplayConfig
+  },
 ): InkBaseline | undefined {
   if (!state.display) return previous
   if (state.connected) return state.saving ? previous : { plan: state.plan, display: state.display }

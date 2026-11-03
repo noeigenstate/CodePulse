@@ -34,7 +34,10 @@ export function readRememberedSocial(storage: StorageLike | undefined): SocialPa
   }
 }
 
-export function writeRememberedSocial(storage: StorageLike | undefined, pair: SocialPair | undefined): void {
+export function writeRememberedSocial(
+  storage: StorageLike | undefined,
+  pair: SocialPair | undefined,
+): void {
   try {
     if (pair) storage?.setItem(SOCIAL_PAIR_KEY, JSON.stringify(pair))
     else storage?.removeItem?.(SOCIAL_PAIR_KEY)

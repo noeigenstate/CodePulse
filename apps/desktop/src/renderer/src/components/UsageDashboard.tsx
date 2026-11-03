@@ -31,7 +31,13 @@ interface Props {
 const TOKEN_KINDS = ['input', 'cacheWrite', 'cacheRead', 'output'] as const
 type TokenKind = (typeof TOKEN_KINDS)[number]
 
-export function UsageDashboard({ locale, copy, onClose, active = true, embedded = false }: Props): JSX.Element {
+export function UsageDashboard({
+  locale,
+  copy,
+  onClose,
+  active = true,
+  embedded = false,
+}: Props): JSX.Element {
   const [range, setRange] = useState<StatsRangePreset>('7d')
   const [data, setData] = useState<UsageLedgerSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
@@ -85,7 +91,12 @@ export function UsageDashboard({ locale, copy, onClose, active = true, embedded 
                     ['30d', copy.range30d],
                   ] as const
                 ).map(([value, label]) => (
-                  <button key={value} type="button" aria-pressed={range === value} onClick={() => setRange(value)}>
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={range === value}
+                    onClick={() => setRange(value)}
+                  >
                     {label}
                   </button>
                 ))}
@@ -98,7 +109,10 @@ export function UsageDashboard({ locale, copy, onClose, active = true, embedded 
                 aria-label={copy.refresh}
                 title={
                   data?.scannedAt
-                    ? copy.syncedAt.replace('{time}', formatRelative(data.scannedAt, Date.now(), locale))
+                    ? copy.syncedAt.replace(
+                        '{time}',
+                        formatRelative(data.scannedAt, Date.now(), locale),
+                      )
                     : copy.refresh
                 }
               >
@@ -113,7 +127,15 @@ export function UsageDashboard({ locale, copy, onClose, active = true, embedded 
         {error ? (
           <StateMessage title={copy.error} />
         ) : !data ? (
-          <StateMessage title={loading ? copy.loading : locale === 'zh' ? '暂无可用的历史统计' : 'Usage history is currently unavailable'} />
+          <StateMessage
+            title={
+              loading
+                ? copy.loading
+                : locale === 'zh'
+                  ? '暂无可用的历史统计'
+                  : 'Usage history is currently unavailable'
+            }
+          />
         ) : empty ? (
           <StateMessage title={copy.emptyTitle} body={copy.emptyBody} />
         ) : (
@@ -242,7 +264,9 @@ ${copy.unpriced.replace('{tokens}', formatTokenCount(t.unpricedTokens))}`
                         </span>
                       ))}
                     </span>
-                    <span className="truncate font-medium">{labels.get(project.path || project.name) ?? project.name}</span>
+                    <span className="truncate font-medium">
+                      {labels.get(project.path || project.name) ?? project.name}
+                    </span>
                   </div>
                   <ShareBar value={t.costUsd > 0 ? project.costUsd / t.costUsd : 0} />
                 </td>
@@ -319,15 +343,26 @@ ${copy.unpriced.replace('{tokens}', formatTokenCount(t.unpricedTokens))}`
               const id = `${session.agentType}:${session.sessionId}`
               const shown = revealed.has(id)
               const hasTitle = Boolean(session.title?.trim())
-              const project = labels.get(session.projectPath || session.projectName) ?? session.projectName
-              const title = sessionTitle(project, session.title, shown, { hidden: copy.titleHidden, untitled: copy.untitled })
+              const project =
+                labels.get(session.projectPath || session.projectName) ?? session.projectName
+              const title = sessionTitle(project, session.title, shown, {
+                hidden: copy.titleHidden,
+                untitled: copy.untitled,
+              })
               return (
                 <tr key={id}>
                   <td>
                     <div className="usage-title-row">
-                      <span className="usage-title-text" title={shown ? title : undefined}>{title}</span>
+                      <span className="usage-title-text" title={shown ? title : undefined}>
+                        {title}
+                      </span>
                       {hasTitle && (
-                        <button type="button" className="product-button is-compact" aria-pressed={shown} onClick={() => toggleTitle(id)}>
+                        <button
+                          type="button"
+                          className="product-button is-compact"
+                          aria-pressed={shown}
+                          onClick={() => toggleTitle(id)}
+                        >
                           {shown ? copy.hideTitle : copy.showTitle}
                         </button>
                       )}
@@ -337,7 +372,12 @@ ${copy.unpriced.replace('{tokens}', formatTokenCount(t.unpricedTokens))}`
                       {session.models.length > 0 && (
                         <span className="usage-hide-md">
                           {' · '}
-                          {session.models.map((model) => `${model.model === '—' ? '—' : formatModelName(model.model)} × ${model.rounds}`).join(' · ')}
+                          {session.models
+                            .map(
+                              (model) =>
+                                `${model.model === '—' ? '—' : formatModelName(model.model)} × ${model.rounds}`,
+                            )
+                            .join(' · ')}
                         </span>
                       )}
                     </p>
@@ -353,7 +393,9 @@ ${copy.unpriced.replace('{tokens}', formatTokenCount(t.unpricedTokens))}`
                   <td className="num">{session.rounds}</td>
                   <td className="num strong">
                     {formatUsd(session.costUsd)}
-                    <span className="usage-muted usage-hide-md usage-cell-sub">{formatTokenCount(session.tokens)} tokens</span>
+                    <span className="usage-muted usage-hide-md usage-cell-sub">
+                      {formatTokenCount(session.tokens)} tokens
+                    </span>
                   </td>
                 </tr>
               )
@@ -361,7 +403,6 @@ ${copy.unpriced.replace('{tokens}', formatTokenCount(t.unpricedTokens))}`
           </tbody>
         </table>
       </section>
-
     </div>
   )
 }
@@ -470,9 +511,7 @@ function ToolCard({
         </span>
         <div className="min-w-0">
           <p className="truncate font-semibold text-ink">{AGENT_DISPLAY_NAMES[agent.agentType]}</p>
-          <p className="usage-muted truncate">
-            {topModel ? formatModelName(topModel) : '—'}
-          </p>
+          <p className="usage-muted truncate">{topModel ? formatModelName(topModel) : '—'}</p>
         </div>
       </div>
       <p className="usage-tool-cost">{formatUsd(agent.costUsd)}</p>

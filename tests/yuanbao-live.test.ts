@@ -236,13 +236,28 @@ test('trimmed live fixtures retain RequestId and only the public parser fields',
 test('live 2: tool updates skip empty summaries, links and install commands', () => {
   const now = Date.parse('2026-11-03T00:00:00+08:00')
   const page = (title: string, passage: string, url: string) => ({
-    title, passage, url, site: '示例站', date: '2026-11-02 10:00:00', vr: false, category: '',
+    title,
+    passage,
+    url,
+    site: '示例站',
+    date: '2026-11-02 10:00:00',
+    vr: false,
+    category: '',
   })
   // Seen live: a title-only page whose passage is just the title and a full stop.
-  assert.equal(toolCard([page('Claude Code', 'Claude Code。', 'https://example.com/a')], 'Claude Code', now), undefined)
+  assert.equal(
+    toolCard([page('Claude Code', 'Claude Code。', 'https://example.com/a')], 'Claude Code', now),
+    undefined,
+  )
   // Seen live: a label, an install line and a URL, followed by real prose about the release.
   const card = toolCard(
-    [page('Codex 发布 0.80 版本', '资讯详情：macOS / Linux 可以这样安装: curl -fsSL https://chatgpt.com/codex/install.sh | sh。新版本把 AGENTS.md 上下文约定和 Skills 机制提到了更重要的位置。', 'https://example.com/b')],
+    [
+      page(
+        'Codex 发布 0.80 版本',
+        '资讯详情：macOS / Linux 可以这样安装: curl -fsSL https://chatgpt.com/codex/install.sh | sh。新版本把 AGENTS.md 上下文约定和 Skills 机制提到了更重要的位置。',
+        'https://example.com/b',
+      ),
+    ],
     'Codex',
     now,
   )

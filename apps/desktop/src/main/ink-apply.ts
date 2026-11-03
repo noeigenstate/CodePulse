@@ -66,9 +66,14 @@ export function applyInk(
   const shell = deps.shell.prepareInkPlan(plan)
   const ambientConfig = deps.ambient.getConfig()
   const enabled = plan.mode === 'cycle' && plan.items.includes('ambient')
-  const ambient = ambientConfig.enabled === enabled && ambientConfig.displayMinutes === plan.intervalMinutes
-    ? undefined
-    : deps.ambient.prepareConfiguration({ ...ambientConfig, enabled, displayMinutes: plan.intervalMinutes })
+  const ambient =
+    ambientConfig.enabled === enabled && ambientConfig.displayMinutes === plan.intervalMinutes
+      ? undefined
+      : deps.ambient.prepareConfiguration({
+          ...ambientConfig,
+          enabled,
+          displayMinutes: plan.intervalMinutes,
+        })
   const stages = [
     shell,
     {

@@ -10,7 +10,13 @@ import {
 import { visibleRateLimitWindows } from './quotaWindows.js'
 import { hudStatePriority, needsHudAttention } from './hudState.js'
 
-export const DISPLAY_AGENT_ORDER: readonly AgentType[] = ['claude_code', 'codex', 'grok', 'kimi', 'antigravity']
+export const DISPLAY_AGENT_ORDER: readonly AgentType[] = [
+  'claude_code',
+  'codex',
+  'grok',
+  'kimi',
+  'antigravity',
+]
 const QUOTA_RECENCY_WINDOW_MS = 30 * 60_000
 
 /** 人类可读的 agent 显示名称。 */

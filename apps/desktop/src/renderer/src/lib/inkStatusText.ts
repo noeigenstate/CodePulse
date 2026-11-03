@@ -1,4 +1,9 @@
-import type { InkConnection, InkDisplayPlan, InkFeatureId, InkScreenStatus } from '@codepulse/shared'
+import type {
+  InkConnection,
+  InkDisplayPlan,
+  InkFeatureId,
+  InkScreenStatus,
+} from '@codepulse/shared'
 import type { Locale } from './i18n.js'
 
 /**
@@ -72,25 +77,47 @@ export function inkPillText(status: InkScreenStatus, now: number, locale: Locale
   if (status.connection === 'server-off') {
     const info = zh ? `启动时设置 ${SERVER_HINT}` : `Start with ${SERVER_HINT}`
     const label = zh ? '服务未开启' : 'service off'
-    return { state: 'server-off', dot: 'hollow', prefix, label, title: `${prefix} ${label} · ${info}`, info, canEnd: false }
+    return {
+      state: 'server-off',
+      dot: 'hollow',
+      prefix,
+      label,
+      title: `${prefix} ${label} · ${info}`,
+      info,
+      canEnd: false,
+    }
   }
   const temporary = status.temporary
   if (temporary) {
     const left = minutesLeft(temporary.until, now)
     // A temporary display that an alert hides still counts down: `showing` is the work screen then.
     const paused = status.showing.kind === 'work'
-    const name = temporary.title.trim() || (temporary.kind === 'todos' ? short('todos') : short('ambient'))
+    const name =
+      temporary.title.trim() || (temporary.kind === 'todos' ? short('todos') : short('ambient'))
     const lead = zh ? '临时展示' : 'Temporary'
     const left_ = zh ? `剩 ${left} 分钟` : `${left} min left`
     const label = paused ? (zh ? `已暂停 · ${left_}` : `paused · ${left_}`) : left_
     return {
-      state: 'temporary', dot: 'ring', prefix: lead, label,
-      title: withNote(`${lead}：${name} · ${label}`), info: '', canEnd: true,
+      state: 'temporary',
+      dot: 'ring',
+      prefix: lead,
+      label,
+      title: withNote(`${lead}：${name} · ${label}`),
+      info: '',
+      canEnd: true,
     }
   }
   if (status.connection === 'disconnected') {
     const label = zh ? '未连接' : 'not connected'
-    return { state: 'disconnected', dot: 'hollow', prefix, label, title: `${prefix} ${label}`, info: '', canEnd: false }
+    return {
+      state: 'disconnected',
+      dot: 'hollow',
+      prefix,
+      label,
+      title: `${prefix} ${label}`,
+      info: '',
+      canEnd: false,
+    }
   }
   const current = short(status.showing.kind === 'work' ? 'work' : status.showing.kind)
   let label: string
@@ -108,7 +135,15 @@ export function inkPillText(status: InkScreenStatus, now: number, locale: Locale
     label = zh ? '仅工作画面' : 'Work only'
     detail += zh ? ' · 节目单里只有工作画面' : ' · The playlist has only the work screen'
   }
-  return { state: 'connected', dot: 'filled', prefix, label, title: withNote(`${prefix} ${label} · ${detail}`), info: '', canEnd: false }
+  return {
+    state: 'connected',
+    dot: 'filled',
+    prefix,
+    label,
+    title: withNote(`${prefix} ${label} · ${detail}`),
+    info: '',
+    canEnd: false,
+  }
 }
 
 /**
@@ -122,13 +157,18 @@ export function inkPlanChip(
   locale: Locale,
 ): { text: string; included: boolean } {
   const zh = locale === 'zh'
-  const later = connection === 'connected' ? '' : zh ? '（连接后生效）' : ' (applies once connected)'
+  const later =
+    connection === 'connected' ? '' : zh ? '（连接后生效）' : ' (applies once connected)'
   if (plan.mode === 'single') {
     return { included: false, text: (zh ? '只显示工作画面' : 'Work screen only') + later }
   }
-  if (!plan.items.includes(feature)) return { included: false, text: zh ? '未加入节目单' : 'Not in the playlist' }
+  if (!plan.items.includes(feature))
+    return { included: false, text: zh ? '未加入节目单' : 'Not in the playlist' }
   return {
     included: true,
-    text: (zh ? `轮播中 · 每 ${plan.intervalMinutes} 分钟` : `Rotating · every ${plan.intervalMinutes} min`) + later,
+    text:
+      (zh
+        ? `轮播中 · 每 ${plan.intervalMinutes} 分钟`
+        : `Rotating · every ${plan.intervalMinutes} min`) + later,
   }
 }

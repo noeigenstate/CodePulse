@@ -18,13 +18,13 @@
 
 现有字段和 protocolVersion=1 不变；旧固件继续读取既有字段并忽略以下新增字段。
 
-| 新字段 | 含义 / 缺省 |
-| --- | --- |
-| threads[].level | quiet / active / notice / action / fault，缺省可按旧 state 回退 |
-| threads[].unread | 当前结果是否未读；缺省按旧行为回退 |
-| threads[].groupId | 同一项目的非可逆散列，用于表达同组关系；不包含路径或原生会话 ID |
-| agents[].quotaSummary.fiveHourUsedPercent | 与 HUD 底栏相同的 5 小时已用百分比；null 表示没有可显示数据 |
-| agents[].quotaSummary.weeklyUsedPercent | 与 HUD 底栏相同的周已用百分比；null 表示未知 |
+| 新字段                                    | 含义 / 缺省                                                     |
+| ----------------------------------------- | --------------------------------------------------------------- |
+| threads[].level                           | quiet / active / notice / action / fault，缺省可按旧 state 回退 |
+| threads[].unread                          | 当前结果是否未读；缺省按旧行为回退                              |
+| threads[].groupId                         | 同一项目的非可逆散列，用于表达同组关系；不包含路径或原生会话 ID |
+| agents[].quotaSummary.fiveHourUsedPercent | 与 HUD 底栏相同的 5 小时已用百分比；null 表示没有可显示数据     |
+| agents[].quotaSummary.weeklyUsedPercent   | 与 HUD 底栏相同的周已用百分比；null 表示未知                    |
 
 原 quotas 保持原始窗口、桶与重置时间兼容，保留旧客户端取数能力。
 **新 HUD 画面和底栏优先消费 quotaSummary，不再自行按 model/bucket 另选显示值。**
@@ -62,7 +62,7 @@ action=等待授权或补充输入，fault=错误/超时/额度受限且未读�
 嵌入式侧须检查新增字段参与模型可见变化比较，防止 ETag 变了但模型忽略更新；
 按照既有调度完成当前驱动后读取最新状态。实机低闪、残影、刷新耗时和断线恢复均待嵌入式侧验证。
 
-主要接入位置：产品 packages/core/src/aggregate/index.ts 与 shared/types/device*.ts；
+主要接入位置：产品 packages/core/src/aggregate/index.ts 与 shared/types/device\*.ts；
 固件 main/codepulse_protocol.{h,c}、main/codepulse_ui.h、main/quiet_dashboard.c 及必要的变化比较测试。
 当前固件这些文件已有未提交工作，请由嵌入式会话在其改动上继续，不覆盖或重置。
 

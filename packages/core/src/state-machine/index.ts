@@ -80,8 +80,10 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
   const tokenOnlyQuotaRefresh = event.internal?.quotaRefresh === true
   const deferSynchronizedTurnIdentity =
     !tokenOnlyQuotaRefresh && event.internal?.sessionSync === true && event.turnTiming != null
-  const passiveObservation = event.eventType === 'session_start' ||
-    (event.eventType === 'token_snapshot' && event.internal?.sessionSync === true &&
+  const passiveObservation =
+    event.eventType === 'session_start' ||
+    (event.eventType === 'token_snapshot' &&
+      event.internal?.sessionSync === true &&
       event.internal.activityRefresh !== true)
   const next: AgentRuntimeState = {
     ...current,
@@ -200,8 +202,12 @@ export function reduce(current: AgentRuntimeState, event: AgentEvent): Transitio
     case 'permission_request':
       // Claude may follow an explicit question tool with a generic permission notification.
       // Keep the more precise question until a tool-specific approval or actual progress arrives.
-      if (current.state === TurnState.WAITING_USER_INPUT && !event.toolName &&
-          (current.toolName === 'AskUserQuestion' || current.toolName === 'request_user_input')) break
+      if (
+        current.state === TurnState.WAITING_USER_INPUT &&
+        !event.toolName &&
+        (current.toolName === 'AskUserQuestion' || current.toolName === 'request_user_input')
+      )
+        break
       next.needUserInput = false
       next.toolName = event.toolName
       next.state = TurnState.WAITING_PERMISSION
@@ -690,8 +696,13 @@ function reconcileSynchronizedTimingLifecycle(
     // native start or a later measured execution change can restore missed hooks.
     const nativeStart = timing.startedAt ?? timing.observedAt
     const discoveryAge = event.timestamp - nativeStart
-    if (event.source === 'codex' && next.taskHidden && event.internal.activityRefresh !== true &&
-        (discoveryAge < -5_000 || discoveryAge > 10 * 60_000)) return
+    if (
+      event.source === 'codex' &&
+      next.taskHidden &&
+      event.internal.activityRefresh !== true &&
+      (discoveryAge < -5_000 || discoveryAge > 10 * 60_000)
+    )
+      return
     next.taskHidden = false
     if (next.lastEventAt === 0) next.lastEventAt = Math.min(event.timestamp, timing.observedAt)
     if (!isActiveState(next.state)) {

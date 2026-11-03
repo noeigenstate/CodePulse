@@ -338,13 +338,30 @@ test('project suggestions and ambient review hooks never become task cards, rega
   for (const [index, prompt] of prompts.entries()) {
     const hub = new StatusHub()
     ingest(hub, hook('user', 'UserPromptSubmit', { thread_name: '真实用户任务' }))
-    const cwd = index ? 'C:/Users/user/AppData/Local/OpenAI/Codex/bin/0123456789abcdef' : 'F:/private/CodePulse'
-    assert.equal(ingest(hub, hook('helper', 'UserPromptSubmit', { cwd, prompt: prompt.replace(/\n/g, '\r\n') + '\nRest of the internal request.' })), false)
+    const cwd = index
+      ? 'C:/Users/user/AppData/Local/OpenAI/Codex/bin/0123456789abcdef'
+      : 'F:/private/CodePulse'
+    assert.equal(
+      ingest(
+        hub,
+        hook('helper', 'UserPromptSubmit', {
+          cwd,
+          prompt: prompt.replace(/\n/g, '\r\n') + '\nRest of the internal request.',
+        }),
+      ),
+      false,
+    )
     assert.equal(ingest(hub, hook('helper', 'Stop', { cwd })), false)
     assert.equal(toDeviceStatusV1(hub.snapshot(), config).threadTotal, 1)
     // A human task quoting/discussing the marker, or explicitly sourced as user, survives.
-    assert.equal(ingest(hub, hook('quoted', 'UserPromptSubmit', { prompt: '请检查这段文本：' + prompt })), true)
-    assert.equal(ingest(hub, hook('explicit-user', 'UserPromptSubmit', { thread_source: 'user', prompt })), true)
+    assert.equal(
+      ingest(hub, hook('quoted', 'UserPromptSubmit', { prompt: '请检查这段文本：' + prompt })),
+      true,
+    )
+    assert.equal(
+      ingest(hub, hook('explicit-user', 'UserPromptSubmit', { thread_source: 'user', prompt })),
+      true,
+    )
     assert.equal(hub.snapshot().agents.length, 3)
   }
 })

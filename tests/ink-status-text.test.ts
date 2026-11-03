@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { InkDisplayPlan, InkScreenStatus } from '@codepulse/shared'
-import { clockText, inkPillText, inkPlanChip } from '../apps/desktop/src/renderer/src/lib/inkStatusText.js'
+import {
+  clockText,
+  inkPillText,
+  inkPlanChip,
+} from '../apps/desktop/src/renderer/src/lib/inkStatusText.js'
 
 const NOW = new Date(2026, 10, 2, 14, 18, 0).getTime()
 const base: InkScreenStatus = {
@@ -55,17 +59,28 @@ test('connected in fixed mode reads 固定 · 工作画面, with one slot 仅工
 
 test('connected names a desk card or the todo list as the current screen', () => {
   const at = NOW + 60000
-  const card = inkPillText(make({ showing: { kind: 'ambient', title: '机会成本' }, next: { feature: 'work', at } }), NOW, 'zh')
+  const card = inkPillText(
+    make({ showing: { kind: 'ambient', title: '机会成本' }, next: { feature: 'work', at } }),
+    NOW,
+    'zh',
+  )
   assert.equal(card.label, `桌边内容 · ${clockText(at)} 工作画面`)
   assert.match(card.title, /桌边内容 · 机会成本/)
-  const todos = inkPillText(make({ showing: { kind: 'todos', title: '待办' }, next: { feature: 'work', at } }), NOW, 'zh')
+  const todos = inkPillText(
+    make({ showing: { kind: 'todos', title: '待办' }, next: { feature: 'work', at } }),
+    NOW,
+    'zh',
+  )
   assert.equal(todos.label, `待办 · ${clockText(at)} 工作画面`)
 })
 
 test('temporary display: ring dot, minutes left, the cross ends it', () => {
   const until = NOW + 7 * 60000 + 1
   const pill = inkPillText(
-    make({ showing: { kind: 'ambient', title: '机会成本' }, temporary: { kind: 'ambient', title: '机会成本', until } }),
+    make({
+      showing: { kind: 'ambient', title: '机会成本' },
+      temporary: { kind: 'ambient', title: '机会成本', until },
+    }),
     NOW,
     'zh',
   )
@@ -79,7 +94,11 @@ test('temporary display: ring dot, minutes left, the cross ends it', () => {
 test('a temporary display hidden by an alert is marked paused, keeps counting and shows the note in the title', () => {
   const note = '授权或异常提醒优先，临时展示暂停'
   const pill = inkPillText(
-    make({ showing: { kind: 'work' }, temporary: { kind: 'todos', title: '待办', until: NOW + 3 * 60000 }, slotNote: note }),
+    make({
+      showing: { kind: 'work' },
+      temporary: { kind: 'todos', title: '待办', until: NOW + 3 * 60000 },
+      slotNote: note,
+    }),
     NOW,
     'zh',
   )
@@ -91,7 +110,11 @@ test('a temporary display hidden by an alert is marked paused, keeps counting an
 test('slotNote joins the title of a connected pill and never a stopped service', () => {
   const note = '桌边内容时段：今日展示已达上限，暂显示工作画面'
   assert.ok(inkPillText(make({ slotNote: note }), NOW, 'zh').title.endsWith(note))
-  assert.ok(!inkPillText(make({ connection: 'server-off', slotNote: note }), NOW, 'zh').title.includes(note))
+  assert.ok(
+    !inkPillText(make({ connection: 'server-off', slotNote: note }), NOW, 'zh').title.includes(
+      note,
+    ),
+  )
 })
 
 test('a whitespace-only slotNote adds nothing to the title', () => {
@@ -102,7 +125,10 @@ test('a whitespace-only slotNote adds nothing to the title', () => {
 
 test('minutes never go negative once a deadline has passed', () => {
   const pill = inkPillText(
-    make({ showing: { kind: 'ambient', title: 'x' }, temporary: { kind: 'ambient', title: 'x', until: NOW - 1000 } }),
+    make({
+      showing: { kind: 'ambient', title: 'x' },
+      temporary: { kind: 'ambient', title: 'x', until: NOW - 1000 },
+    }),
     NOW,
     'zh',
   )
@@ -115,17 +141,49 @@ test('English wording mirrors every state', () => {
   const next = inkPillText(make({ next: { feature: 'todos', at: NOW + 60000 } }), NOW, 'en')
   assert.match(next.label, /^Work · \d\d:\d\d Tasks$/)
   assert.equal(inkPillText(make({ mode: 'single' }), NOW, 'en').label, 'Fixed · Work')
-  const temp = inkPillText(make({ showing: { kind: 'ambient', title: 'Card' }, temporary: { kind: 'ambient', title: 'Card', until: NOW + 120000 } }), NOW, 'en')
+  const temp = inkPillText(
+    make({
+      showing: { kind: 'ambient', title: 'Card' },
+      temporary: { kind: 'ambient', title: 'Card', until: NOW + 120000 },
+    }),
+    NOW,
+    'en',
+  )
   assert.equal(`${temp.prefix} ${temp.label}`, 'Temporary 2 min left')
 })
 
-const plan = (patch: Partial<InkDisplayPlan>): InkDisplayPlan => ({ mode: 'cycle', fixed: 'work', items: ['work', 'ambient'], intervalMinutes: 15, ...patch })
+const plan = (patch: Partial<InkDisplayPlan>): InkDisplayPlan => ({
+  mode: 'cycle',
+  fixed: 'work',
+  items: ['work', 'ambient'],
+  intervalMinutes: 15,
+  ...patch,
+})
 
 test('plan chip reflects the applied playlist and adds the connect note offline', () => {
-  assert.deepEqual(inkPlanChip(plan({}), 'ambient', 'connected', 'zh'), { included: true, text: '轮播中 · 每 15 分钟' })
-  assert.deepEqual(inkPlanChip(plan({}), 'ambient', 'disconnected', 'zh'), { included: true, text: '轮播中 · 每 15 分钟（连接后生效）' })
-  assert.deepEqual(inkPlanChip(plan({}), 'todos', 'connected', 'zh'), { included: false, text: '未加入节目单' })
-  assert.equal(inkPlanChip(plan({ mode: 'single' }), 'ambient', 'connected', 'zh').text, '只显示工作画面')
-  assert.equal(inkPlanChip(plan({ mode: 'single' }), 'todos', 'server-off', 'zh').text, '只显示工作画面（连接后生效）')
-  assert.match(inkPlanChip(plan({ items: ['work', 'todos'], intervalMinutes: 10 }), 'todos', undefined, 'en').text, /^Rotating · every 10 min/)
+  assert.deepEqual(inkPlanChip(plan({}), 'ambient', 'connected', 'zh'), {
+    included: true,
+    text: '轮播中 · 每 15 分钟',
+  })
+  assert.deepEqual(inkPlanChip(plan({}), 'ambient', 'disconnected', 'zh'), {
+    included: true,
+    text: '轮播中 · 每 15 分钟（连接后生效）',
+  })
+  assert.deepEqual(inkPlanChip(plan({}), 'todos', 'connected', 'zh'), {
+    included: false,
+    text: '未加入节目单',
+  })
+  assert.equal(
+    inkPlanChip(plan({ mode: 'single' }), 'ambient', 'connected', 'zh').text,
+    '只显示工作画面',
+  )
+  assert.equal(
+    inkPlanChip(plan({ mode: 'single' }), 'todos', 'server-off', 'zh').text,
+    '只显示工作画面（连接后生效）',
+  )
+  assert.match(
+    inkPlanChip(plan({ items: ['work', 'todos'], intervalMinutes: 10 }), 'todos', undefined, 'en')
+      .text,
+    /^Rotating · every 10 min/,
+  )
 })

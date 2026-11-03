@@ -283,7 +283,11 @@ test('review 5: a key change never refires checked jobs; never-checked jobs run 
   f.setKey(credentials)
   await f.source.tick()
   const first = f.queries.length
-  assert.equal(first, 4, 'weather, both tools and news each run once (configured inputs are already settled)')
+  assert.equal(
+    first,
+    4,
+    'weather, both tools and news each run once (configured inputs are already settled)',
+  )
   f.setTime(now + 2500)
   await f.source.tick()
   assert.equal(f.queries.length, first, 'they do not run again within their cadence')
@@ -428,21 +432,42 @@ test('review 8: success for one tool does not erase another tool failure in the 
 test('live 1: a response without Pages is an empty result, not a connection failure', async () => {
   const client = new YuanbaoClient({
     now: () => now,
-    transport: async () => new Response(JSON.stringify({ Response: { RequestId: 'r', Query: 'q', Version: 'standard' } })),
+    transport: async () =>
+      new Response(
+        JSON.stringify({ Response: { RequestId: 'r', Query: 'q', Version: 'standard' } }),
+      ),
   })
-  const result = await client.search({ Query: '今日金价 国内现货黄金', Mode: 1 }, { apiKey: 'obviously-fake-key' })
+  const result = await client.search(
+    { Query: '今日金价 国内现货黄金', Mode: 1 },
+    { apiKey: 'obviously-fake-key' },
+  )
   assert.deepEqual(result.pages, [])
   assert.equal(result.edition, 'standard')
 })
 test('live 1: unknown service codes and timeouts are named, never echoing request data', async () => {
   const coded = new YuanbaoClient({
     now: () => now,
-    transport: async () => new Response(JSON.stringify({ Response: { RequestId: 'r', Error: { Code: 'InternalError', Message: 'x' } } })),
+    transport: async () =>
+      new Response(
+        JSON.stringify({
+          Response: { RequestId: 'r', Error: { Code: 'InternalError', Message: 'x' } },
+        }),
+      ),
   })
-  await assert.rejects(coded.search({ Query: 'q', Mode: 1 }, { apiKey: 'obviously-fake-key' }), /服务暂不可用（InternalError）/)
+  await assert.rejects(
+    coded.search({ Query: 'q', Mode: 1 }, { apiKey: 'obviously-fake-key' }),
+    /服务暂不可用（InternalError）/,
+  )
   const slow = new YuanbaoClient({
     now: () => now,
-    transport: async () => { const e = new Error('t'); e.name = 'TimeoutError'; throw e },
+    transport: async () => {
+      const e = new Error('t')
+      e.name = 'TimeoutError'
+      throw e
+    },
   })
-  await assert.rejects(slow.search({ Query: 'q', Mode: 1 }, { apiKey: 'obviously-fake-key' }), /请求超时/)
+  await assert.rejects(
+    slow.search({ Query: 'q', Mode: 1 }, { apiKey: 'obviously-fake-key' }),
+    /请求超时/,
+  )
 })

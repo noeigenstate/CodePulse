@@ -123,7 +123,6 @@ export function App(): JSX.Element {
   const product = useProductNavigation()
   const standaloneScreen = new URLSearchParams(window.location.search).get('surface') === 'screen'
 
-
   const [dashboardSettings, setDashboardSettings] = useState<DashboardSettings>(() =>
     readDashboardSettings(window.localStorage),
   )
@@ -186,7 +185,8 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     const sync = (event: StorageEvent) => {
-      if (event.storageArea === window.localStorage) setDashboardSettings(readDashboardSettings(window.localStorage))
+      if (event.storageArea === window.localStorage)
+        setDashboardSettings(readDashboardSettings(window.localStorage))
     }
     window.addEventListener('storage', sync)
     return () => window.removeEventListener('storage', sync)
@@ -240,10 +240,19 @@ export function App(): JSX.Element {
   const reconcileSurfaces = useCallback((visible: DashboardSettings['visibleTools']): void => {
     surfaceQueue.current = surfaceQueue.current.then(async () => {
       try {
-        const hud = hudToolsAfterMasterOff(productRef.current.shell.hudSettings.visibleTools, visible)
+        const hud = hudToolsAfterMasterOff(
+          productRef.current.shell.hudSettings.visibleTools,
+          visible,
+        )
         // A partial map on purpose: main merges per key, so only these tools change.
-        if (hud) await productRef.current.setHudSettings({ visibleTools: hud as Record<HudToolKey, boolean> })
-        const display = displayAfterMasterOff((await window.codepulse.getDeviceDisplay()).config, visible)
+        if (hud)
+          await productRef.current.setHudSettings({
+            visibleTools: hud as Record<HudToolKey, boolean>,
+          })
+        const display = displayAfterMasterOff(
+          (await window.codepulse.getDeviceDisplay()).config,
+          visible,
+        )
         if (display) await window.codepulse.setDeviceDisplay(display)
       } catch {
         // The next toggle or launch reconciles again.
@@ -278,8 +287,6 @@ export function App(): JSX.Element {
     [updateDashboardSettings],
   )
 
-
-
   const liveConsole = (
     <LiveConsole
       panels={panels}
@@ -291,20 +298,33 @@ export function App(): JSX.Element {
     />
   )
 
-  if (standaloneScreen) return <div className="app-shell native-workstation h-full text-ink"><div className="product-scroll h-full"><ScreenWorkbench copy={copy.settings.deviceProvisioning} standalone /></div></div>
+  if (standaloneScreen)
+    return (
+      <div className="app-shell native-workstation h-full text-ink">
+        <div className="product-scroll h-full">
+          <ScreenWorkbench copy={copy.settings.deviceProvisioning} standalone />
+        </div>
+      </div>
+    )
 
   return (
     <div className="app-shell native-workstation flex h-full flex-col text-ink">
       {window.codepulse.platform === 'win32' ? <WindowTitleBar /> : null}
       <ProductFrame product={product} locale={locale} onLocale={toggleLocale} snapshot={snapshot}>
         {product.focusMode && (
-          <section className="product-page product-work" aria-label={locale === 'zh' ? '专注模式' : 'Focus mode'}>
+          <section
+            className="product-page product-work"
+            aria-label={locale === 'zh' ? '专注模式' : 'Focus mode'}
+          >
             <div className="product-desktop-work">
               <div className="product-live-console">{liveConsole}</div>
             </div>
           </section>
         )}
-        <section className="product-page" hidden={product.focusMode || (product.view !== 'control' && product.view !== 'work')}>
+        <section
+          className="product-page"
+          hidden={product.focusMode || (product.view !== 'control' && product.view !== 'work')}
+        >
           <ProductControl
             product={product}
             locale={locale}
@@ -316,23 +336,60 @@ export function App(): JSX.Element {
           />
         </section>
         {product.visited.has('usage') && (
-          <section className="product-page" hidden={product.focusMode || product.view !== 'usage'} aria-label={locale === 'zh' ? '用量统计' : 'Usage history'}>
-            <UsageDashboard embedded locale={locale} copy={copy.usageBoard} active={!product.focusMode && product.view === 'usage'} onClose={() => void product.navigate('control')} />
+          <section
+            className="product-page"
+            hidden={product.focusMode || product.view !== 'usage'}
+            aria-label={locale === 'zh' ? '用量统计' : 'Usage history'}
+          >
+            <UsageDashboard
+              embedded
+              locale={locale}
+              copy={copy.usageBoard}
+              active={!product.focusMode && product.view === 'usage'}
+              onClose={() => void product.navigate('control')}
+            />
           </section>
         )}
         {product.visited.has('ambient') && (
-          <section className="product-scroll" hidden={product.focusMode || product.view !== 'ambient'}>
-            <AmbientPanel active={!product.focusMode && product.view === 'ambient'} product={product} locale={locale} />
+          <section
+            className="product-scroll"
+            hidden={product.focusMode || product.view !== 'ambient'}
+          >
+            <AmbientPanel
+              active={!product.focusMode && product.view === 'ambient'}
+              product={product}
+              locale={locale}
+            />
           </section>
         )}
         {product.visited.has('assistant') && (
-          <section className="product-scroll" hidden={product.focusMode || product.view !== 'assistant'}>
-            <AssistantPanel active={!product.focusMode && product.view === 'assistant'} product={product} locale={locale} />
+          <section
+            className="product-scroll"
+            hidden={product.focusMode || product.view !== 'assistant'}
+          >
+            <AssistantPanel
+              active={!product.focusMode && product.view === 'assistant'}
+              product={product}
+              locale={locale}
+            />
           </section>
         )}
         {product.visited.has('settings') && (
-          <section className="product-scroll" hidden={product.focusMode || product.view !== 'settings'}>
-            <SettingsDialog embedded copy={copy.settings} locale={locale} onLocaleChange={changeLocale} onClose={() => void product.navigate('control')} onThemeChange={setTheme} onToolVisibilityChange={setToolVisibility} theme={dashboardSettings.theme} visibleTools={dashboardSettings.visibleTools} />
+          <section
+            className="product-scroll"
+            hidden={product.focusMode || product.view !== 'settings'}
+          >
+            <SettingsDialog
+              embedded
+              copy={copy.settings}
+              locale={locale}
+              onLocaleChange={changeLocale}
+              onClose={() => void product.navigate('control')}
+              onThemeChange={setTheme}
+              onToolVisibilityChange={setToolVisibility}
+              theme={dashboardSettings.theme}
+              visibleTools={dashboardSettings.visibleTools}
+            />
           </section>
         )}
       </ProductFrame>
@@ -354,7 +411,6 @@ export function App(): JSX.Element {
           update={updateInfo}
         />
       )}
-
     </div>
   )
 }

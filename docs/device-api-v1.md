@@ -8,14 +8,14 @@
 `X-CodePulse-Device-Id`（1–64 字符，仅字母、数字、`-`、`_`、`:`）。设备 ID 是
 同一授权下的上下文分区，不是新的认证凭据。不要在 URL 中传令牌。
 
-| 方法与相对路径 | 请求 / 响应 |
-| --- | --- |
-| `GET info` | 语音开关、协议版本和 PCM 规格，不返回凭据或全部待办 |
-| `POST text` | `{text}`，最多 4000 字符 / 16000 字节；返回 `reply`、`draftId`、`needsConfirmation` |
-| `POST voice` | `application/octet-stream`，16 kHz / 单声道 / signed 16-bit LE PCM，0.1–30 秒 / 960000 字节；返回转写和同样的建议字段 |
-| `POST speech` | `{text}`，最多 300 字符 / 3000 字节；返回原始 PCM，不是 WAV/MP3；响应头 `x-codepulse-audio-rate: 16000` |
-| `GET announcement` | `{announcement: null}` 或 `{announcement:{id,text}}`，领取本设备的一条到期播报 |
-| `POST announcement/ack` | `{id}` / 1000 字节上限；播放完成后回执，成功为 `{ok:true}` |
+| 方法与相对路径          | 请求 / 响应                                                                                                           |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `GET info`              | 语音开关、协议版本和 PCM 规格，不返回凭据或全部待办                                                                   |
+| `POST text`             | `{text}`，最多 4000 字符 / 16000 字节；返回 `reply`、`draftId`、`needsConfirmation`                                   |
+| `POST voice`            | `application/octet-stream`，16 kHz / 单声道 / signed 16-bit LE PCM，0.1–30 秒 / 960000 字节；返回转写和同样的建议字段 |
+| `POST speech`           | `{text}`，最多 300 字符 / 3000 字节；返回原始 PCM，不是 WAV/MP3；响应头 `x-codepulse-audio-rate: 16000`               |
+| `GET announcement`      | `{announcement: null}` 或 `{announcement:{id,text}}`，领取本设备的一条到期播报                                        |
+| `POST announcement/ack` | `{id}` / 1000 字节上限；播放完成后回执，成功为 `{ok:true}`                                                            |
 
 建议不会立即修改待办。设备随后发送“确认”才执行自己的未过期建议；“取消”或新输入
 解除原确认关联。建议十分钟过期；三个及以上动作改到桌面查看确认。桌面与各设备的
@@ -264,7 +264,6 @@ timeout | usage_limited | cancelled
 带入当前读数。PAIR125、一次变更区域局刷、故障锁止和启动一次清洁全刷不变。
 配置预览仍是目标画面，不是设备实时显示回执；旧固件仍遵守旧刷新节奏。
 
-
 `200` 响应会带弱 ETag，例如：
 
 ```http
@@ -295,7 +294,6 @@ If-None-Match: W/"v1-5db1f203"
 ## Shared HUD work presentation (additive v1 extension)
 
 The unified host uses the retained HUD projection for both preview and LAN status. Optional thread level/unread/groupId and agent quotaSummary fields carry shared display semantics; legacy fields remain compatible. See [the implementation and firmware acceptance contract](WORK-PRESENTATION-HANDOFF.md). Old firmware ignores these fields; displaying their semantics requires an updated production renderer.
-
 
 ### Optional BW inversion (firmware 0.0.24+)
 
@@ -349,8 +347,8 @@ changed is shown with a full three-colour refresh (`epd_ssd1683_refresh`, real r
 plane, about 16 s with visible flashing); log tag `red_full`, distinct from the boot
 `clean_baseline`. Other changes keep the low-flicker PAIR partial refresh, which needs
 the red plane to be all 0xFF. Cooldown: when less than 120 s have passed since the last
-runtime full refresh, *entering* a red frame (previous frame had no red) draws red pixels
-as black through the partial refresh; *leaving or replacing* a red frame always does a full
+runtime full refresh, _entering_ a red frame (previous frame had no red) draws red pixels
+as black through the partial refresh; _leaving or replacing_ a red frame always does a full
 refresh regardless of the cooldown, because partial refresh cannot clear red. A refresh
 failure follows the existing policy (mark faulted, power down safely). PAIR waveforms,
 LUTs, boot clear, keys and power flow are unchanged.
@@ -460,17 +458,16 @@ PAIR125/PAIR150 波形及单次驱动。配套固件 `7e3d9e6` 已合入独立�
 两套桌面预览均为 `0.0.26-paced`，仅表示目标像素；版本对应、软件检查和实测范围见
 [日常低干扰显示记录](QUIET-DISPLAY-2026-10-28.md)。
 
-
 ### Additive work voice output (source candidate, 2026-11-02)
 
 Independent from assistant voice input/output, the optional host registers these
 routes behind the existing device token guard. No status JSON or preview changes.
 
-| Method / path | Result |
-| --- | --- |
-| GET /api/v1/device/work/voice | `{announcement:null}` or `{announcement:{id:"UUID"}}`; requires X-CodePulse-Device-Id |
-| GET /api/v1/device/work/voice/:id/audio | Binary PCM signed 16-bit LE, mono, 16000 Hz; x-codepulse-audio-rate:16000 |
-| POST /api/v1/device/work/voice/:id/ack | `{ok:true}` after successful playback; empty JSON body |
+| Method / path                           | Result                                                                                |
+| --------------------------------------- | ------------------------------------------------------------------------------------- |
+| GET /api/v1/device/work/voice           | `{announcement:null}` or `{announcement:{id:"UUID"}}`; requires X-CodePulse-Device-Id |
+| GET /api/v1/device/work/voice/:id/audio | Binary PCM signed 16-bit LE, mono, 16000 Hz; x-codepulse-audio-rate:16000             |
+| POST /api/v1/device/work/voice/:id/ack  | `{ok:true}` after successful playback; empty JSON body                                |
 
 All responses are no-store. Audio is capped at 640000 bytes; queues retain at most
 4 batches for 120 seconds, with at most 16 devices and 3 audio attempts per device.

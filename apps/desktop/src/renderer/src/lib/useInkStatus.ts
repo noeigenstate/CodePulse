@@ -14,12 +14,21 @@ export function useInkStatus(): InkScreenStatus | undefined {
     const read = () =>
       void window.codepulse
         .getInkStatus()
-        .then((next) => { if (alive) setStatus(next) })
+        .then((next) => {
+          if (alive) setStatus(next)
+        })
         .catch(() => {})
-    const stop = window.codepulse.onInkStatus((next) => { received = true; if (alive) setStatus(next) })
+    const stop = window.codepulse.onInkStatus((next) => {
+      received = true
+      if (alive) setStatus(next)
+    })
     if (!received) read()
     const heartbeat = setInterval(read, 30000)
-    return () => { alive = false; stop(); clearInterval(heartbeat) }
+    return () => {
+      alive = false
+      stop()
+      clearInterval(heartbeat)
+    }
   }, [])
   return status
 }

@@ -16,9 +16,15 @@ export function InfoTip({ text, label = '说明' }: { text: string; label?: stri
     const anchor = button.current.getBoundingClientRect()
     const width = bubble.current.offsetWidth
     const height = bubble.current.offsetHeight
-    const left = Math.max(8, Math.min(anchor.left + anchor.width / 2 - width / 2, window.innerWidth - width - 8))
+    const left = Math.max(
+      8,
+      Math.min(anchor.left + anchor.width / 2 - width / 2, window.innerWidth - width - 8),
+    )
     const above = anchor.top - height - 6
-    setPlace({ left, top: above >= 8 ? above : Math.min(anchor.bottom + 6, window.innerHeight - height - 8) })
+    setPlace({
+      left,
+      top: above >= 8 ? above : Math.min(anchor.bottom + 6, window.innerHeight - height - 8),
+    })
   }, [open, text])
   return (
     <span className="info-tip-wrap">
@@ -42,13 +48,28 @@ export function InfoTip({ text, label = '说明' }: { text: string; label?: stri
           }
         }}
       >
-        <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 16 16"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        >
           <circle cx="8" cy="8" r="6.5" />
           <path d="M8 7.2v3.6" />
           <circle cx="8" cy="4.9" r=".4" fill="currentColor" />
         </svg>
       </button>
-      <span ref={bubble} id={id} role="tooltip" className={`info-tip-bubble${open ? ' is-open' : ''}`} style={open ? place : undefined}>
+      <span
+        ref={bubble}
+        id={id}
+        role="tooltip"
+        className={`info-tip-bubble${open ? ' is-open' : ''}`}
+        style={open ? place : undefined}
+      >
         {text}
       </span>
     </span>

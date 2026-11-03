@@ -380,7 +380,9 @@ export class AssistantService {
     this.clearTemporaryInk()
     return this.snapshot()
   }
-  temporaryInkUntil(): number { return this.inkUntil > this.now() ? this.inkUntil : 0 }
+  temporaryInkUntil(): number {
+    return this.inkUntil > this.now() ? this.inkUntil : 0
+  }
   inkCard(
     status: Pick<StatusSnapshot, 'agents'>,
     preview = false,

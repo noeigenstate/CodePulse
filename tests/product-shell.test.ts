@@ -3,7 +3,14 @@ import test from 'node:test'
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { DEFAULT_HUD_SETTINGS, DEFAULT_INK_PLAN, normalizeShellPreferences, productTargets, type ShellPreferences } from '@codepulse/shared'
+import {
+  DEFAULT_HUD_SETTINGS,
+  DEFAULT_INK_PLAN,
+  normalizeInkPlan,
+  normalizeShellPreferences,
+  productTargets,
+  type ShellPreferences,
+} from '@codepulse/shared'
 import { ProductShell, shellPreferenceStore } from '../apps/desktop/src/main/product-shell.js'
 import { DeviceViewLeases } from '../apps/desktop/src/main/device-view-leases.js'
 import { registerProductIpc } from '../apps/desktop/src/main/product-ipc.js'
@@ -25,10 +32,16 @@ function fixture(input?: unknown) {
       hudVisible: () => visible,
       focusMode: (focused) => calls.push(focused ? 'focus' : 'expand'),
       standard: () => calls.push('standard'),
-      hud: () => { visible = true; calls.push('hud') },
+      hud: () => {
+        visible = true
+        calls.push('hud')
+      },
       screen: () => calls.push('screen'),
       hideStandard: () => calls.push('hide-standard'),
-      hideHud: () => { visible = false; calls.push('hide-hud') },
+      hideHud: () => {
+        visible = false
+        calls.push('hide-hud')
+      },
     },
     () => calls.push('changed'),
   )
@@ -44,18 +57,66 @@ function fixture(input?: unknown) {
     },
   }
 }
+test('ink plans retain work first, deduplicate slots and accept five-minute dwell', () => {
+  const plan = normalizeInkPlan({
+    mode: 'cycle',
+    fixed: 'todos',
+    items: ['todos', 'ambient', 'todos'],
+    intervalMinutes: 5,
+  })
+  assert.deepEqual(plan, {
+    mode: 'cycle',
+    fixed: 'work',
+    items: ['work', 'todos', 'ambient'],
+    intervalMinutes: 5,
+  })
+  assert.equal(normalizeInkPlan({ intervalMinutes: 7 }).intervalMinutes, 15)
+  assert.equal(normalizeInkPlan({ intervalMinutes: '5' }).intervalMinutes, 15)
+  assert.equal(normalizeInkPlan({ mode: 'single', fixed: 'work' }).fixed, 'work')
+  assert.deepEqual(normalizeInkPlan({ items: [] }).items, ['work'])
+  assert.deepEqual(normalizeInkPlan({ items: ['invalid'] }).items, ['work'])
+})
+test('legacy non-work fixed plans migrate once to a cycle with work and that content', () => {
+  for (const fixed of ['ambient', 'todos']) {
+    const plan = normalizeInkPlan({
+      mode: 'single',
+      fixed,
+      items: ['ambient', 'todos'],
+      intervalMinutes: 30,
+    })
+    assert.deepEqual(plan, {
+      mode: 'cycle',
+      fixed: 'work',
+      items: ['work', fixed],
+      intervalMinutes: 30,
+    })
+    assert.deepEqual(normalizeInkPlan(plan), plan)
+    assert.deepEqual(
+      normalizeShellPreferences({ inkPlan: { mode: 'single', fixed } }).inkPlan.items,
+      ['work', fixed],
+    )
+  }
+})
 test('shell defaults provide control; malformed routes cannot become file or network destinations', () => {
   assert.deepEqual(normalizeShellPreferences(null), {
     version: 1,
     form: 'standard',
-    view: 'control', target: 'desktop', focusMode: false, desktopLayout: 'work',
-    inkPlan: DEFAULT_INK_PLAN, hudSettings: DEFAULT_HUD_SETTINGS,
+    view: 'control',
+    target: 'desktop',
+    focusMode: false,
+    desktopLayout: 'work',
+    inkPlan: DEFAULT_INK_PLAN,
+    hudSettings: DEFAULT_HUD_SETTINGS,
   })
   assert.deepEqual(normalizeShellPreferences({ form: 'hud', view: 'https://untrusted/' }), {
     version: 1,
     form: 'standard',
-    view: 'control', target: 'desktop', focusMode: false, desktopLayout: 'work',
-    inkPlan: DEFAULT_INK_PLAN, hudSettings: DEFAULT_HUD_SETTINGS,
+    view: 'control',
+    target: 'desktop',
+    focusMode: false,
+    desktopLayout: 'work',
+    inkPlan: DEFAULT_INK_PLAN,
+    hudSettings: DEFAULT_HUD_SETTINGS,
   })
   const f = fixture()
   assert.throws(() => f.shell.navigate('../../config'))
@@ -84,7 +145,14 @@ test('legacy form actions open windows without changing the client entry point',
   assert.equal(f.shell.snapshot().hudVisible, true)
 })
 test('startup and reopen reveal Control even for a legacy HUD-only profile or unwritable store', () => {
-  const f = fixture({ form: 'hud', view: 'ambient', target: 'ink', focusMode: true, desktopLayout: 'board', hudSettings: { hudOpacity: 37 } })
+  const f = fixture({
+    form: 'hud',
+    view: 'ambient',
+    target: 'ink',
+    focusMode: true,
+    desktopLayout: 'board',
+    hudSettings: { hudOpacity: 37 },
+  })
   f.failSave()
   f.shell.restore()
   assert.deepEqual(f.calls, ['expand', 'standard', 'changed'])
@@ -123,7 +191,15 @@ test('shell persistence is additive and does not rewrite account, device, conten
     const sentinel = join(directory, 'device-display.json')
     writeFileSync(sentinel, '{"mode":"usage"}')
     const store = shellPreferenceStore(join(directory, 'product-shell.json'))
-    store.write(normalizeShellPreferences({ version: 1, form: 'hud', view: 'screen', focusMode: true, desktopLayout: 'board' }))
+    store.write(
+      normalizeShellPreferences({
+        version: 1,
+        form: 'hud',
+        view: 'screen',
+        focusMode: true,
+        desktopLayout: 'board',
+      }),
+    )
     assert.equal(store.read().view, 'control')
     assert.equal(store.read().target, 'ink')
     assert.equal(store.read().focusMode, true)
@@ -208,7 +284,10 @@ test('legacy routes migrate without losing presentation preferences', () => {
   assert.equal(ink.form, 'standard')
   assert.equal(normalizeShellPreferences({ view: 'ambient', target: 'desktop' }).target, 'ink')
   assert.equal(normalizeShellPreferences({ view: 'usage', target: 'hud' }).target, 'desktop')
-  assert.equal(normalizeShellPreferences({ focusMode: 'true', desktopLayout: 'invalid' }).focusMode, false)
+  assert.equal(
+    normalizeShellPreferences({ focusMode: 'true', desktopLayout: 'invalid' }).focusMode,
+    false,
+  )
 })
 
 test('configuration target selection never opens a window or changes launch preference', () => {

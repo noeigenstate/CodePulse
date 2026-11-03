@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import {
   DEFAULT_AMBIENT,
-  petMoodLabel,
   normalizeAmbient,
   petProfile,
   type AmbientCard,
@@ -9,11 +8,47 @@ import {
   type AmbientSnapshot,
   type CalendarNextHoliday,
   type DeviceStatusV1,
+  type YuanbaoConfig,
+  type YuanbaoStatus,
+  type YuanbaoTopic,
 } from '@codepulse/shared'
 import { DeviceScreenPreview } from './DeviceScreenPreview.js'
+import { PageHeader } from './PageHeader.js'
+import { InfoTip } from './InfoTip.js'
+import { YuanbaoSettings } from './YuanbaoSettings.js'
 import { planesToRgba } from '../device-preview/renderer.mjs'
 import './ambient-panel.css'
 import { useScreenTarget } from '../lib/useScreenTarget.js'
+import { useInkStatus } from '../lib/useInkStatus.js'
+import { inkPlanChip } from '../lib/inkStatusText.js'
+import { yuanbaoRowError } from '../lib/yuanbaoStatus.js'
+import {
+  cardCategory,
+  categoryProblem,
+  refreshSummary,
+  type AmbientCategory,
+} from '../lib/ambientStatus.js'
+import {
+  lifeRowOn,
+  lifeTripleOf,
+  parseStocks,
+  parseTools,
+  readRememberedLife,
+  rememberAfterLifeFlag,
+  setYuanbaoFlag,
+  toggleLifeRow,
+  withDerivedEnabled,
+  writeRememberedLife,
+  type LifeTriple,
+  type YuanbaoFlag,
+} from '../lib/yuanbaoRows.js'
+import {
+  readRememberedSocial,
+  rememberAfterFlag,
+  toggleSocialRow,
+  writeRememberedSocial,
+  type SocialPair,
+} from '../lib/ambientSocial.js'
 
 /** Tail of the calendar info line: the break going on, or how far away the next one is. */
 function nextHolidayText(next: CalendarNextHoliday | undefined): string {
@@ -114,14 +149,129 @@ function PetThumb({ card }: { card: AmbientCard }): JSX.Element {
   )
 }
 
-export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Element {
-  const { target, error: targetError } = useScreenTarget(active)
+type Category = AmbientCategory
+type YuanbaoCategory = 'life' | 'tools' | 'holiday' | 'headlines'
+const isYuanbao = (id: Category): id is YuanbaoCategory =>
+  id === 'life' || id === 'tools' || id === 'holiday' || id === 'headlines'
+/** The list order is the page order: a category row is the category's own *Enabled rule. */
+const CATEGORIES: { id: Category; label: string }[] = [
+  { id: 'concept', label: '概念卡' },
+  { id: 'prompt', label: '思考实验' },
+  { id: 'pet', label: '像素宠物' },
+  { id: 'calendar', label: '日历' },
+  { id: 'news', label: '科技热议' },
+  { id: 'social', label: 'X 与 meme' },
+  { id: 'local', label: '我的图片与便签' },
+  { id: 'life', label: '生活卡' },
+  { id: 'tools', label: '工具更新' },
+  { id: 'holiday', label: '假日公告' },
+  { id: 'headlines', label: '今日要闻' },
+]
+/** Built-in samples shown (tagged 示例) while a 元宝搜索 category has no card yet. */
+const SAMPLES: Record<YuanbaoCategory, { topic: YuanbaoTopic; label: string }[]> = {
+  life: [
+    { topic: 'weather', label: '天气' },
+    { topic: 'gold', label: '金价' },
+    { topic: 'stock', label: '股价' },
+  ],
+  tools: [{ topic: 'tools', label: '工具更新' }],
+  holiday: [{ topic: 'holiday', label: '假日公告' }],
+  headlines: [{ topic: 'news', label: '今日要闻' }],
+}
+const HOLIDAY_STATE = { published: '已发布', pending: '尚未发布', synced: '已同步' } as const
+const RULE_FLAG: Partial<
+  Record<
+    Category,
+    'conceptsEnabled' | 'promptsEnabled' | 'petEnabled' | 'calendarEnabled' | 'newsEnabled'
+  >
+> = {
+  concept: 'conceptsEnabled',
+  prompt: 'promptsEnabled',
+  pet: 'petEnabled',
+  calendar: 'calendarEnabled',
+  news: 'newsEnabled',
+}
+const SAVE_DELAY_MS = 400
+type NumberField =
+  | 'minLikes'
+  | 'memeMinUps'
+  | 'pollMinutes'
+  | 'gapMinutes'
+  | 'dailyLimit'
+  | 'dailyRequestLimit'
+  | 'quietStart'
+  | 'quietEnd'
+
+/** A number that is only committed on blur or Enter, so typing "30" never saves "3" first. */
+function NumberRule({
+  label,
+  hint,
+  value,
+  min,
+  max,
+  disabled,
+  onCommit,
+}: {
+  label: string
+  hint?: string
+  value: number
+  min: number
+  max: number
+  disabled?: boolean
+  onCommit: (value: number) => void
+}): JSX.Element {
+  const [text, setText] = useState(String(value))
+  useEffect(() => setText(String(value)), [value])
+  const commit = () => {
+    const parsed = Number(text)
+    const next = Number.isFinite(parsed) ? Math.max(min, Math.min(max, Math.round(parsed))) : value
+    setText(String(next))
+    if (next !== value) onCommit(next)
+  }
+  return (
+    <label className="page-field" title={hint}>
+      {label}
+      <input
+        type="number"
+        min={min}
+        max={max}
+        value={text}
+        disabled={disabled}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit()
+        }}
+      />
+    </label>
+  )
+}
+
+/** One-line label for an item in the middle list; the preview carries the content itself. */
+function itemLabel(card: AmbientCard): string {
+  if (card.pet) return petProfile(card.pet.id).name
+  if (card.kind === 'calendar') return card.text
+  const text = card.text.replace(/\s+/g, ' ').slice(0, 60)
+  return ['x', 'meme', 'news'].includes(card.kind) ? `${card.source} · ${text}` : text
+}
+
+export function AmbientPanel({
+  active = true,
+  product,
+  locale = 'zh',
+}: {
+  active?: boolean
+  /** ia-refactor contract: shell state (applied playlist) and navigation to 控制 › 节目单. */
+  product?: import('./ProductFrame.js').ProductNavigation
+  locale?: import('../lib/i18n.js').Locale
+}): JSX.Element {
+  const { target, error: targetError, retry: retryTarget } = useScreenTarget(active)
+  const ink = useInkStatus()
+  const online = ink?.connection === 'connected'
   const [snapshot, setSnapshot] = useState<AmbientSnapshot>()
   const [draft, setDraft] = useState<AmbientConfig>({ ...DEFAULT_AMBIENT })
   const [key, setKey] = useState('')
-  const [category, setCategory] = useState<
-    'local' | 'concept' | 'prompt' | 'pet' | 'calendar' | 'online'
-  >('concept')
+  const [category, setCategory] = useState<Category>('concept')
   const [note, setNote] = useState('')
   const [selectedId, setSelectedId] = useState('')
   const [dragging, setDragging] = useState(false)
@@ -130,9 +280,29 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
   const [message, setMessage] = useState('')
   const [messageScope, setMessageScope] = useState<'content' | 'settings'>('content')
   const [preview, setPreview] = useState<DeviceStatusV1>()
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [savedFlash, setSavedFlash] = useState(false)
+  const [saveFailed, setSaveFailed] = useState(false)
   const savedConfig = useRef<AmbientConfig>()
   const draftRef = useRef(draft)
   draftRef.current = draft
+  const previewedId = useRef('')
+  // Only the newest preview request may land; a slower, older answer is dropped.
+  const previewSeq = useRef(0)
+  // The pair behind the 「X 与 meme」 row switch while it is off.
+  const rememberedSocial = useRef<SocialPair | undefined>(readRememberedSocial(window.localStorage))
+  // The triple behind the 「生活卡」 row switch while it is off.
+  const rememberedLife = useRef<LifeTriple | undefined>(readRememberedLife(window.localStorage))
+  const [sampleTopic, setSampleTopic] = useState<YuanbaoTopic>()
+  const [stocksText, setStocksText] = useState('')
+  const [stocksError, setStocksError] = useState('')
+  const [toolsText, setToolsText] = useState('')
+  const [refreshNote, setRefreshNote] = useState('')
+  const refreshTimer = useRef<ReturnType<typeof setTimeout>>()
+  const saveTimer = useRef<ReturnType<typeof setTimeout>>()
+  const flashTimer = useRef<ReturnType<typeof setTimeout>>()
+  const unsaved = useRef(false)
+  const saveSeq = useRef(0)
   useEffect(() => {
     let alive = true,
       received = false
@@ -147,7 +317,7 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
         }
       })
       .catch(() => {
-        if (alive) setMessage('当前桌面服务尚未加载信息推送，请重新启动统一应用。')
+        if (alive) setMessage('当前桌面服务尚未加载桌边内容，请重新启动统一应用。')
       })
     const stop = window.codepulse.onAmbient((s) => {
       received = true
@@ -155,21 +325,54 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
       setSnapshot(s)
       const incoming = normalizeAmbient(s.config)
       if (JSON.stringify(savedConfig.current) !== JSON.stringify(incoming)) {
-        const dirty =
-          savedConfig.current &&
-          JSON.stringify(draftRef.current) !== JSON.stringify(savedConfig.current)
         savedConfig.current = incoming
-        if (!dirty) setDraft(incoming)
-        else setMessage('另一窗口已更新设置；这里保留你的未保存修改。')
+        // Never overwrite what the user is typing; the pending save carries it.
+        if (!unsaved.current) setDraft(incoming)
       }
     })
     return () => {
       alive = false
       stop()
+      clearTimeout(saveTimer.current)
+      clearTimeout(flashTimer.current)
+      clearTimeout(refreshTimer.current)
     }
   }, [])
-  const edit = <K extends keyof AmbientConfig>(name: K, value: AmbientConfig[K]) =>
-    setDraft((d) => ({ ...d, [name]: value }))
+
+  /**
+   * Rules save by themselves. `enabled` and `displayMinutes` belong to the playlist in 控制 and are
+   * never taken from the draft: the last saved values go back with every write.
+   */
+  async function persist(next: AmbientConfig) {
+    const seq = ++saveSeq.current
+    const base = savedConfig.current
+    try {
+      const state = await window.codepulse.setAmbient(
+        base ? { ...next, enabled: base.enabled, displayMinutes: base.displayMinutes } : next,
+      )
+      savedConfig.current = normalizeAmbient(state.config)
+      setSnapshot(state)
+      if (seq === saveSeq.current) unsaved.current = false
+      setSaveFailed(false)
+      setSavedFlash(true)
+      clearTimeout(flashTimer.current)
+      flashTimer.current = setTimeout(() => setSavedFlash(false), 1800)
+    } catch {
+      if (seq === saveSeq.current) unsaved.current = false
+      setSavedFlash(false)
+      setSaveFailed(true)
+    }
+  }
+  const editMany = (patch: Partial<AmbientConfig>, delay = 0) => {
+    const next = { ...draftRef.current, ...patch }
+    draftRef.current = next
+    setDraft(next)
+    unsaved.current = true
+    clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => void persist(draftRef.current), delay)
+  }
+  const edit = <K extends keyof AmbientConfig>(name: K, value: AmbientConfig[K], delay = 0) =>
+    editMany({ [name]: value } as Partial<AmbientConfig>, delay)
   async function action(
     run: () => Promise<AmbientSnapshot>,
     success = '',
@@ -194,57 +397,86 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
     }
   }
   async function showPreview(card: AmbientCard) {
+    // Marked before the request so a failed preview is not retried on every snapshot update.
+    previewedId.current = card.id
+    const seq = ++previewSeq.current
     setMessageScope('content')
     setMessage('')
-    setBusy(true)
+    setSampleTopic(undefined)
+    setSelectedId(card.id)
     try {
-      setSelectedId(card.id)
-      setPreview(await window.codepulse.previewAmbient(card.id))
+      const next = await window.codepulse.previewAmbient(card.id)
+      if (seq === previewSeq.current) setPreview(next)
     } catch {
-      setMessage('这条内容已过期，请刷新候选。')
-    } finally {
-      setBusy(false)
+      if (seq === previewSeq.current) setMessage('这条内容已过期，请刷新候选。')
     }
   }
-  async function importFile(file?: File) {
-    if (!file || busy) return
+  /** A built-in sample for a 元宝搜索 topic: no network, no quota; tagged 示例 in the preview. */
+  async function previewSample(topic: YuanbaoTopic) {
+    previewedId.current = `sample:${topic}`
+    const seq = ++previewSeq.current
+    setMessageScope('content')
+    setMessage('')
+    setSelectedId('')
+    setSampleTopic(topic)
+    try {
+      const next = await window.codepulse.previewYuanbaoSample?.(topic)
+      if (seq === previewSeq.current) setPreview(next)
+    } catch {
+      if (seq === previewSeq.current) setPreview(undefined)
+    }
+  }
+  async function importFiles(files: File[]) {
+    if (!files.length || busy) return
     setMessageScope('content')
     setBusy(true)
     setMessage('')
+    let imported = 0
+    let last: AmbientCard | undefined
     try {
-      if (file.size > 8000000 || !/\.(png|jpe?g)$/i.test(file.name))
-        throw new Error('请选择 8 MB 内的 PNG / JPEG 图片')
-      const card = await window.codepulse.importAmbientImage(
-        new Uint8Array(await file.arrayBuffer()),
-        file.name,
-      )
+      for (const file of files) {
+        if (file.size > 8000000 || !/\.(png|jpe?g)$/i.test(file.name))
+          throw new Error('请选择 8 MB 内的 PNG / JPEG 图片')
+        last = await window.codepulse.importAmbientImage(
+          new Uint8Array(await file.arrayBuffer()),
+          file.name,
+        )
+        imported += 1
+      }
       setCategory('local')
       setSnapshot(await window.codepulse.getAmbient())
-      setSelectedId(card.id)
-      setPreview(await window.codepulse.previewAmbient(card.id))
-      try {
-        setSnapshot(await window.codepulse.showAmbient(card.id))
-        setPreview(undefined)
-        setMessage('图片已设为目标画面，联网屏幕会在当前刷新结束后获取。')
-      } catch (error) {
-        const detail = error instanceof Error ? error.message.split('Error: ').pop()! : ''
-        setMessage(
-          /^先处理 Agent/.test(detail)
-            ? `图片已准备好。${detail}`
-            : '图片已保存，但展示未完成，请点击“显示到屏幕”重试。',
-        )
-      }
+      if (last) await selectImported(last)
+      setMessage(`已导入 ${imported} 张图片`)
     } catch (error) {
       const detail = error instanceof Error ? error.message.split('Error: ').pop()! : ''
-      setMessage(
-        /^(请选择|图片|仅支持)/.test(detail)
-          ? detail
-          : '图片导入失败，请试用 PNG / JPEG 静态图片。',
-      )
+      const reason = /^(请选择|图片|仅支持)/.test(detail)
+        ? detail
+        : '图片导入失败，请试用 PNG / JPEG 静态图片。'
+      // Pictures imported before the failure are real: show them and say which one failed.
+      if (imported > 0) {
+        setCategory('local')
+        try {
+          setSnapshot(await window.codepulse.getAmbient())
+          if (last) await selectImported(last)
+        } catch {
+          // The list refreshes on the next update.
+        }
+        setMessage(`已导入 ${imported} 张，第 ${imported + 1} 张失败：${reason}`)
+      } else {
+        setMessage(reason)
+      }
     } finally {
       setBusy(false)
       if (fileInput.current) fileInput.current.value = ''
     }
+  }
+  /** Select a freshly imported card and preview it, unless another request has overtaken this one. */
+  async function selectImported(card: AmbientCard) {
+    previewedId.current = card.id
+    const seq = ++previewSeq.current
+    setSelectedId(card.id)
+    const next = await window.codepulse.previewAmbient(card.id)
+    if (seq === previewSeq.current) setPreview(next)
   }
   async function addNote() {
     setMessageScope('content')
@@ -255,23 +487,54 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
       setCategory('local')
       setNote('')
       setSnapshot(await window.codepulse.getAmbient())
-      setSelectedId(card.id)
-      setPreview(await window.codepulse.previewAmbient(card.id))
-      setMessage('便签已保存在本机，点击“显示到屏幕”即可展示。')
+      await selectImported(card)
     } catch {
       setMessage('便签保存失败，请填写 1–120 字的内容。')
     } finally {
       setBusy(false)
     }
   }
-  const visibleCards =
-    snapshot?.cards.filter((c) =>
-      category === 'local'
-        ? c.kind === 'image' || c.kind === 'note'
-        : category === 'online'
-          ? c.kind === 'x' || c.kind === 'meme' || c.kind === 'news'
-          : c.kind === category,
-    ) ?? []
+  const cardsFor = (id: Category): AmbientCard[] =>
+    snapshot?.cards.filter((c) => cardCategory(c) === id) ?? []
+  const visibleCards = cardsFor(category)
+  const selectedCard =
+    category === 'pet'
+      ? (visibleCards.find((c) => c.pet?.id === draft.petId) ?? visibleCards[0])
+      : (visibleCards.find((c) => c.id === selectedId) ?? visibleCards[0])
+  // Pets are one item (the chosen pet); the picker for the others sits in 设置.
+  const items = category === 'pet' ? (selectedCard ? [selectedCard] : []) : visibleCards
+  // Opening a category (or choosing a pet) previews its selected item without another click.
+  useEffect(() => {
+    if (active && snapshot && selectedCard && previewedId.current !== selectedCard.id)
+      void showPreview(selectedCard)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, snapshot, selectedCard?.id])
+  useEffect(() => {
+    if (!active || !snapshot || !isYuanbao(category) || visibleCards.length > 0) return
+    const topic = sampleTopic ?? SAMPLES[category][0]!.topic
+    if (previewedId.current !== `sample:${topic}`) void previewSample(topic)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, snapshot, category, visibleCards.length, sampleTopic])
+  // `holiday` arrives with the host's next contract revision; read it defensively until then.
+  const yb = snapshot?.yuanbao as
+    | (YuanbaoStatus & { holiday?: { year: number; state: keyof typeof HOLIDAY_STATE } | null })
+    | undefined
+  const hasYbKey = Boolean(yb?.hasKey)
+  // Per-topic errors arrive with the host's next contract revision; read them defensively until then.
+  const ybErrors = (yb as { errors?: Partial<Record<YuanbaoTopic, string>> } | undefined)?.errors
+  const ybConfig = draft.yuanbao
+  // Keep the text fields in step with the saved config unless the typed text already says the same.
+  useEffect(() => {
+    const parsed = parseStocks(stocksText)
+    if (!(parsed.ok && parsed.stocks.join() === ybConfig.stocks.join()))
+      setStocksText(ybConfig.stocks.join(', '))
+    if (parseTools(toolsText).join() !== ybConfig.tools.join())
+      setToolsText(ybConfig.tools.join(', '))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ybConfig.stocks.join(), ybConfig.tools.join()])
+  /** Saves a 元宝搜索 change; `enabled` is always re-derived from the six feature flags. */
+  const editYuanbao = (patch: Partial<YuanbaoConfig>, delay = 0) =>
+    editMany({ yuanbao: withDerivedEnabled({ ...draftRef.current.yuanbao, ...patch }) }, delay)
   const previewStatus =
     preview && target
       ? {
@@ -279,40 +542,158 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
           display: target.status.display ? { ...target.status.display, page: 0 } : preview.display,
         }
       : preview
-  const selectedCard =
-    category === 'pet'
-      ? (visibleCards.find((c) => c.pet?.id === draft.petId) ?? visibleCards[0])
-      : (visibleCards.find((c) => c.id === selectedId) ?? visibleCards[0])
+  const enabledSources = { x: draft.xEnabled, meme: draft.memeEnabled, news: draft.newsEnabled }
+  const ybRowOn = (id: YuanbaoCategory): boolean =>
+    id === 'life'
+      ? lifeRowOn(lifeTripleOf(ybConfig))
+      : id === 'tools'
+        ? ybConfig.toolsEnabled
+        : id === 'holiday'
+          ? ybConfig.holidayEnabled
+          : ybConfig.newsEnabled
+  const problem =
+    categoryProblem(category, snapshot?.sourceStatus, enabledSources) ||
+    (isYuanbao(category) && ybRowOn(category) ? yuanbaoRowError(category, ybErrors) : '')
+  const chip = product
+    ? inkPlanChip(product.shell.inkPlan, 'ambient', ink?.connection, locale)
+    : undefined
+  const openPlaylist = (): void => {
+    if (product) void product.navigate('control').then(() => product.selectTarget('ink'))
+  }
   const number = (
-    name:
-      | 'minLikes'
-      | 'memeMinUps'
-      | 'pollMinutes'
-      | 'gapMinutes'
-      | 'dailyLimit'
-      | 'dailyRequestLimit'
-      | 'displayMinutes'
-      | 'quietStart'
-      | 'quietEnd',
+    name: NumberField,
     label: string,
     min: number,
     max: number,
+    disabled = false,
+    hint?: string,
   ) => (
-    <label>
-      {label}
+    <NumberRule
+      label={label}
+      hint={hint}
+      value={draft[name]}
+      min={min}
+      max={max}
+      disabled={disabled}
+      onCommit={(value) => edit(name, value)}
+    />
+  )
+  const flagSwitch = (flag: 'xEnabled' | 'memeEnabled', label: string) => (
+    <label className="page-switch">
       <input
-        type="number"
-        min={min}
-        max={max}
-        value={draft[name]}
-        onChange={(e) => edit(name, Number(e.target.value))}
+        type="checkbox"
+        checked={draft[flag]}
+        onChange={(e) => {
+          const value = e.target.checked
+          rememberedSocial.current = rememberAfterFlag(
+            { xEnabled: draft.xEnabled, memeEnabled: draft.memeEnabled },
+            flag,
+            value,
+          )
+          writeRememberedSocial(window.localStorage, rememberedSocial.current)
+          edit(flag, value)
+        }}
       />
+      {label}
     </label>
   )
+  async function refreshNow() {
+    const before = new Set(snapshot?.cards.map((c) => c.id))
+    const show = (text: string) => {
+      setRefreshNote(text)
+      clearTimeout(refreshTimer.current)
+      refreshTimer.current = setTimeout(() => setRefreshNote(''), 4000)
+    }
+    setBusy(true)
+    setRefreshNote('')
+    try {
+      const state = await window.codepulse.refreshAmbient()
+      setSnapshot(state)
+      show(
+        refreshSummary(
+          category,
+          before,
+          state.cards,
+          categoryProblem(category, state.sourceStatus, enabledSources),
+        ),
+      )
+    } catch {
+      show('检查未完成，请稍后重试')
+    } finally {
+      setBusy(false)
+    }
+  }
+  const refreshButton = (
+    <button
+      type="button"
+      className="product-button"
+      disabled={busy || !snapshot || snapshot.collecting}
+      onClick={() => void refreshNow()}
+    >
+      {snapshot?.collecting ? '正在检查…' : '检查新内容'}
+    </button>
+  )
+  // The corner tag says whether the previewed card is the one on the e-ink screen now (projected card ids).
+  const onScreen =
+    Boolean(preview?.ambient?.id) &&
+    (ink?.showing.kind === 'ambient' || ink?.showing.kind === 'todos') &&
+    ink.showing.id === preview?.ambient?.id
+  const selectedCanOpen = Boolean(selectedCard?.url)
+  const selectedRemovable =
+    selectedCard && (selectedCard.kind === 'image' || selectedCard.kind === 'note')
+  const hasSettings = ['pet', 'news', 'social', 'life', 'tools', 'headlines'].includes(category)
+  const rowOn = (id: Category): boolean =>
+    isYuanbao(id)
+      ? ybRowOn(id)
+      : id === 'social'
+        ? draft.xEnabled || draft.memeEnabled
+        : RULE_FLAG[id]
+          ? draft[RULE_FLAG[id]!]
+          : false
+  const holidayStatus = yb?.holiday
+    ? `${yb.holiday.year} 放假安排：${HOLIDAY_STATE[yb.holiday.state]}`
+    : ''
+  const toggleYuanbaoRow = (id: YuanbaoCategory) => {
+    if (!hasYbKey) return
+    if (id === 'life') {
+      const next = toggleLifeRow(lifeTripleOf(ybConfig), rememberedLife.current)
+      rememberedLife.current = next.remembered
+      writeRememberedLife(window.localStorage, next.remembered)
+      editYuanbao(next.patch)
+      return
+    }
+    const flag: YuanbaoFlag =
+      id === 'tools' ? 'toolsEnabled' : id === 'holiday' ? 'holidayEnabled' : 'newsEnabled'
+    editMany({ yuanbao: setYuanbaoFlag(ybConfig, flag, !ybConfig[flag]) })
+  }
+  /** An individual weather / gold / stocks switch in 生活卡 设置: the latest choice replaces the row's memory. */
+  const lifeFlagSwitch = (flag: keyof LifeTriple, label: string) => (
+    <label className="page-switch">
+      <input
+        type="checkbox"
+        checked={ybConfig[flag]}
+        disabled={!hasYbKey}
+        onChange={(e) => {
+          const value = e.target.checked
+          rememberedLife.current = rememberAfterLifeFlag(lifeTripleOf(ybConfig), flag, value)
+          writeRememberedLife(window.localStorage, rememberedLife.current)
+          editMany({ yuanbao: setYuanbaoFlag(ybConfig, flag, value) })
+        }}
+      />
+      {label}
+    </label>
+  )
+  const tempReason = !online
+    ? '连接设备后可临时展示'
+    : sampleTopic
+      ? '这是示例，有真实内容后才能临时展示'
+      : !selectedCard
+        ? '没有可展示的内容'
+        : undefined
   return (
     <section
       className={'ambient-panel' + (dragging ? ' is-dragging' : '')}
-      aria-labelledby="ambient-title"
+      aria-label="桌边内容"
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes('Files')) {
           e.preventDefault()
@@ -325,508 +706,136 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
       onDrop={(e) => {
         e.preventDefault()
         setDragging(false)
-        void importFile(e.dataTransfer.files[0])
+        void importFiles(Array.from(e.dataTransfer.files))
       }}
     >
-      <div className="ambient-heading">
-        <div>
-          <span className="ambient-eyebrow">MULTIMEDIA</span>
-          <h3 id="ambient-title">多媒体玩法</h3>
-        </div>
-        <div className="ambient-import-action">
-          <span>图片拖进此页即可展示</span>
-          <input
-            ref={fileInput}
-            type="file"
-            accept="image/png,image/jpeg"
-            hidden
-            onChange={(e) => void importFile(e.target.files?.[0])}
-          />
-          <button type="button" disabled={busy} onClick={() => fileInput.current?.click()}>
-            选择图片
-          </button>
-        </div>
-      </div>
-      <p className="ambient-description">
-        一张图片，一个新概念，或一条值得瞥一眼的动态。手动随时选，自动偶尔看；授权与异常提醒优先。
-      </p>
-      <div className="product-config-grid ambient-workbench">
-        <div className="ambient-preview-column">
-          <div className="ambient-library-tabs" aria-label="内容分类">
-            {(
-              [
-                ['concept', '概念卡'],
-                ['prompt', '思考实验'],
-                ['local', '我的图片与便签'],
-                ['online', '热点与 meme'],
-                ['pet', '像素宠物'],
-                ['calendar', '日历'],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                type="button"
-                key={id}
-                aria-pressed={category === id}
-                onClick={() => {
-                  setCategory(id)
-                  setSelectedId('')
-                  setPreview(undefined)
-                  // One card a day, so the page opens on it, like picking a pet does.
-                  const today =
-                    id === 'calendar'
-                      ? snapshot?.cards.find((c) => c.kind === 'calendar')
-                      : undefined
-                  if (today) void showPreview(today)
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          {category === 'pet' && visibleCards.length > 0 && (
-            <div className="ambient-pet-picker" role="radiogroup" aria-label="选择宠物形象">
-              {visibleCards.map((c) => {
-                const chosen = c.pet?.id === selectedCard?.pet?.id
-                return (
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={chosen}
-                    key={c.id}
-                    disabled={busy}
-                    className="ambient-pet-option"
-                    title={c.pet ? petProfile(c.pet.id).trait : undefined}
-                    onClick={() => {
-                      if (c.pet) edit('petId', c.pet.id)
-                      void showPreview(c)
-                    }}
-                  >
-                    <PetThumb card={c} />
-                    <strong>{c.pet ? petProfile(c.pet.id).name : c.source}</strong>
-                    <span>{c.pet ? petProfile(c.pet.id).trait : ''}</span>
-                    {chosen && <em>已选</em>}
-                  </button>
-                )
-              })}
-            </div>
-          )}
-          {category !== 'pet' && category !== 'calendar' && selectedCard && (
-            <div className="ambient-select-card">
-              <select
-                aria-label="选择内容"
-                value={selectedCard?.id ?? ''}
-                disabled={busy}
-                onChange={(e) => {
-                  const card = visibleCards.find((c) => c.id === e.target.value)
-                  if (card) void showPreview(card)
-                }}
-              >
-                {visibleCards.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.source} · {c.text.slice(0, 28)}
-                  </option>
-                ))}
-              </select>
-              <button type="button" disabled={busy} onClick={() => void showPreview(selectedCard)}>
-                预览画面
-              </button>
-            </div>
-          )}
-          {category === 'calendar' && selectedCard?.calendar && (
-            <div className="ambient-calendar-info" role="status">
-              <p>
-                {selectedCard.text}
-                {nextHolidayText(snapshot?.calendarNext)}
-              </p>
-              <small>月历需要固件 0.0.29 以上，旧固件只显示一行文字</small>
-            </div>
-          )}
-          <section className="product-preview-stage">
-            <div className="product-preview-label">
-              <span>{preview ? '内容示例' : '当前目标画面'}</span>
-              {preview && (
-                <button
-                  type="button"
-                  className="product-button"
-                  onClick={() => setPreview(undefined)}
-                >
-                  返回实时画面
+      <PageHeader
+        title="桌边内容"
+        actions={
+          <>
+            <input
+              ref={fileInput}
+              type="file"
+              accept="image/png,image/jpeg"
+              multiple
+              hidden
+              onChange={(e) => void importFiles(Array.from(e.target.files ?? []))}
+            />
+            {chip &&
+              (product ? (
+                <button type="button" className="page-chip is-button" onClick={openPlaylist}>
+                  {chip.text}
                 </button>
-              )}
-            </div>
-            {preview || target ? (
-              <DeviceScreenPreview
-                status={previewStatus ?? target!.status}
-                sample={Boolean(preview)}
-                live={!preview}
-                fit
-              />
-            ) : (
-              <p className="product-empty">
-                {targetError ? '预览暂不可用，等待设备服务连接。' : '正在读取当前画面…'}
-              </p>
-            )}
-            {targetError && target && !preview && (
-              <p className="product-caption" role="status">
-                连接暂时中断，当前显示最后收到的目标画面。
-              </p>
-            )}
-            <p className="ambient-message" data-feedback="content" role="status">
-              {messageScope === 'content' ? message : ''}
-            </p>
-            <div className="ambient-display-actions">
-              <button
-                type="button"
-                className="ambient-primary"
-                disabled={busy || !selectedCard}
-                onClick={() =>
-                  selectedCard &&
-                  void action(async () => {
-                    const state = await window.codepulse.showAmbient(selectedCard.id)
-                    setPreview(undefined)
-                    return state
-                  }, '已设为目标画面，联网屏幕会在当前刷新结束后获取。')
-                }
-              >
-                显示到屏幕
-              </button>
-              <button
-                type="button"
-                disabled={busy || !snapshot?.activeId}
-                onClick={() =>
-                  void action(async () => {
-                    const state = await window.codepulse.dismissAmbient()
-                    setPreview(undefined)
-                    return state
-                  }, '已恢复工作目标画面。')
-                }
-              >
-                回到工作画面
-              </button>
-              <span>手动展示 · {snapshot?.config.displayMinutes ?? 10} 分钟</span>
-            </div>
-          </section>
-          {category === 'local' && (
-            <div className="ambient-note-editor">
-              <label htmlFor="ambient-note">写一张便签</label>
-              <textarea
-                id="ambient-note"
-                maxLength={120}
-                rows={3}
-                placeholder="今天只做一件最重要的事……"
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-              />
-              <button type="button" disabled={busy || !note.trim()} onClick={() => void addNote()}>
-                保存并预览
-              </button>
-              <small>{note.length} / 120 · 最近 8 张个人内容</small>
-            </div>
-          )}
-          <h4 className="ambient-candidates-title">
-            可选内容{' '}
-            <small>
-              预览只在电脑上；显示到屏幕后停留 {snapshot?.config.displayMinutes ?? 10} 分钟
-            </small>
-          </h4>
-          <div className="ambient-cards">
-            {!visibleCards.length && (
-              <p className="ambient-empty">暂时没有合适内容。屏幕继续显示工作状态与用量。</p>
-            )}
-            {(selectedCard ? [selectedCard] : []).map((card) => (
-              <article className="ambient-card" key={card.id}>
-                <div className="ambient-card-meta">
-                  <strong>{card.source}</strong>
-                  <span>
-                    {['x', 'meme', 'news'].includes(card.kind)
-                      ? `${card.score.toLocaleString()} 赞 · `
-                      : '本机内容 · '}
-                    {card.kind === 'meme' ? '采集于 ' : ''}
-                    {new Date(card.publishedAt).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </span>
-                </div>
-                <p>{card.text}</p>
-                {card.calendar && (
-                  <p className="ambient-hint">
-                    每天最多出现一次，红色需要完整刷新，约 16 秒，所以进出各刷新一次。
-                  </p>
-                )}
-                {card.pet && (
-                  <p className="ambient-hint">
-                    此刻心情：{petMoodLabel(card.pet.mood).label}（
-                    {petMoodLabel(card.pet.mood).hint}
-                    ）。心情随工作状态和本地时间变化，选好形象后可随时手动展示。
-                    自动推送只在允许展示的时段出场：安静时段和 Agent
-                    工作时不会推送（可在“展示节奏”里调整），
-                    所以“犯困”“陪你干活”多半只在手动展示时看到。屏幕上的红色需要完整刷新，约 16
-                    秒并会闪一下， 所以宠物只在展示和退场时刷新两次。
-                  </p>
-                )}
-                <div className="ambient-actions">
-                  {card.url && (
+              ) : (
+                <span className="page-chip">{chip.text}</span>
+              ))}
+            <button
+              type="button"
+              className="product-button"
+              disabled={busy}
+              onClick={() => fileInput.current?.click()}
+            >
+              选择图片
+            </button>
+          </>
+        }
+      />
+      <div className="ambient-grid">
+        <div className="ambient-card ambient-cats">
+          <ul className="ambient-catlist" aria-label="内容分类">
+            {CATEGORIES.map(({ id, label }) => {
+              const flag = RULE_FLAG[id]
+              const count = id === 'pet' ? Math.min(1, cardsFor(id).length) : cardsFor(id).length
+              return (
+                <Fragment key={id}>
+                  {id === 'life' && (
+                    <li className="ambient-group-label" role="presentation">
+                      <span>元宝搜索</span>
+                      {!hasYbKey && (
+                        <InfoTip text="先在元宝搜索设置里填写密钥" label="为什么开关不可用" />
+                      )}
+                    </li>
+                  )}
+                  <li className={id === category ? 'is-current' : undefined} data-rule={id}>
                     <button
                       type="button"
-                      onClick={() =>
-                        void window.codepulse
-                          .openAmbient(card.id)
-                          .catch(() => setMessage('原帖暂时无法打开'))
-                      }
+                      className="ambient-cat-main"
+                      data-cat={id}
+                      aria-pressed={id === category}
+                      onClick={() => {
+                        // Re-selecting the current category keeps its selection and preview.
+                        if (id === category) return
+                        setCategory(id)
+                        setSelectedId('')
+                        setSampleTopic(undefined)
+                        setPreview(undefined)
+                        setMessage('')
+                        previewedId.current = ''
+                        previewSeq.current += 1
+                        setRefreshNote('')
+                      }}
                     >
-                      {card.kind === 'concept' ? '延伸阅读 ↗' : '查看来源 ↗'}
+                      <span>{label}</span>
+                      <span className="ambient-cat-count">{count} 条</span>
                     </button>
-                  )}
-                  {(card.kind === 'image' || card.kind === 'note') && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() =>
-                        void action(async () => {
-                          const s = await window.codepulse.removeAmbient(card.id)
-                          setPreview(undefined)
-                          return s
-                        })
-                      }
-                    >
-                      移除
-                    </button>
-                  )}
-                </div>
-              </article>
-            ))}
-          </div>
-        </div>
-        <aside className="product-config ambient-configuration">
-          <h2>自动推送设置</h2>
-          <fieldset disabled={busy || !snapshot}>
-            <label className="ambient-toggle">
-              <input
-                type="checkbox"
-                checked={draft.enabled}
-                onChange={(e) => edit('enabled', e.target.checked)}
-              />
-              自动推送（手动展示无需开启）
-            </label>
-            <div className="ambient-status" role="status">
-              <span>
-                {snapshot?.activeId
-                  ? '内容已设为目标画面'
-                  : snapshot?.pausedReason || '等待下一次展示机会'}
-              </span>
-              <span>
-                今日 {snapshot?.shownToday ?? 0} / {snapshot?.config.dailyLimit ?? 6} 条
-              </span>
-            </div>
-            <div className="ambient-local-options">
-              <label className="ambient-toggle">
-                <input
-                  type="checkbox"
-                  checked={draft.conceptsEnabled}
-                  onChange={(e) => edit('conceptsEnabled', e.target.checked)}
-                />{' '}
-                概念卡 · 经济学 / 哲学 / 物理学
-              </label>
-              <label className="ambient-toggle">
-                <input
-                  type="checkbox"
-                  checked={draft.promptsEnabled}
-                  onChange={(e) => edit('promptsEnabled', e.target.checked)}
-                />{' '}
-                一分钟思考实验
-              </label>
-              <label className="ambient-toggle">
-                <input
-                  type="checkbox"
-                  checked={draft.petEnabled}
-                  onChange={(e) => edit('petEnabled', e.target.checked)}
-                />{' '}
-                像素宠物 · {petProfile(draft.petId).name}（在“像素宠物”页换形象）
-              </label>
-              <label className="ambient-toggle">
-                <input
-                  type="checkbox"
-                  checked={draft.calendarEnabled}
-                  onChange={(e) => edit('calendarEnabled', e.target.checked)}
-                />{' '}
-                日历 · 农历与节假日
-              </label>
-              <label className="ambient-toggle">
-                <input
-                  type="checkbox"
-                  checked={draft.newsEnabled}
-                  onChange={(e) => edit('newsEnabled', e.target.checked)}
-                />{' '}
-                科技热议 · Hacker News
-              </label>
-              <p className="ambient-hint">
-                日历：每天最多出现一次。假日数据：内置 2025–2026，联网自动更新。
-              </p>
-              <p className="ambient-hint">
-                宠物按当前心情出场，同一形象同一心情每天最多一次，并遵守下方的展示节奏。概念与思考卡离线可用，原创短解读配阅读来源。科技热议只选近
-                24 小时首页中超过 100 赞的标题，保留原文，不自动改写为新闻。
-              </p>
-            </div>
-            <details className="ambient-details">
-              <summary>X 贴文 · 来源与筛选</summary>
-              <label className="ambient-toggle">
-                <input
-                  type="checkbox"
-                  checked={draft.xEnabled}
-                  onChange={(e) => edit('xEnabled', e.target.checked)}
-                />
-                订阅 X 贴文
-              </label>
-              <div className="ambient-fields">
-                <label>
-                  接入方式
-                  <select
-                    value={draft.provider}
-                    onChange={(e) => edit('provider', e.target.value as AmbientConfig['provider'])}
-                  >
-                    <option value="twitterapi">TwitterAPI.io · 第三方按量付费</option>
-                    <option value="x">X 官方 API · 按量付费</option>
-                  </select>
-                </label>
-                <label>
-                  API 密钥
-                  <input
-                    type="password"
-                    autoComplete="off"
-                    value={key}
-                    placeholder={
-                      snapshot?.hasKey && snapshot.config.provider === draft.provider
-                        ? '已保存，留空保留'
-                        : '填入对应来源的 API 密钥'
-                    }
-                    onChange={(e) => setKey(e.target.value)}
-                  />
-                </label>
-              </div>
-              <p className="ambient-hint">
-                密钥通过系统加密保存在本机，API 费用由所选服务按量计收。这里展示指定账号的热门原帖。
-              </p>
-              <label className="ambient-wide">
-                账号（逗号分隔）
-                <input
-                  value={draft.accounts.join(', ')}
-                  onChange={(e) => edit('accounts', e.target.value.split(/[,，\s]+/))}
-                />
-              </label>
-              <div className="ambient-fields">
-                <label>
-                  必须包含任一关键词（可留空）
-                  <input
-                    value={draft.keywords.join(', ')}
-                    onChange={(e) =>
-                      edit(
-                        'keywords',
-                        e.target.value.split(/[,，]/).map((s) => s.trimStart()),
-                      )
-                    }
-                  />
-                </label>
-                <label>
-                  排除关键词
-                  <input
-                    value={draft.exclude.join(', ')}
-                    onChange={(e) =>
-                      edit(
-                        'exclude',
-                        e.target.value.split(/[,，]/).map((s) => s.trimStart()),
-                      )
-                    }
-                  />
-                </label>
-                {number('minLikes', '最低点赞数', 0, 1000000)}
-                {number('dailyRequestLimit', '每天最多检查 X（含手动检查）', 1, 96)}
-              </div>
-              <p className="ambient-hint">
-                默认关注 Polymarket、马斯克和 AI 官方账号。只收近 12
-                小时原帖，过滤回复、转发和敏感标记；作者观点会保留来源，不转换为已证实新闻。
-              </p>
-              <details>
-                <summary>按账号调整门槛 · 马斯克默认 50,000 赞</summary>
-                <div className="ambient-fields">
-                  {[
-                    ...new Set(
-                      draft.accounts
-                        .map((a) => a.replace(/^@/, '').trim())
-                        .filter((a) => /^[A-Za-z0-9_]{1,15}$/.test(a)),
-                    ),
-                  ].map((account) => (
-                    <label key={account}>
-                      @{account} 最低赞数
-                      <input
-                        type="number"
-                        min={0}
-                        max={1000000}
-                        value={draft.accountMinLikes[account.toLowerCase()] ?? draft.minLikes}
-                        onChange={(e) =>
-                          edit('accountMinLikes', {
-                            ...draft.accountMinLikes,
-                            [account.toLowerCase()]: Number(e.target.value),
-                          })
-                        }
+                    {id === 'local' && <span className="ambient-manual-tag">仅手动</span>}
+                    {isYuanbao(id) && (
+                      <button
+                        type="button"
+                        role="switch"
+                        className="ambient-switch"
+                        // Without a key nothing can run, so the switch reads off whatever the stored flags say.
+                        aria-checked={hasYbKey && rowOn(id)}
+                        aria-disabled={!snapshot || !hasYbKey}
+                        aria-label={`自动挑选 ${label}`}
+                        onClick={() => toggleYuanbaoRow(id)}
                       />
-                    </label>
-                  ))}
-                </div>
-              </details>
-              <p className="ambient-hint">
-                每次只读一页：第三方最多 20 条，官方最多 10 条。展示上限与 API
-                费用不同，建议同时设置来源后台的消费上限。今日已检查 X{' '}
-                {snapshot?.xRequestsToday ?? 0} 次。
-              </p>
-              <button
-                type="button"
-                disabled={busy || !snapshot?.hasKey}
-                onClick={() =>
-                  void action(
-                    () => window.codepulse.setAmbientKey(draft.provider, ''),
-                    '已清除该来源密钥',
-                  )
-                }
-              >
-                清除该来源密钥
-              </button>
-            </details>
-            <details className="ambient-details">
-              <summary>Meme · 少量高热度图片</summary>
-              <label className="ambient-toggle">
-                <input
-                  type="checkbox"
-                  checked={draft.memeEnabled}
-                  onChange={(e) => edit('memeEnabled', e.target.checked)}
-                />
-                启用 meme
-              </label>
-              <div className="ambient-fields">
-                <label>
-                  来源
-                  <select
-                    value={draft.memeCommunity}
-                    onChange={(e) =>
-                      edit('memeCommunity', e.target.value as AmbientConfig['memeCommunity'])
-                    }
-                  >
-                    <option value="memes">r/memes</option>
-                    <option value="dankmemes">r/dankmemes</option>
-                    <option value="ProgrammerHumor">r/ProgrammerHumor</option>
-                  </select>
-                </label>
-                {number('memeMinUps', '最低赞数', 0, 1000000)}
-              </div>
-              <p className="ambient-hint">
-                从公开来源一次取 20 个候选，再按赞数筛选；这是候选中的高赞内容，并非全站热榜。来自
-                Reddit 的 PNG / JPEG
-                图片，无需账号。保留原帖入口，自动适配黑白小屏；跳过成人内容、剧透、动图和超大图片；竖图保持比例并留白。
-              </p>
-            </details>
-            <details className="ambient-details">
-              <summary>展示节奏</summary>
-              <label className="ambient-toggle">
+                    )}
+                    {(flag || id === 'social') && (
+                      <button
+                        type="button"
+                        role="switch"
+                        className="ambient-switch"
+                        aria-checked={rowOn(id)}
+                        aria-label={`自动挑选 ${label}`}
+                        disabled={!snapshot}
+                        onClick={() => {
+                          if (id !== 'social') return edit(flag!, !draft[flag!])
+                          const next = toggleSocialRow(
+                            { xEnabled: draft.xEnabled, memeEnabled: draft.memeEnabled },
+                            rememberedSocial.current,
+                          )
+                          rememberedSocial.current = next.remembered
+                          writeRememberedSocial(window.localStorage, next.remembered)
+                          editMany(next.patch)
+                        }}
+                      />
+                    )}
+                  </li>
+                </Fragment>
+              )
+            })}
+          </ul>
+          <YuanbaoSettings
+            status={yb}
+            limit={ybConfig.dailyRequestLimit}
+            onLimit={(value) => editYuanbao({ dailyRequestLimit: value })}
+            onSnapshot={setSnapshot}
+            disabled={!snapshot}
+            limitField={(value, onCommit) => (
+              <NumberRule
+                label="每日请求上限"
+                value={value}
+                min={1}
+                max={200}
+                onCommit={onCommit}
+              />
+            )}
+          />
+          <details className="ambient-details ambient-pacing">
+            <summary>展示节奏</summary>
+            <fieldset className="ambient-fieldset" disabled={!snapshot}>
+              <label className="page-switch">
                 <input
                   type="checkbox"
                   checked={draft.idleOnly}
@@ -838,67 +847,495 @@ export function AmbientPanel({ active = true }: { active?: boolean }): JSX.Eleme
                 {number('pollMinutes', '检查间隔（分钟）', 15, 1440)}
                 {number('gapMinutes', '展示间隔（分钟）', 30, 1440)}
                 {number('dailyLimit', '每天最多展示', 1, 24)}
-                {number('displayMinutes', '每条停留（分钟）', 1, 30)}
-                {number('quietStart', '安静时段开始（本地小时）', 0, 23)}
-                {number('quietEnd', '安静时段结束（本地小时）', 0, 23)}
+                {number('quietStart', '安静开始（小时）', 0, 23)}
+                {number('quietEnd', '安静结束（小时）', 0, 23)}
               </div>
-              <p className="ambient-hint">
-                起止小时相同表示不设安静时段。以上只限制自动推送；手动展示可跳过空闲、间隔与每日上限，也可暂时覆盖待查看；
-                授权、补充输入及异常提醒仍优先。图片与便签只手动展示。
-              </p>
-            </details>
-            <p className="ambient-message" data-feedback="settings" role="status">
-              {messageScope === 'settings' ? message : ''}
-            </p>
-            <div className="ambient-actions">
-              <button
-                type="button"
-                className="ambient-primary"
-                disabled={busy || !snapshot}
-                onClick={() =>
-                  void action(
-                    async () => {
-                      if (key.trim()) {
-                        await window.codepulse.setAmbientKey(draft.provider, key)
-                        setKey('')
-                      }
-                      const s = await window.codepulse.setAmbient(draft)
-                      savedConfig.current = normalizeAmbient(s.config)
-                      setDraft(savedConfig.current)
-                      return s
-                    },
-                    '自动推送设置已保存。展示选中内容请点左侧“显示到屏幕”。',
-                    'settings',
-                  )
-                }
-              >
-                保存推送设置
-              </button>
-              <button
-                type="button"
-                disabled={busy || !snapshot || snapshot?.collecting}
-                onClick={() =>
-                  void action(
-                    () => window.codepulse.refreshAmbient(),
-                    '内容检查完成，来源状态见下方。',
-                    'settings',
-                  )
-                }
-              >
-                {snapshot?.collecting ? '正在检查…' : '检查新内容'}
-              </button>
+            </fieldset>
+          </details>
+        </div>
+        <div
+          className="ambient-card ambient-detail"
+          aria-label={CATEGORIES.find((c) => c.id === category)!.label}
+        >
+          <div className="page-card-head">
+            <div className="ambient-detail-title">
+              <h2>{CATEGORIES.find((c) => c.id === category)!.label}</h2>
+              {problem && <span className="page-chip is-warn">{problem}</span>}
             </div>
-            <div className="ambient-health">
-              <span>概念 / 思考：离线可用，无需密钥</span>
-              <span>科技热议：{snapshot?.sourceStatus.news ?? '尚未检查'}</span>
-              <span>X：{snapshot?.sourceStatus.x ?? '正在连接'}</span>
-              <span>Meme：{snapshot?.sourceStatus.meme ?? '正在连接'}</span>
-              {Boolean(snapshot?.lastCheckedAt) && (
-                <span>最近检查 {new Date(snapshot!.lastCheckedAt).toLocaleTimeString()}</span>
+            <span
+              className={`page-saved ${savedFlash || refreshNote ? 'is-shown' : ''}`}
+              role="status"
+            >
+              {refreshNote || (savedFlash ? '已保存' : '')}
+            </span>
+          </div>
+          {saveFailed && (
+            <p className="ambient-message" role="alert">
+              保存未完成，请检查输入后重试。
+            </p>
+          )}
+          <div className="ambient-inner">
+            <div className="ambient-items-col">
+              <ul className="ambient-items" aria-label="条目">
+                {items.length === 0 && !isYuanbao(category) && (
+                  <li className="ambient-empty">暂无内容</li>
+                )}
+                {items.length === 0 &&
+                  isYuanbao(category) &&
+                  SAMPLES[category].map(({ topic, label }) => (
+                    <li key={topic}>
+                      <button
+                        type="button"
+                        className="ambient-item"
+                        data-sample={topic}
+                        aria-pressed={sampleTopic === topic}
+                        onClick={() => void previewSample(topic)}
+                      >
+                        示例 · {label}
+                      </button>
+                    </li>
+                  ))}
+                {items.map((card) => (
+                  <li key={card.id}>
+                    <button
+                      type="button"
+                      className="ambient-item"
+                      aria-pressed={card.id === selectedCard?.id}
+                      title={`${card.text}${['x', 'meme', 'news'].includes(card.kind) ? ` · ${card.score.toLocaleString()} 赞` : ''}`}
+                      onClick={() => void showPreview(card)}
+                    >
+                      {itemLabel(card)}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {category === 'calendar' && selectedCard?.calendar && (
+                <p
+                  className="ambient-calendar-info"
+                  role="status"
+                  title="月历需要固件 0.0.29 以上，旧固件只显示一行文字"
+                >
+                  {selectedCard.text}
+                  {nextHolidayText(snapshot?.calendarNext)}
+                </p>
+              )}
+              {(category === 'calendar' || category === 'holiday') && holidayStatus && (
+                <p className="ambient-calendar-info" data-holiday-status role="status">
+                  {holidayStatus}
+                </p>
+              )}
+              {(selectedCanOpen || selectedRemovable) && (
+                <div className="ambient-actions">
+                  {selectedCanOpen && selectedCard && (
+                    <button
+                      type="button"
+                      className="product-button is-compact"
+                      onClick={() =>
+                        void window.codepulse
+                          .openAmbient(selectedCard.id)
+                          .catch(() => setMessage('原帖暂时无法打开'))
+                      }
+                    >
+                      {selectedCard.kind === 'concept' ? '延伸阅读 ↗' : '查看来源 ↗'}
+                    </button>
+                  )}
+                  {selectedRemovable && selectedCard && (
+                    <button
+                      type="button"
+                      className="product-button is-compact"
+                      disabled={busy}
+                      onClick={() =>
+                        void action(async () => {
+                          const s = await window.codepulse.removeAmbient(selectedCard.id)
+                          setPreview(undefined)
+                          previewSeq.current += 1
+                          previewedId.current = ''
+                          setSelectedId('')
+                          return s
+                        })
+                      }
+                    >
+                      移除
+                    </button>
+                  )}
+                </div>
+              )}
+              {category === 'local' && (
+                <div className="ambient-note-editor">
+                  <label htmlFor="ambient-note">写一张便签</label>
+                  <textarea
+                    id="ambient-note"
+                    maxLength={120}
+                    rows={3}
+                    placeholder="今天只做一件最重要的事……"
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="product-button"
+                    disabled={busy || !note.trim()}
+                    onClick={() => void addNote()}
+                  >
+                    保存并预览
+                  </button>
+                  <small>{note.length} / 120</small>
+                </div>
+              )}
+              {hasSettings && (
+                <details
+                  className="ambient-details ambient-settings"
+                  open={settingsOpen}
+                  onToggle={(e) => setSettingsOpen(e.currentTarget.open)}
+                >
+                  <summary>设置</summary>
+                  <fieldset className="ambient-fieldset" disabled={!snapshot}>
+                    {category === 'pet' && (
+                      <div className="ambient-pet-picker" role="radiogroup" aria-label="宠物形象">
+                        {cardsFor('pet').map((c) => {
+                          const chosen = c.pet?.id === draft.petId
+                          return (
+                            <button
+                              type="button"
+                              role="radio"
+                              aria-checked={chosen}
+                              key={c.id}
+                              className="ambient-pet-option"
+                              title={c.pet ? petProfile(c.pet.id).trait : undefined}
+                              onClick={() => c.pet && edit('petId', c.pet.id)}
+                            >
+                              <PetThumb card={c} />
+                              <strong>{c.pet ? petProfile(c.pet.id).name : c.source}</strong>
+                              <span>{c.pet ? petProfile(c.pet.id).trait : ''}</span>
+                              {chosen && <em>已选</em>}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                    {category === 'news' && <div className="ambient-actions">{refreshButton}</div>}
+                    {category === 'life' && (
+                      <>
+                        <section className="ambient-group" aria-label="天气">
+                          <h3>天气</h3>
+                          {lifeFlagSwitch('weatherEnabled', '显示天气')}
+                          <label className="page-field">
+                            城市
+                            <input
+                              value={ybConfig.city}
+                              maxLength={20}
+                              onChange={(e) => editYuanbao({ city: e.target.value }, SAVE_DELAY_MS)}
+                            />
+                          </label>
+                        </section>
+                        <section className="ambient-group" aria-label="金价">
+                          <h3>金价</h3>
+                          {lifeFlagSwitch('goldEnabled', '显示金价')}
+                          <label className="page-switch">
+                            <input
+                              type="checkbox"
+                              checked={ybConfig.goldBrand}
+                              onChange={(e) => editYuanbao({ goldBrand: e.target.checked })}
+                            />
+                            附品牌金价
+                          </label>
+                        </section>
+                        <section className="ambient-group" aria-label="股票">
+                          <h3>股票</h3>
+                          {lifeFlagSwitch('stocksEnabled', '显示股价')}
+                          <label className="page-field">
+                            代码（最多 3 个，逗号分隔）
+                            <input
+                              value={stocksText}
+                              aria-invalid={Boolean(stocksError)}
+                              placeholder="00700.hk"
+                              onChange={(e) => {
+                                setStocksText(e.target.value)
+                                const parsed = parseStocks(e.target.value)
+                                setStocksError(parsed.ok ? '' : parsed.error)
+                                if (parsed.ok) editYuanbao({ stocks: parsed.stocks }, SAVE_DELAY_MS)
+                              }}
+                            />
+                            {stocksError && (
+                              <span className="ambient-field-error" role="alert">
+                                {stocksError}
+                              </span>
+                            )}
+                          </label>
+                        </section>
+                        <div className="ambient-actions">{refreshButton}</div>
+                      </>
+                    )}
+                    {category === 'tools' && (
+                      <>
+                        <label className="page-field">
+                          工具名称（最多 4 个，逗号分隔）
+                          <input
+                            value={toolsText}
+                            onChange={(e) => {
+                              setToolsText(e.target.value)
+                              editYuanbao({ tools: parseTools(e.target.value) }, SAVE_DELAY_MS)
+                            }}
+                          />
+                        </label>
+                        <div className="ambient-actions">{refreshButton}</div>
+                      </>
+                    )}
+                    {category === 'headlines' && (
+                      <>
+                        <label className="page-field">
+                          话题
+                          <input
+                            value={ybConfig.newsTopic}
+                            maxLength={20}
+                            onChange={(e) =>
+                              editYuanbao({ newsTopic: e.target.value }, SAVE_DELAY_MS)
+                            }
+                          />
+                        </label>
+                        <div className="ambient-actions">{refreshButton}</div>
+                      </>
+                    )}
+                    {category === 'social' && (
+                      <>
+                        <section className="ambient-group" aria-label="X 贴文">
+                          <h3>X 贴文</h3>
+                          {flagSwitch('xEnabled', '订阅 X 贴文')}
+                          <div className={`ambient-subfields${draft.xEnabled ? '' : ' is-dim'}`}>
+                            <div className="ambient-fields">
+                              <label className="page-field">
+                                接入方式
+                                <select
+                                  value={draft.provider}
+                                  disabled={!draft.xEnabled}
+                                  onChange={(e) =>
+                                    edit('provider', e.target.value as AmbientConfig['provider'])
+                                  }
+                                >
+                                  <option value="twitterapi">TwitterAPI.io · 第三方按量付费</option>
+                                  <option value="x">X 官方 API · 按量付费</option>
+                                </select>
+                              </label>
+                              <div className="ambient-key-row">
+                                <label className="page-field">
+                                  API 密钥
+                                  <input
+                                    type="password"
+                                    autoComplete="off"
+                                    value={key}
+                                    disabled={!draft.xEnabled}
+                                    placeholder={
+                                      snapshot?.hasKey &&
+                                      snapshot.config.provider === draft.provider
+                                        ? '已保存，留空保留'
+                                        : '填入对应来源的 API 密钥'
+                                    }
+                                    onChange={(e) => setKey(e.target.value)}
+                                  />
+                                </label>
+                                <button
+                                  type="button"
+                                  className="product-button"
+                                  disabled={busy || !key.trim() || !draft.xEnabled}
+                                  onClick={() =>
+                                    void action(
+                                      async () => {
+                                        const state = await window.codepulse.setAmbientKey(
+                                          draft.provider,
+                                          key,
+                                        )
+                                        setKey('')
+                                        return state
+                                      },
+                                      '密钥已加密保存在本机。',
+                                      'settings',
+                                    )
+                                  }
+                                >
+                                  保存密钥
+                                </button>
+                                <button
+                                  type="button"
+                                  className="product-button"
+                                  disabled={busy || !snapshot?.hasKey || !draft.xEnabled}
+                                  onClick={() =>
+                                    void action(
+                                      () => window.codepulse.setAmbientKey(draft.provider, ''),
+                                      '已清除该来源密钥',
+                                      'settings',
+                                    )
+                                  }
+                                >
+                                  清除密钥
+                                </button>
+                              </div>
+                            </div>
+                            <label className="page-field">
+                              账号（逗号分隔）
+                              <input
+                                value={draft.accounts.join(', ')}
+                                disabled={!draft.xEnabled}
+                                onChange={(e) =>
+                                  edit('accounts', e.target.value.split(/[,，\s]+/), SAVE_DELAY_MS)
+                                }
+                              />
+                            </label>
+                            <div className="ambient-fields">
+                              <label className="page-field">
+                                必须包含任一关键词（可留空）
+                                <input
+                                  value={draft.keywords.join(', ')}
+                                  disabled={!draft.xEnabled}
+                                  onChange={(e) =>
+                                    edit(
+                                      'keywords',
+                                      e.target.value.split(/[,，]/).map((s) => s.trimStart()),
+                                      SAVE_DELAY_MS,
+                                    )
+                                  }
+                                />
+                              </label>
+                              <label className="page-field">
+                                排除关键词
+                                <input
+                                  value={draft.exclude.join(', ')}
+                                  disabled={!draft.xEnabled}
+                                  onChange={(e) =>
+                                    edit(
+                                      'exclude',
+                                      e.target.value.split(/[,，]/).map((s) => s.trimStart()),
+                                      SAVE_DELAY_MS,
+                                    )
+                                  }
+                                />
+                              </label>
+                              {number('minLikes', '最低点赞数', 0, 1000000, !draft.xEnabled)}
+                              {number(
+                                'dailyRequestLimit',
+                                '每天最多检查 X',
+                                1,
+                                96,
+                                !draft.xEnabled,
+                                `含手动检查；今日已检查 ${snapshot?.xRequestsToday ?? 0} 次`,
+                              )}
+                            </div>
+                            <details className="ambient-details">
+                              <summary>按账号调整最低赞数</summary>
+                              <div className="ambient-fields">
+                                {[
+                                  ...new Set(
+                                    draft.accounts
+                                      .map((a) => a.replace(/^@/, '').trim())
+                                      .filter((a) => /^[A-Za-z0-9_]{1,15}$/.test(a)),
+                                  ),
+                                ].map((account) => (
+                                  <NumberRule
+                                    key={account}
+                                    label={`@${account}`}
+                                    value={
+                                      draft.accountMinLikes[account.toLowerCase()] ?? draft.minLikes
+                                    }
+                                    min={0}
+                                    max={1000000}
+                                    disabled={!draft.xEnabled}
+                                    onCommit={(value) =>
+                                      edit('accountMinLikes', {
+                                        ...draft.accountMinLikes,
+                                        [account.toLowerCase()]: value,
+                                      })
+                                    }
+                                  />
+                                ))}
+                              </div>
+                            </details>
+                          </div>
+                        </section>
+                        <section className="ambient-group" aria-label="Meme">
+                          <h3>Meme</h3>
+                          {flagSwitch('memeEnabled', '启用 meme')}
+                          <div className={`ambient-subfields${draft.memeEnabled ? '' : ' is-dim'}`}>
+                            <div className="ambient-fields">
+                              <label className="page-field">
+                                来源
+                                <select
+                                  value={draft.memeCommunity}
+                                  disabled={!draft.memeEnabled}
+                                  onChange={(e) =>
+                                    edit(
+                                      'memeCommunity',
+                                      e.target.value as AmbientConfig['memeCommunity'],
+                                    )
+                                  }
+                                >
+                                  <option value="memes">r/memes</option>
+                                  <option value="dankmemes">r/dankmemes</option>
+                                  <option value="ProgrammerHumor">r/ProgrammerHumor</option>
+                                </select>
+                              </label>
+                              {number('memeMinUps', '最低赞数', 0, 1000000, !draft.memeEnabled)}
+                            </div>
+                          </div>
+                        </section>
+                        <div className="ambient-actions">{refreshButton}</div>
+                      </>
+                    )}
+                    <p className="ambient-message" data-feedback="settings" role="status">
+                      {messageScope === 'settings' ? message : ''}
+                    </p>
+                  </fieldset>
+                </details>
               )}
             </div>
-          </fieldset>
-        </aside>
+            <div className="ambient-stage-col">
+              <section className="ambient-stage">
+                {preview || target ? (
+                  <DeviceScreenPreview
+                    status={previewStatus ?? target!.status}
+                    sample={Boolean(preview)}
+                    live={!preview}
+                    fit
+                    compact
+                    cornerTag={sampleTopic ? '示例' : onScreen ? '当前画面' : '预览'}
+                  />
+                ) : targetError ? (
+                  <p className="ambient-empty" role="alert">
+                    预览暂不可用
+                    <button
+                      type="button"
+                      className="product-button is-compact"
+                      onClick={retryTarget}
+                    >
+                      重试
+                    </button>
+                  </p>
+                ) : (
+                  <p className="ambient-empty">正在读取画面…</p>
+                )}
+                <span className="ambient-temp">
+                  <button
+                    type="button"
+                    className="product-button primary"
+                    aria-disabled={busy || !selectedCard || !online}
+                    onClick={() => {
+                      // aria-disabled keeps the button focusable so its reason can be read; the click is ignored.
+                      if (busy || !selectedCard || !online) return
+                      void action(async () => {
+                        const state = await window.codepulse.showAmbient(selectedCard.id)
+                        return state
+                      }, '已临时展示，10 分钟后自动回到节目单。')
+                    }}
+                  >
+                    临时展示 10 分钟
+                  </button>
+                  {tempReason && <InfoTip text={tempReason} label="为什么不能临时展示" />}
+                </span>
+                <p className="ambient-message" data-feedback="content" role="status">
+                  {messageScope === 'content' ? message : ''}
+                </p>
+              </section>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   )

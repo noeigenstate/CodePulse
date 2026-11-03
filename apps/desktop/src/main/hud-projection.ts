@@ -35,13 +35,22 @@ export class HudProjection {
   private retentionMinutes = 30
   private workspaces: HudWorkspaces
 
-  constructor(private path?: string, private onError?: (error: unknown) => void) {
+  constructor(
+    private path?: string,
+    private onError?: (error: unknown) => void,
+  ) {
     this.workspaces = new HudWorkspaces(path, onError)
-    if (path) try {
-      const saved = JSON.parse(readFileSync(path + '.order.json', 'utf8'))
-      const keys = (value: unknown): string[] => Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string').slice(0, 2048) : []
-      this.order = { projects: keys(saved.projects), tasks: keys(saved.tasks) }
-    } catch { /* First run or malformed presentation preferences. */ }
+    if (path)
+      try {
+        const saved = JSON.parse(readFileSync(path + '.order.json', 'utf8'))
+        const keys = (value: unknown): string[] =>
+          Array.isArray(value)
+            ? value.filter((v): v is string => typeof v === 'string').slice(0, 2048)
+            : []
+        this.order = { projects: keys(saved.projects), tasks: keys(saved.tasks) }
+      } catch {
+        /* First run or malformed presentation preferences. */
+      }
   }
 
   /** Resolve a displayed project back to canonical sessions, not their tool cwd.
@@ -139,10 +148,15 @@ export class HudProjection {
     const { order } = buildWorkPresentation({ ...snapshot, workOrder: this.order })
     if (JSON.stringify(order) !== JSON.stringify(this.order)) {
       this.order = order
-      if (this.path) try {
-        writeFileSync(this.path + '.order.json.tmp', JSON.stringify(order) + '\n', { mode: 0o600 })
-        renameSync(this.path + '.order.json.tmp', this.path + '.order.json')
-      } catch (error) { this.onError?.(error) }
+      if (this.path)
+        try {
+          writeFileSync(this.path + '.order.json.tmp', JSON.stringify(order) + '\n', {
+            mode: 0o600,
+          })
+          renameSync(this.path + '.order.json.tmp', this.path + '.order.json')
+        } catch (error) {
+          this.onError?.(error)
+        }
     }
     return { ...snapshot, workOrder: this.order }
   }

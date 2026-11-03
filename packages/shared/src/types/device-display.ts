@@ -14,8 +14,14 @@ export interface DeviceDisplayConfig {
   page: number
 }
 export const DEFAULT_DEVICE_DISPLAY: Readonly<DeviceDisplayConfig> = {
-  version: 1, mode: 'hud', metric: 'remaining', showQuota: true,
-  showEnvironment: true, inverted: false, agents: ['codex', 'claude_code'], page: 0,
+  version: 1,
+  mode: 'hud',
+  metric: 'remaining',
+  showQuota: true,
+  showEnvironment: true,
+  inverted: false,
+  agents: ['codex', 'claude_code'],
+  page: 0,
 }
 export interface DeviceThreadV1 {
   id: string
@@ -35,7 +41,7 @@ export interface DeviceDisplaySnapshot {
   serverAvailable: boolean
 }
 export function normalizeDeviceDisplay(value: unknown): DeviceDisplayConfig {
-  const v = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+  const v = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
   return {
     version: 1,
     mode: v.mode === 'usage' ? 'usage' : 'hud',
@@ -44,10 +50,12 @@ export function normalizeDeviceDisplay(value: unknown): DeviceDisplayConfig {
     showEnvironment: typeof v.showEnvironment === 'boolean' ? v.showEnvironment : true,
     inverted: v.inverted === true,
     agents: Array.isArray(v.agents)
-      ? DISPLAY_AGENT_TYPES.filter(t => (v.agents as unknown[]).includes(t))
+      ? DISPLAY_AGENT_TYPES.filter((t) => (v.agents as unknown[]).includes(t))
       : [...DEFAULT_DEVICE_DISPLAY.agents],
-    page: typeof v.page === 'number' && Number.isInteger(v.page) && v.page >= 0
-      ? Math.min(v.page, 9999) : 0,
+    page:
+      typeof v.page === 'number' && Number.isInteger(v.page) && v.page >= 0
+        ? Math.min(v.page, 9999)
+        : 0,
   }
 }
 export function isDisplayAgent(type: AgentType): type is DisplayAgentType {
@@ -58,15 +66,23 @@ export function deviceGridColumns(count: number): 1 | 2 | 3 {
 }
 
 /** Same quota selection as the MCU, including Spark and unknown windows. */
-export function deviceDisplayQuota(agent?: import('./device.js').DeviceAgentStatusV1): import('./device.js').DeviceQuotaBucketV1 | undefined {
+export function deviceDisplayQuota(
+  agent?: import('./device.js').DeviceAgentStatusV1,
+): import('./device.js').DeviceQuotaBucketV1 | undefined {
   let best = -1
   let selected: import('./device.js').DeviceQuotaBucketV1 | undefined
   for (const bucket of agent?.quotas ?? []) {
     if (bucket.weekly?.usedPercent == null && bucket.fiveHour?.usedPercent == null) continue
-    const sameModel = Boolean(agent?.model?.toLowerCase().includes('spark')) === bucket.id.toLowerCase().includes('spark')
-    const canonical = bucket.id === agent?.type || (agent?.type === 'claude_code' && bucket.id === 'claude')
+    const sameModel =
+      Boolean(agent?.model?.toLowerCase().includes('spark')) ===
+      bucket.id.toLowerCase().includes('spark')
+    const canonical =
+      bucket.id === agent?.type || (agent?.type === 'claude_code' && bucket.id === 'claude')
     const priority = 1 + (sameModel ? 20 : 0) + (canonical ? 10 : 0)
-    if (priority > best) { best = priority; selected = bucket }
+    if (priority > best) {
+      best = priority
+      selected = bucket
+    }
   }
   return selected
 }

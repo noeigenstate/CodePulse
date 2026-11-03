@@ -10,14 +10,14 @@ they are not current restrictions on publishing to main. See [REPOSITORY.md](REP
 
 ## Ownership and build
 
-| Area | Responsibility |
-| --- | --- |
-| apps/desktop/src/main | One Electron process, StatusHub, native session reads, collectors, hooks, device service and windows |
-| apps/desktop/src/renderer | Standard desktop and independent screen workbench |
-| apps/hud/src/renderer | Existing HUD appearance, task cards, ordering and acknowledgement controls |
-| apps/hud/src/preload | HUD IPC bridge to the same host; no second server or collector |
-| packages | Shared model, adapters, local server, storage and hooks |
-| Both device-preview directories | Identical committed firmware renderer assets, checked before every build |
+| Area                            | Responsibility                                                                                       |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| apps/desktop/src/main           | One Electron process, StatusHub, native session reads, collectors, hooks, device service and windows |
+| apps/desktop/src/renderer       | Standard desktop and independent screen workbench                                                    |
+| apps/hud/src/renderer           | Existing HUD appearance, task cards, ordering and acknowledgement controls                           |
+| apps/hud/src/preload            | HUD IPC bridge to the same host; no second server or collector                                       |
+| packages                        | Shared model, adapters, local server, storage and hooks                                              |
+| Both device-preview directories | Identical committed firmware renderer assets, checked before every build                             |
 
 Install with `pnpm install --frozen-lockfile`, build with `pnpm build`, and launch
 with `pnpm start`. The root build includes HUD automatically. `pnpm dist:win`
@@ -25,8 +25,8 @@ also includes it in the installer; other upstream package targets are retained.
 On Windows `scripts/start-desktop.ps1 -Build -DeviceServer` additionally enables
 the optional device service. No sibling source checkout is required.
 
-The accepted standard client provides Control and Multimedia, with Usage and
-global Settings in the rail footer. Control offers connected desktop/HUD/e-paper
+The accepted standard client provides Control, then a Features group (Desk
+content, Tasks & assistant, Usage), with Settings in the rail footer. Control offers connected desktop/HUD/e-paper
 cards with their existing configuration options. Focus mode collapses the console
 to the original work dashboard and has an explicit return control. HUD can coexist with the standard window; the screen
 workbench remains independent. All three use the same host and saved device
@@ -48,7 +48,7 @@ dependency directory for validation while another checkout is running.
 ## Existing split checkouts
 
 The old HUD and standard-host working trees can remain in place for rollback;
-this branch replaces their *build dependency*, not their local files or history.
+this branch replaces their _build dependency_, not their local files or history.
 Keep unpublished changes in those trees until their transfer has been reviewed.
 Use this branch for future desktop/HUD work. Do not run the old HUD backend
 alongside this host. Stop only CodePulse via its tray before switching builds.
@@ -158,3 +158,22 @@ pin request; the latest isolated run observed that refusal, so pin reliability
 is not claimed. Installer/clean-clone checks, live X access and physical e-paper
 quality have not been revalidated for this change. Firmware and device protocol
 are unchanged.
+
+## Information architecture (ia-refactor)
+
+- One e-ink status bar sits at the top of every product page except focus mode.
+  It only renders `InkScreenStatus` (computed in the main process, read through
+  `useInkStatus`); wording lives in `renderer/src/lib/inkStatusText.ts`.
+- What the e-ink screen shows is decided in one place: Control › E-paper ›
+  playlist (applied through `applyInk`). Desk content and Tasks only manage their
+  content and rules and link back to the playlist; their chips read the applied plan.
+- Desk content (formerly Multimedia) saves rule changes immediately. It cannot
+  change `enabled` or the dwell time, which belong to the playlist.
+- Settings › Visible CLI is the master switch for every surface. Switching a tool off
+  also removes it from the HUD tool list and the device display agents; a tool is
+  never switched on in a surface automatically (`lib/cliVisibility.ts`).
+- Usage hides first-prompt titles by default and masks secrets even when shown
+  (`lib/redact.ts`); projects with the same folder name get a path-tail suffix.
+- Design tokens (font sizes 12/13/14/16/20/24, weights 400/500/600, radii
+  6/10/14/pill, 36px buttons, one 150ms transition) live at the top of
+  `product-shell.css`. The live session workbench cards keep their own styles.

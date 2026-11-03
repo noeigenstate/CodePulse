@@ -1,12 +1,21 @@
 /** Legacy routes remain accepted for saved preferences and older tray links. */
-export const PRODUCT_VIEWS = ['control', 'work', 'usage', 'ambient', 'assistant', 'settings', 'overview', 'screen'] as const
+export const PRODUCT_VIEWS = [
+  'control',
+  'work',
+  'usage',
+  'ambient',
+  'assistant',
+  'settings',
+  'overview',
+  'screen',
+] as const
 export type ProductView = (typeof PRODUCT_VIEWS)[number]
 export type DesktopForm = 'standard' | 'hud'
 export type PresentationTarget = 'desktop' | 'hud' | 'ink'
 export type DesktopLayout = 'work' | 'usage' | 'board'
 export type InkDisplayMode = 'single' | 'cycle'
 export type InkFeatureId = 'work' | 'ambient' | 'todos'
-export type InkCycleInterval = 10 | 15 | 30
+export type InkCycleInterval = 5 | 10 | 15 | 30
 export interface InkDisplayPlan {
   mode: InkDisplayMode
   fixed: InkFeatureId
@@ -79,27 +88,38 @@ export function productTargets(view: ProductView): readonly PresentationTarget[]
   if (view === 'settings') return []
   return PRESENTATION_TARGETS
 }
-export function targetForProductView(view: ProductView, target: PresentationTarget): PresentationTarget {
+export function targetForProductView(
+  view: ProductView,
+  target: PresentationTarget,
+): PresentationTarget {
   const allowed = productTargets(view)
   return allowed.length && !allowed.includes(target) ? allowed[0]! : target
 }
 export function normalizeInkPlan(input: unknown): InkDisplayPlan {
   const value = input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
-  const mode: InkDisplayMode = value.mode === 'single' ? 'single' : 'cycle'
-  const fixed: InkFeatureId = value.fixed === 'ambient' || value.fixed === 'todos' ? value.fixed : 'work'
+  const legacyFixed =
+    value.mode === 'single' && (value.fixed === 'ambient' || value.fixed === 'todos')
+  const mode: InkDisplayMode = value.mode === 'single' && !legacyFixed ? 'single' : 'cycle'
   const rawItems = Array.isArray(value.items)
-    ? value.items.filter((item): item is InkFeatureId => item === 'work' || item === 'ambient' || item === 'todos')
-    : []
-  const items: InkFeatureId[] = rawItems.length > 0 ? [...new Set(rawItems)] : ['work', 'ambient']
+    ? value.items.filter(
+        (item): item is InkFeatureId => item === 'work' || item === 'ambient' || item === 'todos',
+      )
+    : (['work', 'ambient'] as InkFeatureId[])
+  const items: InkFeatureId[] = legacyFixed
+    ? ['work', value.fixed as InkFeatureId]
+    : ['work', ...new Set(rawItems.filter((item) => item !== 'work'))]
   const intervalMinutes: InkCycleInterval =
-    value.intervalMinutes === 10 || value.intervalMinutes === 30 ? value.intervalMinutes : 15
-  return { mode, fixed, items, intervalMinutes }
+    value.intervalMinutes === 5 || value.intervalMinutes === 10 || value.intervalMinutes === 30
+      ? value.intervalMinutes
+      : 15
+  return { mode, fixed: 'work', items, intervalMinutes }
 }
 export function normalizeHudSettings(input: unknown): HudAppearanceSettings {
   const value = input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
-  const tools = value.visibleTools && typeof value.visibleTools === 'object'
-    ? (value.visibleTools as Record<string, unknown>)
-    : {}
+  const tools =
+    value.visibleTools && typeof value.visibleTools === 'object'
+      ? (value.visibleTools as Record<string, unknown>)
+      : {}
   const retention = value.resultRetentionMinutes
   return {
     theme: value.theme === 'auto' || value.theme === 'dark' ? value.theme : 'light',
@@ -114,7 +134,11 @@ export function normalizeHudSettings(input: unknown): HudAppearanceSettings {
     projectLayout: value.projectLayout === 'grid' ? 'grid' : 'list',
     showUsageStrip: typeof value.showUsageStrip === 'boolean' ? value.showUsageStrip : true,
     resultRetentionMinutes:
-      retention === 10 || retention === 30 || retention === 60 || retention === 120 || retention === 240
+      retention === 10 ||
+      retention === 30 ||
+      retention === 60 ||
+      retention === 120 ||
+      retention === 240
         ? retention
         : 30,
     visibleTools: {
@@ -129,8 +153,12 @@ export function normalizeHudSettings(input: unknown): HudAppearanceSettings {
 export function normalizeShellPreferences(input: unknown): ShellPreferences {
   const value = input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
   const view = isProductView(value.view) ? canonicalProductView(value.view) : 'control'
-  const target = value.view === 'screen' ? 'ink' : PRESENTATION_TARGETS.includes(value.target as PresentationTarget)
-    ? value.target as PresentationTarget : 'desktop'
+  const target =
+    value.view === 'screen'
+      ? 'ink'
+      : PRESENTATION_TARGETS.includes(value.target as PresentationTarget)
+        ? (value.target as PresentationTarget)
+        : 'desktop'
   return {
     version: 1,
     // Legacy startup-form input is accepted, but the client is always the entry point.
@@ -138,7 +166,10 @@ export function normalizeShellPreferences(input: unknown): ShellPreferences {
     view,
     target: targetForProductView(view, target),
     focusMode: value.focusMode === true,
-    desktopLayout: value.desktopLayout === 'board' || value.desktopLayout === 'usage' ? value.desktopLayout : 'work',
+    desktopLayout:
+      value.desktopLayout === 'board' || value.desktopLayout === 'usage'
+        ? value.desktopLayout
+        : 'work',
     inkPlan: normalizeInkPlan(value.inkPlan),
     hudSettings: normalizeHudSettings(value.hudSettings),
   }

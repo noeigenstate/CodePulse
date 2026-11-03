@@ -1,3 +1,4 @@
+param([string]$Output)
 $ErrorActionPreference = 'Stop'
 $firmwareRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
@@ -17,7 +18,7 @@ $quiet = Join-Path $firmwareRoot 'experiments\epd-quiet-probe'
 $experiment = Join-Path $firmwareRoot 'experiments\epd-text-timing-probe'
 $main = Join-Path $firmwareRoot 'main'
 $tests = Join-Path $firmwareRoot 'tests\quiet'
-$output = Join-Path $firmwareRoot 'build-quiet-tests'
+$output = if ($Output) { [IO.Path]::GetFullPath($Output) } else { Join-Path $firmwareRoot 'build-quiet-tests' }
 New-Item -ItemType Directory -Path $output -Force | Out-Null
 Push-Location $output
 try {
@@ -42,50 +43,70 @@ try {
     }
     & cl.exe /nologo /std:c11 /utf-8 /W4 /WX /D_CRT_SECURE_NO_WARNINGS `
         ('/I' + (Join-Path $quiet 'tests')) ('/I' + $main) ('/I' + (Join-Path $tests '../vendor/miniz')) (Join-Path $tests 'test_dashboard.c') `
-        (Join-Path $main 'quiet_dashboard.c') (Join-Path $main 'display_text.c') (Join-Path $main 'epd_canvas.c') `
+        (Join-Path $main 'quiet_dashboard.c') (Join-Path $main 'life_dashboard.c') (Join-Path $main 'display_text.c') (Join-Path $main 'epd_canvas.c') `
         (Join-Path $main 'display_sync_policy.c') (Join-Path $tests '../vendor/miniz/miniz_tinfl.c') /Fe:test-dashboard.exe
     if ($LASTEXITCODE -ne 0) { throw 'Quiet dashboard compilation failed.' }
     & (Join-Path $output 'test-dashboard.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Quiet dashboard regression failed.' }
     & cl.exe /nologo /std:c11 /utf-8 /W4 /WX /D_CRT_SECURE_NO_WARNINGS `
         ('/I' + (Join-Path $quiet 'tests')) ('/I' + $main) ('/I' + (Join-Path $tests '../vendor/miniz')) (Join-Path $tests 'test_red.c') `
-        (Join-Path $main 'quiet_dashboard.c') (Join-Path $main 'display_text.c') (Join-Path $main 'epd_canvas.c') `
+        (Join-Path $main 'quiet_dashboard.c') (Join-Path $main 'life_dashboard.c') (Join-Path $main 'display_text.c') (Join-Path $main 'epd_canvas.c') `
         (Join-Path $main 'display_sync_policy.c') (Join-Path $tests '../vendor/miniz/miniz_tinfl.c') /Fe:test-red.exe
     if ($LASTEXITCODE -ne 0) { throw 'Red dashboard compilation failed.' }
     & (Join-Path $output 'test-red.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Red dashboard regression failed.' }
     & cl.exe /nologo /std:c11 /utf-8 /W4 /WX /D_CRT_SECURE_NO_WARNINGS `
         ('/I' + (Join-Path $quiet 'tests')) ('/I' + $main) ('/I' + (Join-Path $tests '../vendor/miniz')) (Join-Path $tests 'test_pet_layout.c') `
-        (Join-Path $main 'quiet_dashboard.c') (Join-Path $main 'epd_canvas.c') `
+        (Join-Path $main 'quiet_dashboard.c') (Join-Path $main 'life_dashboard.c') (Join-Path $main 'epd_canvas.c') `
         (Join-Path $main 'display_sync_policy.c') (Join-Path $tests '../vendor/miniz/miniz_tinfl.c') /Fe:test-pet-layout.exe
     if ($LASTEXITCODE -ne 0) { throw 'Pet layout compilation failed.' }
     & (Join-Path $output 'test-pet-layout.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Pet layout regression failed.' }
     & cl.exe /nologo /std:c11 /utf-8 /W4 /WX /D_CRT_SECURE_NO_WARNINGS `
         ('/I' + (Join-Path $quiet 'tests')) ('/I' + $main) ('/I' + (Join-Path $tests '../vendor/miniz')) (Join-Path $tests 'test_calendar.c') `
-        (Join-Path $main 'quiet_dashboard.c') (Join-Path $main 'display_text.c') (Join-Path $main 'epd_canvas.c') `
+        (Join-Path $main 'quiet_dashboard.c') (Join-Path $main 'life_dashboard.c') (Join-Path $main 'display_text.c') (Join-Path $main 'epd_canvas.c') `
         (Join-Path $main 'display_sync_policy.c') (Join-Path $tests '../vendor/miniz/miniz_tinfl.c') /Fe:test-calendar.exe
     if ($LASTEXITCODE -ne 0) { throw 'Calendar dashboard compilation failed.' }
     & (Join-Path $output 'test-calendar.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Calendar dashboard regression failed.' }
     & cl.exe /nologo /std:c11 /utf-8 /W4 /WX /D_CRT_SECURE_NO_WARNINGS `
         ('/I' + (Join-Path $quiet 'tests')) ('/I' + $main) ('/I' + (Join-Path $tests '../vendor/miniz')) (Join-Path $tests 'test_pacing.c') `
-        (Join-Path $main 'quiet_dashboard.c') (Join-Path $main 'display_text.c') (Join-Path $main 'epd_canvas.c') `
+        (Join-Path $main 'quiet_dashboard.c') (Join-Path $main 'life_dashboard.c') (Join-Path $main 'display_text.c') (Join-Path $main 'epd_canvas.c') `
         (Join-Path $main 'display_sync_policy.c') (Join-Path $tests '../vendor/miniz/miniz_tinfl.c') /Fe:test-pacing.exe
     if ($LASTEXITCODE -ne 0) { throw 'Pacing compilation failed.' }
     & (Join-Path $output 'test-pacing.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Pacing replay failed.' }
-    foreach ($unit in @('test_dashboard', 'test_pet_layout', 'test_calendar')) {
+    & cl.exe /nologo /std:c11 /utf-8 /W4 /WX /D_CRT_SECURE_NO_WARNINGS `
+        ('/I' + (Join-Path $quiet 'tests')) ('/I' + $main) ('/I' + (Join-Path $tests '../vendor/miniz')) `
+        (Join-Path $tests 'test_life.c') (Join-Path $main 'quiet_dashboard.c') (Join-Path $main 'life_dashboard.c') `
+        (Join-Path $main 'display_text.c') (Join-Path $main 'epd_canvas.c') (Join-Path $main 'display_sync_policy.c') `
+        (Join-Path $tests '../vendor/miniz/miniz_tinfl.c') /Fe:test-life.exe
+    if ($LASTEXITCODE -ne 0) { throw 'Life renderer compilation failed.' }
+    & (Join-Path $output 'test-life.exe')
+    if ($LASTEXITCODE -ne 0) { throw 'Life renderer regression failed.' }
+    foreach ($unit in @('test_dashboard', 'test_pet_layout', 'test_calendar', 'test_life')) {
         $nativeFonts = @()
         if ($unit -ne 'test_pet_layout') { $nativeFonts = @((Join-Path $main 'display_text.c')) }
         $checkedExe = $unit + '-ndebug.exe'
         & cl.exe /nologo /std:c11 /utf-8 /W4 /WX /DNDEBUG /D_CRT_SECURE_NO_WARNINGS `
             ('/I' + (Join-Path $quiet 'tests')) ('/I' + $main) ('/I' + (Join-Path $tests '../vendor/miniz')) `
-            (Join-Path $tests ($unit + '.c')) (Join-Path $main 'quiet_dashboard.c') @nativeFonts `
+            (Join-Path $tests ($unit + '.c')) (Join-Path $main 'quiet_dashboard.c') (Join-Path $main 'life_dashboard.c') @nativeFonts `
             (Join-Path $main 'epd_canvas.c') (Join-Path $main 'display_sync_policy.c') `
             (Join-Path $tests '../vendor/miniz/miniz_tinfl.c') ('/Fe:' + $checkedExe)
         if ($LASTEXITCODE -ne 0) { throw ('NDEBUG compilation failed: ' + $unit) }
         & (Join-Path $output $checkedExe)
         if ($LASTEXITCODE -ne 0) { throw ('NDEBUG checks failed: ' + $unit) }
+    }
+    foreach ($ndebug in @(0, 1)) {
+        $defines = @()
+        if ($ndebug) { $defines = @('/DNDEBUG') }
+        $textExe = 'test-life-text-' + $ndebug + '.exe'
+        & cl.exe /nologo /std:c11 /utf-8 /W4 /WX /D_CRT_SECURE_NO_WARNINGS @defines `
+            ('/I' + (Join-Path $quiet 'tests')) ('/I' + $main) ('/I' + (Join-Path $tests '../vendor/miniz')) `
+            (Join-Path $tests 'test_life_text.c') (Join-Path $main 'display_text.c') (Join-Path $main 'epd_canvas.c') `
+            (Join-Path $tests '../vendor/miniz/miniz_tinfl.c') ('/Fe:' + $textExe)
+        if ($LASTEXITCODE -ne 0) { throw 'Life text boundary compilation failed.' }
+        & (Join-Path $output $textExe)
+        if ($LASTEXITCODE -ne 0) { throw 'Life text boundary regression failed.' }
     }
 } finally { Pop-Location }

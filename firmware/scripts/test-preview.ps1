@@ -1,10 +1,10 @@
 param([Parameter(Mandatory = $true)][string]$Zig,
       [string]$Python = 'python',
       [string]$Loader,
-      [switch]$UpdateBaseline)
+      [switch]$UpdateBaseline, [string]$Output)
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
-$output = Join-Path $root 'build-preview-check'
+$output = if ($Output) { [IO.Path]::GetFullPath($Output) } else { Join-Path $root 'build-preview-check' }
 $json = Join-Path $root 'managed_components/espressif__cjson/cJSON'
 if (-not $Loader) { $Loader = Join-Path $root '../apps/desktop/src/renderer/src/device-preview/renderer.mjs' }
 $Loader = (Resolve-Path -LiteralPath $Loader).Path
@@ -26,7 +26,7 @@ Push-Location $output
 try {
     & cl.exe /nologo /std:c11 /utf-8 /W3 /D_CRT_SECURE_NO_WARNINGS /DPREVIEW_NATIVE `
         ('/I' + $root + '/main') ('/I' + $root + '/preview/include') ('/I' + $root + '/tests/vendor/miniz') ('/I' + $json) `
-        ($root + '/preview/renderer.c') ($root + '/main/quiet_dashboard.c') ($root + '/main/display_text.c') `
+        ($root + '/preview/renderer.c') ($root + '/main/quiet_dashboard.c') ($root + '/main/life_dashboard.c') ($root + '/main/display_text.c') `
         ($root + '/main/epd_canvas.c') ($root + '/main/codepulse_protocol.c') `
         ($root + '/tests/vendor/miniz/miniz_tinfl.c') ($json + '/cJSON.c') /Fe:preview-native.exe
     if ($LASTEXITCODE -ne 0) { throw 'Native renderer build failed.' }
@@ -37,4 +37,12 @@ try {
     if ($UpdateBaseline) { $baselineOptions = @('--update') }
     & node (Join-Path $root 'preview/check-legacy.mjs') (Join-Path $output 'preview-native.exe') (Join-Path $output 'legacy') @baselineOptions
     if ($LASTEXITCODE -ne 0) { throw 'Pixel baseline regression failed.' }
+    & node (Join-Path $root 'preview/test-life.mjs') (Join-Path $output 'renderer.wasm') `
+        (Join-Path $output 'preview-native.exe') (Join-Path $output 'life-fallback')
+    if ($LASTEXITCODE -ne 0) { throw 'Life fallback/native-Wasm checks failed.' }
+    & node (Join-Path $root 'preview/render-life.mjs') (Join-Path $output 'renderer.wasm') `
+        (Join-Path $output 'life') (Join-Path $output 'preview-native.exe')
+    if ($LASTEXITCODE -ne 0) { throw 'Life fixture native/Wasm parity failed.' }
+    & $Python (Join-Path $root 'preview/check-life.py') (Join-Path $output 'life')
+    if ($LASTEXITCODE -ne 0) { throw 'Life approved-pixel regression failed.' }
 } finally { Pop-Location }

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { deviceLife } from './device-life.js'
 import { needsHudAttention } from '@codepulse/shared'
 import type {
   AmbientCard,
@@ -23,7 +24,7 @@ export function inQuietHours(config: AmbientConfig, now: number): boolean {
   return start !== end && (start < end ? hour >= start && hour < end : hour >= start || hour < end)
 }
 export function pauseReason(config: AmbientConfig, status: StatusSnapshot, now: number): string {
-  if (!config.enabled) return '桌边动态已关闭'
+  if (!config.enabled) return '桌边内容已关闭'
   if (inQuietHours(config, now)) return '安静时段'
   if (status.agents.some((a) => !a.taskHidden && needsHudAttention(a))) return '先处理 Agent 提醒'
   if (
@@ -41,6 +42,23 @@ export function xMinimumLikes(config: AmbientConfig, account: string): number {
 export function qualifies(card: AmbientCard, config: AmbientConfig, now: number): boolean {
   if (!card.text || card.expiresAt <= now || card.publishedAt > now + 300000) return false
   if (config.exclude.some((w) => card.text.toLowerCase().includes(w.toLowerCase()))) return false
+  if (card.kind === 'life' || card.kind === 'search') {
+    const y = config.yuanbao
+    if (!y.enabled || card.score <= 0) return false
+    return card.topic === 'weather'
+      ? y.weatherEnabled
+      : card.topic === 'gold'
+        ? y.goldEnabled
+        : card.topic === 'stock'
+          ? y.stocksEnabled
+          : card.topic === 'tools'
+            ? y.toolsEnabled
+            : card.topic === 'holiday'
+              ? y.holidayEnabled
+              : card.topic === 'news'
+                ? y.newsEnabled
+                : false
+  }
   if (card.kind === 'concept') return config.conceptsEnabled
   if (card.kind === 'prompt') return config.promptsEnabled
   if (card.kind === 'news') return config.newsEnabled && card.score >= 100
@@ -68,7 +86,12 @@ export function contentKey(card: AmbientCard): string {
         (card.layout ?? '') +
         (card.calendar ? JSON.stringify(card.calendar) : '') +
         // A pet or calendar looks the same all day; its id carries the date so it can come back tomorrow.
-        (card.kind === 'pet' || card.kind === 'calendar' ? card.id : '') +
+        (card.kind === 'pet' ||
+        card.kind === 'calendar' ||
+        card.kind === 'life' ||
+        card.kind === 'search'
+          ? card.id
+          : '') +
         ':' +
         card.text
           .toLowerCase()
@@ -81,6 +104,16 @@ export function contentKey(card: AmbientCard): string {
 export function deviceCard(
   card: AmbientCard & Pick<DeviceAmbientCard, 'manual'>,
 ): DeviceAmbientCard {
+  const candidate =
+    card.layout === 'life' &&
+    !card.imageHex &&
+    !card.items &&
+    !card.calendar &&
+    (card.kind === 'life' || card.kind === 'search')
+      ? deviceLife(card.life)
+      : undefined
+  const life =
+    candidate?.kind === (card.topic === 'tools' ? 'tool' : card.topic) ? candidate : undefined
   const utf8 = (s: string, bytes: number) => {
     let out = ''
     for (const c of s) {
@@ -96,9 +129,11 @@ export function deviceCard(
   // the same card with another layout, bitmap or red plane is a new id; an identical one is stable.
   const picture = card.imageHex
     ? `\u0000${card.layout ?? ''}\u0000${card.imageHex}\u0000${card.red ? `${card.red.x},${card.red.y},${card.red.w}x${card.red.h}:${card.red.hex}` : ''}`
-    : card.calendar
-      ? `\u0000calendar\u0000${JSON.stringify(card.calendar)}`
-      : ''
+    : life
+      ? `\u0000life\u0000${JSON.stringify(life)}`
+      : card.calendar
+        ? `\u0000calendar\u0000${JSON.stringify(card.calendar)}`
+        : ''
   return {
     id: createHash('sha256')
       .update(card.id + picture)
@@ -113,7 +148,15 @@ export function deviceCard(
     ),
     text: utf8(card.text.replace(/https?:\/\/t\.co\/\S+/g, '[链接]'), 767),
     ...(card.imageHex ? { imageHex: card.imageHex } : {}),
-    ...(card.items ? { items: card.items.slice(0, 6).map(item => ({ title: utf8(item.title, 159), meta: utf8(item.meta, 47), overdue: item.overdue })) } : {}),
+    ...(card.items
+      ? {
+          items: card.items.slice(0, 6).map((item) => ({
+            title: utf8(item.title, 159),
+            meta: utf8(item.meta, 47),
+            overdue: item.overdue,
+          })),
+        }
+      : {}),
     // Red ink only ever accompanies a bitmap; the card builder guarantees the geometry.
     ...(card.imageHex && card.red ? { red: card.red } : {}),
     // The pet layout only means something for a bitmap; the calendar layout needs its grid.
@@ -121,6 +164,7 @@ export function deviceCard(
     ...(!card.imageHex && card.calendar
       ? { layout: 'calendar' as const, calendar: card.calendar }
       : {}),
+    ...(life ? { layout: 'life' as const, life } : {}),
   }
 }
 export function withAmbient(
@@ -150,8 +194,8 @@ export function withAmbient(
     const black = project(blackOnly)
     if (fits(black)) return black
   }
-  if (ambient.calendar) {
-    const { calendar: _calendar, layout: _layout, ...plain } = card
+  if (ambient.calendar || ambient.life) {
+    const { calendar: _calendar, life: _life, layout: _layout, ...plain } = card
     const text = project(deviceCard(plain))
     if (fits(text)) return text
   }

@@ -11,15 +11,18 @@ const DEVICE_CALENDAR_CHARS =
 test('every calendar label and lunar header from 1900 to 2100 has native device glyphs', () => {
   const known = new Set(DEVICE_CALENDAR_CHARS)
   const missing = new Set<string>()
-  const check = (text: string) => { for (const ch of text) if (ch !== ' ' && !known.has(ch)) missing.add(ch) }
-  for (let year = 1900; year <= 2100; year++) for (let month = 0; month < 12; month++) {
-    const calendar = buildMonthCalendar(new Date(year, month, 1, 12))
-    calendar.labels.forEach(check)
-    for (let day = 1; day <= calendar.days; day++) {
-      const lunar = lunarDate(new Date(year, month, day, 12))
-      check(`${lunar.ganzhiYear}年${lunar.monthName}${lunar.dayName}`)
-    }
+  const check = (text: string) => {
+    for (const ch of text) if (ch !== ' ' && !known.has(ch)) missing.add(ch)
   }
+  for (let year = 1900; year <= 2100; year++)
+    for (let month = 0; month < 12; month++) {
+      const calendar = buildMonthCalendar(new Date(year, month, 1, 12))
+      calendar.labels.forEach(check)
+      for (let day = 1; day <= calendar.days; day++) {
+        const lunar = lunarDate(new Date(year, month, day, 12))
+        check(`${lunar.ganzhiYear}年${lunar.monthName}${lunar.dayName}`)
+      }
+    }
   check('一二三四五六日第周班年月')
   assert.deepEqual([...missing], [], 'regenerate the firmware calendar character set')
 })

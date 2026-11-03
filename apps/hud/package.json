@@ -1,6 +1,6 @@
 {
   "name": "@codepulse/hud",
-  "version": "1.4.11",
+  "version": "1.5.0",
   "private": true,
   "description": "HUD renderer and preload for the shared CodePulse desktop host",
   "scripts": {

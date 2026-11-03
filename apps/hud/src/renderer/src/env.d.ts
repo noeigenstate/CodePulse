@@ -1,6 +1,9 @@
 /// <reference types="vite/client" />
 import type {
-  ProductView, DesktopForm, ShellSnapshot, WorkbenchWindowState,
+  ProductView,
+  DesktopForm,
+  ShellSnapshot,
+  WorkbenchWindowState,
   AmbientConfig,
   AmbientCard,
   AmbientSnapshot,
@@ -27,7 +30,10 @@ export interface CodePulseApi {
   getShell: () => Promise<ShellSnapshot>
   navigateProduct: (view: ProductView) => Promise<ShellSnapshot>
   selectDesktopForm: (form: DesktopForm) => Promise<ShellSnapshot>
-  openSurface: (surface: 'standard' | 'hud' | 'screen', view?: ProductView) => Promise<ShellSnapshot>
+  openSurface: (
+    surface: 'standard' | 'hud' | 'screen',
+    view?: ProductView,
+  ) => Promise<ShellSnapshot>
   onShell: (cb: (snapshot: ShellSnapshot) => void) => Unsubscribe
   setWorkbenchWindow: (patch: Partial<WorkbenchWindowState>) => Promise<WorkbenchWindowState>
   onWorkbenchWindow: (cb: (state: WorkbenchWindowState) => void) => Unsubscribe

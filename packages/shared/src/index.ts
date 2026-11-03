@@ -44,10 +44,12 @@ export const DEFAULT_DISPLAY_DEVICE_PORT = 17890
 export * from './presentation-order.js'
 
 export * from './types/ambient.js'
+export * from './types/life.js'
 
 export * from './device-preview-scale.js'
 
 export * from './types/product-shell.js'
+export * from './types/ink-status.js'
 export * from './types/assistant.js'
 
 export * from './presentation/displayAgents.js'

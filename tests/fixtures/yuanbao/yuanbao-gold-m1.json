@@ -1,0 +1,17 @@
+{
+  "request": {
+    "Query": "今日金价",
+    "Mode": 1
+  },
+  "response": {
+    "Response": {
+      "RequestId": "167dca83-dad4-402e-8ff1-aab8c6a32912",
+      "Query": "今日金价",
+      "Pages": [
+        "{\"vr\":true,\"vr_category\":\"gold\",\"vrid\":\"70099201\",\"title\":\"实物黄金价格_金投网\",\"url\":\"https://m.cngold.org/quote/gjs/swhj_city_460.html\",\"site\":\"金投网\",\"passage\":\"# 详情：\\n\\n在售商家类型：金店\\n商家列表：\\n\\n品牌名称：周大福\\n商品：黄金\\n价格（元）：1199元/克\\n商家列表页面PC端地址：https://quote.cngold.org/gjs/swhj_zdf/city_460.html\\n商家列表页面无线端地址：https://m.cngold.org/quote/gjs/swhj_zdf/city_460.html\\n\\n品牌名称：周六福\\n商品：黄金\\n价格（元）：1194元/克\\n商家列表页面PC端地址：https://quote.cngold.org/gjs/swhj_zlf/city_460.html\\n商家列表页面无线端地址：https://m.cngold.org/quote/gjs/swhj_zlf/city_460.html\\n\\n品牌名称：六福珠宝\\n商品：黄金\\n价格（元）：1197元/克\\n商家列表页面PC端地址：https://quote.cngold.org/gjs/swhj_lfzb/city_460.html\\n商家列表页面无线端地址：https://m.cngold.org/quote/gjs/swhj_lfzb/city_460.html\\n\\n品牌名称：老凤祥\\n商品：黄金\\n价格（元）：1200元/克\\n商家列表页面PC端地址：https://quote.cngold.org/gjs/swhj_lfx/city_460.html\\n商家列表页面无线端地址：https://m.cngold.org/quote/gjs/swhj_lfx/city_460.html\\n\\n品牌名称：中国黄金\\n商品：基础金价\\n价格（元）：867.6元/克\\n商家列表页面PC端地址：https://quote.cngold.org/gjs/swhj_zghj/city_460.html\\n商家列表页面无线端地址：https://m.cngold.org/qu...\",\"date\":\"2026-10-30 15:33:40\",\"favicon\":\"https://img01.sogoucdn.com/app/a/200797/cad6ce24-5121-4414-808e-6784120fb4da\",\"pc_url\":\"https://quote.cngold.org/gjs/swhj_city_460.html\"}",
+        "{\"vr\":true,\"vr_category\":\"gold\",\"vrid\":\"70227501\",\"title\":\"今日现货黄金价格走势图_金投网\",\"url\":\"http://m.cngold.org/quote/gjs/gjhj_xhhj.html?key=au\",\"site\":\"金投网\",\"passage\":\"# 转跳地址：http://m.cngold.org/quote/gjs/gjhj_xhhj.html?key=au\\n# 今日现货黄金价格走势图_金投网\\n# 贵金属名称：黄金\\n# 更新信息：\\n更新时间：1793345461\\n交易状态：on\\n# 行情信息：\\n\\n转跳地址：http://m.cngold.org/quote/gjs/gjhj_xhhj.html?key=au\\n价格值类型：国内价格(元/克)\\n最新信息：\\n价格：852.80\\n涨跌状态：down\\n价格单位：元/克\\n涨跌值：-7.77\\n涨跌幅：-0.90%\\n统计信息列表：\\n\\n价格值类型：最高\\n价格值：861.66\\n涨跌状态：up\\n\\n价格值类型：最低\\n价格值：851.60\\n涨跌状态：down\\n\\n价格值类型：昨收\\n价格值：860.58\\n涨跌状态：draw\\n\\n价格值类型：今开\\n价格值：860.41\\n涨跌状态：down\\n\\n\\n转跳地址：http://m.cngold.org/quote/gjs/gjhj_xhhj.html\\n价格值类型：国际价格(美元/盎司)\\n最新信息：\\n价格：3984.98\\n涨跌状态：down\\n价格单位：美元/盎司\\n涨跌值：-36.32\\n涨跌幅：-0.90%\\n统计信息列表：\\n\\n价格值类型：最高\\n价格值：4026.34\\n涨跌状态：up\\n\\n价格值类型：最低\\n价格值：3979.36\\n涨跌状态：down\\n\\n价格值类型：昨收\\n价格值：4021.30\\n涨跌状态：draw\\n\\n价格值类型：今开\\n价格值：4020.50\\n涨跌状态：down\\n\\n\\n# 数据来源：金投网...\",\"date\":\"2026-10-30 15:33:40\",\"favicon\":\"https://img01.sogoucdn.com/app/a/200797/cad6ce24-5121-4414-808e-6784120fb4da\",\"pc_url\":\"http://m.cngold.org/quote/gjs/gjhj_xhhj.html?key=au\"}"
+      ],
+      "Version": "standard"
+    }
+  }
+}

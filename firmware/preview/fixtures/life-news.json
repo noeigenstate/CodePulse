@@ -1,0 +1,67 @@
+{
+  "protocolVersion": 1,
+  "revision": "life-B",
+  "mainState": "idle",
+  "agents": [
+    {
+      "type": "claude_code",
+      "state": "idle",
+      "quotas": [],
+      "quotaSummary": {
+        "fiveHourUsedPercent": 17,
+        "weeklyUsedPercent": 2
+      }
+    },
+    {
+      "type": "codex",
+      "state": "idle",
+      "quotas": [],
+      "quotaSummary": {
+        "fiveHourUsedPercent": null,
+        "weeklyUsedPercent": 87
+      }
+    }
+  ],
+  "display": {
+    "version": 1,
+    "mode": "hud",
+    "metric": "remaining",
+    "showQuota": true,
+    "showEnvironment": true,
+    "agents": [
+      "claude_code",
+      "codex"
+    ],
+    "page": 0
+  },
+  "threadTotal": 0,
+  "threads": [],
+  "ambient": {
+    "id": "life-news",
+    "source": "元宝搜索 · 示例",
+    "text": "news · 兼容旧固件的文字内容（合成排版样例）",
+    "layout": "life",
+    "life": {
+      "v": 1,
+      "kind": "news",
+      "headlines": [
+        {
+          "title": "20项领先科技…",
+          "source": "光明时政"
+        },
+        {
+          "title": "商品服务、实体云端…",
+          "source": "中国青年网"
+        },
+        {
+          "title": "示例标题：本地新闻摘要…",
+          "source": "示例来源"
+        },
+        {
+          "title": "示例标题：行业动态速递…",
+          "source": "示例来源"
+        }
+      ]
+    }
+  }
+}

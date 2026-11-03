@@ -34,6 +34,10 @@ export function isCodexAuxiliarySession(
   // Older app hooks omit provenance for ephemeral suggestion sessions. Match
   // the exact opening envelope before preview truncation, never generic words
   // such as "review", a task title, or a missing entry in the native index.
-  return typeof prompt === 'string' && AUXILIARY_PROMPT_ENVELOPES.some(prefix =>
-    prompt.trimStart().replace(/\r\n/g, '\n').startsWith(prefix))
+  return (
+    typeof prompt === 'string' &&
+    AUXILIARY_PROMPT_ENVELOPES.some((prefix) =>
+      prompt.trimStart().replace(/\r\n/g, '\n').startsWith(prefix),
+    )
+  )
 }

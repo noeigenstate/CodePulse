@@ -17,6 +17,7 @@ idf_component_register(
         "device_identity.c"
         "display_sync_policy.c"
         "quiet_dashboard.c"
+        "life_dashboard.c"
         "display_text.c"
         "epd_canvas.c"
         "epd_ssd1683.c"

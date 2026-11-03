@@ -1,16 +1,22 @@
 import {
   normalizeAmbient,
+  INK_TEMPORARY_MINUTES,
   hudStateLevel,
   type AmbientCard,
   type AmbientConfig,
   type AmbientSnapshot,
   type StatusSnapshot,
+  type InkDisplayPlan,
 } from '@codepulse/shared'
 import { HolidayStore, type HolidayCache } from './ambient-calendar.js'
-import { contentKey, pauseReason, qualifies, xMinimumLikes } from './ambient-rules.js'
+import { contentKey, pauseReason, qualifies, xMinimumLikes, inQuietHours } from './ambient-rules.js'
+import { inkFeatureAt } from './ambient-plan.js'
+import { inkCardTitle } from './ink-status.js'
 import { builtinCards, restorePersonalCards, personalCard } from './ambient-library.js'
 import { petCards } from './ambient-pet.js'
 import { collectMemes, collectX, collectNews, type JsonRequest } from './ambient-sources.js'
+import { YuanbaoSource, type YuanbaoCache } from './ambient-yuanbao-service.js'
+import type { YuanbaoClient, YuanbaoCredentials } from './ambient-yuanbao.js'
 
 export interface AmbientHistory {
   day: string
@@ -36,12 +42,40 @@ export interface AmbientDependencies {
   holidayCache?: unknown
   saveHolidayCache?: (cache: HolidayCache) => void
   automaticAllowed?: () => boolean
+  /** The whole applied playlist, rather than only the currently selected slot. */
+  plan?: () => InkDisplayPlan
+  yuanbaoKey?: () => YuanbaoCredentials | null
+  yuanbaoClient?: Pick<YuanbaoClient, 'search'>
+  yuanbaoCache?: unknown
+  saveYuanbao?: (cache: YuanbaoCache) => void
+  saveYuanbaoResponse?: (raw: unknown) => void
+  saveYuanbaoDebug?: (topic: string, raw: unknown) => void
 }
 const day = (now: number) => {
   const d = new Date(now)
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
 }
+/** Changes that invalidate fetched content or the selected automatic card. Pacing is separate. */
+const SOURCE_FIELDS = [
+  'xEnabled',
+  'memeEnabled',
+  'conceptsEnabled',
+  'promptsEnabled',
+  'newsEnabled',
+  'petEnabled',
+  'petId',
+  'calendarEnabled',
+  'provider',
+  'accounts',
+  'keywords',
+  'exclude',
+  'minLikes',
+  'accountMinLikes',
+  'memeMinUps',
+  'memeCommunity',
+] as const satisfies readonly (keyof AmbientConfig)[]
 export class AmbientService {
+  readonly yuanbao: YuanbaoSource
   private config: AmbientConfig
   private history: AmbientHistory
   private cards: AmbientCard[] = []
@@ -70,6 +104,21 @@ export class AmbientService {
       typeof deps.history.seen === 'object'
         ? deps.history
         : { day: '', shown: 0, lastShown: 0, seen: {} }
+    this.yuanbao = new YuanbaoSource({
+      config: () => this.config,
+      now: () => this.now(),
+      credentials: deps.yuanbaoKey ?? (() => null),
+      client: deps.yuanbaoClient,
+      cache: deps.yuanbaoCache,
+      holidays: () => this.holidays.table(),
+      hasYear: (year) => this.holidays.hasYear(year),
+      scheduledAllowed: () =>
+        this.history.day !== day(this.now()) || this.history.shown < this.config.dailyLimit,
+      save: deps.saveYuanbao ?? (() => {}),
+      saveLastResponse: deps.saveYuanbaoResponse,
+      saveDebugResponse: deps.saveYuanbaoDebug,
+      changed: () => this.changed(),
+    })
   }
   private now() {
     return this.deps.now?.() ?? Date.now()
@@ -99,12 +148,14 @@ export class AmbientService {
   }
   start() {
     this.stopped = false
+    this.yuanbao.start()
     this.timer ??= setInterval(() => this.tick(), 15000)
     this.timer.unref?.()
     this.tick()
   }
   stop() {
     this.stopped = true
+    this.yuanbao.stop()
     this.generation++
     if (this.timer) clearInterval(this.timer)
     this.timer = undefined
@@ -113,15 +164,89 @@ export class AmbientService {
     return this.config
   }
   configure(input: unknown) {
-    const config = normalizeAmbient(input)
-    this.deps.save(config, this.history) // Do not apply unsaved settings on failure.
-    this.config = config
-    this.generation++
-    this.cards = []
-    if (!this.manual) this.active = undefined
-    this.nextCheckAt = 0
+    const prepared = this.prepareConfiguration(input)
+    prepared.save()
+    prepared.commit()
     this.changed()
     return this.snapshot()
+  }
+  prepareConfiguration(input: unknown) {
+    const config = normalizeAmbient(input)
+    const previous = this.config
+    const sourceChanged = SOURCE_FIELDS.some(
+      (field) => JSON.stringify(config[field]) !== JSON.stringify(previous[field]),
+    )
+    return {
+      save: () => this.deps.save(config, this.history),
+      rollback: () => this.deps.save(previous, this.history),
+      commit: () => {
+        this.config = config
+        if (sourceChanged) {
+          this.generation++
+          this.cards = []
+          if (!this.manual && this.active?.kind !== 'life' && this.active?.kind !== 'search')
+            this.active = undefined
+          this.nextCheckAt = 0
+        }
+      },
+    }
+  }
+  /** A hidden manual card keeps its original deadline and resumes if the alert clears. */
+  temporaryInk(): { title: string; until: number } | null {
+    if (
+      !this.manual ||
+      !this.active ||
+      this.activeUntil <= this.now() ||
+      this.active.expiresAt <= this.now()
+    )
+      return null
+    return {
+      title: inkCardTitle(this.active),
+      until: Math.min(this.activeUntil, this.active.expiresAt),
+    }
+  }
+  nextAutoAt(): number | null {
+    this.resetDay()
+    const config = this.config,
+      now = this.now(),
+      plan = this.deps.plan?.()
+    if (
+      !config.enabled ||
+      this.history.shown >= config.dailyLimit ||
+      (plan && (plan.mode !== 'cycle' || !plan.items.includes('ambient'))) ||
+      (!plan && this.deps.automaticAllowed?.() === false)
+    )
+      return null
+    const reason = pauseReason(config, this.deps.status(), now)
+    if (reason && reason !== '安静时段') return null // A user's next action or idle time cannot be predicted.
+    const end = new Date(now)
+    end.setHours(24, 0, 0, 0)
+    let at = Math.max(
+      now,
+      this.history.lastShown ? this.history.lastShown + config.gapMinutes * 60000 : now,
+    )
+    if (this.active && this.activeUntil > now) at = Math.max(at, this.activeUntil)
+    while (at < end.getTime()) {
+      if (inQuietHours(config, at)) {
+        const resume = new Date(at)
+        resume.setHours(config.quietEnd, 0, 0, 0)
+        if (resume.getTime() <= at) resume.setDate(resume.getDate() + 1)
+        at = resume.getTime()
+      } else if (plan && inkFeatureAt(plan, at) !== 'ambient') {
+        const dwell = plan.intervalMinutes * 60000
+        at = (Math.floor(at / dwell) + 1) * dwell
+      } else {
+        return this.allCards().some(
+          (card) =>
+            qualifies(card, config, at) &&
+            !this.history.seen[card.id] &&
+            !this.history.seen[contentKey(card)],
+        )
+          ? at
+          : null
+      }
+    }
+    return null
   }
   snapshot(): AmbientSnapshot {
     this.resetDay()
@@ -131,6 +256,7 @@ export class AmbientService {
       collecting: this.collecting,
       lastCheckedAt: this.lastCheckedAt,
       nextCheckAt: this.nextCheckAt,
+      nextAutoAt: this.nextAutoAt(),
       sourceStatus: {
         x: !this.config.xEnabled
           ? '已关闭'
@@ -147,8 +273,11 @@ export class AmbientService {
       activeId: this.current()?.id ?? null,
       shownToday: this.history.shown,
       xRequestsToday: this.history.xRequests ?? 0,
+      yuanbao: this.yuanbao.snapshot(),
       pausedReason:
-        (this.deps.automaticAllowed?.() === false ? '控制中当前为工作画面；仍可手动展示' : '') ||
+        (this.deps.automaticAllowed?.() === false
+          ? '节目单当前为工作画面时段；仍可临时展示'
+          : '') ||
         pauseReason(this.config, this.deps.status(), this.now()) ||
         (this.history.shown >= this.config.dailyLimit ? '今日展示已达上限' : '') ||
         (!this.current() &&
@@ -163,10 +292,13 @@ export class AmbientService {
       this.activeUntil > this.now() &&
       this.active.expiresAt > this.now() &&
       !(this.manual ? this.manualPause(status) : pauseReason(this.config, status, this.now())) &&
-      (this.manual || this.deps.automaticAllowed?.() !== false)
+      (this.manual || this.deps.automaticAllowed?.() !== false) &&
+      (this.manual ||
+        (this.active.kind !== 'life' && this.active.kind !== 'search') ||
+        (qualifies(this.active, this.config, this.now()) && this.yuanbao.accepts(this.active)))
       ? this.manual
-        ? { ...this.active, manual: true }
-        : this.active
+        ? { ...this.yuanbao.present(this.active), manual: true }
+        : this.yuanbao.present(this.active)
       : undefined
   }
   private allCards(): AmbientCard[] {
@@ -175,6 +307,7 @@ export class AmbientService {
     return [
       ...this.personal,
       ...this.cards,
+      ...this.yuanbao.cards(),
       ...this.calendarCards(),
       ...petCards(this.deps.status(), this.now()),
       ...builtinCards(this.now()),
@@ -248,14 +381,19 @@ export class AmbientService {
     if (!card) throw new Error('内容已过期，请重新选择')
     this.active = card
     this.manual = true
-    this.activeUntil = this.now() + this.config.displayMinutes * 60000
+    this.activeUntil = this.now() + INK_TEMPORARY_MINUTES * 60000
     this.changed()
     return this.snapshot()
   }
   dismiss() {
     this.active = undefined
+    this.activeUntil = 0
+    this.manual = false
     this.changed()
     return this.snapshot()
+  }
+  dismissTemporary() {
+    return this.manual ? this.dismiss() : this.snapshot()
   }
   show(id?: string) {
     this.resetDay()
@@ -296,8 +434,15 @@ export class AmbientService {
     if (this.stopped) return
     this.resetDay()
     this.syncHolidays()
-    if (this.active && !this.current()) {
+    if (
+      this.active &&
+      (this.activeUntil <= this.now() ||
+        this.active.expiresAt <= this.now() ||
+        (!this.manual && !this.current()))
+    ) {
       this.active = undefined
+      this.manual = false
+      this.activeUntil = 0
       this.changed()
     }
     if (
@@ -306,6 +451,7 @@ export class AmbientService {
       pauseReason(this.config, this.deps.status(), this.now()) === '安静时段'
     )
       return
+    void this.yuanbao.tick()
     if (this.now() >= this.nextCheckAt) void this.refresh()
     if (!this.active) this.show()
   }

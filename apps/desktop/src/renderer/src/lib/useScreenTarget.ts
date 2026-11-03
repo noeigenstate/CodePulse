@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DeviceDisplaySnapshot } from '@codepulse/shared'
 
 /** Coalesce source events into one read; rendering never starts another collector. */
 export function useScreenTarget(active = true) {
   const [target, setTarget] = useState<DeviceDisplaySnapshot>()
   const [error, setError] = useState(false)
+  const reader = useRef<() => Promise<void>>()
   useEffect(() => {
     if (!active) return
     let alive = true,
@@ -33,6 +34,7 @@ export function useScreenTarget(active = true) {
         }
       }
     }
+    reader.current = read
     const schedule = () => {
       if (!timer)
         timer = setTimeout(() => {
@@ -55,5 +57,6 @@ export function useScreenTarget(active = true) {
       clearTimeout(timer)
     }
   }, [active])
-  return { target, error }
+  const retry = useCallback(() => void reader.current?.(), [])
+  return { target, error, retry }
 }

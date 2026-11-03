@@ -1,3 +1,10 @@
+Life-card numeric/command subset (0.0.30-life, 2026-11-03)
+Terminus Bold native 32px, integer 2x only for life heroes.
+Source: sources/terminus-ter-u32b.bdf.gz
+SHA256: 9bf7c8feb04601ed162e81f8e73dfccde946374f5dfa85395aaa7bab0cb714b0
+Copyright (C) 2020 Dimitar Toshkov Zhekov; SIL OFL-1.1, licenses/Terminus-OFL.txt.
+Generated from the pinned BDF by scripts/generate-life-assets.py. Native Noto CJK tables unchanged.
+
 Current revision: 0.0.29-calendar / Scheme C native Noto MONO (2026-10-30)
 - Noto Sans Bold 2.008: native, hinted MONO at 12/14/16/20/24/40px.
 - Noto Sans SC Regular 2.004: native MONO at 12/14/16px; mathematical

@@ -1,3 +1,4 @@
+param([string]$Output)
 $ErrorActionPreference = 'Stop'
 $firmwareRoot = Split-Path -Parent $PSScriptRoot
 if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
@@ -15,7 +16,7 @@ if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
         }
     }
 }
-$buildRoot = Join-Path $firmwareRoot 'build-host-tests'
+$buildRoot = if ($Output) { [IO.Path]::GetFullPath($Output) } else { Join-Path $firmwareRoot 'build-host-tests' }
 New-Item -ItemType Directory -Path $buildRoot -Force | Out-Null
 Push-Location $buildRoot
 try {
@@ -41,6 +42,14 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Calendar protocol compilation failed.' }
     & (Join-Path $buildRoot 'test-calendar.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Calendar protocol regression failed.' }
+    & cl.exe /nologo /std:c11 /utf-8 /W3 /D_CRT_SECURE_NO_WARNINGS `
+        ('/I' + (Join-Path $firmwareRoot 'tests/host/include')) ('/I' + (Join-Path $firmwareRoot 'main')) `
+        ('/I' + (Join-Path $firmwareRoot 'managed_components/espressif__cjson/cJSON')) `
+        (Join-Path $firmwareRoot 'tests/host/test_life.c') (Join-Path $firmwareRoot 'main/codepulse_protocol.c') `
+        (Join-Path $firmwareRoot 'managed_components/espressif__cjson/cJSON/cJSON.c') /Fe:test-life.exe
+    if ($LASTEXITCODE -ne 0) { throw 'Life protocol compilation failed.' }
+    & (Join-Path $buildRoot 'test-life.exe') (Join-Path $firmwareRoot 'preview/fixtures')
+    if ($LASTEXITCODE -ne 0) { throw 'Life protocol regression failed.' }
 } finally {
     Pop-Location
 }

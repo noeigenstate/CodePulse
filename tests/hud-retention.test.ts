@@ -37,7 +37,10 @@ test('HUD default keeps idle cards for 30 minutes while classic/device still exp
   send('session_end')
   tick(start + 6 * minute)
   assert.equal(hub.snapshot(start + 6 * minute).agents.length, 0)
-  assert.equal(toDeviceStatusV1(hub.snapshot(start + 6 * minute), normalizeDeviceDisplay({})).threads?.length, 0)
+  assert.equal(
+    toDeviceStatusV1(hub.snapshot(start + 6 * minute), normalizeDeviceDisplay({})).threads?.length,
+    0,
+  )
   assert.equal(visible(start + 6 * minute).length, 1)
   tick(start + 30 * minute - 1)
   assert.equal(visible(start + 30 * minute - 1).length, 1)

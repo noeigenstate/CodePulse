@@ -44,6 +44,8 @@ export interface DeviceServerConfig {
 
 /** {@link startDeviceServer} 选项。 */
 export interface DeviceServerOptions {
+  /** A successful authenticated status read, including conditional and long-poll responses. */
+  onStatusRead?: () => void
   /** Optional local assistant endpoints. Omitted hosts retain the read-only contract. */
   registerAssistantRoutes?: (app: FastifyInstance) => void | Promise<void>
   registerWorkVoiceRoutes?: (app: FastifyInstance) => void | Promise<void>
@@ -143,14 +145,20 @@ export async function startDeviceServer(options: DeviceServerOptions): Promise<D
   // snapshot so a transition cannot fall between the comparison and listener.
   const readers = new Set<() => void>()
   let stopped = false
-  const notifyChanged = () => { for (const wake of [...readers]) wake() }
+  const notifyChanged = () => {
+    for (const wake of [...readers]) wake()
+  }
   options.hub.on('status', notifyChanged)
   app.addHook('preClose', async () => {
     stopped = true
     options.hub.off('status', notifyChanged)
     notifyChanged()
   })
-  const snapshot = () => (options.projectStatus ?? toDeviceStatusV1)(options.hub.snapshot(), options.getDisplayConfig?.())
+  const snapshot = () =>
+    (options.projectStatus ?? toDeviceStatusV1)(
+      options.hub.snapshot(),
+      options.getDisplayConfig?.(),
+    )
 
   app.get(DEVICE_STATUS_PATH, async (request, reply) => {
     const rawWait = request.headers['x-codepulse-wait-ms']
@@ -166,14 +174,20 @@ export async function startDeviceServer(options: DeviceServerOptions): Promise<D
           clearTimeout(timer)
           readers.delete(wake)
           reply.raw.off('close', onClose)
-          if (error) reject(error); else resolve()
+          if (error) reject(error)
+          else resolve()
         }
         const wake = () => {
           try {
-            if (stopped) { finish(); return }
+            if (stopped) {
+              finish()
+              return
+            }
             status = snapshot()
             if (!etagMatches(conditional, `W/"${status.revision}"`)) finish()
-          } catch (error) { finish(error) }
+          } catch (error) {
+            finish(error)
+          }
         }
         const onClose = () => finish()
         const timer = setTimeout(() => finish(), waitMs)
@@ -183,7 +197,10 @@ export async function startDeviceServer(options: DeviceServerOptions): Promise<D
         if (reply.raw.destroyed) finish()
       })
     }
-    if (reply.raw.destroyed) { reply.hijack(); return reply }
+    if (reply.raw.destroyed) {
+      reply.hijack()
+      return reply
+    }
     if (stopped) return reply.code(503).send({ error: 'server_closing' })
     // Re-read after the await: merge changes received during the same turn.
     status = snapshot()
@@ -191,6 +208,11 @@ export async function startDeviceServer(options: DeviceServerOptions): Promise<D
     reply.header('x-codepulse-protocol-version', String(DEVICE_PROTOCOL_VERSION))
     reply.header('cache-control', 'private, no-cache, max-age=0, must-revalidate')
     reply.header('etag', etag)
+    try {
+      options.onStatusRead?.()
+    } catch {
+      // A host UI observer must not turn an authenticated read into a failed device request.
+    }
     if (etagMatches(conditional, etag)) return reply.code(304).send()
     return status
   })

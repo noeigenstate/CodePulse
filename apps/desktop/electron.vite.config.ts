@@ -76,7 +76,10 @@ export default defineConfig({
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
     resolve: {
-      alias: { '@renderer': resolve(__dirname, 'src/renderer/src'), '@hud': resolve(__dirname, '../hud/src/renderer/src') },
+      alias: {
+        '@renderer': resolve(__dirname, 'src/renderer/src'),
+        '@hud': resolve(__dirname, '../hud/src/renderer/src'),
+      },
       dedupe: ['react', 'react-dom'],
     },
     plugins: [react()],

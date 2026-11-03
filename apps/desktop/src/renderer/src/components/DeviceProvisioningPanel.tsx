@@ -117,7 +117,6 @@ export function DeviceProvisioningPanel({ copy }: Props): JSX.Element {
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold text-ink">{copy.title}</h3>
-          <p className="mt-1.5 text-meta leading-5 text-ink-500">{copy.description}</p>
         </div>
         <button
           className="control-btn h-9 shrink-0 justify-center px-3"
@@ -133,11 +132,7 @@ export function DeviceProvisioningPanel({ copy }: Props): JSX.Element {
         <p className="mt-3 rounded-badge border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
           {ipcUnavailable ? copy.unavailable : copy.serverUnavailable}
         </p>
-      ) : (
-        <p className="mt-3 text-xs text-ink-500">
-          {copy.serverReady.replace('{host}', snapshot.fallbackHost ?? '—')}
-        </p>
-      )}
+      ) : null}
 
       <div className="mt-3 grid gap-2">
         {snapshot.devices.length === 0 ? (
@@ -184,7 +179,6 @@ export function DeviceProvisioningPanel({ copy }: Props): JSX.Element {
               type="password"
               value={wifiPassword}
             />
-            <span className="font-normal text-ink-500">{copy.passwordHint}</span>
           </label>
           <label className="grid gap-1.5 text-xs font-medium text-ink-700">
             {copy.fallbackHost}
@@ -217,7 +211,6 @@ export function DeviceProvisioningPanel({ copy }: Props): JSX.Element {
               {active ? copy.provisioning : copy.provision}
             </button>
           </div>
-          <p className="text-[11px] leading-5 text-ink-500">{copy.securityNote}</p>
         </form>
       )}
     </section>

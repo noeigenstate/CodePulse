@@ -1,0 +1,9 @@
+{
+  "Response": {
+    "RequestId": "45fea8a1-a486-4fab-af59-e087183b3232",
+    "Version": "standard",
+    "Pages": [
+      "{\"title\":\"苹果_AAPL_us\",\"site\":\"腾讯自选股\",\"url\":\"https://wzq.tenpay.com/mm/detail?scode=AAPL.OQ&type=3\",\"date\":\"2026-11-02 23:34:34\",\"vr\":true,\"vr_category\":\"stock\",\"passage\":\"# 股票：苹果_AAPL_us\\n# 详情页地址：https://wzq.tenpay.com/mm/detail?scode=AAPL.OQ&type=3\\n# 股票名称：苹果\\n# 股票代码：AAPL\\n# 美股股票代码：AAPL\\n# 股票代码前缀：us\\n# 股票类型：美股\\n# 实时股价：340.57\\n# 涨跌额：-4.06\\n# 涨跌幅：-1.18\\n# 交易状态：交易中\\n# 更新时间：2026-11-02 10:24:50\\n# 今日开盘价：342.67\\n# 昨日收盘价：344.63\\n# 今日最高价：343.78\\n# 今日最低价：339.61\\n# 成交量：9699440\\n# 市盈率TTM：39.06\\n# 总市值：49703.22370...\"}"
+    ]
+  }
+}

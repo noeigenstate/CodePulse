@@ -11,7 +11,7 @@ test('3/6/9 previews have unique identities, long titles and an attention state 
     const data = createDeviceDensityPreview(config, count)
     assert.equal(data.threadTotal, count)
     assert.equal(data.threads!.length, count)
-    assert.equal(new Set(data.threads!.map(t => t.id)).size, count)
+    assert.equal(new Set(data.threads!.map((t) => t.id)).size, count)
     assert.equal(deviceGridColumns(count), count / 3)
     for (let col = 0; col < count / 3; col++) {
       assert.equal(data.threads![col * 3]!.state, 'waiting_permission')
@@ -26,13 +26,19 @@ test('3/6/9 previews have unique identities, long titles and an attention state 
 })
 
 test('preview options remain local; provider filters and metric match the selected draft', () => {
-  const config = normalizeDeviceDisplay({ agents: ['claude_code'], page: 8, metric: 'used', showQuota: false, showEnvironment: false })
+  const config = normalizeDeviceDisplay({
+    agents: ['claude_code'],
+    page: 8,
+    metric: 'used',
+    showQuota: false,
+    showEnvironment: false,
+  })
   const sample = createDeviceDensityPreview(config, 9)
   assert.equal(sample.display!.page, 0)
   assert.equal(config.page, 8)
   assert.equal(sample.display!.metric, 'used')
   assert.equal(sample.display!.showQuota, false)
   assert.equal(sample.display!.showEnvironment, false)
-  assert.ok(sample.threads!.every(t => t.type === 'claude_code'))
+  assert.ok(sample.threads!.every((t) => t.type === 'claude_code'))
   assert.equal(createDeviceDensityPreview(normalizeDeviceDisplay({ agents: [] }), 6).threadTotal, 0)
 })

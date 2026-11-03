@@ -1,7 +1,10 @@
 import { readFileSync, writeFileSync, renameSync } from 'node:fs'
 import {
   isProductView,
-  canonicalProductView, targetForProductView, productTargets, PRESENTATION_TARGETS,
+  canonicalProductView,
+  targetForProductView,
+  productTargets,
+  PRESENTATION_TARGETS,
   normalizeShellPreferences,
   normalizeInkPlan,
   normalizeHudSettings,
@@ -34,9 +37,15 @@ export class ProductShell {
     this.preferences = normalizeShellPreferences(input)
   }
   snapshot(): ShellSnapshot {
-    return { ...this.preferences, hudAvailable: this.windows.hudAvailable(), hudVisible: this.windows.hudVisible?.() ?? false }
+    return {
+      ...this.preferences,
+      hudAvailable: this.windows.hudAvailable(),
+      hudVisible: this.windows.hudVisible?.() ?? false,
+    }
   }
-  refresh(): void { this.changed(this.snapshot()) }
+  refresh(): void {
+    this.changed(this.snapshot())
+  }
   private commit(patch: Partial<ShellPreferences>) {
     const next = { ...this.preferences, ...patch }
     this.save(next)
@@ -51,8 +60,11 @@ export class ProductShell {
     return this.snapshot()
   }
   selectTarget(target: unknown): ShellSnapshot {
-    if (!PRESENTATION_TARGETS.includes(target as PresentationTarget) ||
-        !productTargets(this.preferences.view).includes(target as PresentationTarget)) throw new Error('Unsupported presentation target')
+    if (
+      !PRESENTATION_TARGETS.includes(target as PresentationTarget) ||
+      !productTargets(this.preferences.view).includes(target as PresentationTarget)
+    )
+      throw new Error('Unsupported presentation target')
     if (target !== this.preferences.target) this.commit({ target: target as PresentationTarget })
     return this.snapshot()
   }
@@ -63,19 +75,38 @@ export class ProductShell {
     return this.snapshot()
   }
   setDesktopLayout(layout: unknown): ShellSnapshot {
-    if (layout !== 'work' && layout !== 'usage' && layout !== 'board') throw new Error('Invalid desktop layout')
+    if (layout !== 'work' && layout !== 'usage' && layout !== 'board')
+      throw new Error('Invalid desktop layout')
     this.commit({ desktopLayout: layout })
     return this.snapshot()
   }
   setInkPlan(plan: unknown): ShellSnapshot {
-    this.commit({ inkPlan: normalizeInkPlan(plan) })
+    const prepared = this.prepareInkPlan(plan)
+    prepared.save()
+    prepared.commit()
+    this.refresh()
     return this.snapshot()
+  }
+  /** Stage disk writes separately so an ink apply can publish all three stores together. */
+  prepareInkPlan(plan: unknown) {
+    const previous = this.preferences
+    const next = { ...previous, inkPlan: normalizeInkPlan(plan) }
+    return {
+      save: () => this.save(next),
+      rollback: () => this.save(previous),
+      commit: () => {
+        this.preferences = next
+      },
+    }
   }
   setHudSettings(patch: unknown): ShellSnapshot {
     const raw = patch && typeof patch === 'object' ? (patch as Record<string, unknown>) : {}
     const mergedTools =
       raw.visibleTools && typeof raw.visibleTools === 'object'
-        ? { ...this.preferences.hudSettings.visibleTools, ...(raw.visibleTools as Record<string, unknown>) }
+        ? {
+            ...this.preferences.hudSettings.visibleTools,
+            ...(raw.visibleTools as Record<string, unknown>),
+          }
         : this.preferences.hudSettings.visibleTools
     const hudSettings = normalizeHudSettings({
       ...this.preferences.hudSettings,
@@ -87,7 +118,8 @@ export class ProductShell {
     return this.snapshot()
   }
   setHudVisible(visible: unknown): ShellSnapshot {
-    if (typeof visible !== 'boolean' || !this.windows.hudAvailable()) throw new Error('HUD unavailable')
+    if (typeof visible !== 'boolean' || !this.windows.hudAvailable())
+      throw new Error('HUD unavailable')
     if (visible) this.windows.hud()
     else this.windows.hideHud()
     this.refresh()

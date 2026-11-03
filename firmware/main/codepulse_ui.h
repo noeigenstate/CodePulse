@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "epd_canvas.h"
+#include "codepulse_life.h"
 
 #define CODEPULSE_UI_MAX_AGENTS 3
 #define CODEPULSE_UI_PERCENT_UNKNOWN (-1)
@@ -86,6 +87,7 @@ typedef enum {
   CODEPULSE_AMBIENT_LAYOUT_LEGACY,
   CODEPULSE_AMBIENT_LAYOUT_PET,
   CODEPULSE_AMBIENT_LAYOUT_CALENDAR,
+  CODEPULSE_AMBIENT_LAYOUT_LIFE,
 } codepulse_ambient_layout_t;
 typedef struct {
   uint16_t year;
@@ -100,6 +102,7 @@ typedef struct {
   uint16_t red_x, red_y, red_w, red_h;
   codepulse_ambient_layout_t layout;
   codepulse_calendar_t calendar;
+  codepulse_life_t life;
   bool has_items;
   size_t item_count;
   codepulse_ambient_item_t items[CODEPULSE_AMBIENT_MAX_ITEMS];

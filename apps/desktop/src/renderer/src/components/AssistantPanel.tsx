@@ -7,13 +7,27 @@ import type {
   DeskTask,
 } from '@codepulse/shared'
 import { recordDeskVoice, playDeskVoice, type DeskRecording } from '../lib/assistantAudio.js'
+import { PageHeader } from './PageHeader.js'
+import { InfoTip } from './InfoTip.js'
+import { formatDue } from '../lib/dueText.js'
+import { useInkStatus } from '../lib/useInkStatus.js'
 import './assistant-panel.css'
 
-export function AssistantPanel({ active }: { active: boolean }): JSX.Element {
+export function AssistantPanel({
+  active,
+  locale = 'zh',
+}: {
+  active: boolean
+  /** ia-refactor contract: shell state (applied playlist) and navigation to 控制 › 节目单. */
+  product?: import('./ProductFrame.js').ProductNavigation
+  locale?: import('../lib/i18n.js').Locale
+}): JSX.Element {
   const [snapshot, setSnapshot] = useState<AssistantSnapshot>(),
     [error, setError] = useState(''),
     [working, setWorking] = useState(false)
   const [message, setMessage] = useState('')
+  const ink = useInkStatus()
+  const online = ink?.connection === 'connected'
   const [title, setTitle] = useState(''),
     [notes, setNotes] = useState(''),
     [due, setDue] = useState(''),
@@ -173,53 +187,40 @@ export function AssistantPanel({ active }: { active: boolean }): JSX.Element {
           () => visible.current && alive.current && audioAllowed.current.output,
         )
     })
+  const pendingCount = snapshot?.tasks.filter((t) => t.status === 'pending').length ?? 0
+  const doneCount = (snapshot?.tasks.length ?? 0) - pendingCount
   const tasks =
     snapshot?.tasks.filter((t) =>
       filter === 'pending' ? t.status === 'pending' : t.status !== 'pending',
     ) ?? []
   return (
     <div className="desk-assistant">
-      <header className="desk-assistant-heading">
-        <div>
-          <h1>待办与助手</h1>
-          <p role="status">{message || '记下要做的事，让提醒留在桌边。数据保存在这台电脑。'}</p>
-        </div>
-        <div className="desk-assistant-actions">
-          <button
-            disabled={!snapshot || working}
-            onClick={() =>
-              void run(async () => {
-                await window.codepulse.showDeskTasksOnInk()
-                setMessage('已设为待办目标，停留 15 分钟；工作紧急提醒优先。')
-              })
-            }
-          >
-            显示到墨水屏
-          </button>
-          <button
-            disabled={!snapshot || working}
-            onClick={() =>
-              void run(async () => {
-                await window.codepulse.openSurface('standard', 'control')
-                await window.codepulse.setPresentationTarget('ink')
-              })
-            }
-          >
-            常驻与轮播配置
-          </button>
-          <button
-            disabled={!snapshot || working}
-            onClick={() =>
-              void run(async () => {
-                await window.codepulse.hideDeskTasksOnInk()
-                setMessage('已返回工作目标画面，实体屏以设备刷新结果为准。')
-              })
-            }
-          >
-            回到工作画面
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        title="待办与助手"
+        actions={
+          <span className="desk-assistant-temp">
+            <button
+              type="button"
+              className="product-button"
+              aria-disabled={!snapshot || working || !online}
+              onClick={() => {
+                // aria-disabled keeps the button focusable so its reason can be read; the click is ignored.
+                if (!snapshot || working || !online) return
+                void run(async () => {
+                  await window.codepulse.showDeskTasksOnInk()
+                  setMessage('已临时展示待办，10 分钟后自动回到节目单；工作紧急提醒优先。')
+                })
+              }}
+            >
+              临时展示到墨水屏
+            </button>
+            {!online && <InfoTip text="连接设备后可临时展示" label="为什么不能临时展示" />}
+          </span>
+        }
+      />
+      <p className="desk-assistant-status" role="status">
+        {message}
+      </p>
       {error && (
         <p className="desk-assistant-error" role="alert">
           {error}
@@ -227,12 +228,6 @@ export function AssistantPanel({ active }: { active: boolean }): JSX.Element {
       )}
       <div className="desk-assistant-columns">
         <section className="desk-assistant-card" aria-label="待办列表">
-          <div className="desk-assistant-card-title">
-            <h2>我的待办</h2>
-            <span>
-              {snapshot?.tasks.filter((t) => t.status === 'pending').length ?? 0} 项待完成
-            </span>
-          </div>
           <form
             onSubmit={(e) => {
               e.preventDefault()
@@ -252,7 +247,7 @@ export function AssistantPanel({ active }: { active: boolean }): JSX.Element {
             </label>
             <div className="desk-task-form-row">
               <label>
-                提醒时间 <small>可留空</small>
+                提醒时间
                 <input type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} />
               </label>
               <button className="primary" disabled={working || !snapshot || !title.trim()}>
@@ -285,21 +280,17 @@ export function AssistantPanel({ active }: { active: boolean }): JSX.Element {
           </form>
           <div className="desk-task-filters" role="group" aria-label="待办筛选">
             <button aria-pressed={filter === 'pending'} onClick={() => setFilter('pending')}>
-              待完成
+              待完成 {pendingCount}
             </button>
             <button aria-pressed={filter === 'completed'} onClick={() => setFilter('completed')}>
-              已完成与取消
+              已完成 {doneCount}
             </button>
           </div>
           <div className="desk-task-list">
             {!snapshot ? (
               <p>正在打开本地待办…</p>
             ) : !tasks.length ? (
-              <p className="desk-assistant-muted">
-                {filter === 'pending'
-                  ? '暂时没有待办，给今天留一点空白。'
-                  : '完成的事项会保留在这里。'}
-              </p>
+              <p className="desk-assistant-muted">没有待办</p>
             ) : (
               tasks.map((task) => (
                 <article
@@ -319,7 +310,7 @@ export function AssistantPanel({ active }: { active: boolean }): JSX.Element {
                   </div>
                   {task.notes && <p>{task.notes}</p>}
                   <small>
-                    {task.dueAt ? new Date(task.dueAt).toLocaleString() : '未设置提醒'}
+                    {task.dueAt ? formatDue(task.dueAt, Date.now(), locale) : '未设置提醒'}
                     {task.reminderState === 'expired'
                       ? ' · 已错过提醒，待办仍保留'
                       : task.reminderState === 'delivered'
@@ -355,13 +346,6 @@ export function AssistantPanel({ active }: { active: boolean }): JSX.Element {
           </div>
         </section>
         <section className="desk-assistant-card" aria-label="文字与语音助手">
-          <div className="desk-assistant-card-title">
-            <h2>说一句，或写下来</h2>
-            <span>{snapshot?.credentials.llmKey ? 'AI 已配置' : '本地规则可用'}</span>
-          </div>
-          <p className="desk-assistant-muted">
-            例如“10分钟后提醒我喝水”。AI 提出的修改会先列出来，确认后保存。
-          </p>
           <form
             onSubmit={(e) => {
               e.preventDefault()
@@ -374,11 +358,10 @@ export function AssistantPanel({ active }: { active: boolean }): JSX.Element {
               value={input}
               maxLength={4000}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="待办：读完这一章，或者描述你想安排的事情"
+              placeholder="例如：10 分钟后提醒我喝水；或 待办：读完这一章"
             />
             <div className="desk-assistant-actions">
               <button
-                className="primary"
                 disabled={!snapshot || working || snapshot.busy || !input.trim() || recording}
               >
                 {working || snapshot?.busy ? '正在处理…' : '交给助手'}
@@ -401,7 +384,9 @@ export function AssistantPanel({ active }: { active: boolean }): JSX.Element {
                 <div key={i} className="desk-draft-task">
                   <strong>{task.title}</strong>
                   <small>
-                    {task.dueAt ? new Date(task.dueAt).toLocaleString() : '仅添加待办，不设置提醒'}
+                    {task.dueAt
+                      ? formatDue(task.dueAt, Date.now(), locale)
+                      : '仅添加待办，不设置提醒'}
                   </small>
                 </div>
               ))}
@@ -421,7 +406,6 @@ export function AssistantPanel({ active }: { active: boolean }): JSX.Element {
               <div className="desk-assistant-actions">
                 {draft.actions.length > 0 && (
                   <button
-                    className="primary"
                     disabled={working}
                     onClick={() =>
                       void run(async () => {
@@ -457,14 +441,14 @@ export function AssistantPanel({ active }: { active: boolean }): JSX.Element {
               </div>
             ))}
           </details>
-          <p className="desk-assistant-muted">
-            语音只在你点击录音后采集。识别会发送本次录音；AI
-            会发送输入、近期对话和部分待办与记忆至所选服务商。普通待办无需联网。
-          </p>
         </section>
       </div>
       <details className="desk-assistant-card desk-assistant-settings">
         <summary>助手、语音与提醒设置</summary>
+        <p className="desk-assistant-muted">
+          语音只在你点击录音后采集。识别会发送本次录音；AI
+          会发送输入、近期对话和部分待办与记忆至所选服务商。普通待办无需联网。
+        </p>
         {settings && snapshot && (
           <>
             <div className="desk-assistant-settings-grid">
@@ -555,7 +539,6 @@ export function AssistantPanel({ active }: { active: boolean }): JSX.Element {
               分钟的旧提醒不补报，事项仍留在列表。起止时间相同表示不设置安静时段。电脑休眠或客户端退出时无法即时提醒。
             </p>
             <button
-              className="primary"
               disabled={working || !settingsDirty}
               onClick={() =>
                 void run(async () => {

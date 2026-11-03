@@ -1,0 +1,126 @@
+{
+  "firmwareVersion": "0.0.30-life",
+  "design": "yb-life-v1 variant B; black falling/closed stocks; pending fixed-holiday countdown",
+  "pixels": {
+    "weather": {
+      "black": "213ed187bcddfdb011a5f68962e9250219ad3f76caaf390f63037b9fa5ef45c5",
+      "red": "f2a66820e5bab84f72181f0aa400522b6a127d63a4e817fe43ce7123b5cd7cea",
+      "approvedPng": "0e30f7b2afe94a6a039cb06a063224eb55e1416809c312fba399009a1b729336",
+      "bodyPixelDiff": 0,
+      "approvedPolicyDiff": 0,
+      "unexpectedBodyDiff": 0,
+      "headerFooterDiff": 0,
+      "redPixels": 3782,
+      "bodyPixels": 92800,
+      "redSharePercent": 4.075
+    },
+    "gold": {
+      "black": "133cfe41ef70765a8a90f405471274df20402d77ce2c3df0be1f9816f92bcf7d",
+      "red": "483d5987388daf188294a4a10abeaf25e793646e1175d4a9905a794a31e70a8d",
+      "approvedPng": "6228334c26585ac810723a9e1bbd1b2e960e6e90b91f9b20ddbaaba434b190e1",
+      "bodyPixelDiff": 0,
+      "approvedPolicyDiff": 0,
+      "unexpectedBodyDiff": 0,
+      "headerFooterDiff": 0,
+      "redPixels": 3784,
+      "bodyPixels": 92800,
+      "redSharePercent": 4.078
+    },
+    "stock-down": {
+      "black": "bd69d854d2e3098afd56dff6c46048c84b5bf5d5a441725bbc3dce81e0cb49c1",
+      "red": "bfc5b164e72195f43728bf37b07bce2be21f37d3169c62437c342ce397a9826f",
+      "approvedPng": "d8a894fa43e0ab4957d042de9a75058d6d1c2ef993c4874bd819ff9e53e0e285",
+      "bodyPixelDiff": 89,
+      "approvedPolicyDiff": 89,
+      "unexpectedBodyDiff": 0,
+      "headerFooterDiff": 0,
+      "redPixels": 0,
+      "bodyPixels": 92800,
+      "redSharePercent": 0.0
+    },
+    "stock-up": {
+      "black": "e31e8c99e2252c3d6649ff41a0b11da4cfe6e6700460b5db2ac9eece516090b3",
+      "red": "c8bd13a8a14e608702fc8b3aa402e0b590fb1a53e98df819879eb1b22af57c9e",
+      "approvedPng": "8082ae6543ce2174a356380f91360917d2cc80376eb1f22a17b1ef87d2ec836a",
+      "bodyPixelDiff": 0,
+      "approvedPolicyDiff": 0,
+      "unexpectedBodyDiff": 0,
+      "headerFooterDiff": 0,
+      "redPixels": 3331,
+      "bodyPixels": 92800,
+      "redSharePercent": 3.589
+    },
+    "stock-closed": {
+      "black": "bd773a6bb73be13321ebf725931323a5963145ead904a2d65635af489f2dacf0",
+      "red": "bfc5b164e72195f43728bf37b07bce2be21f37d3169c62437c342ce397a9826f",
+      "approvedPng": "b41b1c5a19b9e2e400da757aa7a0928dbd9ea4ad739f27f3dd263a2ec936dd11",
+      "bodyPixelDiff": 42,
+      "approvedPolicyDiff": 42,
+      "unexpectedBodyDiff": 0,
+      "headerFooterDiff": 0,
+      "redPixels": 0,
+      "bodyPixels": 92800,
+      "redSharePercent": 0.0
+    },
+    "tool-codex": {
+      "black": "3d4ea6dcfd0728ed78934041cc0cf9442d9ec8b338fdd39430fa486dcefd20d6",
+      "red": "dcd9cfd0247e550dbbc27511d1dc446f2207bd597afaed47b21d5f5c8d9eb045",
+      "approvedPng": "0fc7494325c32dfd8648fc3ffec6d8f3c6fd3a48d488c108f5e9138d2d8a9902",
+      "bodyPixelDiff": 0,
+      "approvedPolicyDiff": 0,
+      "unexpectedBodyDiff": 0,
+      "headerFooterDiff": 0,
+      "redPixels": 1210,
+      "bodyPixels": 92800,
+      "redSharePercent": 1.304
+    },
+    "tool-claude": {
+      "black": "eb6b48bdcc0be9f12db8781f2060c8999352c0b8476cb9068d64cf21cce05a92",
+      "red": "dcd9cfd0247e550dbbc27511d1dc446f2207bd597afaed47b21d5f5c8d9eb045",
+      "approvedPng": "740a8ca641f2e2ddc314cdee0c2febea3198c4bfd3a6e9166d9b7cd1bfb0fbb9",
+      "bodyPixelDiff": 0,
+      "approvedPolicyDiff": 0,
+      "unexpectedBodyDiff": 0,
+      "headerFooterDiff": 0,
+      "redPixels": 1210,
+      "bodyPixels": 92800,
+      "redSharePercent": 1.304
+    },
+    "news": {
+      "black": "86f61898c8a72d86229a5921012c5856470477927fc608ec48d7bda7e08cc00b",
+      "red": "f4ee7e4db3ff480c6315ad627b562428689a6d869ab64e88966b90f62a3e09ef",
+      "approvedPng": "f0b7182a14f44321a32104a1b1589bc3a54ed2fc0c9a87bcce45f849eb837b98",
+      "bodyPixelDiff": 0,
+      "approvedPolicyDiff": 0,
+      "unexpectedBodyDiff": 0,
+      "headerFooterDiff": 0,
+      "redPixels": 2291,
+      "bodyPixels": 92800,
+      "redSharePercent": 2.469
+    },
+    "holiday-yes": {
+      "black": "2d56a58b80d9a4f670f301e8150b27bc520e0b5d711b2060398d9f081f96afbc",
+      "red": "6fa28603de1291063b6e16388c6682a82eb3eaac63f106d11b15a28965abdff6",
+      "approvedPng": "1b14b532ab15a8e211daaa089ca8827f43a7d0e2fcdfd100ce4253e6e44d3a44",
+      "bodyPixelDiff": 1888,
+      "approvedPolicyDiff": 1888,
+      "unexpectedBodyDiff": 0,
+      "headerFooterDiff": 0,
+      "redPixels": 10917,
+      "bodyPixels": 92800,
+      "redSharePercent": 11.764
+    },
+    "holiday-none": {
+      "black": "cf3f47a2d224062b02f8ef927637598b2b9295c49533f8102f060a9cf434fd62",
+      "red": "efb1bd4322d0ec07b87f6f0e9c26b5b5d28fd6aa3c6f416c11b53b29a056b9c6",
+      "approvedPng": "ef71c8fa779a1b20897c730623aa26003aa8a8816c9885db8fd30f81a7f55da9",
+      "bodyPixelDiff": 4798,
+      "approvedPolicyDiff": 4798,
+      "unexpectedBodyDiff": 0,
+      "headerFooterDiff": 0,
+      "redPixels": 3794,
+      "bodyPixels": 92800,
+      "redSharePercent": 4.088
+    }
+  }
+}

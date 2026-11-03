@@ -18,6 +18,10 @@ CodePulse-owned firmware source is distributed under the repository's
   use their OFL notices; the preserved Unifont sources include the offered
   OFL license and original license text. Historical font sources and notices
   remain available for reproduction; they are not all embedded in the current image.
+- Life-card hero/secondary digits and command labels embed a generated subset of
+  Terminus Bold native 32px (`terminus-ter-u32b.bdf.gz`), Copyright (C) 2020
+  Dimitar Toshkov Zhekov, under the preserved [SIL OFL-1.1](fonts/licenses/Terminus-OFL.txt).
+  Hero glyphs use exact integer 2x pixels; this does not change the native Noto tables.
 
 The Wasm build produces `THIRD-PARTY-FONTS.txt` containing font and linked-code
 notices. `scripts/sync-device-preview.ps1` at the root copies it to both UI

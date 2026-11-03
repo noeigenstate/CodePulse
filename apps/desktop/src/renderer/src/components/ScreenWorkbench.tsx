@@ -1,8 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type {
-  DeviceProvisioningSnapshot,
-  WorkbenchWindowState,
-} from '@codepulse/shared'
+import type { DeviceProvisioningSnapshot, WorkbenchWindowState } from '@codepulse/shared'
 import { DeviceScreenPreview } from './DeviceScreenPreview.js'
 import { DeviceDisplayPanel } from './DeviceDisplayPanel.js'
 import { DeviceProvisioningPanel } from './DeviceProvisioningPanel.js'
@@ -50,9 +47,13 @@ export function ScreenWorkbench({
       windowReceived = true
       if (alive) setWindowState(s)
     })
-    if (standalone) void window.codepulse.setWorkbenchWindow({}).then(s => {
-      if (alive && !windowReceived) setWindowState(s)
-    }).catch(() => {})
+    if (standalone)
+      void window.codepulse
+        .setWorkbenchWindow({})
+        .then((s) => {
+          if (alive && !windowReceived) setWindowState(s)
+        })
+        .catch(() => {})
     return () => {
       alive = false
       stop()
@@ -68,7 +69,9 @@ export function ScreenWorkbench({
       const requested = !latestWindowState.current[key]
       const next = await window.codepulse.setWorkbenchWindow({ [key]: requested })
       setWindowState(next)
-      setMessage(key === 'pinned' && next.pinned !== requested ? '系统未应用置顶设置，可稍后重试。' : '')
+      setMessage(
+        key === 'pinned' && next.pinned !== requested ? '系统未应用置顶设置，可稍后重试。' : '',
+      )
     } catch {
       setMessage('独立窗口暂不可用，请重新打开屏幕工作台。')
     }

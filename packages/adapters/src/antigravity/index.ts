@@ -11,25 +11,46 @@ export function fromAntigravityHook(raw: unknown): AgentEventInput | null {
   const tool = asRecord(r.toolCall)
   let eventType: AgentEventType
   switch (hook) {
-    case 'SessionStart': eventType = 'session_start'; break
+    case 'SessionStart':
+      eventType = 'session_start'
+      break
     case 'PreInvocation':
-      eventType = 'model_start'; break
-    case 'PreToolUse': eventType = tool?.name === 'ask_question' ? 'user_input_required' : 'tool_start'; break
-    case 'PostToolUse': eventType = 'tool_end'; break
+      eventType = 'model_start'
+      break
+    case 'PreToolUse':
+      eventType = tool?.name === 'ask_question' ? 'user_input_required' : 'tool_start'
+      break
+    case 'PostToolUse':
+      eventType = 'tool_end'
+      break
     case 'Stop':
       if (r.fullyIdle !== true) return null // Background commands are still running.
-      eventType = r.terminationReason === 'error' || Boolean(r.error) ? 'turn_error'
-        : r.terminationReason === 'max_steps_exceeded' ? 'turn_timeout' : 'turn_stop'
+      eventType =
+        r.terminationReason === 'error' || Boolean(r.error)
+          ? 'turn_error'
+          : r.terminationReason === 'max_steps_exceeded'
+            ? 'turn_timeout'
+            : 'turn_stop'
       break
     // PostInvocation ends one model call, not the user-visible task.
-    default: return null
+    default:
+      return null
   }
-  const workspace = Array.isArray(r.workspacePaths) ? r.workspacePaths.find((v): v is string => typeof v === 'string' && !!v.trim()) : undefined
+  const workspace = Array.isArray(r.workspacePaths)
+    ? r.workspacePaths.find((v): v is string => typeof v === 'string' && !!v.trim())
+    : undefined
   return {
-    source: 'antigravity', eventType, externalSessionId: session,
-    workspacePath: workspace, cwd: workspace, model: pickString(r, 'modelName'),
+    source: 'antigravity',
+    eventType,
+    externalSessionId: session,
+    workspacePath: workspace,
+    cwd: workspace,
+    model: pickString(r, 'modelName'),
     toolName: tool ? pickString(tool, 'name') : undefined,
-    message: hook === 'Stop' && eventType !== 'turn_stop' ? 'Antigravity execution stopped with an error or limit' : undefined,
+    message:
+      hook === 'Stop' && eventType !== 'turn_stop'
+        ? 'Antigravity execution stopped with an error or limit'
+        : undefined,
     raw,
   }
 }

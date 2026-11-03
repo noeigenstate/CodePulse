@@ -20,7 +20,10 @@ test('standard and HUD previews render identical production pixels for 3/6/9 tas
       assert.deepEqual(input, hudFixture(config, count))
       const frame = desktop(input)
       assert.equal(frame.length, 15000)
-      assert.ok(frame.some(value => value !== 255), 'must contain ink')
+      assert.ok(
+        frame.some((value) => value !== 255),
+        'must contain ink',
+      )
       assert.deepEqual(frame, hud(input))
     }
   }

@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type {
-  ProductView, DesktopForm, ShellSnapshot, WorkbenchWindowState,
+  ProductView,
+  DesktopForm,
+  ShellSnapshot,
+  WorkbenchWindowState,
   AmbientConfig,
   AmbientCard,
   AmbientSnapshot,
@@ -30,25 +33,42 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): Unsubscribe {
 
 const api = {
   getShell: (): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-get'),
-  navigateProduct: (view: ProductView): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-navigate', view),
-  selectDesktopForm: (form: DesktopForm): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-form', form),
-  openSurface: (surface: 'standard' | 'hud' | 'screen', view?: ProductView): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-open', surface, view),
-  onShell: (cb: (snapshot: ShellSnapshot) => void): Unsubscribe => subscribe('codepulse:shell-status', cb),
-  setWorkbenchWindow: (patch: Partial<WorkbenchWindowState>): Promise<WorkbenchWindowState> => ipcRenderer.invoke('codepulse:workbench-configure', patch),
-  onWorkbenchWindow: (cb: (state: WorkbenchWindowState) => void): Unsubscribe => subscribe('codepulse:workbench-window', cb),
-  onDeviceDisplay: (cb: (snapshot: DeviceDisplaySnapshot) => void): Unsubscribe => subscribe('codepulse:device-display', cb),
-  importAmbientImage: (bytes: Uint8Array, name: string): Promise<AmbientCard> => ipcRenderer.invoke('codepulse:ambient-import', bytes, name),
-  addAmbientNote: (text: string): Promise<AmbientCard> => ipcRenderer.invoke('codepulse:ambient-note', text),
-  removeAmbient: (id: string): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:ambient-remove', id),
+  navigateProduct: (view: ProductView): Promise<ShellSnapshot> =>
+    ipcRenderer.invoke('codepulse:shell-navigate', view),
+  selectDesktopForm: (form: DesktopForm): Promise<ShellSnapshot> =>
+    ipcRenderer.invoke('codepulse:shell-form', form),
+  openSurface: (
+    surface: 'standard' | 'hud' | 'screen',
+    view?: ProductView,
+  ): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-open', surface, view),
+  onShell: (cb: (snapshot: ShellSnapshot) => void): Unsubscribe =>
+    subscribe('codepulse:shell-status', cb),
+  setWorkbenchWindow: (patch: Partial<WorkbenchWindowState>): Promise<WorkbenchWindowState> =>
+    ipcRenderer.invoke('codepulse:workbench-configure', patch),
+  onWorkbenchWindow: (cb: (state: WorkbenchWindowState) => void): Unsubscribe =>
+    subscribe('codepulse:workbench-window', cb),
+  onDeviceDisplay: (cb: (snapshot: DeviceDisplaySnapshot) => void): Unsubscribe =>
+    subscribe('codepulse:device-display', cb),
+  importAmbientImage: (bytes: Uint8Array, name: string): Promise<AmbientCard> =>
+    ipcRenderer.invoke('codepulse:ambient-import', bytes, name),
+  addAmbientNote: (text: string): Promise<AmbientCard> =>
+    ipcRenderer.invoke('codepulse:ambient-note', text),
+  removeAmbient: (id: string): Promise<AmbientSnapshot> =>
+    ipcRenderer.invoke('codepulse:ambient-remove', id),
   getAmbient: (): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:ambient-get'),
-  setAmbient: (config: AmbientConfig): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:ambient-set', config),
-  setAmbientKey: (provider: AmbientConfig['provider'], key: string): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:ambient-key', provider, key),
+  setAmbient: (config: AmbientConfig): Promise<AmbientSnapshot> =>
+    ipcRenderer.invoke('codepulse:ambient-set', config),
+  setAmbientKey: (provider: AmbientConfig['provider'], key: string): Promise<AmbientSnapshot> =>
+    ipcRenderer.invoke('codepulse:ambient-key', provider, key),
   refreshAmbient: (): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:ambient-refresh'),
-  showAmbient: (id: string): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:ambient-show', id),
+  showAmbient: (id: string): Promise<AmbientSnapshot> =>
+    ipcRenderer.invoke('codepulse:ambient-show', id),
   dismissAmbient: (): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:ambient-dismiss'),
-  previewAmbient: (id: string): Promise<DeviceStatusV1> => ipcRenderer.invoke('codepulse:ambient-preview', id),
+  previewAmbient: (id: string): Promise<DeviceStatusV1> =>
+    ipcRenderer.invoke('codepulse:ambient-preview', id),
   openAmbient: (id: string): Promise<void> => ipcRenderer.invoke('codepulse:ambient-open', id),
-  onAmbient: (cb: (snapshot: AmbientSnapshot) => void): Unsubscribe => subscribe('codepulse:ambient-status', cb),
+  onAmbient: (cb: (snapshot: AmbientSnapshot) => void): Unsubscribe =>
+    subscribe('codepulse:ambient-status', cb),
   /** Lets the renderer opt into Windows-only title-bar layout without Node access. */
   platform: process.platform,
   getStatus: (): Promise<StatusSnapshot> => ipcRenderer.invoke('codepulse:get-status'),

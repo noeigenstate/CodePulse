@@ -61,7 +61,7 @@ export class ScreenWorkbenchWindow {
       },
     })
     this.window = window
-    window.on('page-title-updated', event => event.preventDefault())
+    window.on('page-title-updated', (event) => event.preventDefault())
     window.webContents.on('before-input-event', (event, input) => {
       if (input.type === 'keyDown' && input.key === 'Escape' && window.isFullScreen()) {
         event.preventDefault()

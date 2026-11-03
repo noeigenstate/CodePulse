@@ -1,7 +1,17 @@
 import { createHash } from 'node:crypto'
-import { deviceThreadId, isDeviceThreadSource, orderDeviceThreadSources, type DeviceThreadOrder, type DeviceThreadSource } from './device-thread-order.js'
+import {
+  deviceThreadId,
+  isDeviceThreadSource,
+  orderDeviceThreadSources,
+  type DeviceThreadOrder,
+  type DeviceThreadSource,
+} from './device-thread-order.js'
 
-import { normalizeDeviceDisplay, type DeviceDisplayConfig, type DeviceThreadV1 } from '@codepulse/shared'
+import {
+  normalizeDeviceDisplay,
+  type DeviceDisplayConfig,
+  type DeviceThreadV1,
+} from '@codepulse/shared'
 /**
  * 聚合辅助函数：把各 agent 的运行时状态收敛为 UI 与硬件消费的视图 ——
  * 托盘总体指示、完整状态快照，以及极简设备投影。
@@ -9,8 +19,13 @@ import { normalizeDeviceDisplay, type DeviceDisplayConfig, type DeviceThreadV1 }
  * @module core/aggregate
  */
 import {
-  buildWorkPresentation, buildProjectDeckGroups, buildProjectUsageSummaries,
-  hudStateLevel, hudStatePriority, needsHudAttention, isDisplayAgent,
+  buildWorkPresentation,
+  buildProjectDeckGroups,
+  buildProjectUsageSummaries,
+  hudStateLevel,
+  hudStatePriority,
+  needsHudAttention,
+  isDisplayAgent,
   type AgentRuntimeState,
   type AgentType,
   type DeviceAgentState,
@@ -121,7 +136,11 @@ export function toDeviceStatus(snapshot: StatusSnapshot): DeviceStatus {
  * 每种 CLI 最多返回一条最相关状态，同时合并该 CLI 在不同工作区捕获到的
  * 额度桶。绝对工作区路径不会离开电脑，只传目录名。
  */
-export function toDeviceStatusV1(snapshot: StatusSnapshot, displayConfig?: DeviceDisplayConfig, order?: DeviceThreadOrder): DeviceStatusV1 {
+export function toDeviceStatusV1(
+  snapshot: StatusSnapshot,
+  displayConfig?: DeviceDisplayConfig,
+  order?: DeviceThreadOrder,
+): DeviceStatusV1 {
   const work = buildWorkPresentation(snapshot)
   const summaries = buildProjectUsageSummaries(work.panels)
   const projections = DEVICE_AGENT_ORDER.flatMap((agentType) => {
@@ -138,8 +157,10 @@ export function toDeviceStatusV1(snapshot: StatusSnapshot, displayConfig?: Devic
       activity: hidden ? null : projectDeviceActivity(source),
       needsAttention: !hidden && needsHudAttention(source),
       quotaSummary: {
-        fiveHourUsedPercent: summaries.find(s => s.agentType === agentType)?.fiveHourPercent ?? null,
-        weeklyUsedPercent: summaries.find(s => s.agentType === agentType)?.sevenDayPercent ?? null,
+        fiveHourUsedPercent:
+          summaries.find((s) => s.agentType === agentType)?.fiveHourPercent ?? null,
+        weeklyUsedPercent:
+          summaries.find((s) => s.agentType === agentType)?.sevenDayPercent ?? null,
       },
       tokens: projectDeviceTokens(source.token),
       quotas: projectDeviceQuotas(states, agentType),
@@ -170,21 +191,32 @@ export function toDeviceStatusV1(snapshot: StatusSnapshot, displayConfig?: Devic
     // The host supplies shared first-seen positions. Legacy raw API callers keep
     // their existing order persistence until they opt into the shared projection.
     const groups = buildProjectDeckGroups(work.panels)
-    const groupIds = new Map(groups.flatMap(group => {
-      const id = createHash('sha256').update(group.id).digest('hex').slice(0, 24)
-      return group.cards.map(card => [deviceThreadId(card.agent), id] as const)
-    }))
+    const groupIds = new Map(
+      groups.flatMap((group) => {
+        const id = createHash('sha256').update(group.id).digest('hex').slice(0, 24)
+        return group.cards.map((card) => [deviceThreadId(card.agent), id] as const)
+      }),
+    )
     const sources = snapshot.workOrder
-      ? groups.flatMap(group => group.cards.map(card => card.agent)).filter((agent): agent is DeviceThreadSource => isDisplayAgent(agent.agentType))
+      ? groups
+          .flatMap((group) => group.cards.map((card) => card.agent))
+          .filter((agent): agent is DeviceThreadSource => isDisplayAgent(agent.agentType))
       : orderDeviceThreadSources(snapshot.agents.filter(isDeviceThreadSource), order)
-    const threads: DeviceThreadV1[] = sources.filter(source => config.agents.includes(source.agentType)).map(source => ({
-      id: deviceThreadId(source), type: source.agentType,
-      title: deviceUtf8Text(source.taskTitle?.trim() || workspaceBasename(source.workspacePath) || source.agentType, 96),
-      detail: deviceUtf8Text(projectDeviceActivity(source) ?? '', 96),
-      state: mapDeviceAgentState(source.state),
-      level: hudStateLevel(source), unread: source.unread,
-      groupId: groupIds.get(deviceThreadId(source)),
-    }))
+    const threads: DeviceThreadV1[] = sources
+      .filter((source) => config.agents.includes(source.agentType))
+      .map((source) => ({
+        id: deviceThreadId(source),
+        type: source.agentType,
+        title: deviceUtf8Text(
+          source.taskTitle?.trim() || workspaceBasename(source.workspacePath) || source.agentType,
+          96,
+        ),
+        detail: deviceUtf8Text(projectDeviceActivity(source) ?? '', 96),
+        state: mapDeviceAgentState(source.state),
+        level: hudStateLevel(source),
+        unread: source.unread,
+        groupId: groupIds.get(deviceThreadId(source)),
+      }))
     config.page = Math.min(config.page, Math.max(0, Math.ceil(threads.length / 9) - 1))
     content.display = config
     content.threadTotal = threads.length

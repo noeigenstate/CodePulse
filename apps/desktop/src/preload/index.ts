@@ -1,8 +1,26 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import type { AssistantAudio, AssistantDraft, AssistantSecret, AssistantSettings, AssistantSnapshot, DeskTaskInput } from '@codepulse/shared'
 import type {
-  ProductView, DesktopForm, ShellSnapshot, WorkbenchWindowState, PresentationTarget, DesktopLayout,
-  InkDisplayPlan, HudAppearanceSettings,
+  AssistantAudio,
+  AssistantDraft,
+  AssistantSecret,
+  AssistantSettings,
+  AssistantSnapshot,
+  DeskTaskInput,
+} from '@codepulse/shared'
+import type {
+  ProductView,
+  DesktopForm,
+  ShellSnapshot,
+  WorkbenchWindowState,
+  PresentationTarget,
+  DesktopLayout,
+  InkDisplayPlan,
+  HudAppearanceSettings,
+  InkScreenStatus,
+  InkApplyRequest,
+  YuanbaoKeyInput,
+  YuanbaoTestResult,
+  YuanbaoTopic,
   AmbientConfig,
   AmbientCard,
   AmbientSnapshot,
@@ -14,7 +32,9 @@ import type {
   DeviceProvisioningRequest,
   DeviceProvisioningSnapshot,
   StatusSnapshot,
-  WorkVoiceSettings, WorkVoiceTargetsSnapshot, WorkVoiceTarget,
+  WorkVoiceSettings,
+  WorkVoiceTargetsSnapshot,
+  WorkVoiceTarget,
   UiLocale,
   UpdateDownloadProgress,
   UpdateInfo,
@@ -36,61 +56,128 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): Unsubscribe {
 
 const api = {
   getAssistant: (): Promise<AssistantSnapshot> => ipcRenderer.invoke('codepulse:assistant-get'),
-  previewDeskTasks: (): Promise<DeviceStatusV1> => ipcRenderer.invoke('codepulse:assistant-preview'),
-  configureAssistant: (settings: AssistantSettings): Promise<AssistantSnapshot> => ipcRenderer.invoke('codepulse:assistant-configure', settings),
-  setAssistantKey: (field: AssistantSecret, value: string): Promise<AssistantSnapshot> => ipcRenderer.invoke('codepulse:assistant-key', field, value),
-  addDeskTask: (input: DeskTaskInput): Promise<AssistantSnapshot> => ipcRenderer.invoke('codepulse:assistant-add', input),
-  updateDeskTask: (id: string, input: DeskTaskInput): Promise<AssistantSnapshot> => ipcRenderer.invoke('codepulse:assistant-update', id, input),
-  completeDeskTask: (id: string): Promise<AssistantSnapshot> => ipcRenderer.invoke('codepulse:assistant-complete', id),
-  cancelDeskTask: (id: string): Promise<AssistantSnapshot> => ipcRenderer.invoke('codepulse:assistant-cancel', id),
-  snoozeDeskTask: (id: string, seconds: number): Promise<AssistantSnapshot> => ipcRenderer.invoke('codepulse:assistant-snooze', id, seconds),
-  forgetDeskMemory: (id: string): Promise<AssistantSnapshot> => ipcRenderer.invoke('codepulse:assistant-forget', id),
-  interpretAssistant: (text: string): Promise<AssistantDraft> => ipcRenderer.invoke('codepulse:assistant-interpret', text),
-  applyAssistantDraft: (id: string): Promise<AssistantSnapshot> => ipcRenderer.invoke('codepulse:assistant-apply', id),
-  listenAssistant: (pcm: Uint8Array): Promise<{text: string; draft: AssistantDraft}> => ipcRenderer.invoke('codepulse:assistant-listen', pcm),
-  speakAssistant: (text: string): Promise<AssistantAudio> => ipcRenderer.invoke('codepulse:assistant-speak', text),
-  showDeskTasksOnInk: (): Promise<AssistantSnapshot> => ipcRenderer.invoke('codepulse:assistant-show-ink'),
-  hideDeskTasksOnInk: (): Promise<AssistantSnapshot> => ipcRenderer.invoke('codepulse:assistant-hide-ink'),
-  onAssistant: (cb: (snapshot: AssistantSnapshot) => void): Unsubscribe => subscribe('codepulse:assistant-status', cb),
+  previewDeskTasks: (): Promise<DeviceStatusV1> =>
+    ipcRenderer.invoke('codepulse:assistant-preview'),
+  configureAssistant: (settings: AssistantSettings): Promise<AssistantSnapshot> =>
+    ipcRenderer.invoke('codepulse:assistant-configure', settings),
+  setAssistantKey: (field: AssistantSecret, value: string): Promise<AssistantSnapshot> =>
+    ipcRenderer.invoke('codepulse:assistant-key', field, value),
+  addDeskTask: (input: DeskTaskInput): Promise<AssistantSnapshot> =>
+    ipcRenderer.invoke('codepulse:assistant-add', input),
+  updateDeskTask: (id: string, input: DeskTaskInput): Promise<AssistantSnapshot> =>
+    ipcRenderer.invoke('codepulse:assistant-update', id, input),
+  completeDeskTask: (id: string): Promise<AssistantSnapshot> =>
+    ipcRenderer.invoke('codepulse:assistant-complete', id),
+  cancelDeskTask: (id: string): Promise<AssistantSnapshot> =>
+    ipcRenderer.invoke('codepulse:assistant-cancel', id),
+  snoozeDeskTask: (id: string, seconds: number): Promise<AssistantSnapshot> =>
+    ipcRenderer.invoke('codepulse:assistant-snooze', id, seconds),
+  forgetDeskMemory: (id: string): Promise<AssistantSnapshot> =>
+    ipcRenderer.invoke('codepulse:assistant-forget', id),
+  interpretAssistant: (text: string): Promise<AssistantDraft> =>
+    ipcRenderer.invoke('codepulse:assistant-interpret', text),
+  applyAssistantDraft: (id: string): Promise<AssistantSnapshot> =>
+    ipcRenderer.invoke('codepulse:assistant-apply', id),
+  listenAssistant: (pcm: Uint8Array): Promise<{ text: string; draft: AssistantDraft }> =>
+    ipcRenderer.invoke('codepulse:assistant-listen', pcm),
+  speakAssistant: (text: string): Promise<AssistantAudio> =>
+    ipcRenderer.invoke('codepulse:assistant-speak', text),
+  showDeskTasksOnInk: (): Promise<AssistantSnapshot> =>
+    ipcRenderer.invoke('codepulse:assistant-show-ink'),
+  hideDeskTasksOnInk: (): Promise<AssistantSnapshot> =>
+    ipcRenderer.invoke('codepulse:assistant-hide-ink'),
+  onAssistant: (cb: (snapshot: AssistantSnapshot) => void): Unsubscribe =>
+    subscribe('codepulse:assistant-status', cb),
   openSettingsWindow: (): Promise<boolean> => ipcRenderer.invoke('codepulse:open-settings-window'),
   getShell: (): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-get'),
-  setPresentationTarget: (target: PresentationTarget): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-target', target),
-  setFocusMode: (focus: boolean): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-focus', focus),
-  setDesktopLayout: (layout: DesktopLayout): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-desktop-layout', layout),
-  setInkPlan: (plan: InkDisplayPlan): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-ink-plan', plan),
-  setHudSettings: (patch: Partial<HudAppearanceSettings>): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-hud-settings', patch),
-  setHudVisible: (visible: boolean): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-hud-visible', visible),
+  setPresentationTarget: (target: PresentationTarget): Promise<ShellSnapshot> =>
+    ipcRenderer.invoke('codepulse:shell-target', target),
+  setFocusMode: (focus: boolean): Promise<ShellSnapshot> =>
+    ipcRenderer.invoke('codepulse:shell-focus', focus),
+  setDesktopLayout: (layout: DesktopLayout): Promise<ShellSnapshot> =>
+    ipcRenderer.invoke('codepulse:shell-desktop-layout', layout),
+  setInkPlan: (plan: InkDisplayPlan): Promise<ShellSnapshot> =>
+    ipcRenderer.invoke('codepulse:shell-ink-plan', plan),
+  setHudSettings: (patch: Partial<HudAppearanceSettings>): Promise<ShellSnapshot> =>
+    ipcRenderer.invoke('codepulse:shell-hud-settings', patch),
+  setHudVisible: (visible: boolean): Promise<ShellSnapshot> =>
+    ipcRenderer.invoke('codepulse:shell-hud-visible', visible),
+  /** Single source for what the e-ink screen shows now; see InkScreenStatus. */
+  getInkStatus: (): Promise<InkScreenStatus> => ipcRenderer.invoke('codepulse:ink-status-get'),
+  onInkStatus: (cb: (status: InkScreenStatus) => void): Unsubscribe =>
+    subscribe('codepulse:ink-status', cb),
+  /** Applies the playlist and the work-screen details together; rejects without partial writes. */
+  applyInk: (
+    request: InkApplyRequest,
+  ): Promise<{ shell: ShellSnapshot; display: DeviceDisplaySnapshot }> =>
+    ipcRenderer.invoke('codepulse:ink-apply', request),
+  /** Ends any one-off display (desk card or todo list) without changing the playlist. */
+  endInkTemporary: (): Promise<InkScreenStatus> =>
+    ipcRenderer.invoke('codepulse:ink-temporary-end'),
   getHudPreview: (): Promise<StatusSnapshot | null> => ipcRenderer.invoke('codepulse:hud-preview'),
-  setHudContentHeight: (height: number): Promise<boolean> => ipcRenderer.invoke('codepulse:set-hud-content-height', height),
-  navigateProduct: (view: ProductView): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-navigate', view),
-  selectDesktopForm: (form: DesktopForm): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-form', form),
-  openSurface: (surface: 'standard' | 'hud' | 'screen', view?: ProductView): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-open', surface, view),
-  onShell: (cb: (snapshot: ShellSnapshot) => void): Unsubscribe => subscribe('codepulse:shell-status', cb),
-  setWorkbenchWindow: (patch: Partial<WorkbenchWindowState>): Promise<WorkbenchWindowState> => ipcRenderer.invoke('codepulse:workbench-configure', patch),
-  onWorkbenchWindow: (cb: (state: WorkbenchWindowState) => void): Unsubscribe => subscribe('codepulse:workbench-window', cb),
-  onDeviceDisplay: (cb: (snapshot: DeviceDisplaySnapshot) => void): Unsubscribe => subscribe('codepulse:device-display', cb),
-  importAmbientImage: (bytes: Uint8Array, name: string): Promise<AmbientCard> => ipcRenderer.invoke('codepulse:ambient-import', bytes, name),
-  addAmbientNote: (text: string): Promise<AmbientCard> => ipcRenderer.invoke('codepulse:ambient-note', text),
-  removeAmbient: (id: string): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:ambient-remove', id),
+  setHudContentHeight: (height: number): Promise<boolean> =>
+    ipcRenderer.invoke('codepulse:set-hud-content-height', height),
+  navigateProduct: (view: ProductView): Promise<ShellSnapshot> =>
+    ipcRenderer.invoke('codepulse:shell-navigate', view),
+  selectDesktopForm: (form: DesktopForm): Promise<ShellSnapshot> =>
+    ipcRenderer.invoke('codepulse:shell-form', form),
+  openSurface: (
+    surface: 'standard' | 'hud' | 'screen',
+    view?: ProductView,
+  ): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-open', surface, view),
+  onShell: (cb: (snapshot: ShellSnapshot) => void): Unsubscribe =>
+    subscribe('codepulse:shell-status', cb),
+  setWorkbenchWindow: (patch: Partial<WorkbenchWindowState>): Promise<WorkbenchWindowState> =>
+    ipcRenderer.invoke('codepulse:workbench-configure', patch),
+  onWorkbenchWindow: (cb: (state: WorkbenchWindowState) => void): Unsubscribe =>
+    subscribe('codepulse:workbench-window', cb),
+  onDeviceDisplay: (cb: (snapshot: DeviceDisplaySnapshot) => void): Unsubscribe =>
+    subscribe('codepulse:device-display', cb),
+  importAmbientImage: (bytes: Uint8Array, name: string): Promise<AmbientCard> =>
+    ipcRenderer.invoke('codepulse:ambient-import', bytes, name),
+  addAmbientNote: (text: string): Promise<AmbientCard> =>
+    ipcRenderer.invoke('codepulse:ambient-note', text),
+  removeAmbient: (id: string): Promise<AmbientSnapshot> =>
+    ipcRenderer.invoke('codepulse:ambient-remove', id),
   getAmbient: (): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:ambient-get'),
-  setAmbient: (config: AmbientConfig): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:ambient-set', config),
-  setAmbientKey: (provider: AmbientConfig['provider'], key: string): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:ambient-key', provider, key),
+  setAmbient: (config: AmbientConfig): Promise<AmbientSnapshot> =>
+    ipcRenderer.invoke('codepulse:ambient-set', config),
+  setAmbientKey: (provider: AmbientConfig['provider'], key: string): Promise<AmbientSnapshot> =>
+    ipcRenderer.invoke('codepulse:ambient-key', provider, key),
   refreshAmbient: (): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:ambient-refresh'),
-  showAmbient: (id: string): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:ambient-show', id),
+  showAmbient: (id: string): Promise<AmbientSnapshot> =>
+    ipcRenderer.invoke('codepulse:ambient-show', id),
   dismissAmbient: (): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:ambient-dismiss'),
-  previewAmbient: (id: string): Promise<DeviceStatusV1> => ipcRenderer.invoke('codepulse:ambient-preview', id),
+  /** Saves 元宝搜索 credentials in the OS-encrypted key store; empty strings clear them. Never returns a key. */
+  setYuanbaoKey: (input: YuanbaoKeyInput): Promise<AmbientSnapshot> =>
+    ipcRenderer.invoke('codepulse:yuanbao-key', input),
+  /** One live weather request (counted against the daily limit) to check the key and connectivity. */
+  testYuanbao: (): Promise<YuanbaoTestResult> => ipcRenderer.invoke('codepulse:yuanbao-test'),
+  previewYuanbaoSample: (topic: YuanbaoTopic): Promise<DeviceStatusV1> =>
+    ipcRenderer.invoke('codepulse:yuanbao-sample', topic),
+  previewAmbient: (id: string): Promise<DeviceStatusV1> =>
+    ipcRenderer.invoke('codepulse:ambient-preview', id),
   openAmbient: (id: string): Promise<void> => ipcRenderer.invoke('codepulse:ambient-open', id),
-  onAmbient: (cb: (snapshot: AmbientSnapshot) => void): Unsubscribe => subscribe('codepulse:ambient-status', cb),
+  onAmbient: (cb: (snapshot: AmbientSnapshot) => void): Unsubscribe =>
+    subscribe('codepulse:ambient-status', cb),
   /** Lets the renderer opt into Windows-only title-bar layout without Node access. */
   platform: process.platform,
   getStatus: (): Promise<StatusSnapshot> => ipcRenderer.invoke('codepulse:get-status'),
   ack: (agent: AgentType, workspacePath?: string): Promise<boolean> =>
     ipcRenderer.invoke('codepulse:ack', agent, workspacePath),
-  getWorkVoice: (): Promise<WorkVoiceTargetsSnapshot> => ipcRenderer.invoke('codepulse:work-voice-get'),
-  setWorkVoice: (target: WorkVoiceTarget, settings: WorkVoiceSettings): Promise<WorkVoiceTargetsSnapshot> => ipcRenderer.invoke('codepulse:work-voice-set', target, settings),
-  testWorkVoice: (target: WorkVoiceTarget, locale: UiLocale): Promise<WorkVoiceTargetsSnapshot> => ipcRenderer.invoke('codepulse:work-voice-test', target, locale),
-  stopWorkVoice: (target: WorkVoiceTarget): Promise<WorkVoiceTargetsSnapshot> => ipcRenderer.invoke('codepulse:work-voice-stop', target),
-  onWorkVoice: (cb: (snapshot: WorkVoiceTargetsSnapshot) => void): Unsubscribe => subscribe('codepulse:work-voice', cb),
+  getWorkVoice: (): Promise<WorkVoiceTargetsSnapshot> =>
+    ipcRenderer.invoke('codepulse:work-voice-get'),
+  setWorkVoice: (
+    target: WorkVoiceTarget,
+    settings: WorkVoiceSettings,
+  ): Promise<WorkVoiceTargetsSnapshot> =>
+    ipcRenderer.invoke('codepulse:work-voice-set', target, settings),
+  testWorkVoice: (target: WorkVoiceTarget, locale: UiLocale): Promise<WorkVoiceTargetsSnapshot> =>
+    ipcRenderer.invoke('codepulse:work-voice-test', target, locale),
+  stopWorkVoice: (target: WorkVoiceTarget): Promise<WorkVoiceTargetsSnapshot> =>
+    ipcRenderer.invoke('codepulse:work-voice-stop', target),
+  onWorkVoice: (cb: (snapshot: WorkVoiceTargetsSnapshot) => void): Unsubscribe =>
+    subscribe('codepulse:work-voice', cb),
   getNotifications: (): Promise<boolean> => ipcRenderer.invoke('codepulse:get-notifications'),
   setNotifications: (enabled: boolean): Promise<boolean> =>
     ipcRenderer.invoke('codepulse:set-notifications', enabled),
@@ -120,8 +207,10 @@ const api = {
   loginMimo: (): Promise<boolean> => ipcRenderer.invoke('codepulse:mimo-login'),
   /** Clears the MiMo console login. */
   logoutMimo: (): Promise<boolean> => ipcRenderer.invoke('codepulse:mimo-logout'),
-  getDeviceDisplay: (preview?: DeviceDisplayConfig): Promise<DeviceDisplaySnapshot> => ipcRenderer.invoke('codepulse:get-device-display', preview),
-  setDeviceDisplay: (config: DeviceDisplayConfig): Promise<DeviceDisplaySnapshot> => ipcRenderer.invoke('codepulse:set-device-display', config),
+  getDeviceDisplay: (preview?: DeviceDisplayConfig): Promise<DeviceDisplaySnapshot> =>
+    ipcRenderer.invoke('codepulse:get-device-display', preview),
+  setDeviceDisplay: (config: DeviceDisplayConfig): Promise<DeviceDisplaySnapshot> =>
+    ipcRenderer.invoke('codepulse:set-device-display', config),
   getDeviceProvisioning: (): Promise<DeviceProvisioningSnapshot> =>
     ipcRenderer.invoke('codepulse:get-device-provisioning'),
   startDeviceScan: (): Promise<DeviceProvisioningSnapshot> =>

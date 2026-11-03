@@ -8,14 +8,14 @@
 `X-CodePulse-Device-Id`（1–64 字符，仅字母、数字、`-`、`_`、`:`）。设备 ID 是
 同一授权下的上下文分区，不是新的认证凭据。不要在 URL 中传令牌。
 
-| 方法与相对路径 | 请求 / 响应 |
-| --- | --- |
-| `GET info` | 语音开关、协议版本和 PCM 规格，不返回凭据或全部待办 |
-| `POST text` | `{text}`，最多 4000 字符 / 16000 字节；返回 `reply`、`draftId`、`needsConfirmation` |
-| `POST voice` | `application/octet-stream`，16 kHz / 单声道 / signed 16-bit LE PCM，0.1–30 秒 / 960000 字节；返回转写和同样的建议字段 |
-| `POST speech` | `{text}`，最多 300 字符 / 3000 字节；返回原始 PCM，不是 WAV/MP3；响应头 `x-codepulse-audio-rate: 16000` |
-| `GET announcement` | `{announcement: null}` 或 `{announcement:{id,text}}`，领取本设备的一条到期播报 |
-| `POST announcement/ack` | `{id}` / 1000 字节上限；播放完成后回执，成功为 `{ok:true}` |
+| 方法与相对路径          | 请求 / 响应                                                                                                           |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `GET info`              | 语音开关、协议版本和 PCM 规格，不返回凭据或全部待办                                                                   |
+| `POST text`             | `{text}`，最多 4000 字符 / 16000 字节；返回 `reply`、`draftId`、`needsConfirmation`                                   |
+| `POST voice`            | `application/octet-stream`，16 kHz / 单声道 / signed 16-bit LE PCM，0.1–30 秒 / 960000 字节；返回转写和同样的建议字段 |
+| `POST speech`           | `{text}`，最多 300 字符 / 3000 字节；返回原始 PCM，不是 WAV/MP3；响应头 `x-codepulse-audio-rate: 16000`               |
+| `GET announcement`      | `{announcement: null}` 或 `{announcement:{id,text}}`，领取本设备的一条到期播报                                        |
+| `POST announcement/ack` | `{id}` / 1000 字节上限；播放完成后回执，成功为 `{ok:true}`                                                            |
 
 建议不会立即修改待办。设备随后发送“确认”才执行自己的未过期建议；“取消”或新输入
 解除原确认关联。建议十分钟过期；三个及以上动作改到桌面查看确认。桌面与各设备的
@@ -264,7 +264,6 @@ timeout | usage_limited | cancelled
 带入当前读数。PAIR125、一次变更区域局刷、故障锁止和启动一次清洁全刷不变。
 配置预览仍是目标画面，不是设备实时显示回执；旧固件仍遵守旧刷新节奏。
 
-
 `200` 响应会带弱 ETag，例如：
 
 ```http
@@ -295,7 +294,6 @@ If-None-Match: W/"v1-5db1f203"
 ## Shared HUD work presentation (additive v1 extension)
 
 The unified host uses the retained HUD projection for both preview and LAN status. Optional thread level/unread/groupId and agent quotaSummary fields carry shared display semantics; legacy fields remain compatible. See [the implementation and firmware acceptance contract](WORK-PRESENTATION-HANDOFF.md). Old firmware ignores these fields; displaying their semantics requires an updated production renderer.
-
 
 ### Optional BW inversion (firmware 0.0.24+)
 
@@ -349,8 +347,8 @@ changed is shown with a full three-colour refresh (`epd_ssd1683_refresh`, real r
 plane, about 16 s with visible flashing); log tag `red_full`, distinct from the boot
 `clean_baseline`. Other changes keep the low-flicker PAIR partial refresh, which needs
 the red plane to be all 0xFF. Cooldown: when less than 120 s have passed since the last
-runtime full refresh, *entering* a red frame (previous frame had no red) draws red pixels
-as black through the partial refresh; *leaving or replacing* a red frame always does a full
+runtime full refresh, _entering_ a red frame (previous frame had no red) draws red pixels
+as black through the partial refresh; _leaving or replacing_ a red frame always does a full
 refresh regardless of the cooldown, because partial refresh cannot clear red. A refresh
 failure follows the existing policy (mark faulted, power down safely). PAIR waveforms,
 LUTs, boot clear, keys and power flow are unchanged.
@@ -364,13 +362,13 @@ is chosen from live status and local time when the card is built.
 
 ### Pet layout (firmware 0.0.28+)
 
-`ambient.layout` is an optional string; the only value is `"pet"`. The desktop sets it on pixel
+`ambient.layout` is an optional string; `"pet"` is its bitmap-specific value. The desktop sets it on pixel
 pet cards, and only sends it when the card also carries `imageHex`. It is part of the card
 projection, so a change of layout changes the response revision. The firmware redraws a card only
 when `ambient.id` changes, so for bitmap cards the desktop derives the id (still 24 hex characters)
 from the card id together with the layout, `imageHex` and `red`: the same card with another
 layout or picture is a new id, an identical one keeps its id. Cards without a bitmap keep the
-plain hash of the card id.
+plain hash of the card id unless they carry the calendar or life extensions below.
 
 - A `"pet"` card with a bitmap is laid out as: picture 384×208 at screen pixel (8, 32) (`red`
   keeps picture-area coordinates and follows the same origin), a 1 px divider at y=243, `text`
@@ -444,6 +442,103 @@ can cross the year, e.g. `2023.json` lists 2022-12-31) and are filed under their
 replaces the built-in table for that year (other years are added) and is cached in the user data
 directory as `calendar-holidays.json`. Any failure is silent and leaves the previous table.
 
+### Life cards (firmware 0.0.30-life+)
+
+Yuanbao cards retain `ambient.text` and `source` and add `layout: "life"` plus a bounded
+`ambient.life` object. This is an additive v1 extension, not a bitmap. Old firmware's
+unknown-layout branch ignores it and draws the unchanged text. New firmware drops an
+invalid/future/partial life object and draws that same text. An invalid independent
+`imageHex` remains a status error; life never bypasses image validation. Life does not
+combine with bitmap or todo payloads.
+
+```json
+{
+  "ambient": {
+    "id": "…24 hex…",
+    "source": "元宝搜索 · 腾讯自选股",
+    "text": "苹果 AAPL.US 340.57 ↓1.18%（-4.06）交易中 · 高 343.78 低 339.61 · 10:24",
+    "layout": "life",
+    "life": {
+      "v": 1,
+      "kind": "stock",
+      "name": "苹果",
+      "symbol": "AAPL.US",
+      "hero": "340.57",
+      "direction": "down",
+      "state": "open",
+      "percent": "1.18%",
+      "change": "-4.06",
+      "low": "339.61",
+      "high": "343.78",
+      "open": "342.67",
+      "previous": "344.63",
+      "source": "腾讯自选股"
+    }
+  }
+}
+```
+
+All listed keys for a kind are required; unavailable optional values use `""`, never
+invented numbers. Only `tomorrow` and `range` may be absent. Version is exactly integer
+`v: 1`. Unknown properties are ignored. Strings are UTF-8, contain no controls, and
+are bounded by Unicode code points below (firmware reserves up to four bytes per
+code point plus NUL). Numeric strings have at most 16 ASCII characters: optional
+`+`/`-`, 1–10 integer digits, optional decimal point and 1–6 fractional digits.
+Only percent fields may end in `%`. Required numbers may not be empty.
+
+| kind      | Fields and limits                                                                                                                                                                                                                                                                                                    |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `weather` | `icon` = sun/cloudsun/cloud/rain/snow/thunder/fog; `place` ≤20, `condition` 1–16, `wind` ≤24, `restriction` ≤16, `sunset` empty or valid HH:MM. Required numeric `low/high`; optional numeric `feels/humidity/air`. Optional `tomorrow` is a complete `{icon, low, high, condition}` using the same rules.           |
+| `gold`    | Required numeric `hero`; `direction` = up/down/flat; optional numeric `percent/change/low/high/international/internationalPercent/brandPrice`; `brand` ≤12 and `source` ≤20.                                                                                                                                         |
+| `stock`   | `name` ≤20; required `symbol` ≤16 (`[A-Z0-9]{1,10}.US/HK/SH/SZ`); required numeric `hero`; `direction` as above; `state` = open/closed/unknown; optional numeric `percent/change/low/high/open/previous`; `source` ≤20.                                                                                              |
+| `tool`    | `icon` = codex/claude/tool; `name` 1–24; `date` ≤12; `source` ≤8; `command` ≤20 printable ASCII characters, empty when no actual command was found; `title` 1–48; `summary` ≤96. A missing command displays the actual title in its place, not a fabricated shell command.                                           |
+| `news`    | `headlines` contains 1–4 `{title,source}` items; title 1–28, source ≤8. Desktop keeps only complete supported titles, then truncates. No placeholder headlines are inserted. The legacy text retains up to three titles.                                                                                             |
+| `holiday` | `year` 1900–2100; `state` pending/published; `label` ≤12; `next` = `{name,date,days}` with name 1–12, real ISO Gregorian date (1900–2101), integer days 0–366. Optional published-only `range` = `{name,start,end,days}` with name 1–12, valid ISO dates and inclusive days 1–31 exactly equal to the date interval. |
+
+Desktop `deviceLife()` checks the shape, normalizes every nested string with
+`deviceText()`, and rejects unsupported code points against the checked-in 7,752-code
+device character set. The firmware validates types, capacities, UTF-8, numbers, dates
+and enums, and checks glyph coverage before drawing any life ink. Oversized hero
+runs fall back atomically to text. Unknown objects never alter canonical tasks or
+the applied playlist.
+
+Published date ranges must belong to the notice's year; only a New Year break may
+start in December of the previous year and end in January of the notice's year.
+An otherwise valid date interval quoted as a historical example is not used.
+
+The pending holiday row uses the China civil calendar (`Asia/Shanghai`), consistently
+with holiday watch and pending-card IDs, to count down to the next fixed Gregorian
+anchor (1 January, 1 May or 1 October, including today at zero days). It is **not** an
+estimate of State Council leave dates. The desktop supplies the count; firmware
+does not read a clock. For example, 3 November 2026 → 1 January 2027 is 59 days.
+Both pending and published cards recompute the countdown at presentation time after
+China midnight without requesting another search or extending the original expiry.
+Pending card IDs also carry the China date; published life JSON changes the device
+projection ID/revision while retaining the announced range. A published notice only supplies
+`range` for the first parsed interval whose end is today or later in China; when all
+intervals have passed, it shows the published notice and
+the independently known fixed-holiday countdown. Media speculation remains pending.
+
+The renderer preserves rows 0–30 and 263–299 (existing header/quota footer). It draws
+native Noto SC14/16 text, pinned Terminus Bold32 secondary digits and exact 2× hero
+bitmaps. Red is firmware-drawn emphasis, never a desktop-sent `red` bitmap; the 3,072
+byte bitmap limit does not apply. Falling/closed stock cards are entirely black.
+There is no black outline, grey, antialiasing, dithering or overlapping black/red
+pigment. Existing inversion, attention priority, 120-second red-entry cooldown and
+safe panel shutdown remain unchanged.
+
+Gauge low/high labels draw validated strings verbatim, including precision and
+trailing zeros (`0.385`, `375.200`). The seven holiday cells fill x=12..387 with six
+four-pixel gaps and widths 50/50/50/51/50/50/51. Pre-market/after-market stocks use the
+neutral `unknown` state, never the closed-market badge. Source humidity may include
+a trailing `%`; desktop strips it before adding the display unit. Tool metadata is
+entity-decoded, glyph-filtered and marked with `…` when truncated.
+
+The 24-hex projection ID and response revision include the validated life JSON. At
+the 32,000-byte response limit, desktop removes the entire `layout/life` pair first,
+preserves text under its plain ID, then falls back to work only if text cannot fit.
+The feature adds no device command, port, credentials or network fetch on firmware.
+
 ### 0.0.26：设备展示减频与局部窗口候选
 
 仍读取同一 v1 快照，不改变桌面/HUD 的任务、已读、保留或顺序语义。
@@ -460,17 +555,16 @@ PAIR125/PAIR150 波形及单次驱动。配套固件 `7e3d9e6` 已合入独立�
 两套桌面预览均为 `0.0.26-paced`，仅表示目标像素；版本对应、软件检查和实测范围见
 [日常低干扰显示记录](QUIET-DISPLAY-2026-10-28.md)。
 
-
 ### Additive work voice output (source candidate, 2026-11-02)
 
 Independent from assistant voice input/output, the optional host registers these
 routes behind the existing device token guard. No status JSON or preview changes.
 
-| Method / path | Result |
-| --- | --- |
-| GET /api/v1/device/work/voice | `{announcement:null}` or `{announcement:{id:"UUID"}}`; requires X-CodePulse-Device-Id |
-| GET /api/v1/device/work/voice/:id/audio | Binary PCM signed 16-bit LE, mono, 16000 Hz; x-codepulse-audio-rate:16000 |
-| POST /api/v1/device/work/voice/:id/ack | `{ok:true}` after successful playback; empty JSON body |
+| Method / path                           | Result                                                                                |
+| --------------------------------------- | ------------------------------------------------------------------------------------- |
+| GET /api/v1/device/work/voice           | `{announcement:null}` or `{announcement:{id:"UUID"}}`; requires X-CodePulse-Device-Id |
+| GET /api/v1/device/work/voice/:id/audio | Binary PCM signed 16-bit LE, mono, 16000 Hz; x-codepulse-audio-rate:16000             |
+| POST /api/v1/device/work/voice/:id/ack  | `{ok:true}` after successful playback; empty JSON body                                |
 
 All responses are no-store. Audio is capped at 640000 bytes; queues retain at most
 4 batches for 120 seconds, with at most 16 devices and 3 audio attempts per device.

@@ -5,15 +5,12 @@ import {
   DEFAULT_INK_PLAN,
   DISPLAY_AGENT_TYPES,
   type AmbientSnapshot,
-  type DesktopLayout,
   type DeviceDisplayConfig,
   type DeviceDisplaySnapshot,
-  type DeviceStatusV1,
   type HudAppearanceSettings,
   type HudToolKey,
-  type InkCycleInterval,
   type InkDisplayPlan,
-  type InkFeatureId,
+  type InkScreenStatus,
   type StatusSnapshot,
 } from '@codepulse/shared'
 import { HudPreview } from '@hud/components/HudPreview'
@@ -22,6 +19,17 @@ import { DeviceScreenPreview } from './DeviceScreenPreview.js'
 import { DeviceProvisioningPanel } from './DeviceProvisioningPanel.js'
 import { createDeviceDensityPreview, type DevicePreviewSource } from './device-density-preview.js'
 import type { DeviceProvisioningCopy, Locale } from '../lib/i18n.js'
+import type { CliToolType } from '../lib/dashboardSettings.js'
+import { useInkStatus } from '../lib/useInkStatus.js'
+import { PageHeader } from './PageHeader.js'
+import {
+  inkPlanChoice,
+  selectInkPlan,
+  inkControlChanges,
+  nextInkBaseline,
+  type InkBaseline,
+} from './product-control-state.js'
+import './product-control.css'
 import './device-display.css'
 import { WorkVoiceSettingsPanel } from './WorkVoiceSettings.js'
 import { WorkStateGuide } from './WorkStateGuide.js'
@@ -35,11 +43,11 @@ const HUD_TOOLS: { key: HudToolKey; label: string }[] = [
 ]
 
 const INK_AGENT_NAMES = { codex: 'Codex', claude_code: 'Claude', grok: 'Grok' } as const
-function inkFeatureLabel(feature: InkFeatureId, zh: boolean): string {
-  return ({work: zh ? '工作' : 'Work', ambient: zh ? '多媒体玩法' : 'Multimedia', todos: zh ? '待办与提醒' : 'Tasks & reminders'})[feature]
-}
-
-const RETENTION_OPTIONS: { value: HudAppearanceSettings['resultRetentionMinutes']; zh: string; en: string }[] = [
+const RETENTION_OPTIONS: {
+  value: HudAppearanceSettings['resultRetentionMinutes']
+  zh: string
+  en: string
+}[] = [
   { value: 10, zh: '10 分钟', en: '10m' },
   { value: 30, zh: '30 分钟', en: '30m' },
   { value: 60, zh: '1 小时', en: '1h' },
@@ -51,10 +59,12 @@ export function HudWorkspace({
   active,
   locale,
   product,
+  cliVisibility,
 }: {
   active: boolean
   locale: Locale
   product: ProductNavigation
+  cliVisibility?: Record<CliToolType, boolean>
 }): JSX.Element {
   const [snapshot, setSnapshot] = useState<StatusSnapshot | null>()
   const [error, setError] = useState('')
@@ -109,713 +119,810 @@ export function HudWorkspace({
   }
 
   return (
-    <div className="product-config-grid">
-      <section className="product-preview-stage hud-preview-stage">
-        <div className="product-preview-label">
-          <span>{zh ? '画面预览' : 'Preview'}</span>
-          <span>
-            {settings.projectLayout === 'grid'
-              ? zh
-                ? 'HUD · 紧凑矩阵'
-                : 'HUD · Grid'
-              : zh
-                ? 'HUD · 单列排序'
-                : 'HUD · List'}{' '}
-            · {settings.hudOpacity}%
-          </span>
-        </div>
-        {snapshot ? (
-          <HudPreview snapshot={snapshot} locale={locale} settings={settings} />
-        ) : (
-          <p className="product-empty">
-            {error ||
-              (product.shell.hudAvailable
-                ? zh
-                  ? '正在读取 HUD…'
-                  : 'Loading HUD…'
-                : zh
-                  ? '当前安装未提供 HUD。'
-                  : 'HUD is not installed.')}
-          </p>
-        )}
-        <p className="product-caption">
-          {zh
-            ? '右侧修改实时同步至预览与独立 HUD 窗口。'
-            : 'Changes on the right sync live to the preview and companion HUD window.'}
-        </p>
-      </section>
-      <aside className="product-config hud-inline-config">
-        <div className="product-config-heading">
-          <h2>{zh ? 'HUD 配置' : 'HUD Settings'}</h2>
-          <small>{product.shell.hudVisible ? (zh ? '窗口已开启' : 'Open') : zh ? '窗口已收起' : 'Hidden'}</small>
-        </div>
-
+    <div className="hud-control-workspace">
+      <header className="hud-workspace-header">
+        <h2>HUD</h2>
         <button
           type="button"
-          className="product-button primary hud-toggle-btn"
+          className={`product-button hud-toggle-btn${product.shell.hudVisible ? '' : ' primary'}`}
           disabled={!product.shell.hudAvailable}
           onClick={() => void product.setHudVisible(!product.shell.hudVisible)}
         >
-          {product.shell.hudVisible ? (zh ? '收起 HUD 窗口' : 'Hide HUD Window') : zh ? '开启 HUD 窗口' : 'Open HUD Window'}
+          {product.shell.hudVisible ? (zh ? '收起 HUD' : 'Hide HUD') : zh ? '开启 HUD' : 'Open HUD'}
         </button>
-
-        <h3>{zh ? '项目布局' : 'Project Layout'}</h3>
-        <div className="product-segments">
-          <button
-            type="button"
-            aria-pressed={settings.projectLayout === 'list'}
-            onClick={() => update({ projectLayout: 'list' })}
-          >
-            {zh ? '单列排序' : 'List'}
-          </button>
-          <button
-            type="button"
-            aria-pressed={settings.projectLayout === 'grid'}
-            onClick={() => update({ projectLayout: 'grid' })}
-          >
-            {zh ? '紧凑矩阵' : 'Compact Grid'}
-          </button>
-        </div>
-
-        <h3>{zh ? '外观主题' : 'Theme'}</h3>
-        <div className="product-segments">
-          <button
-            type="button"
-            aria-pressed={settings.theme === 'light'}
-            onClick={() => update({ theme: 'light' })}
-          >
-            {zh ? '浅色' : 'Light'}
-          </button>
-          <button
-            type="button"
-            aria-pressed={settings.theme === 'dark'}
-            onClick={() => update({ theme: 'dark' })}
-          >
-            {zh ? '深色' : 'Dark'}
-          </button>
-          <button
-            type="button"
-            aria-pressed={settings.theme === 'auto'}
-            onClick={() => update({ theme: 'auto' })}
-          >
-            {zh ? '自动' : 'Auto'}
-          </button>
-        </div>
-
-        <div className="hud-setting-row">
-          <div className="hud-setting-label">
-            <span>{zh ? '面板背景不透明度' : 'Background Opacity'}</span>
-            <strong>{settings.hudOpacity}%</strong>
+      </header>
+      <div className="product-config-grid">
+        <section className="product-preview-stage hud-preview-stage">
+          {snapshot ? (
+            <HudPreview snapshot={snapshot} locale={locale} settings={settings} />
+          ) : (
+            <p className="product-empty">
+              {error ||
+                (product.shell.hudAvailable
+                  ? zh
+                    ? '正在读取 HUD…'
+                    : 'Loading HUD…'
+                  : zh
+                    ? '当前安装未提供 HUD。'
+                    : 'HUD is not installed.')}
+            </p>
+          )}
+        </section>
+        <aside className="product-config hud-inline-config">
+          <h3>{zh ? '项目布局' : 'Project Layout'}</h3>
+          <div className="product-segments">
+            <button
+              type="button"
+              aria-pressed={settings.projectLayout === 'list'}
+              onClick={() => update({ projectLayout: 'list' })}
+            >
+              {zh ? '单列排序' : 'List'}
+            </button>
+            <button
+              type="button"
+              aria-pressed={settings.projectLayout === 'grid'}
+              onClick={() => update({ projectLayout: 'grid' })}
+            >
+              {zh ? '紧凑矩阵' : 'Compact Grid'}
+            </button>
           </div>
-          <input
-            type="range"
-            min={20}
-            max={100}
-            step={1}
-            value={settings.hudOpacity}
-            onChange={(e) => update({ hudOpacity: Number(e.target.value) })}
-            className="hud-opacity-slider"
-          />
-        </div>
 
-        <h3>{zh ? '橙色提示动效' : 'Attention Effect'}</h3>
-        <div className="product-segments">
-          <button
-            type="button"
-            aria-pressed={settings.attentionEffect === 'steady'}
-            onClick={() => update({ attentionEffect: 'steady' })}
-          >
-            {zh ? '常亮' : 'Steady'}
-          </button>
-          <button
-            type="button"
-            aria-pressed={settings.attentionEffect === 'breathe'}
-            onClick={() => update({ attentionEffect: 'breathe' })}
-          >
-            {zh ? '呼吸' : 'Breathe'}
-          </button>
-          <button
-            type="button"
-            aria-pressed={settings.attentionEffect === 'pulse'}
-            onClick={() => update({ attentionEffect: 'pulse' })}
-          >
-            {zh ? '脉冲' : 'Pulse'}
-          </button>
-        </div>
+          <h3>{zh ? '外观主题' : 'Theme'}</h3>
+          <div className="product-segments">
+            <button
+              type="button"
+              aria-pressed={settings.theme === 'light'}
+              onClick={() => update({ theme: 'light' })}
+            >
+              {zh ? '浅色' : 'Light'}
+            </button>
+            <button
+              type="button"
+              aria-pressed={settings.theme === 'dark'}
+              onClick={() => update({ theme: 'dark' })}
+            >
+              {zh ? '深色' : 'Dark'}
+            </button>
+            <button
+              type="button"
+              aria-pressed={settings.theme === 'auto'}
+              onClick={() => update({ theme: 'auto' })}
+            >
+              {zh ? '自动' : 'Auto'}
+            </button>
+          </div>
 
-        <label className="product-cycle-row">
-          <span>{zh ? '卡片停留时长' : 'Card Retention'}</span>
-          <select
-            value={settings.resultRetentionMinutes}
-            onChange={(e) =>
-              update({
-                resultRetentionMinutes: Number(e.target.value) as HudAppearanceSettings['resultRetentionMinutes'],
-              })
-            }
-          >
-            {RETENTION_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {zh ? opt.zh : opt.en}
-              </option>
+          <div className="hud-setting-row">
+            <div className="hud-setting-label">
+              <span>{zh ? '面板背景不透明度' : 'Background Opacity'}</span>
+              <strong>{settings.hudOpacity}%</strong>
+            </div>
+            <input
+              type="range"
+              min={20}
+              max={100}
+              step={1}
+              value={settings.hudOpacity}
+              onChange={(e) => update({ hudOpacity: Number(e.target.value) })}
+              className="hud-opacity-slider"
+            />
+          </div>
+
+          <h3>{zh ? '橙色提示动效' : 'Attention Effect'}</h3>
+          <div className="product-segments">
+            <button
+              type="button"
+              aria-pressed={settings.attentionEffect === 'steady'}
+              onClick={() => update({ attentionEffect: 'steady' })}
+            >
+              {zh ? '常亮' : 'Steady'}
+            </button>
+            <button
+              type="button"
+              aria-pressed={settings.attentionEffect === 'breathe'}
+              onClick={() => update({ attentionEffect: 'breathe' })}
+            >
+              {zh ? '呼吸' : 'Breathe'}
+            </button>
+            <button
+              type="button"
+              aria-pressed={settings.attentionEffect === 'pulse'}
+              onClick={() => update({ attentionEffect: 'pulse' })}
+            >
+              {zh ? '脉冲' : 'Pulse'}
+            </button>
+          </div>
+
+          <label className="product-cycle-row">
+            <span>{zh ? '卡片停留时长' : 'Card Retention'}</span>
+            <select
+              value={settings.resultRetentionMinutes}
+              onChange={(e) =>
+                update({
+                  resultRetentionMinutes: Number(
+                    e.target.value,
+                  ) as HudAppearanceSettings['resultRetentionMinutes'],
+                })
+              }
+            >
+              {RETENTION_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {zh ? opt.zh : opt.en}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="hud-inline-check">
+            <input
+              type="checkbox"
+              checked={settings.showUsageStrip}
+              onChange={(e) => update({ showUsageStrip: e.target.checked })}
+            />
+            <span>{zh ? '显示底部用量行' : 'Show bottom usage strip'}</span>
+          </label>
+
+          <h3>{zh ? '显示的 CLI 工具' : 'Visible CLI Tools'}</h3>
+          <div className="hud-tools-grid">
+            {HUD_TOOLS.filter((tool) => cliVisibility?.[tool.key] !== false).map((tool) => (
+              <label key={tool.key} className="hud-inline-check">
+                <input
+                  type="checkbox"
+                  checked={settings.visibleTools[tool.key] !== false}
+                  onChange={(e) =>
+                    update({
+                      visibleTools: {
+                        ...settings.visibleTools,
+                        [tool.key]: e.target.checked,
+                      },
+                    })
+                  }
+                />
+                <span>{tool.label}</span>
+              </label>
             ))}
-          </select>
-        </label>
+          </div>
 
-        <label className="hud-inline-check">
-          <input
-            type="checkbox"
-            checked={settings.showUsageStrip}
-            onChange={(e) => update({ showUsageStrip: e.target.checked })}
-          />
-          <span>{zh ? '显示底部用量行' : 'Show bottom usage strip'}</span>
-        </label>
-
-        <h3>{zh ? '显示的 CLI 工具' : 'Visible CLI Tools'}</h3>
-        <div className="hud-tools-grid">
-          {HUD_TOOLS.map((tool) => (
-            <label key={tool.key} className="hud-inline-check">
-              <input
-                type="checkbox"
-                checked={settings.visibleTools[tool.key] !== false}
-                onChange={(e) =>
-                  update({
-                    visibleTools: {
-                      ...settings.visibleTools,
-                      [tool.key]: e.target.checked,
-                    },
-                  })
-                }
-              />
-              <span>{tool.label}</span>
-            </label>
-          ))}
-        </div>
-
-        {error && (
-          <p role="status" className="product-caption">
-            {error}
-          </p>
-        )}
-      </aside>
+          {error && (
+            <p role="status" className="product-caption">
+              {error}
+            </p>
+          )}
+        </aside>
+      </div>
     </div>
   )
 }
+
+type CliVisibility = Record<CliToolType, boolean>
+const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
 function InkControlWorkspace({
   active,
   locale,
   product,
   deviceCopy,
-  connectOpen,
+  ink,
+  cliVisibility,
 }: {
   active: boolean
   locale: Locale
   product: ProductNavigation
   deviceCopy: DeviceProvisioningCopy
-  connectOpen: boolean
+  ink?: InkScreenStatus
+  cliVisibility?: CliVisibility
 }): JSX.Element {
   const zh = locale === 'zh'
+  const connected = ink?.connection === 'connected'
   const savedPlan = product.shell.inkPlan ?? DEFAULT_INK_PLAN
   const [plan, setPlan] = useState<InkDisplayPlan>(savedPlan)
-  const lastSavedPlanRef = useRef<InkDisplayPlan>(savedPlan)
-
   const [displaySnap, setDisplaySnap] = useState<DeviceDisplaySnapshot>()
   const [displayDraft, setDisplayDraft] = useState<DeviceDisplayConfig>({
     ...DEFAULT_DEVICE_DISPLAY,
     agents: [...DEFAULT_DEVICE_DISPLAY.agents],
   })
-  const savedDisplayRef = useRef<DeviceDisplayConfig>()
-  const displayDraftRef = useRef(displayDraft)
-  displayDraftRef.current = displayDraft
-
-  const [workStatus, setWorkStatus] = useState<DeviceStatusV1>()
-  const [previewSource, setPreviewSource] = useState<DevicePreviewSource>('live')
-  const [ambientSnap, setAmbientSnap] = useState<AmbientSnapshot>()
-  const [ambientPreview, setAmbientPreview] = useState<DeviceStatusV1>()
-  const [todoPreview, setTodoPreview] = useState<DeviceStatusV1>()
-  const [previewFocus, setPreviewFocus] = useState<InkFeatureId>('work')
+  const [ambient, setAmbient] = useState<AmbientSnapshot>()
+  const [source, setSource] = useState<DevicePreviewSource>('live')
+  const [connectOpen, setConnectOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
-  const schedulePreview = useRef<() => void>(() => {})
-  const acceptSavedDisplay = useCallback((s: DeviceDisplaySnapshot) => {
-    const previous = savedDisplayRef.current
-    const hasDraft = previous && JSON.stringify(displayDraftRef.current) !== JSON.stringify(previous)
-    savedDisplayRef.current = s.config
-    setDisplaySnap(s)
-    if (!hasDraft && JSON.stringify(displayDraftRef.current) !== JSON.stringify(s.config)) {
-      displayDraftRef.current = s.config
-      setDisplayDraft(s.config)
+  const [previewError, setPreviewError] = useState('')
+  const [temporaryError, setTemporaryError] = useState('')
+  const [endingTemporary, setEndingTemporary] = useState(false)
+  const [todoCount, setTodoCount] = useState<number>()
+  const savedDisplayRef = useRef<DeviceDisplayConfig>()
+  const savedPlanRef = useRef(savedPlan)
+  const draftRef = useRef(displayDraft)
+  const planRef = useRef(plan)
+  const busyRef = useRef(false)
+  const failedRef = useRef('')
+  const aliveRef = useRef(true)
+  const scheduleRef = useRef<() => void>(() => {})
+  draftRef.current = displayDraft
+  planRef.current = plan
+  const visibilityRef = useRef(cliVisibility)
+  visibilityRef.current = cliVisibility
+  const filterDisplay = useCallback(
+    (display: DeviceDisplayConfig): DeviceDisplayConfig => ({
+      ...display,
+      agents: display.agents.filter((agent) => visibilityRef.current?.[agent] !== false),
+    }),
+    [],
+  )
+
+  useEffect(() => {
+    aliveRef.current = true
+    return () => {
+      aliveRef.current = false
     }
   }, [])
-
   useEffect(() => {
-    const prev = lastSavedPlanRef.current
-    setPlan((draft) => (JSON.stringify(draft) === JSON.stringify(prev) ? savedPlan : draft))
-    lastSavedPlanRef.current = savedPlan
+    const previous = savedPlanRef.current
+    setPlan((draft) => (equal(draft, previous) ? savedPlan : draft))
+    savedPlanRef.current = savedPlan
   }, [savedPlan])
-
-  // Saved configuration follows other windows even while hidden; local drafts survive.
-  useEffect(() => window.codepulse.onDeviceDisplay((s) => {
-    acceptSavedDisplay(s)
-    schedulePreview.current()
-  }), [acceptSavedDisplay])
-
+  useEffect(() => {
+    setDisplayDraft((draft) => {
+      const next = filterDisplay(draft)
+      return equal(next, draft) ? draft : next
+    })
+  }, [cliVisibility, filterDisplay])
+  const acceptDisplay = useCallback(
+    (snapshot: DeviceDisplaySnapshot) => {
+      const previous = savedDisplayRef.current
+      const dirty = previous && !equal(draftRef.current, previous)
+      savedDisplayRef.current = snapshot.config
+      setDisplaySnap(snapshot)
+      if (!dirty) setDisplayDraft(filterDisplay(snapshot.config))
+    },
+    [filterDisplay],
+  )
+  useEffect(
+    () =>
+      window.codepulse.onDeviceDisplay((snapshot) => {
+        acceptDisplay(snapshot)
+        scheduleRef.current()
+      }),
+    [acceptDisplay],
+  )
   useEffect(() => {
     if (!active) return
-    let alive = true, busy = false, pending = false
+    let alive = true,
+      busy = false,
+      pending = false
     let timer: ReturnType<typeof setTimeout> | undefined
     const read = async () => {
-      if (busy) { pending = true; return }
+      if (busy) {
+        pending = true
+        return
+      }
       busy = true
-      const draft = savedDisplayRef.current ? displayDraftRef.current : undefined
       try {
-        const s = await window.codepulse.getDeviceDisplay(draft)
-        if (!alive) return
-        acceptSavedDisplay(s)
-        // A slow response must not replace a newer configuration preview.
-        if (!draft || JSON.stringify(draft) === JSON.stringify(displayDraftRef.current)) setWorkStatus(s.status)
-        else pending = true
-      } catch {} finally {
+        const snapshot = await window.codepulse.getDeviceDisplay()
+        if (alive) {
+          acceptDisplay(snapshot)
+          setPreviewError('')
+        }
+      } catch {
+        if (alive)
+          setPreviewError(zh ? '读取画面失败，请重试' : 'Could not read the screen. Retry.')
+      } finally {
         busy = false
-        if (alive && pending) { pending = false; schedule() }
+        if (alive && pending) {
+          pending = false
+          schedule()
+        }
       }
     }
     const schedule = () => {
       if (!alive || timer) return
-      timer = setTimeout(() => { timer = undefined; void read() }, 160)
+      timer = setTimeout(() => {
+        timer = undefined
+        void read()
+      }, 160)
     }
-    schedulePreview.current = schedule
+    scheduleRef.current = schedule
     const stop = window.codepulse.onStatus(schedule)
     schedule()
     return () => {
       alive = false
-      schedulePreview.current = () => {}
+      stop()
       clearTimeout(timer)
+      scheduleRef.current = () => {}
+    }
+  }, [active, acceptDisplay, zh])
+  useEffect(() => {
+    scheduleRef.current()
+  }, [
+    ink?.current,
+    ink?.showing.kind,
+    ink?.showing.kind === 'work' ? '' : ink?.showing.title,
+    ink?.temporary?.until,
+  ])
+  useEffect(() => {
+    if (!active) return
+    let alive = true,
+      received = false
+    const stop = window.codepulse.onAmbient((snapshot) => {
+      received = true
+      if (alive) setAmbient(snapshot)
+    })
+    void window.codepulse
+      .getAmbient()
+      .then((snapshot) => {
+        if (alive && !received) setAmbient(snapshot)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
       stop()
     }
-  }, [active, acceptSavedDisplay])
-
-  useEffect(() => { schedulePreview.current() }, [displayDraft])
-
-  // Content changes have their own event stream. Agent activity must not re-read X/meme cards.
-  useEffect(() => {
-    if (!active) return
-    let alive = true, received = false, request = 0
-    let cardKey: string | undefined
-    const accept = async (a: AmbientSnapshot) => {
-      if (!alive) return
-      setAmbientSnap(a)
-      const card = a.cards[0], nextKey = JSON.stringify(card ?? null)
-      if (cardKey === nextKey) return
-      cardKey = nextKey
-      const current = ++request
-      setAmbientPreview(undefined)
-      if (!card) return
-      try {
-        const preview = await window.codepulse.previewAmbient(card.id)
-        if (alive && request === current) setAmbientPreview(preview)
-      } catch { if (alive && request === current) cardKey = undefined }
-    }
-    const stop = window.codepulse.onAmbient(a => { received = true; void accept(a) })
-    void window.codepulse.getAmbient().then(a => { if (!received) void accept(a) }).catch(() => {})
-    return () => { alive = false; stop() }
   }, [active])
 
   useEffect(() => {
     if (!active) return
-    let alive = true, request = 0, key = ''
+    let alive = true,
+      received = false
     const accept = (snapshot: import('@codepulse/shared').AssistantSnapshot) => {
-      const next = JSON.stringify([snapshot.tasks, snapshot.tasks.filter(t => t.status === 'pending' && t.dueAt !== null && t.dueAt <= Date.now()).map(t => t.id)])
-      if (next === key) return
-      key = next
-      const current = ++request
-      void window.codepulse.previewDeskTasks().then(status => {
-        if (alive && current === request) setTodoPreview(status)
-      }).catch(() => { if (alive && current === request) key = '' })
+      if (alive) setTodoCount(snapshot.tasks.filter((task) => task.status === 'pending').length)
     }
-    const stop = window.codepulse.onAssistant(accept)
-    void window.codepulse.getAssistant().then(accept).catch(() => {})
-    return () => { alive = false; stop() }
+    const stop = window.codepulse.onAssistant((snapshot) => {
+      received = true
+      accept(snapshot)
+    })
+    void window.codepulse
+      .getAssistant()
+      .then((snapshot) => {
+        if (!received) accept(snapshot)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+      stop()
+    }
   }, [active])
+  useEffect(() => {
+    setTemporaryError('')
+  }, [ink?.temporary?.until])
 
-  const planDirty = JSON.stringify(plan) !== JSON.stringify(savedPlan)
-  const displayDirty =
-    Boolean(displaySnap) && JSON.stringify(displayDraft) !== JSON.stringify(displaySnap?.config)
-  const dirty = planDirty || displayDirty
-
+  const display = filterDisplay(displayDraft)
+  const pending = inkControlChanges(plan, display, savedPlan, displaySnap?.config)
+  const count = pending.length
+  // Offline changes auto-apply (the count above drops to zero), but they stay pending for the device.
+  const baselineRef = useRef<InkBaseline>()
+  baselineRef.current = nextInkBaseline(baselineRef.current, {
+    connected,
+    saving,
+    plan: savedPlan,
+    display: displaySnap?.config,
+  })
+  const offlineCount = baselineRef.current
+    ? inkControlChanges(plan, display, baselineRef.current.plan, baselineRef.current.display).length
+    : count
+  const shownCount = connected ? count : offlineCount
+  const signature = JSON.stringify([plan, display])
+  const applyAll = useCallback(async () => {
+    if (busyRef.current || !savedDisplayRef.current) return
+    busyRef.current = true
+    setSaving(true)
+    setMessage('')
+    const request = { plan: planRef.current, display: filterDisplay(draftRef.current) }
+    try {
+      const result = await window.codepulse.applyInk(request)
+      if (!aliveRef.current) return
+      failedRef.current = ''
+      acceptDisplay(result.display)
+      if (equal(planRef.current, request.plan)) setPlan(result.shell.inkPlan)
+      if (equal(filterDisplay(draftRef.current), request.display))
+        setDisplayDraft(filterDisplay(result.display.config))
+    } catch {
+      failedRef.current = JSON.stringify([request.plan, request.display])
+      if (aliveRef.current) setMessage(zh ? '保存失败，请重试' : 'Save failed. Retry.')
+    } finally {
+      busyRef.current = false
+      if (aliveRef.current) setSaving(false)
+    }
+  }, [acceptDisplay, filterDisplay, zh])
+  useEffect(() => {
+    if (
+      !active ||
+      !ink ||
+      connected ||
+      !product.ready ||
+      !count ||
+      saving ||
+      !displaySnap ||
+      failedRef.current === signature
+    )
+      return
+    const timer = setTimeout(() => void applyAll(), 400)
+    return () => clearTimeout(timer)
+  }, [
+    active,
+    ink?.connection,
+    connected,
+    product.ready,
+    count,
+    signature,
+    saving,
+    displaySnap,
+    applyAll,
+  ])
   const changeDisplay = (patch: Partial<DeviceDisplayConfig>) => {
-    setDisplayDraft((d) => ({ ...d, ...patch }))
-    setPreviewFocus('work')
+    setDisplayDraft((current) => filterDisplay({ ...current, ...patch }))
     setMessage('')
   }
-
-  const setMode = (mode: InkDisplayPlan['mode']) => {
-    setPlan((cur) => ({
-      ...cur,
-      mode,
-      items: mode === 'cycle' && cur.items.length === 0 ? ['work', 'ambient'] : cur.items,
+  const toggleItem = (item: 'ambient' | 'todos') => {
+    setPlan((current) => ({
+      ...current,
+      fixed: 'work',
+      items: current.items.includes(item)
+        ? current.items.filter((value) => value !== item)
+        : [...current.items, item],
     }))
     setMessage('')
   }
-
-  const toggleItem = (id: InkFeatureId) => {
-    if (plan.mode === 'single') {
-      setPlan((cur) => ({ ...cur, fixed: id }))
-      setPreviewFocus(id)
-    } else {
-      setPlan((cur) => {
-        const exists = cur.items.includes(id)
-        const next = exists ? cur.items.filter((x) => x !== id) : [...cur.items, id]
-        const valid = next.length > 0 ? next : [id]
-        return { ...cur, items: valid }
-      })
-      setPreviewFocus(id)
-    }
-    setMessage('')
-  }
-
-  const applyAll = async () => {
-    setSaving(true)
-    setMessage('')
+  const endTemporary = async () => {
+    setEndingTemporary(true)
+    setTemporaryError('')
     try {
-      await product.setInkPlan(plan)
-      if (displayDirty) {
-        const s = await window.codepulse.setDeviceDisplay(displayDraft)
-        setDisplaySnap(s)
-        savedDisplayRef.current = s.config
-        setDisplayDraft(s.config)
-      }
-      if (ambientSnap) {
-        const enableAmbient =
-          plan.mode === 'cycle' ? plan.items.includes('ambient') : plan.fixed === 'ambient'
-        await window.codepulse
-          .setAmbient({
-            ...ambientSnap.config,
-            enabled: enableAmbient,
-            displayMinutes: plan.intervalMinutes,
-          })
-      }
-      setMessage(zh ? '已保存墨水屏配置' : 'Saved e-paper configuration')
+      await window.codepulse.endInkTemporary()
+      scheduleRef.current()
     } catch {
-      setMessage(zh ? '保存失败，请重试' : 'Failed to save')
+      if (aliveRef.current)
+        setTemporaryError(
+          zh ? '未能回到工作画面，请重试' : 'Could not return to the work screen. Retry.',
+        )
     } finally {
-      setSaving(false)
+      if (aliveRef.current) setEndingTemporary(false)
     }
   }
-
-  const activePreviewKind: InkFeatureId =
-    plan.mode === 'single'
-      ? plan.fixed
-      : plan.items.includes(previewFocus)
-        ? previewFocus
-        : plan.items[0] ?? 'work'
-
-  const densitySample = useMemo(
-    () =>
-      previewSource === 'live' ? undefined : createDeviceDensityPreview(displayDraft, previewSource),
-    [displayDraft, previewSource],
+  const sample = useMemo(
+    () => (source === 'live' ? undefined : createDeviceDensityPreview(display, source)),
+    [source, signature],
   )
-  const showingSample =
-    activePreviewKind === 'work' && displayDraft.mode === 'hud' && previewSource !== 'live'
-  const effectiveWorkStatus =
-    displayDraft.mode === 'hud' && densitySample ? densitySample : workStatus
-
-  const statusToRender: DeviceStatusV1 | undefined =
-    activePreviewKind === 'todos'
-      ? todoPreview ? { ...todoPreview, display: { ...displayDraft, page: 0 } } : undefined
-      : activePreviewKind === 'ambient'
-      ? (ambientPreview ? { ...ambientPreview, display: { ...displayDraft, page: 0 } } : undefined) ??
-        (workStatus
-          ? {
-              ...workStatus,
-              ambient: {
-                id: 'sample-ambient',
-                source: 'X · @OpenAI',
-                text: zh
-                  ? '多媒体玩法启用后，符合筛选门槛的 X 热点与 meme 将按设定周期在墨水屏轮播展示，工作提醒始终优先。'
-                  : 'Eligible X highlights and memes appear in rotation on the e-paper screen while work alerts always take priority.',
-              },
-            }
-          : undefined)
-      : effectiveWorkStatus
-
-  const summaryText =
-    plan.mode === 'single'
-      ? `${zh ? '固定显示' : 'Fixed'} · ${inkFeatureLabel(plan.fixed, zh)}`
-      : `${plan.items.map((i) => inkFeatureLabel(i, zh)).join(' → ')} · ${zh ? `每项 ${plan.intervalMinutes} 分钟` : `Every ${plan.intervalMinutes}m`}`
-
-  return (
-    <div className="device-workbench ink-control-workspace" data-connecting={connectOpen && active}>
-      <div className="product-config-grid">
-        <section className="product-preview-stage">
-          <div className="product-preview-label">
-            <span>{zh ? '画面预览' : 'Preview'}</span>
-            {plan.mode === 'cycle' && plan.items.length > 1 ? (
-              <div className="ink-preview-switcher" role="group" aria-label={zh ? '切换预览画面' : 'Switch preview'}>
-                {plan.items.map(kind => <button key={kind} type="button"
-                  aria-pressed={activePreviewKind === kind} onClick={() => setPreviewFocus(kind)}>
-                  {kind === 'work' && zh ? '工作画面' : inkFeatureLabel(kind, zh)}
-                </button>)}
-              </div>
-            ) : (
-              <span>{summaryText}</span>
-            )}
-          </div>
-
-          {statusToRender ? (
-            <DeviceScreenPreview
-              active={active}
-              status={statusToRender}
-              sample={showingSample || activePreviewKind === 'todos' || (activePreviewKind === 'ambient' && Boolean(ambientPreview))}
-              fit
-            />
-          ) : (
-            <p className="product-empty">{zh ? '正在生成墨水屏预览…' : 'Loading e-paper preview…'}</p>
-          )}
-
-          {activePreviewKind === 'work' && displayDraft.mode === 'hud' && (
-            <section className="product-sample-options">
-              <div className="product-sample-label">{zh ? '查看密集任务样例' : 'Dense Task Samples'}</div>
-              <div className="product-sample-buttons" role="group" aria-label={zh ? '预览内容' : 'Preview source'}>
-                {(['live', 3, 6, 9] as const).map((source) => (
-                  <button
-                    key={source}
-                    type="button"
-                    className="control-btn px-3 py-1.5"
-                    aria-pressed={previewSource === source}
-                    onClick={() => setPreviewSource(source)}
-                  >
-                    {source === 'live' ? (zh ? '实时任务' : 'Live') : zh ? `${source} 个任务样例` : `${source} tasks`}
-                  </button>
-                ))}
-              </div>
-              {showingSample && (
-                <p className="product-caption" role="status">
-                  {zh
-                    ? '示例仅用于检查长标题与密集布局，不会发送到设备。切回实时任务后可应用配置。'
-                    : 'Samples are for checking dense layouts only. Switch back to Live before applying.'}
-                </p>
-              )}
-            </section>
-          )}
-        </section>
-
-        <aside className="product-config ink-config">
-          <div className="product-config-heading">
-            <h2>{zh ? '更改配置' : 'Configuration'}</h2>
-            <small>{dirty ? (zh ? '待应用' : 'Not applied') : zh ? '已应用' : 'Applied'}</small>
-          </div>
-
-          <div className="product-config-scroll">
-          <h3>{zh ? '显示方式' : 'Display Mode'}</h3>
-          <div className="product-segments">
-            <button
-              type="button"
-              aria-pressed={plan.mode === 'single'}
-              onClick={() => setMode('single')}
-            >
-              {zh ? '固定显示' : 'Fixed'}
-            </button>
-            <button
-              type="button"
-              aria-pressed={plan.mode === 'cycle'}
-              onClick={() => setMode('cycle')}
-            >
-              {zh ? '轮播显示' : 'Cycle'}
-            </button>
-          </div>
-
-          <h3>{plan.mode === 'cycle' ? (zh ? '轮播内容' : 'Cycle Content') : zh ? '常驻内容' : 'Fixed Content'}</h3>
-
-          <div
-            className={`product-feature-option ${
-              (plan.mode === 'single' ? plan.fixed === 'work' : plan.items.includes('work'))
-                ? 'is-selected'
-                : ''
-            }`}
+  const status = sample ?? displaySnap?.status
+  const tag = sample
+    ? zh
+      ? '样例'
+      : 'Sample'
+    : !connected
+      ? zh
+        ? '预览'
+        : 'Preview'
+      : ink?.temporary && ink.showing.kind !== 'work'
+        ? zh
+          ? '临时展示'
+          : 'Temporary'
+        : zh
+          ? '当前画面'
+          : 'Current screen'
+  const headerActions = (
+    <>
+      {ink && !connected && (
+        <button
+          type="button"
+          className={`product-button${connectOpen ? '' : ' primary'}`}
+          aria-expanded={connectOpen}
+          aria-controls="ink-provisioning"
+          onClick={() => setConnectOpen((open) => !open)}
+        >
+          {connectOpen ? (zh ? '收起' : 'Collapse') : zh ? '连接设备' : 'Connect device'}
+        </button>
+      )}
+      {ink?.temporary && (
+        <button
+          type="button"
+          data-ink-temporary-end
+          className="product-button"
+          disabled={endingTemporary}
+          onClick={() => void endTemporary()}
+        >
+          {endingTemporary ? (zh ? '返回中…' : 'Returning…') : zh ? '回到工作画面' : 'Back to work'}
+        </button>
+      )}
+    </>
+  )
+  const previewOptions = (
+    <div className="product-sample-options">
+      <span>{zh ? '样例' : 'Samples'}</span>
+      <div
+        className="product-sample-buttons"
+        role="group"
+        aria-label={zh ? '预览内容' : 'Preview source'}
+      >
+        {(['live', 3, 6, 9] as DevicePreviewSource[]).map((value) => (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={source === value}
+            onClick={() => setSource(value)}
           >
-            <label className="product-feature-main">
+            {value === 'live' ? (zh ? '实时' : 'Live') : `${value} ${zh ? '任务' : 'tasks'}`}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+  const workOptions = (
+    <details className="ink-work-options">
+      <summary>{zh ? '画面细项' : 'Work-screen details'}</summary>
+      <div className="ink-work-options-body">
+        <div
+          className="product-segments"
+          role="group"
+          aria-label={zh ? '工作画面内容' : 'Work-screen content'}
+        >
+          {(['hud', 'usage'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              aria-pressed={display.mode === mode}
+              onClick={() => changeDisplay({ mode })}
+            >
+              {mode === 'hud' ? (zh ? '工作状态' : 'Work status') : zh ? '用量看板' : 'Usage board'}
+            </button>
+          ))}
+        </div>
+        <div className="hud-tools-grid">
+          {DISPLAY_AGENT_TYPES.filter((agent) => cliVisibility?.[agent] !== false).map((agent) => (
+            <label key={agent} className="hud-inline-check">
               <input
-                type={plan.mode === 'cycle' ? 'checkbox' : 'radio'}
-                name="ink-content"
-                checked={plan.mode === 'single' ? plan.fixed === 'work' : plan.items.includes('work')}
-                onChange={() => toggleItem('work')}
-              />
-              <span>
-                <strong>{zh ? '工作' : 'Work'}</strong>
-                <small>{zh ? '会话状态与实时余量' : 'Sessions and real-time allowances'}</small>
-              </span>
-            </label>
-          </div>
-
-          <div
-            className={`product-feature-option ${
-              (plan.mode === 'single' ? plan.fixed === 'ambient' : plan.items.includes('ambient'))
-                ? 'is-selected'
-                : ''
-            }`}
-          >
-            <label className="product-feature-main">
-              <input
-                type={plan.mode === 'cycle' ? 'checkbox' : 'radio'}
-                name="ink-content"
-                checked={
-                  plan.mode === 'single' ? plan.fixed === 'ambient' : plan.items.includes('ambient')
+                type="checkbox"
+                checked={display.agents.includes(agent)}
+                onChange={(event) =>
+                  changeDisplay({
+                    agents: event.target.checked
+                      ? [...display.agents, agent]
+                      : display.agents.filter((value) => value !== agent),
+                  })
                 }
-                onChange={() => toggleItem('ambient')}
               />
-              <span>
-                <strong>{zh ? '多媒体玩法' : 'Multimedia'}</strong>
-                <small>{zh ? 'X 热点与 meme' : 'X highlights and memes'}</small>
-              </span>
+              {INK_AGENT_NAMES[agent]}
             </label>
-            <button
-              type="button"
-              className="product-feature-link"
-              onClick={() => void product.navigate('ambient')}
-            >
-              {zh ? '配置' : 'Configure'}
-            </button>
-          </div>
-
-          <div className={`product-feature-option ${(plan.mode === 'single' ? plan.fixed === 'todos' : plan.items.includes('todos')) ? 'is-selected' : ''}`}>
-            <label className="product-feature-main">
-              <input type={plan.mode === 'cycle' ? 'checkbox' : 'radio'} name="ink-content"
-                checked={plan.mode === 'single' ? plan.fixed === 'todos' : plan.items.includes('todos')}
-                onChange={() => toggleItem('todos')}/>
-              <span><strong>{zh ? '待办与提醒' : 'Tasks & reminders'}</strong><small>{zh ? '本地事项与到期时间' : 'Local tasks and reminder times'}</small></span>
-            </label>
-            <button type="button" className="product-feature-link" onClick={() => void product.navigate('assistant')}>{zh ? '管理' : 'Manage'}</button>
-          </div>
-
-          <div className="product-feature-option is-disabled">
-            <label className="product-feature-main">
-              <input type="checkbox" disabled />
-              <span>
-                <strong>{zh ? '用量统计' : 'Usage'}</strong>
-                <small>{zh ? '历史 Token 与调用统计' : 'Historical tokens and requests'}</small>
-              </span>
-            </label>
-            <em className="product-feature-badge">{zh ? '暂不支持' : 'Unsupported'}</em>
-          </div>
-
-          {plan.mode === 'cycle' && (
-            <label className="product-cycle-row">
-              <span>{zh ? '每项停留' : 'Interval'}</span>
-              <select
-                value={plan.intervalMinutes}
-                onChange={(e) => {
-                  setPlan((cur) => ({
-                    ...cur,
-                    intervalMinutes: Number(e.target.value) as InkCycleInterval,
-                  }))
-                  setMessage('')
-                }}
-              >
-                <option value={10}>{zh ? '10 分钟' : '10 min'}</option>
-                <option value={15}>{zh ? '15 分钟' : '15 min'}</option>
-                <option value={30}>{zh ? '30 分钟' : '30 min'}</option>
-              </select>
-            </label>
-          )}
-
-          <h3>{zh ? '工作画面细项' : 'Work Screen Options'}</h3>
-          <div className="product-segments">
-            {(['hud', 'usage'] as const).map((mode) => (
-              <button
-                type="button"
-                key={mode}
-                aria-pressed={displayDraft.mode === mode}
-                onClick={() => changeDisplay({ mode })}
-              >
-                {mode === 'hud' ? (zh ? '工作状态' : 'Work Status') : zh ? '用量看板' : 'Quota Board'}
-              </button>
-            ))}
-          </div>
-
-          <details className="ink-work-options">
-          <summary>{zh ? '显示细项' : 'Display details'}</summary>
-          <div className="hud-tools-grid mt-2">
-            {DISPLAY_AGENT_TYPES.map((type) => (
-              <label key={type} className="hud-inline-check">
-                <input
-                  type="checkbox"
-                  checked={displayDraft.agents.includes(type)}
-                  onChange={(e) =>
-                    changeDisplay({
-                      agents: DISPLAY_AGENT_TYPES.filter((t) =>
-                        t === type ? e.target.checked : displayDraft.agents.includes(t),
-                      ),
-                      page: 0,
-                    })
-                  }
-                />
-                <span>{INK_AGENT_NAMES[type]}</span>
-              </label>
-            ))}
-          </div>
-
-          <div className="mt-2 grid gap-1">
-            <label className="hud-inline-check">
-              <input
-                type="checkbox"
-                disabled={displayDraft.mode === 'usage'}
-                checked={displayDraft.showQuota}
-                onChange={(e) => changeDisplay({ showQuota: e.target.checked })}
-              />
-              <span>{zh ? '工作画面显示额度' : 'Show quota in work view'}</span>
-            </label>
-            <label className="hud-inline-check">
-              <input
-                type="checkbox"
-                checked={displayDraft.showEnvironment}
-                onChange={(e) => changeDisplay({ showEnvironment: e.target.checked })}
-              />
-              <span>{zh ? '显示温度与湿度' : 'Show temperature & humidity'}</span>
-            </label>
-          </div>
-
-          <label><input type="checkbox" checked={Boolean(displayDraft.inverted)} onChange={(e) => changeDisplay({ inverted: e.target.checked })} /> {zh ? '黑底白字（固件 0.0.24 起支持）' : 'Inverted colors (firmware 0.0.24+)'}</label>
-              <label className="product-cycle-row">
-            <span>{zh ? '额度口径' : 'Quota Metric'}</span>
+          ))}
+        </div>
+        <label className="hud-inline-check">
+          <input
+            type="checkbox"
+            checked={display.showQuota}
+            onChange={(event) => changeDisplay({ showQuota: event.target.checked })}
+          />
+          {zh ? '显示余量' : 'Show quota'}
+        </label>
+        <label className="hud-inline-check">
+          <input
+            type="checkbox"
+            checked={display.showEnvironment}
+            onChange={(event) => changeDisplay({ showEnvironment: event.target.checked })}
+          />
+          {zh ? '显示环境读数' : 'Show environment'}
+        </label>
+        <label className="hud-inline-check">
+          <input
+            type="checkbox"
+            checked={Boolean(display.inverted)}
+            onChange={(event) => changeDisplay({ inverted: event.target.checked })}
+          />
+          {zh ? '反色显示' : 'Invert screen'}
+        </label>
+        {display.mode === 'usage' && (
+          <label className="product-cycle-row">
+            <span>{zh ? '用量指标' : 'Usage metric'}</span>
             <select
-              value={displayDraft.metric}
-              onChange={(e) =>
-                changeDisplay({ metric: e.target.value as DeviceDisplayConfig['metric'] })
+              value={display.metric}
+              onChange={(event) =>
+                changeDisplay({ metric: event.target.value as DeviceDisplayConfig['metric'] })
               }
             >
               <option value="remaining">{zh ? '剩余' : 'Remaining'}</option>
               <option value="used">{zh ? '已用' : 'Used'}</option>
             </select>
           </label>
+        )}
+      </div>
+    </details>
+  )
 
-          </details>
-          <WorkVoiceSettingsPanel locale={locale} target="ink" active={active} />
-          <WorkStateGuide locale={locale} />
-          </div>
-          <footer className="product-config-actions">
-          <button
-            type="button"
-            className="product-button primary"
-            disabled={saving || !product.ready || !dirty || showingSample}
-            onClick={() => void applyAll()}
-          >
-            {saving ? (zh ? '保存中…' : 'Saving…') : zh ? '立即应用' : 'Apply now'}
-          </button>
-          {message && (
-            <p className="product-caption" role="status">
-              {message}
+  const openPage = (event: React.MouseEvent, page: 'ambient' | 'assistant') => {
+    if ((event.target as Element).closest('[role="switch"]')) return
+    void product.navigate(page)
+  }
+  return (
+    <div className="ink-control-workspace">
+      <div className="ink-preview-column">
+        <section className="product-preview-stage ink-preview-card">
+          {status ? (
+            <DeviceScreenPreview
+              status={status}
+              active={active}
+              sample={Boolean(sample)}
+              live={!sample}
+              fit
+              compact
+              heading={zh ? '画面预览' : 'Screen preview'}
+              headerActions={headerActions}
+              cornerTag={tag}
+              options={previewOptions}
+            />
+          ) : (
+            <>
+              <div className="device-preview-header">
+                <h2>{zh ? '画面预览' : 'Screen preview'}</h2>
+                <div className="device-preview-header-actions">{headerActions}</div>
+              </div>
+              {!previewError && <p role="status">{zh ? '正在读取画面…' : 'Loading screen…'}</p>}
+            </>
+          )}
+          {previewError && (
+            <p className="ink-action-error" role="alert">
+              {previewError}
+              <button
+                type="button"
+                className="product-feature-link"
+                onClick={() => scheduleRef.current()}
+              >
+                {zh ? '重试' : 'Retry'}
+              </button>
             </p>
           )}
-          </footer>
-        </aside>
+          {temporaryError && (
+            <p className="ink-action-error" role="alert">
+              {temporaryError}
+            </p>
+          )}
+        </section>
+        {connectOpen && !connected && active && (
+          <section className="ink-connection-panel" id="ink-provisioning">
+            <DeviceProvisioningPanel copy={deviceCopy} />
+          </section>
+        )}
       </div>
-
-      {connectOpen && active && (
-        <div className="product-device-connection">
-          <DeviceProvisioningPanel copy={deviceCopy} />
+      <section className="product-config ink-config" aria-label={zh ? '节目单' : 'Playlist'}>
+        <div className="product-config-heading">
+          <h2>{zh ? '节目单' : 'Playlist'}</h2>
         </div>
-      )}
+        <div className="ink-playlist-row ink-work-row">
+          <ProductIcon name="work" />
+          <strong>{zh ? '工作画面' : 'Work screen'}</strong>
+          <svg
+            className="ink-work-lock"
+            role="img"
+            aria-label={zh ? '始终显示工作画面' : 'Work screen always included'}
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+          >
+            <rect x="6" y="11" width="12" height="9" rx="2" />
+            <path d="M9 11V8a3 3 0 0 1 6 0v3" />
+          </svg>
+        </div>
+        {workOptions}
+        <div className="ink-playlist-row is-linked" onClick={(event) => openPage(event, 'ambient')}>
+          <button
+            type="button"
+            className="ink-row-main"
+            aria-label={zh ? '桌边内容' : 'Desk content'}
+          >
+            <ProductIcon name="ambient" />
+            <span className="ink-playlist-text">
+              <strong>{zh ? '桌边内容' : 'Desk content'}</strong>
+              {ambient && (
+                <span>
+                  {zh
+                    ? `今日 ${ambient.shownToday}/${ambient.config.dailyLimit}`
+                    : `Today ${ambient.shownToday}/${ambient.config.dailyLimit}`}
+                </span>
+              )}
+            </span>
+          </button>
+          <button
+            type="button"
+            className="ink-switch"
+            role="switch"
+            aria-label={zh ? '桌边内容加入节目单' : 'Include desk content'}
+            aria-checked={plan.items.includes('ambient')}
+            disabled={plan.mode === 'single'}
+            onClick={(event) => {
+              event.stopPropagation()
+              toggleItem('ambient')
+            }}
+          />
+          <span className="ink-row-chevron" aria-hidden="true">
+            ›
+          </span>
+        </div>
+        <div
+          className="ink-playlist-row is-linked"
+          onClick={(event) => openPage(event, 'assistant')}
+        >
+          <button
+            type="button"
+            className="ink-row-main"
+            aria-label={zh ? '待办与提醒' : 'Tasks & reminders'}
+          >
+            <ProductIcon name="tasks" />
+            <span className="ink-playlist-text">
+              <strong>{zh ? '待办与提醒' : 'Tasks & reminders'}</strong>
+              {todoCount !== undefined && (
+                <span>{zh ? `${todoCount} 项待完成` : `${todoCount} pending tasks`}</span>
+              )}
+            </span>
+          </button>
+          <button
+            type="button"
+            className="ink-switch"
+            role="switch"
+            aria-label={zh ? '待办与提醒加入节目单' : 'Include tasks & reminders'}
+            aria-checked={plan.items.includes('todos')}
+            disabled={plan.mode === 'single'}
+            onClick={(event) => {
+              event.stopPropagation()
+              toggleItem('todos')
+            }}
+          />
+          <span className="ink-row-chevron" aria-hidden="true">
+            ›
+          </span>
+        </div>
+        <select
+          className="ink-playback-select"
+          aria-label={zh ? '显示方式' : 'Display mode'}
+          value={inkPlanChoice(plan)}
+          onChange={(event) => {
+            setPlan((current) => selectInkPlan(current, event.target.value))
+            setMessage('')
+          }}
+        >
+          {[5, 10, 15, 30].map((minutes) => (
+            <option key={minutes} value={String(minutes)}>
+              {zh ? `轮播 · 每 ${minutes} 分钟` : `Cycle · every ${minutes} min`}
+            </option>
+          ))}
+          <option value="fixed">{zh ? '只显示工作画面' : 'Work screen only'}</option>
+        </select>
+        <WorkVoiceSettingsPanel locale={locale} target="ink" active={active} />
+        <WorkStateGuide locale={locale} />
+        {shownCount > 0 && (
+          <footer className="product-config-actions" aria-live="polite">
+            <strong>
+              {connected
+                ? zh
+                  ? `${count} 项未应用`
+                  : `${count} pending changes`
+                : zh
+                  ? `${shownCount} 项改动，连接后自动应用`
+                  : `${shownCount} changes · applied on connection`}
+            </strong>
+            {connected && (
+              <button
+                type="button"
+                className="product-button primary"
+                disabled={saving || !displaySnap || !product.ready}
+                onClick={() => void applyAll()}
+              >
+                {saving ? (zh ? '应用中…' : 'Applying…') : zh ? '应用' : 'Apply'}
+              </button>
+            )}
+          </footer>
+        )}
+        {message && (
+          <p className="ink-action-error" role="alert">
+            {message}
+            <button
+              type="button"
+              className="product-feature-link"
+              disabled={saving}
+              onClick={() => void applyAll()}
+            >
+              {zh ? '重试' : 'Retry'}
+            </button>
+          </p>
+        )}
+      </section>
     </div>
   )
 }
@@ -825,332 +932,166 @@ export function ProductControl({
   locale,
   deviceCopy,
   desktopPreview,
-  usagePreview,
   active,
+  cliVisibility,
 }: {
   product: ProductNavigation
   locale: Locale
   deviceCopy: DeviceProvisioningCopy
   snapshot?: StatusSnapshot
   desktopPreview: ReactNode
-  usagePreview: ReactNode
+  usagePreview?: ReactNode
   active: boolean
+  cliVisibility?: CliVisibility
 }): JSX.Element {
   const zh = locale === 'zh',
     target = product.target
-  // Retain mounted desktop panels/drafts without reconciling their live trees while hidden.
-  const desktopContent = useRef({ work: desktopPreview, usage: usagePreview })
-  if (active && target === 'desktop') desktopContent.current = { work: desktopPreview, usage: usagePreview }
+  const ink = useInkStatus()
   const [visited, setVisited] = useState(new Set([target]))
-  const [connectOpen, setConnectOpen] = useState(false)
-  const [layout, setLayout] = useState<DesktopLayout>(product.shell.desktopLayout)
-  const savedLayout = useRef(product.shell.desktopLayout)
-  const [saving, setSaving] = useState(false)
-
+  const desktopContent = useRef(desktopPreview)
+  if (active && target === 'desktop') desktopContent.current = desktopPreview
   useEffect(() => {
-    setVisited((old) => old.has(target) ? old : new Set([...old, target]))
+    setVisited((previous) => (previous.has(target) ? previous : new Set([...previous, target])))
   }, [target])
-
-  useEffect(() => {
-    const previous = savedLayout.current
-    setLayout((draft) => (draft === previous ? product.shell.desktopLayout : draft))
-    savedLayout.current = product.shell.desktopLayout
-  }, [product.shell.desktopLayout])
-
-  const apply = async () => {
-    setSaving(true)
-    try {
-      await product.setLayout(layout)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const names = {
-    work: zh ? '工作' : 'Work',
-    usage: zh ? '用量统计' : 'Usage',
-    board: zh ? '工作 + 用量统计 · 平铺' : 'Work + Usage · Board',
-  }
-
-  const inkPlan = product.shell.inkPlan ?? DEFAULT_INK_PLAN
-  const inkSummary =
-    inkPlan.mode === 'single'
-      ? `${inkFeatureLabel(inkPlan.fixed, zh)} · ${zh ? '固定显示' : 'Fixed'}`
-      : `${inkPlan.items.map((i) => inkFeatureLabel(i, zh)).join(' / ')} · ${zh ? '轮播' : 'Cycle'}`
-
-  const hudLayoutName =
-    product.shell.hudSettings?.projectLayout === 'grid'
+  const inkConnection = !ink
+    ? zh
+      ? '读取中…'
+      : 'Loading…'
+    : ink.connection === 'connected'
       ? zh
-        ? '工作 · 紧凑矩阵'
-        : 'Work · Grid'
-      : zh
-        ? '工作 · 单列排序'
-        : 'Work · List'
-
+        ? '已连接'
+        : 'Connected'
+      : ink.connection === 'server-off'
+        ? zh
+          ? '服务未开启'
+          : 'Service off'
+        : zh
+          ? '未连接'
+          : 'Disconnected'
   return (
     <div className="product-scroll product-control">
-      <header className="workspace-heading">
-        <div>
-          <h1>{zh ? '控制' : 'Control'}</h1>
-          <p>{zh ? '选择展示端，实时查看工作状态并更改配置。' : 'Select a presentation, view live status and configure it.'}</p>
-        </div>
-        <div className="product-focus-entry">
+      <PageHeader
+        title={zh ? '控制' : 'Control'}
+        actions={
           <button
             type="button"
-            className="product-button primary"
+            className="product-button"
             disabled={!product.ready}
             onClick={() => void product.setFocus(true)}
           >
             <ProductIcon name="focus" />
-            {zh ? '进入专注模式' : 'Enter focus mode'}
+            {zh ? '专注模式' : 'Focus mode'}
           </button>
-          <small>{zh ? '只保留会话与账户余量' : 'Only sessions and account allowances'}</small>
-        </div>
-      </header>
-
-      <div className="product-control-group" data-target={target}>
-        <div className="product-endpoints" role="group" aria-label={zh ? '选择展示端' : 'Select presentation'}>
-          {(['desktop', 'hud', 'ink'] as const).map((t) => (
-            <article key={t} className={`product-endpoint ${target === t ? 'is-current' : ''}`}>
-              <button
-                id={`endpoint-${t}`}
-                type="button"
-                className="product-endpoint-select"
-                aria-pressed={target === t}
-                aria-controls="product-control-detail"
-                onClick={() => void product.selectTarget(t)}
-              >
-                <span className="product-endpoint-head">
-                  <strong>
-                    <ProductIcon name={t} />
-                    {TARGET_NAMES[t][zh ? 0 : 1]}
-                  </strong>
-                  <small className="product-endpoint-status">
-                    {t === 'desktop'
+        }
+      />
+      <div
+        className="product-surface-tabs"
+        role="tablist"
+        aria-label={zh ? '展示端' : 'Presentation'}
+      >
+        {(['desktop', 'hud', 'ink'] as const).map((value) => (
+          <button
+            type="button"
+            key={value}
+            id={`endpoint-${value}`}
+            role="tab"
+            aria-selected={target === value}
+            aria-controls={`control-panel-${value}`}
+            tabIndex={target === value ? 0 : -1}
+            onClick={() => void product.selectTarget(value)}
+            onKeyDown={(event) => {
+              const values = ['desktop', 'hud', 'ink'] as const
+              let index = values.indexOf(value)
+              if (event.key === 'ArrowRight') index = (index + 1) % 3
+              else if (event.key === 'ArrowLeft') index = (index + 2) % 3
+              else if (event.key === 'Home') index = 0
+              else if (event.key === 'End') index = 2
+              else return
+              event.preventDefault()
+              document.getElementById(`endpoint-${values[index]}`)?.focus()
+              void product.selectTarget(values[index]!)
+            }}
+          >
+            <ProductIcon name={value} />
+            <span>
+              <strong>{TARGET_NAMES[value][zh ? 0 : 1]}</strong>
+              <small>
+                <i
+                  className={`control-connection-dot ${value === 'desktop' || (value === 'hud' ? product.shell.hudVisible : ink?.connection === 'connected') ? 'is-on' : ''}`}
+                />
+                {value === 'desktop'
+                  ? zh
+                    ? '已打开'
+                    : 'Open'
+                  : value === 'hud'
+                    ? product.shell.hudVisible
                       ? zh
                         ? '已打开'
                         : 'Open'
-                      : t === 'hud'
-                        ? product.shell.hudVisible
-                          ? zh
-                            ? '已打开'
-                            : 'Open'
-                          : zh
-                            ? '已收起'
-                            : 'Hidden'
-                        : zh
-                          ? '设备显示'
-                          : 'Device'}
-                  </small>
-                </span>
-                <span className="product-endpoint-meta">
-                  <span className="product-endpoint-content">
-                    {t === 'desktop'
-                      ? names[product.shell.desktopLayout]
-                      : t === 'hud'
-                        ? hudLayoutName
-                        : inkSummary}
-                  </span>
-                  <small className="product-endpoint-description">
-                    {t === 'desktop'
-                      ? zh
-                        ? '主窗口'
-                        : 'Main window'
-                      : t === 'hud'
-                        ? zh
-                          ? '独立桌面浮窗'
-                          : 'Companion window'
-                        : zh
-                          ? '400×300 墨水屏'
-                          : '400×300 E-paper'}
-                  </small>
-                </span>
-              </button>
-              <div className="product-endpoint-actions">
-                <button
-                  type="button"
-                  className="product-button endpoint-action-btn"
-                  disabled={t === 'hud' && !product.shell.hudAvailable}
-                  onClick={() => {
-                    if (t === 'hud') void product.setHudVisible(!product.shell.hudVisible)
-                    else if (t === 'desktop') void product.setFocus(true)
-                    else
-                      void product.selectTarget('ink').then((ok) => {
-                        if (ok) setConnectOpen((v) => !v)
-                      })
-                  }}
-                >
-                  {t === 'desktop'
-                    ? zh
-                      ? '专注查看'
-                      : 'Focus View'
-                    : t === 'hud'
-                      ? product.shell.hudVisible
-                        ? zh
-                          ? '收起 HUD'
-                          : 'Hide HUD'
-                        : zh
-                          ? '开启 HUD'
-                          : 'Open HUD'
-                      : connectOpen && target === 'ink'
-                        ? zh
-                          ? '收起连接'
-                          : 'Hide Connect'
-                        : zh
-                          ? '连接设备'
-                          : 'Connect Device'}
-                </button>
-              </div>
-            </article>
-          ))}
-        </div>
-
-        <section
-          className="product-control-detail"
-          id="product-control-detail"
-          aria-labelledby={`endpoint-${target}`}
-        >
-          {(target === 'desktop' || visited.has('desktop')) && (
-            <div hidden={target !== 'desktop'} className="product-config-grid">
-              <section className="product-preview-stage">
-                <div className="product-preview-label">
-                  <span>{zh ? '桌面端实时工作台' : 'Live Desktop Workspace'}</span>
-                  <span>{names[layout]}</span>
-                </div>
-                <div className={`product-desktop-preview ${layout === 'board' ? 'is-board' : ''}`}>
-                  {layout !== 'usage' && (
-                    <div className="product-console-live-stage">{desktopContent.current.work}</div>
-                  )}
-                  {layout !== 'work' && (
-                    <div className="product-usage-preview">{desktopContent.current.usage}</div>
-                  )}
-                </div>
-              </section>
-
-              <aside className="product-config">
-                <div className="product-config-heading">
-                  <h2>{zh ? '更改配置' : 'Configuration'}</h2>
-                  <small>
-                    {layout === product.shell.desktopLayout
-                      ? zh
-                        ? '已应用'
-                        : 'Applied'
                       : zh
-                        ? '待应用'
-                        : 'Not applied'}
-                  </small>
-                </div>
-
-                <h3>{zh ? '显示方式' : 'Layout'}</h3>
-                <div className="product-segments">
-                  <button
-                    type="button"
-                    aria-pressed={layout !== 'board'}
-                    onClick={() => setLayout(layout === 'board' ? 'work' : layout)}
-                  >
-                    {zh ? '单个功能' : 'Single'}
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={layout === 'board'}
-                    onClick={() => setLayout('board')}
-                  >
-                    {zh ? '功能平铺' : 'Board'}
-                  </button>
-                </div>
-
-                <h3>{zh ? '显示内容' : 'Content'}</h3>
-                {(['work', 'usage'] as const).map((item) => (
-                  <div
-                    className={`product-feature-option ${
-                      layout === 'board' || layout === item ? 'is-selected' : ''
-                    }`}
-                    key={item}
-                  >
-                    <label className="product-feature-main">
-                      <input
-                        type={layout === 'board' ? 'checkbox' : 'radio'}
-                        name="desktop-content"
-                        checked={layout === 'board' || layout === item}
-                        onChange={() =>
-                          setLayout(
-                            layout === 'board' ? (item === 'work' ? 'usage' : 'work') : item,
-                          )
-                        }
-                      />
-                      <span>
-                        <strong>{names[item]}</strong>
-                        <small>
-                          {item === 'work'
-                            ? zh
-                              ? '会话状态与实时余量'
-                              : 'Sessions and allowances'
-                            : zh
-                              ? '历史 Token 与调用统计'
-                              : 'Historical tokens and requests'}
-                        </small>
-                      </span>
-                    </label>
-                    <button
-                      type="button"
-                      className="product-feature-link"
-                      onClick={() => {
-                        if (item === 'work') {
-                          void product.setFocus(true)
-                        } else {
-                          void product.navigate('usage')
-                        }
-                      }}
-                    >
-                      {item === 'work' ? (zh ? '专注' : 'Focus') : zh ? '查看' : 'View'}
-                    </button>
-                  </div>
-                ))}
-
-                <div className="product-feature-option is-disabled">
-                  <label className="product-feature-main">
-                    <input type="checkbox" disabled />
-                    <span>
-                      <strong>{zh ? '多媒体玩法' : 'Multimedia'}</strong>
-                      <small>{zh ? '桌面端暂未开放' : 'Not yet available on desktop'}</small>
-                    </span>
-                  </label>
-                  <em className="product-feature-badge">{zh ? '暂不支持' : 'Unsupported'}</em>
-                </div>
-
-                <WorkVoiceSettingsPanel locale={locale} target="desktop" active={active && target === 'desktop'} />
-                <WorkStateGuide locale={locale} />
-                <button
-                  type="button"
-                  className="product-button primary"
-                  disabled={saving || !product.ready || layout === product.shell.desktopLayout}
-                  onClick={() => void apply()}
-                >
-                  {saving ? (zh ? '保存中…' : 'Saving…') : zh ? '立即应用' : 'Apply now'}
-                </button>
-              </aside>
-            </div>
-          )}
-
-          {(target === 'hud' || visited.has('hud')) && (
-            <div hidden={target !== 'hud'} className="product-control-surface">
-              <HudWorkspace product={product} locale={locale} active={active && target === 'hud'} />
-            </div>
-          )}
-
-          {(target === 'ink' || visited.has('ink')) && (
-            <div hidden={target !== 'ink'} className="product-control-surface">
-              <InkControlWorkspace
-                active={active && target === 'ink'}
-                locale={locale}
-                product={product}
-                deviceCopy={deviceCopy}
-                connectOpen={connectOpen}
-              />
-            </div>
-          )}
-        </section>
+                        ? '已收起'
+                        : 'Hidden'
+                    : inkConnection}
+              </small>
+            </span>
+          </button>
+        ))}
       </div>
+      <section
+        id="control-panel-desktop"
+        role="tabpanel"
+        aria-labelledby="endpoint-desktop"
+        hidden={target !== 'desktop'}
+        className="product-control-surface"
+      >
+        {(target === 'desktop' || visited.has('desktop')) && (
+          <div className="product-desktop-panel">
+            <div className="product-console-live-stage">{desktopContent.current}</div>
+            <div className="product-desktop-options">
+              <WorkVoiceSettingsPanel
+                locale={locale}
+                target="desktop"
+                active={active && target === 'desktop'}
+              />
+              <WorkStateGuide locale={locale} />
+            </div>
+          </div>
+        )}
+      </section>
+      <section
+        id="control-panel-hud"
+        role="tabpanel"
+        aria-labelledby="endpoint-hud"
+        hidden={target !== 'hud'}
+        className="product-control-surface"
+      >
+        {(target === 'hud' || visited.has('hud')) && (
+          <HudWorkspace
+            product={product}
+            locale={locale}
+            active={active && target === 'hud'}
+            cliVisibility={cliVisibility}
+          />
+        )}
+      </section>
+      <section
+        id="control-panel-ink"
+        role="tabpanel"
+        aria-labelledby="endpoint-ink"
+        hidden={target !== 'ink'}
+        className="product-control-surface"
+      >
+        {(target === 'ink' || visited.has('ink')) && (
+          <InkControlWorkspace
+            product={product}
+            locale={locale}
+            deviceCopy={deviceCopy}
+            active={active && target === 'ink'}
+            ink={ink}
+            cliVisibility={cliVisibility}
+          />
+        )}
+      </section>
     </div>
   )
 }

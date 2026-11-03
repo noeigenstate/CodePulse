@@ -14,6 +14,9 @@ import type { Locale, UsageCopy } from '../lib/i18n.js'
 import { formatRelative } from '../lib/format.js'
 import { formatModelName } from '../lib/modelName.js'
 import { AgentLogo } from './AgentLogo.js'
+import { PageHeader } from './PageHeader.js'
+import { InfoTip } from './InfoTip.js'
+import { projectLabels, sessionTitle } from '../lib/redact.js'
 import './usage-dashboard.css'
 
 interface Props {
@@ -28,7 +31,13 @@ interface Props {
 const TOKEN_KINDS = ['input', 'cacheWrite', 'cacheRead', 'output'] as const
 type TokenKind = (typeof TOKEN_KINDS)[number]
 
-export function UsageDashboard({ locale, copy, onClose, active = true, embedded = false }: Props): JSX.Element {
+export function UsageDashboard({
+  locale,
+  copy,
+  onClose,
+  active = true,
+  embedded = false,
+}: Props): JSX.Element {
   const [range, setRange] = useState<StatsRangePreset>('7d')
   const [data, setData] = useState<UsageLedgerSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
@@ -62,57 +71,71 @@ export function UsageDashboard({ locale, copy, onClose, active = true, embedded 
   const empty = data !== null && data.totals.requests === 0 && data.totals.rounds === 0
 
   return (
-    <div className="usage-page flex min-h-0 flex-1 flex-col text-ink">
-      <header className="usage-topbar">
-        <button hidden={embedded} type="button" className="control-btn" onClick={onClose}>
-          <BackIcon />
-          <span>{copy.back}</span>
-        </button>
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-module font-bold text-ink">{copy.title}</h1>
-          <p className="truncate text-meta text-ink-500">{copy.subtitle}</p>
-        </div>
-        <div className="usage-segmented" role="tablist">
-          {(
-            [
-              ['today', copy.rangeToday],
-              ['7d', copy.range7d],
-              ['30d', copy.range30d],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              role="tab"
-              aria-selected={range === value}
-              className={range === value ? 'is-on' : ''}
-              onClick={() => setRange(value)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <button
-          type="button"
-          className="control-btn control-btn-icon"
-          onClick={() => void load()}
-          disabled={loading}
-          aria-label={copy.refresh}
-          title={
-            data?.scannedAt
-              ? copy.syncedAt.replace('{time}', formatRelative(data.scannedAt, Date.now(), locale))
-              : copy.refresh
+    <div className="usage-page">
+      <div className="usage-head">
+        {!embedded && (
+          <button type="button" className="product-button is-compact" onClick={onClose}>
+            <BackIcon />
+            <span>{copy.back}</span>
+          </button>
+        )}
+        <PageHeader
+          title={copy.title}
+          actions={
+            <>
+              <div className="page-segmented" role="group" aria-label={copy.title}>
+                {(
+                  [
+                    ['today', copy.rangeToday],
+                    ['7d', copy.range7d],
+                    ['30d', copy.range30d],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={range === value}
+                    onClick={() => setRange(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="product-button usage-refresh"
+                onClick={() => void load()}
+                disabled={loading}
+                aria-label={copy.refresh}
+                title={
+                  data?.scannedAt
+                    ? copy.syncedAt.replace(
+                        '{time}',
+                        formatRelative(data.scannedAt, Date.now(), locale),
+                      )
+                    : copy.refresh
+                }
+              >
+                <RefreshIcon spin={loading} />
+              </button>
+            </>
           }
-        >
-          <RefreshIcon spin={loading} />
-        </button>
-      </header>
+        />
+      </div>
 
-      <div className="usage-scroll min-h-0 flex-1 overflow-y-auto">
+      <div className="usage-scroll">
         {error ? (
           <StateMessage title={copy.error} />
         ) : !data ? (
-          <StateMessage title={loading ? copy.loading : locale === 'zh' ? '暂无可用的历史统计' : 'Usage history is currently unavailable'} />
+          <StateMessage
+            title={
+              loading
+                ? copy.loading
+                : locale === 'zh'
+                  ? '暂无可用的历史统计'
+                  : 'Usage history is currently unavailable'
+            }
+          />
         ) : empty ? (
           <StateMessage title={copy.emptyTitle} body={copy.emptyBody} />
         ) : (
@@ -133,6 +156,17 @@ function DashboardBody({
   locale: Locale
 }): JSX.Element {
   const t = data.totals
+  const labels = useMemo(() => {
+    const list = projectLabels(data.byProject.map((p) => ({ name: p.name, path: p.path })))
+    return new Map(data.byProject.map((p, i) => [p.path || p.name, list[i]!]))
+  }, [data.byProject])
+  const [revealed, setRevealed] = useState<ReadonlySet<string>>(new Set())
+  const toggleTitle = (id: string): void =>
+    setRevealed((old) => {
+      const next = new Set(old)
+      if (!next.delete(id)) next.add(id)
+      return next
+    })
   const costPerRound = t.rounds > 0 ? t.costUsd / t.rounds : undefined
   const previousPerRound =
     data.previous.rounds > 0 ? data.previous.costUsd / data.previous.rounds : undefined
@@ -142,14 +176,16 @@ function DashboardBody({
       <section className="usage-kpis">
         <Kpi
           label={copy.kpiCost}
+          hint={
+            t.unpricedTokens > 0
+              ? `${copy.costHint}
+${copy.unpriced.replace('{tokens}', formatTokenCount(t.unpricedTokens))}`
+              : copy.costHint
+          }
           value={formatUsd(t.costUsd)}
           delta={delta(t.costUsd, data.previous.costUsd)}
           copy={copy}
-          foot={
-            t.unpricedTokens > 0
-              ? copy.unpriced.replace('{tokens}', formatTokenCount(t.unpricedTokens))
-              : copy.requests.replace('{n}', t.requests.toLocaleString())
-          }
+          foot={copy.requests.replace('{n}', t.requests.toLocaleString())}
         />
         <Kpi
           label={copy.kpiTokens}
@@ -228,7 +264,9 @@ function DashboardBody({
                         </span>
                       ))}
                     </span>
-                    <span className="truncate font-medium">{project.name}</span>
+                    <span className="truncate font-medium">
+                      {labels.get(project.path || project.name) ?? project.name}
+                    </span>
                   </div>
                   <ShareBar value={t.costUsd > 0 ? project.costUsd / t.costUsd : 0} />
                 </td>
@@ -281,67 +319,116 @@ function DashboardBody({
 
       <section className="usage-card usage-rounds">
         <div className="usage-card-head">
-          <h2 className="usage-h2">{copy.roundsTitle}</h2>
+          <div>
+            <h2 className="usage-h2">{copy.roundsTitle}</h2>
+          </div>
         </div>
-        <p className="usage-muted mb-3">{copy.roundsHint}</p>
-        <ol className="usage-session-list">
-          {data.sessions.map((session) => (
-            <li key={`${session.agentType}:${session.sessionId}`} className="usage-session">
-              <div className="usage-session-rounds">
-                <strong>{session.rounds}</strong>
-                <span>{copy.roundsUnit}</span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-medium text-ink" title={session.title}>
-                  {session.title || copy.untitled}
-                </p>
-                <p className="usage-muted mt-0.5 flex min-w-0 items-center gap-1.5">
-                  <span className="usage-agent-dot" data-agent={session.agentType}>
-                    <AgentLogo agentType={session.agentType} />
-                  </span>
-                  <span className="truncate">
-                    {session.projectName} ·{' '}
-                    {formatRelative(session.lastActiveAt, Date.now(), locale)}
-                  </span>
-                </p>
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {session.models.map((model) => (
-                    <span key={model.model} className="usage-chip">
-                      {model.model === '—' ? '—' : formatModelName(model.model)} × {model.rounds}
+        <table className="usage-table usage-rounds-table" aria-label={copy.roundsTitle}>
+          <colgroup>
+            <col />
+            <col className="usage-hide-md usage-col-tool" />
+            <col className="usage-col-num" />
+            <col className="usage-col-cost" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>{copy.colSession}</th>
+              <th className="usage-hide-md">{copy.colTool}</th>
+              <th className="num">{copy.colRounds}</th>
+              <th className="num">{copy.colCost}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.sessions.map((session) => {
+              const id = `${session.agentType}:${session.sessionId}`
+              const shown = revealed.has(id)
+              const hasTitle = Boolean(session.title?.trim())
+              const project =
+                labels.get(session.projectPath || session.projectName) ?? session.projectName
+              const title = sessionTitle(project, session.title, shown, {
+                hidden: copy.titleHidden,
+                untitled: copy.untitled,
+              })
+              return (
+                <tr key={id}>
+                  <td>
+                    <div className="usage-title-row">
+                      <span className="usage-title-text" title={shown ? title : undefined}>
+                        {title}
+                      </span>
+                      {hasTitle && (
+                        <button
+                          type="button"
+                          className="product-button is-compact"
+                          aria-pressed={shown}
+                          onClick={() => toggleTitle(id)}
+                        >
+                          {shown ? copy.hideTitle : copy.showTitle}
+                        </button>
+                      )}
+                    </div>
+                    <p className="usage-muted usage-session-meta">
+                      {formatRelative(session.lastActiveAt, Date.now(), locale)}
+                      {session.models.length > 0 && (
+                        <span className="usage-hide-md">
+                          {' · '}
+                          {session.models
+                            .map(
+                              (model) =>
+                                `${model.model === '—' ? '—' : formatModelName(model.model)} × ${model.rounds}`,
+                            )
+                            .join(' · ')}
+                        </span>
+                      )}
+                    </p>
+                  </td>
+                  <td className="usage-hide-md">
+                    <span className="usage-tool-cell">
+                      <span className="usage-agent-dot" data-agent={session.agentType}>
+                        <AgentLogo agentType={session.agentType} />
+                      </span>
+                      <span className="truncate">{AGENT_DISPLAY_NAMES[session.agentType]}</span>
                     </span>
-                  ))}
-                </div>
-              </div>
-              <div className="usage-session-cost">
-                <strong>{formatUsd(session.costUsd)}</strong>
-                <span>{formatTokenCount(session.tokens)} tokens</span>
-              </div>
-            </li>
-          ))}
-        </ol>
+                  </td>
+                  <td className="num">{session.rounds}</td>
+                  <td className="num strong">
+                    {formatUsd(session.costUsd)}
+                    <span className="usage-muted usage-hide-md usage-cell-sub">
+                      {formatTokenCount(session.tokens)} tokens
+                    </span>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
       </section>
-
-      <p className="usage-footnote">{copy.footnote.replace('{date}', data.pricingAsOf)}</p>
     </div>
   )
 }
 
 function Kpi({
   label,
+  hint,
   value,
   delta: change,
   foot,
   copy,
 }: {
   label: string
+  /** Extra caveat, shown as a tooltip on an info mark instead of a line of text. */
+  hint?: string
   value: string
   delta: number | undefined
   foot: ReactNode
   copy: UsageCopy
 }): JSX.Element {
   return (
-    <div className="usage-card usage-kpi fx-spot">
-      <p className="usage-kpi-label">{label}</p>
+    <div className="usage-card usage-kpi">
+      <p className="usage-kpi-label">
+        {label}
+        {hint && <InfoTip text={hint} />}
+      </p>
       <p className="usage-kpi-value">{value}</p>
       <p className="usage-kpi-delta">
         {change === undefined ? (
@@ -417,21 +504,22 @@ function ToolCard({
   copy: UsageCopy
 }): JSX.Element {
   return (
-    <article className="usage-tool fx-spot fx-tilt" data-agent={agent.agentType}>
+    <article className="usage-tool" data-agent={agent.agentType}>
       <div className="flex items-center gap-2.5">
         <span className="agent-brand-icon usage-tool-icon" data-agent={agent.agentType}>
           <AgentLogo agentType={agent.agentType} />
         </span>
         <div className="min-w-0">
           <p className="truncate font-semibold text-ink">{AGENT_DISPLAY_NAMES[agent.agentType]}</p>
-          <p className="usage-muted truncate">
-            {copy.topModel}: {topModel ? formatModelName(topModel) : '—'}
-          </p>
+          <p className="usage-muted truncate">{topModel ? formatModelName(topModel) : '—'}</p>
         </div>
       </div>
       <p className="usage-tool-cost">{formatUsd(agent.costUsd)}</p>
-      <ShareBar value={share} agent={agent.agentType} />
-      <p className="usage-muted mt-1.5">{copy.costShare.replace('{pct}', formatPct(share))}</p>
+      <ShareBar
+        value={share}
+        agent={agent.agentType}
+        label={copy.costShare.replace('{pct}', formatPct(share))}
+      />
       <dl className="usage-tool-stats">
         <div>
           <dt>{copy.colTokens}</dt>
@@ -450,9 +538,22 @@ function ToolCard({
   )
 }
 
-function ShareBar({ value, agent }: { value: number; agent?: AgentType }): JSX.Element {
+function ShareBar({
+  value,
+  agent,
+  label,
+}: {
+  value: number
+  agent?: AgentType
+  /** Percentage text kept in the title and aria-label instead of on screen. */
+  label?: string
+}): JSX.Element {
   return (
-    <div className="usage-share" aria-hidden="true">
+    <div
+      className="usage-share"
+      title={label}
+      {...(label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true })}
+    >
       <span data-agent={agent} style={{ width: `${Math.max(0, Math.min(1, value)) * 100}%` }} />
     </div>
   )

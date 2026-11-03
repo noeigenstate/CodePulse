@@ -1,3 +1,4 @@
+import type { DeviceLife } from './life.js'
 /** Pixel pets drawn for the multimedia area. Names and art live in the desktop main process. */
 export const PET_IDS = ['tuantuan', 'yaya', 'fangfang', 'rongrong', 'lulu'] as const
 export type PetId = (typeof PET_IDS)[number]
@@ -69,6 +70,73 @@ export interface CalendarNextHoliday {
   ongoing: boolean
 }
 
+/** 元宝搜索 (Tencent Cloud WSA SearchPro) — features that feed desk cards. */
+export type YuanbaoTopic = 'weather' | 'gold' | 'stock' | 'tools' | 'holiday' | 'news'
+export interface YuanbaoConfig {
+  /** Master switch; nothing is requested without a saved key either. */
+  enabled: boolean
+  weatherEnabled: boolean
+  city: string
+  goldEnabled: boolean
+  /** Adds the first brand price (e.g. 周大福) as a second line. */
+  goldBrand: boolean
+  stocksEnabled: boolean
+  /** Up to 3, lower-case `<code>.<market>`: `00700.hk`, `600519.sh`, `000001.sz`, `aapl.us`. */
+  stocks: string[]
+  toolsEnabled: boolean
+  /** Up to 4 tool names searched for release news. */
+  tools: string[]
+  holidayEnabled: boolean
+  newsEnabled: boolean
+  newsTopic: string
+  /** Requests per local day across all features, 1–200. */
+  dailyRequestLimit: number
+}
+export const DEFAULT_YUANBAO: YuanbaoConfig = {
+  enabled: false,
+  weatherEnabled: false,
+  city: '北京',
+  goldEnabled: false,
+  goldBrand: true,
+  stocksEnabled: false,
+  stocks: ['00700.hk'],
+  toolsEnabled: false,
+  tools: ['Claude Code', 'Codex'],
+  holidayEnabled: false,
+  newsEnabled: false,
+  newsTopic: '科技',
+  dailyRequestLimit: 48,
+}
+export type YuanbaoAuthMode = 'tc3' | 'apikey'
+/** Renderer → main only; the main process never sends a key back. Empty strings clear it. */
+export interface YuanbaoKeyInput {
+  secretId?: string
+  secretKey?: string
+  apiKey?: string
+}
+export interface YuanbaoStatus {
+  hasKey: boolean
+  authMode: YuanbaoAuthMode | null
+  requestsToday: number
+  limit: number
+  lastLatencyMs: number | null
+  lastError: string
+  errors: Partial<Record<YuanbaoTopic, string>>
+  lastCheckedAt: number
+  /** Edition reported by the API: 'lite' | 'standard' | 'flagship'. */
+  edition: string | null
+  /** Site names behind the current cards, e.g. 气象在线、金投网、腾讯自选股. */
+  sources: string[]
+  holiday: { year: number; state: 'published' | 'pending' | 'synced' } | null
+}
+export interface YuanbaoTestResult {
+  ok: boolean
+  latencyMs: number | null
+  edition: string | null
+  /** The parsed weather line on success. */
+  cardText: string
+  error: string
+}
 /** Optional, low-priority desk content. Credentials never cross back to the renderer. */
 export interface AmbientConfig {
   version: 1
@@ -97,6 +165,8 @@ export interface AmbientConfig {
   quietStart: number
   quietEnd: number
   idleOnly: boolean
+  /** 元宝搜索 features; see YuanbaoConfig. */
+  yuanbao: YuanbaoConfig
 }
 export const DEFAULT_AMBIENT: AmbientConfig = {
   version: 1,
@@ -125,12 +195,26 @@ export const DEFAULT_AMBIENT: AmbientConfig = {
   quietStart: 23,
   quietEnd: 8,
   idleOnly: true,
+  yuanbao: DEFAULT_YUANBAO,
 }
 export interface AmbientCard {
   /** Optional production-rendered checklist; old firmware uses the text fallback. */
   items?: { title: string; meta: string; overdue: boolean }[]
   id: string
-  kind: 'x' | 'meme' | 'concept' | 'prompt' | 'note' | 'image' | 'news' | 'pet' | 'calendar'
+  kind:
+    | 'x'
+    | 'meme'
+    | 'concept'
+    | 'prompt'
+    | 'note'
+    | 'image'
+    | 'news'
+    | 'pet'
+    | 'calendar'
+    | 'life'
+    | 'search'
+  /** 元宝搜索 cards only: which feature produced it ('life' kind: weather/gold/stock; 'search' kind: tools/holiday/news). */
+  topic?: YuanbaoTopic
   source: string
   text: string
   url: string
@@ -142,8 +226,9 @@ export interface AmbientCard {
   imageHex?: string
   /** Red ink on top of `imageHex`; only cards with a bitmap may carry it. */
   red?: AmbientRedPlane
-  /** Screen layout: `'pet'` for a bitmap card (larger picture, 20px line), `'calendar'` with `calendar`. */
-  layout?: 'pet' | 'calendar'
+  /** Additive firmware layouts; life cards retain text for older firmware. */
+  layout?: 'pet' | 'calendar' | 'life'
+  life?: DeviceLife
   /** Pet cards only: which pet this is and the mood it was drawn for. */
   pet?: { id: PetId; mood: PetMood }
   /** Calendar cards only: the month grid the device draws (no bitmap). */
@@ -160,8 +245,9 @@ export interface DeviceAmbientCard {
   imageHex?: string
   /** Optional; devices drop it (and show black only) if it is invalid. */
   red?: AmbientRedPlane
-  /** `'pet'` needs `imageHex` (firmware 0.0.28+); `'calendar'` needs `calendar` (0.0.29+). Older firmware ignores both. */
-  layout?: 'pet' | 'calendar'
+  /** pet (0.0.28+), calendar (0.0.29+), life (0.0.30+). Unknown layouts render the legacy text. */
+  layout?: 'pet' | 'calendar' | 'life'
+  life?: DeviceLife
   /** Optional; firmware drops an invalid one and shows `text` as a plain card. */
   calendar?: DeviceCalendar
 }
@@ -171,6 +257,8 @@ export interface AmbientSnapshot {
   collecting: boolean
   lastCheckedAt: number
   nextCheckAt: number
+  /** Earliest possible automatic display today; null if disabled, capped or currently unpredictable. */
+  nextAutoAt: number | null
   sourceStatus: { x: string; meme: string; news?: string }
   /** Next official holiday from the holiday table in use; absent when none is known. */
   calendarNext?: CalendarNextHoliday
@@ -179,6 +267,8 @@ export interface AmbientSnapshot {
   shownToday: number
   xRequestsToday: number
   pausedReason: string
+  /** 元宝搜索 status; never contains credentials. Absent on hosts without the source. */
+  yuanbao?: YuanbaoStatus
 }
 export function normalizeAmbient(value: unknown): AmbientConfig {
   const v = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
@@ -247,5 +337,56 @@ export function normalizeAmbient(value: unknown): AmbientConfig {
     quietStart: num('quietStart', 0, 23),
     quietEnd: num('quietEnd', 0, 23),
     idleOnly: bool('idleOnly'),
+    yuanbao: normalizeYuanbao(v.yuanbao),
+  }
+}
+
+const YUANBAO_STOCK = /^[a-z0-9]{1,10}\.(hk|sh|sz|us)$/
+/** Validates 元宝搜索 settings; unknown or malformed values fall back to the defaults. */
+export function normalizeYuanbao(value: unknown): YuanbaoConfig {
+  const v = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+  const bool = (key: keyof YuanbaoConfig) =>
+    typeof v[key] === 'boolean' ? (v[key] as boolean) : (DEFAULT_YUANBAO[key] as boolean)
+  const text = (key: 'city' | 'newsTopic', max: number) => {
+    const raw =
+      typeof v[key] === 'string' ? (v[key] as string).replace(/\s+/g, ' ').trim().slice(0, max) : ''
+    return raw || DEFAULT_YUANBAO[key]
+  }
+  const list = (key: 'stocks' | 'tools') =>
+    Array.isArray(v[key]) ? (v[key] as unknown[]) : DEFAULT_YUANBAO[key]
+  const stocks = [
+    ...new Set(
+      list('stocks')
+        .filter((s): s is string => typeof s === 'string')
+        .map((s) => s.trim().toLowerCase())
+        .filter((s) => YUANBAO_STOCK.test(s)),
+    ),
+  ].slice(0, 3)
+  const tools = [
+    ...new Set(
+      list('tools')
+        .filter((s): s is string => typeof s === 'string')
+        .map((s) => s.replace(/\s+/g, ' ').trim().slice(0, 40))
+        .filter(Boolean),
+    ),
+  ].slice(0, 4)
+  const limit =
+    typeof v.dailyRequestLimit === 'number' && Number.isFinite(v.dailyRequestLimit)
+      ? Math.max(1, Math.min(200, Math.round(v.dailyRequestLimit)))
+      : DEFAULT_YUANBAO.dailyRequestLimit
+  return {
+    enabled: bool('enabled'),
+    weatherEnabled: bool('weatherEnabled'),
+    city: text('city', 20),
+    goldEnabled: bool('goldEnabled'),
+    goldBrand: bool('goldBrand'),
+    stocksEnabled: bool('stocksEnabled'),
+    stocks: Array.isArray(v.stocks) ? stocks : [...DEFAULT_YUANBAO.stocks],
+    toolsEnabled: bool('toolsEnabled'),
+    tools: Array.isArray(v.tools) ? tools : [...DEFAULT_YUANBAO.tools],
+    holidayEnabled: bool('holidayEnabled'),
+    newsEnabled: bool('newsEnabled'),
+    newsTopic: text('newsTopic', 20),
+    dailyRequestLimit: limit,
   }
 }

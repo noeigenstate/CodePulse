@@ -39,9 +39,13 @@ export function fromCodexHook(raw: unknown): AgentEventInput | null {
   const hookEvent = pickString(r, 'hook_event_name', 'hookEvent', 'event', 'type')
   if (!hookEvent) return null
 
-  const questionTool = pickString(r, 'tool_name', 'toolName', 'tool')?.replace(/^functions\./, '') === 'request_user_input'
-  const eventType = questionTool && (hookEvent === 'PreToolUse' || hookEvent === 'PermissionRequest')
-    ? 'user_input_required' : mapCodexEvent(hookEvent)
+  const questionTool =
+    pickString(r, 'tool_name', 'toolName', 'tool')?.replace(/^functions\./, '') ===
+    'request_user_input'
+  const eventType =
+    questionTool && (hookEvent === 'PreToolUse' || hookEvent === 'PermissionRequest')
+      ? 'user_input_required'
+      : mapCodexEvent(hookEvent)
   if (!eventType) return null
 
   const event: AgentEventInput = {

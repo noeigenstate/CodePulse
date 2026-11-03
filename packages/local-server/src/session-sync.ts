@@ -770,7 +770,10 @@ export class SessionSyncService {
         if (meta.isAuxiliary) {
           // A helper header can carry its parent session_id. Exclude only the
           // helper thread id, never the parent user session or entire workspace.
-          this.hub.excludeAuxiliarySession('codex', meta.threadId ?? sessionIdFromRolloutName(file.path))
+          this.hub.excludeAuxiliarySession(
+            'codex',
+            meta.threadId ?? sessionIdFromRolloutName(file.path),
+          )
           continue
         }
         let cwd = meta.cwd
@@ -1747,9 +1750,19 @@ export class SessionSyncService {
     if (source === 'codex') {
       // Resume/view writes change mtime, settings and context metadata. Only real
       // turn or measured token progress may refresh liveness/recover a timeout.
-      const work = JSON.stringify([turnTiming?.state, turnTiming?.externalTurnId,
-        turnTiming?.startedAt, turnTiming?.elapsedMs, turnTiming?.observedAt, turnTiming?.outcome,
-        token.input, token.cachedInput, token.output, token.reasoningOutput, token.total])
+      const work = JSON.stringify([
+        turnTiming?.state,
+        turnTiming?.externalTurnId,
+        turnTiming?.startedAt,
+        turnTiming?.elapsedMs,
+        turnTiming?.observedAt,
+        turnTiming?.outcome,
+        token.input,
+        token.cachedInput,
+        token.output,
+        token.reasoningOutput,
+        token.total,
+      ])
       const previousWork = this.codexWorkFingerprints.get(mapKey)
       this.codexWorkFingerprints.set(mapKey, work)
       if (previousWork !== undefined && previousWork !== work) return 'activity'
@@ -2247,8 +2260,11 @@ async function readCodexRolloutMeta(file: string): Promise<CodexMeta> {
       const item = JSON.parse(line) as { type?: string; payload?: Record<string, unknown> }
       const p = item.payload
       if (!p) continue
-      if (item.type === 'event_msg' && p.type === 'user_message' &&
-          isCodexAuxiliarySession({ thread_source: meta.threadSource }, p.message)) {
+      if (
+        item.type === 'event_msg' &&
+        p.type === 'user_message' &&
+        isCodexAuxiliarySession({ thread_source: meta.threadSource }, p.message)
+      ) {
         meta.isAuxiliary = true
       }
       if (item.type === 'session_meta' || item.type === 'turn_context') {

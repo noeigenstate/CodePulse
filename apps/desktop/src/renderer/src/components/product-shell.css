@@ -543,84 +543,6 @@
 .hud-preview .project-deck-header { -webkit-app-region:no-drag; }
 .hud-preview .project-deck-state-dot.is-running { animation:none; }
 
-/* Control is a workspace, not a document: keep the cards and apply action in view. */
-.product-control { padding:18px 20px; }
-.product-frame .product-control > .workspace-heading { margin-bottom:16px; }
-.product-control .product-control-detail { padding:16px; }
-.product-control .product-config-grid { gap:16px; grid-template-columns:minmax(0,1fr) 250px; }
-.product-control .product-preview-stage { padding:12px; }
-.product-control .product-preview-label { margin-bottom:10px; }
-.product-control .product-config-heading h2 { margin-bottom:8px; }
-.product-control .product-config h3 { margin:12px 0 6px; }
-.product-control .product-feature-option { padding:8px 10px; margin:6px 0; }
-.product-control .product-feature-option.is-disabled { padding:6px 10px; }
-.product-control .product-feature-option.is-disabled small { display:none; }
-.product-control .product-sample-options { margin-top:6px; padding-top:6px; display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
-.product-control .product-sample-options .product-caption { flex-basis:100%; }
-.product-control .product-sample-buttons { gap:5px; }
-.product-control .product-sample-buttons button { padding:5px 7px; font-size:11px; white-space:nowrap; }
-.product-control .product-sample-label { margin-bottom:0; }
-.product-control .product-sample-options .product-sample-label { margin-bottom:0; white-space:nowrap; }
-.product-control .device-preview-frame { border-radius:6px; box-shadow:none; }
-.ink-work-options { border-top:1px solid var(--line); margin-top:12px; padding-top:10px; }
-.ink-work-options summary { cursor:pointer; font-size:12px; font-weight:500; }
-.product-config-actions { padding-top:10px; margin-top:10px; border-top:1px solid var(--line); background:var(--surface-solid); }
-.product-config-actions > .product-button { width:100%; min-height:36px; }
-.product-config-actions .product-caption { margin-top:5px; line-height:1.4; }
-@media (min-width:900px) {
-  .product-control { display:flex; flex-direction:column; overflow:hidden; scrollbar-gutter:auto; }
-  .product-control > .workspace-heading,.product-control .product-endpoints { flex:none; }
-  .product-control-group { display:flex; flex:1; flex-direction:column; min-height:0; }
-  .product-control-detail { display:flex; flex:1; min-height:0; overflow:hidden; }
-  .product-control-surface,.product-control .ink-control-workspace { display:flex; flex:1; flex-direction:column; min-width:0; min-height:0; }
-  .product-control .product-config-grid { flex:1; min-height:0; width:100%; align-items:stretch; }
-  .product-control .product-preview-stage,.product-control .product-config { min-height:0; overflow:auto; scrollbar-gutter:stable; }
-  .product-control .product-config { border-top:0; padding-top:0; }
-  .product-control .ink-config { display:flex; flex-direction:column; overflow:hidden; scrollbar-gutter:auto; }
-  .ink-config .product-config-heading,.ink-config .product-config-actions { flex:none; }
-  .ink-config .product-config-scroll { flex:1; min-height:0; overflow:auto; scrollbar-gutter:stable; }
-  .product-control .product-desktop-preview { height:calc(100% - 24px); }
-  .product-control .product-console-live-stage,.product-control .product-usage-preview { flex:1; min-height:0; max-height:none; }
-  .product-control .product-desktop-preview.is-board { overflow:auto; }
-  .product-control .is-board .product-console-live-stage,.product-control .is-board .product-usage-preview { flex:none; min-height:340px; }
-  .product-control .ink-control-workspace[data-connecting='true'] { overflow:auto; }
-  .product-control .ink-control-workspace[data-connecting='true'] > .product-config-grid { min-height:480px; flex:none; }
-}
-@media (min-width:900px) and (max-width:1199px) {
-  .product-control { padding:14px; }
-  .product-control .product-control-detail { padding:12px; }
-  .product-control .product-config-grid { grid-template-columns:minmax(0,1fr) 220px; gap:12px; }
-  .product-control .product-endpoints { gap:8px; }
-  .product-control .product-endpoint { padding:10px; gap:8px; }
-  .product-control .product-endpoint-select,.product-control .product-endpoint-actions { padding:0; }
-  .product-control .product-endpoint-head { gap:4px; }
-  .product-control .product-endpoint-head strong { font-size:13px; }
-  .product-control .product-endpoint-description { display:none; }
-  .product-control .product-endpoint-content { font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .product-control .endpoint-action-btn { font-size:11px; padding:6px 8px; }
-}
-@media (max-width:899px) {
-  .product-control .product-config-grid { grid-template-columns:minmax(0,1fr); }
-  .product-control .product-endpoint { display:block; padding:10px; }
-  .product-control .product-endpoint-select { padding:0; }
-  .product-control .product-endpoint-actions { padding:8px 0 0; }
-  .product-control .product-endpoint-description { display:none; }
-  .product-control .endpoint-action-btn { padding:6px 8px; font-size:11px; }
-}
-
-/* Reserve height for actual controls before asking a typical laptop window to scroll. */
-.product-control .product-config h3 { margin:8px 0 5px; }
-.product-control .product-config .product-feature-main { line-height:1.4; }
-.product-control .product-feature-option { padding:7px 9px; }
-.product-control .ink-config .product-feature-option { padding:5px 9px; margin:4px 0; }
-.product-control .product-config .product-cycle-row { padding:5px 8px; margin-top:8px; }
-.product-control .product-config .product-cycle-row select { padding:3px 6px; }
-@media (min-width:900px) and (max-height:740px) {
-  .product-control .workspace-heading p,.product-control .product-focus-entry small { display:none; }
-  .product-frame .product-control > .workspace-heading { margin-bottom:12px; }
-}
-
-
 /* Compact work options and a language action discoverable beside Settings. */
 .work-voice-options { margin-top:12px; }
 .work-voice-details { border-top:1px solid var(--line); padding-top:6px; }
@@ -640,10 +562,6 @@
 
 /* Small-height work options keep the primary controls and collapsed voice row in view. */
 @media (min-width:900px) and (max-height:820px) {
-  .product-control .ink-config .product-feature-main small { display:none; }
-  .product-control .ink-config .product-feature-option { padding-block:4px; }
-  .product-control .ink-config h3 { margin:6px 0 4px; }
-  .ink-config .ink-work-options { margin-top:8px; padding-top:6px; }
   .ink-config .work-voice-options { margin-top:8px; }
   .ink-config .work-voice-details { padding-top:2px; }
   .ink-config .work-voice-details > summary { min-height:30px; }

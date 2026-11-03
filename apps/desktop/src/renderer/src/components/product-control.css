@@ -118,7 +118,10 @@
 .product-desktop-options .work-voice-options { margin-top:0; }
 .ink-config .work-voice-options { margin-top:12px; }
 .product-state-guide { border-top:1px solid var(--line); padding-top:6px; font-size:12px; color:var(--ink); }
-.product-state-guide > summary { min-height:34px; display:flex; align-items:center; cursor:pointer; font-weight:600; }
+.product-state-guide > summary { min-height:34px; display:flex; align-items:center; justify-content:space-between; list-style:none; cursor:pointer; font-weight:600; }
+.product-state-guide > summary::-webkit-details-marker { display:none; }
+.product-state-guide > summary::after { content:'›'; font-size:18px; line-height:1; color:var(--ink-muted); transition:transform .15s; }
+.product-state-guide[open] > summary::after { transform:rotate(90deg); }
 .product-state-guide table { width:100%; border-collapse:collapse; margin:4px 0 8px; }
 .product-state-guide th, .product-state-guide td { text-align:left; padding:3px 6px; border-bottom:1px solid var(--line-soft); font-weight:400; }
 .product-state-guide th { color:var(--ink-muted); }

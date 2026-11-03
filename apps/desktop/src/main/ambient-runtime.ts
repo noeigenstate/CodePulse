@@ -6,7 +6,7 @@ import { YuanbaoClient, yuanbaoResponseJson } from './ambient-yuanbao.js'
 import { YuanbaoKeyStore } from './ambient-yuanbao-keys.js'
 import { AmbientService, type AmbientDependencies } from './ambient-service.js'
 import { allowedMemeImage, fetchBytes } from './ambient-sources.js'
-import { checkMemeImage, packMemeBitmap } from './ambient-image.js'
+import { checkMemeImage, packMemeBitmap, packPicture } from './ambient-image.js'
 
 export function createAmbientRuntime(
   directory: string,
@@ -130,15 +130,18 @@ export function createAmbientRuntime(
       const scale = Math.min(384 / size.width, 208 / size.height)
       const width = Math.max(1, Math.floor(size.width * scale)),
         height = Math.max(1, Math.floor(size.height * scale))
-      const hex = packMemeBitmap(
+      // Personal pictures are shown on demand, so they may use red (a slow full refresh).
+      const picture = packPicture(
         image.resize({ width, height, quality: 'best' }).toBitmap(),
         width,
         height,
+        { red: true },
       )
       return service.addPersonal(
         'image',
         typeof name === 'string' ? name.slice(0, 100) : '我的图片',
-        hex,
+        picture.imageHex,
+        picture.red,
       )
     },
     setKey(provider: AmbientConfig['provider'], key: unknown) {

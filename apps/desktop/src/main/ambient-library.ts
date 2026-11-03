@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { AmbientCard } from '@codepulse/shared'
+import { AMBIENT_RED_MAX_BYTES, type AmbientCard, type AmbientRedPlane } from '@codepulse/shared'
 import { cleanText } from './ambient-rules.js'
 
 // Original short explanations, with reading links. No quotation or live AI call.
@@ -110,23 +110,38 @@ export function builtinCards(now: number): AmbientCard[] {
     ...prompts.map(([id, text]) => make('prompt:' + id, 'prompt', '一分钟 · 思考实验', text)),
   ]
 }
+/** A stored red plane, or undefined when it breaks the protocol (the picture then stays black/white). */
+export function validRedPlane(value: unknown): AmbientRedPlane | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const { x, y, w, h, hex } = value as Record<string, unknown>
+  if (![x, y, w, h].every((v) => Number.isInteger(v))) return undefined
+  const [px, py, pw, ph] = [x, y, w, h] as number[]
+  if (px! % 8 || pw! % 8 || pw! < 8 || ph! < 1 || px! < 0 || py! < 0) return undefined
+  if (px! + pw! > 384 || py! + ph! > 208 || (pw! * ph!) / 8 > AMBIENT_RED_MAX_BYTES)
+    return undefined
+  if (typeof hex !== 'string' || hex.length !== (pw! * ph!) / 4 || !/^[a-f0-9]+$/.test(hex))
+    return undefined
+  return { x: px!, y: py!, w: pw!, h: ph!, hex }
+}
 export function personalCard(
   kind: 'note' | 'image',
   input: unknown,
   now: number,
   imageHex?: string,
+  redInput?: unknown,
 ): AmbientCard {
   if (typeof input !== 'string' || !input.trim() || [...input.trim()].length > 120)
     throw new Error('请填写 1–120 字的内容')
   if (kind === 'image' && (!imageHex || !/^[a-f0-9]{19968}$/.test(imageHex)))
     throw new Error('图片转换失败')
   const text = cleanText(input, 500)
+  const red = kind === 'image' ? validRedPlane(redInput) : undefined
   return {
     id:
       kind +
       ':' +
       createHash('sha256')
-        .update(text + (imageHex ?? ''))
+        .update(text + (imageHex ?? '') + (red ? JSON.stringify(red) : ''))
         .digest('hex')
         .slice(0, 24),
     kind,
@@ -137,6 +152,7 @@ export function personalCard(
     expiresAt: now + 365 * 86400000,
     score: 0,
     ...(imageHex ? { imageHex } : {}),
+    ...(red ? { red } : {}),
   }
 }
 export function restorePersonalCards(input: unknown, now: number): AmbientCard[] {
@@ -150,7 +166,7 @@ export function restorePersonalCards(input: unknown, now: number): AmbientCard[]
         c.publishedAt > now
       )
         return []
-      const card = personalCard(c.kind, c.text, c.publishedAt, c.imageHex)
+      const card = personalCard(c.kind, c.text, c.publishedAt, c.imageHex, c.red)
       return card.expiresAt > now ? [card] : []
     } catch {
       return []

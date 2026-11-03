@@ -38,7 +38,7 @@
 .hud-tools-grid { display:flex; flex-wrap:wrap; gap:4px 16px; }
 .product-feature-link { min-height:32px; padding:4px 0; border:0; background:transparent; text-align:left; font-size:13px; color:var(--ink-700); text-decoration:underline; text-underline-offset:4px; }
 .product-feature-link:hover { color:var(--ink); }
-.ink-control-workspace { display:grid; grid-template-columns:minmax(0,1fr) minmax(320px,.9fr); align-items:start; gap:24px; }
+.ink-control-workspace { display:grid; grid-template-columns:minmax(0,1fr) minmax(260px,.31fr); align-items:start; gap:24px; }
 .ink-preview-column { display:flex; flex-direction:column; gap:16px; min-width:0; }
 .ink-preview-card .device-preview { margin-top:0; }
 .ink-preview-card .device-preview-frame { background:var(--surface-muted); border:1px solid var(--line); border-radius:10px; box-shadow:none; }

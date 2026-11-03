@@ -2430,22 +2430,37 @@ app.whenReady().then(async () => {
             )
           }
           const root = page === 'ambient' ? '.ambient-panel' : '.product-control'
-          const bar = (await main.webContents.executeJavaScript(
-            `(()=>{const b=document.querySelector(${JSON.stringify(root)}+' .device-preview-framebar'),f=document.querySelector(${JSON.stringify(root)}+' .device-preview-frame');if(!b||!f)return null;const br=b.getBoundingClientRect(),fr=f.getBoundingClientRect();return {barRight:br.right,frameRight:fr.right,barBottom:br.bottom,frameTop:fr.top,more:b.querySelector('.device-preview-more').getBoundingClientRect().height}})()`,
+          // Control: ⋯ shares the heading row with 连接设备. Desk content (no heading): ⋯ hugs the frame.
+          const controls = (await main.webContents.executeJavaScript(
+            `(()=>{const r=document.querySelector(${JSON.stringify(root)}),f=r?.querySelector('.device-preview-frame'),m=r?.querySelector('.device-preview-more');if(!f||!m)return null;
+              const fr=f.getBoundingClientRect(),mr=m.getBoundingClientRect(),h=m.closest('.device-preview-header'),b=m.closest('.device-preview-framebar');
+              const peers=h?[...h.querySelectorAll('.device-preview-header-actions > button')].filter(x=>x!==m&&x.getBoundingClientRect().height).map(x=>{const q=x.getBoundingClientRect();return q.top+q.height/2}):[];
+              return {inHeader:Boolean(h),inBar:Boolean(b),moreMid:mr.top+mr.height/2,peers,more:mr.height,moreBottom:mr.bottom,frameTop:fr.top,moreRight:mr.right,frameRight:fr.right,
+                visibleTag:[...r.querySelectorAll('.device-preview-tag')].some(t=>t.getBoundingClientRect().width>2)}})()`,
           )) as {
-            barRight: number
-            frameRight: number
-            barBottom: number
-            frameTop: number
+            inHeader: boolean
+            inBar: boolean
+            moreMid: number
+            peers: number[]
             more: number
+            moreBottom: number
+            frameTop: number
+            moreRight: number
+            frameRight: number
+            visibleTag: boolean
           } | null
           assert.ok(
-            bar &&
-              Math.abs(bar.barRight - bar.frameRight) <= 3 &&
-              bar.frameTop - bar.barBottom <= 12 &&
-              bar.frameTop >= bar.barBottom - 1 &&
-              bar.more >= 32,
-            `${page} preview controls hug the frame (${theme} ${width}): ${JSON.stringify(bar)}`,
+            controls &&
+              controls.more >= 32 &&
+              !controls.visibleTag &&
+              (page === 'ambient'
+                ? controls.inBar &&
+                  Math.abs(controls.moreRight - controls.frameRight) <= 3 &&
+                  controls.frameTop >= controls.moreBottom - 1 &&
+                  controls.frameTop - controls.moreBottom <= 12
+                : controls.inHeader &&
+                  controls.peers.every((mid) => Math.abs(mid - controls.moreMid) <= 2)),
+            `${page} preview controls (${theme} ${width}): ${JSON.stringify(controls)}`,
           )
           await capture(`ia2-final-${theme}-${width}x${height}-${page}`)
         }

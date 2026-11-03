@@ -34,7 +34,6 @@
 .device-preview-stagebox { width:max-content; margin:0 auto; }
 .device-preview-stagebox .device-preview-frame { margin:0; }
 .device-preview-framebar { display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-bottom:8px; }
-.device-preview-tag { padding:0 8px; border:1px solid var(--line); border-radius:999px; background:var(--surface-muted); color:var(--ink-muted); font-size:12px; font-weight:500; line-height:20px; }
 .device-preview-menu { position:fixed; z-index:100; box-sizing:border-box; overflow:auto; padding:16px; border:1px solid var(--line); border-radius:10px; background:var(--surface-solid); color:var(--ink); box-shadow:0 8px 24px #0002; }
 .device-preview-menu-row { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px; font-size:13px; color:var(--ink-muted); }
 .device-preview-menu-buttons { display:flex; gap:4px; }

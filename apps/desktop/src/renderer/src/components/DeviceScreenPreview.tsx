@@ -393,44 +393,48 @@ export function DeviceScreenPreview({
       </div>
     </div>
   )
+  const hasHeader = Boolean(compact && (heading || headerActions))
+  const moreButton = (
+    <button
+      ref={menuTrigger}
+      type="button"
+      className="product-button device-preview-more"
+      aria-label="预览选项"
+      title="预览选项"
+      aria-haspopup="dialog"
+      aria-expanded={menuOpen}
+      aria-controls={menuId}
+      onClick={toggleMenu}
+    >
+      ⋯
+    </button>
+  )
   return (
     <div
       className={'device-preview ' + (fit ? 'device-preview-fit' : '')}
       data-render-state={state}
       data-pixel-ratio={scale.k}
     >
-      {compact && (heading || headerActions) && (
+      {/* The preview state stays available to assistive tech without a visible pill. */}
+      {compact && cornerTag && (
+        <span className="device-preview-tag sr-only" role="status">
+          {cornerTag}
+        </span>
+      )}
+      {hasHeader && (
         <div className="device-preview-header">
           {heading && <h2>{heading}</h2>}
-          <div className="device-preview-header-actions">{headerActions}</div>
+          <div className="device-preview-header-actions">
+            {headerActions}
+            {moreButton}
+          </div>
         </div>
       )}
       {!compact && !collapsibleOptions && toolbar}
       <div className="device-preview-picture">
         <div ref={scroll} className="device-preview-scroll" aria-busy={state === 'loading'}>
           <div className={compact ? 'device-preview-stagebox' : undefined}>
-            {compact && (
-              <div className="device-preview-framebar">
-                {cornerTag && (
-                  <span className="device-preview-tag" role="status">
-                    {cornerTag}
-                  </span>
-                )}
-                <button
-                  ref={menuTrigger}
-                  type="button"
-                  className="product-button device-preview-more"
-                  aria-label="预览选项"
-                  title="预览选项"
-                  aria-haspopup="dialog"
-                  aria-expanded={menuOpen}
-                  aria-controls={menuId}
-                  onClick={toggleMenu}
-                >
-                  ⋯
-                </button>
-              </div>
-            )}
+            {compact && !hasHeader && <div className="device-preview-framebar">{moreButton}</div>}
             <div ref={frame} className="device-preview-frame" style={{ width: scale.cssWidth }}>
               <canvas
                 ref={canvas}

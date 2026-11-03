@@ -603,3 +603,34 @@ test('plan gates auto content, manual selection remains an explicit temporary ov
   allowed = false
   assert.equal(s.current(), undefined)
 })
+test('a meme collected again keeps one card per id and its prepared image', async () => {
+  let images = 0
+  const meme = {
+    postLink: 'https://redd.it/dup12',
+    subreddit: 'memes',
+    title: 'Same post',
+    url: 'https://i.redd.it/d.png',
+    nsfw: false,
+    spoiler: false,
+    ups: 3000,
+  }
+  const f = fixture({
+    request: async (url) => (url.includes('meme-api') ? { memes: [meme] } : { tweets: [] }),
+    image: async () => {
+      images++
+      return '00'.repeat(9984)
+    },
+  })
+  f.service.configure({ ...config, xEnabled: false })
+  await f.service.refresh()
+  f.advance(config.pollMinutes * 60000 + 1000)
+  await f.service.refresh()
+  const memes = f.service.snapshot().cards.filter((c) => c.kind === 'meme')
+  assert.equal(memes.length, 1)
+  assert.ok(memes[0]!.imageHex)
+  assert.equal(
+    new Set(f.service.snapshot().cards.map((c) => c.id)).size,
+    f.service.snapshot().cards.length,
+  )
+  assert.equal(images, 1)
+})

@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { deviceInspectScale, devicePixelRatioLabel, devicePreviewScale } from '@codepulse/shared'
+import {
+  DEVICE_SCREEN_MM,
+  deviceInspectScale,
+  devicePhysicalScale,
+  devicePixelRatioLabel,
+  devicePreviewScale,
+} from '@codepulse/shared'
 
 const physical = (cssWidth: number, dpr: number) => Math.round(cssWidth * dpr * 1e6) / 1e6
 
@@ -62,4 +68,15 @@ test('inspect view is at least 2x and in whole physical pixels', () => {
 test('bad pixel ratios read as 1 and the label tells the physical ratio', () => {
   for (const dpr of [0, -1, Number.NaN, Infinity]) assert.equal(devicePreviewScale(dpr, 2000).k, 1)
   assert.equal(devicePixelRatioLabel(2), '1:2 像素')
+})
+
+test('real-size view covers the panel 84.8 x 63.6 mm at 96 CSS px per inch', () => {
+  for (const dpr of [1, 1.5, 2]) {
+    const scale = devicePhysicalScale(dpr)
+    assert.ok(Math.abs((scale.cssWidth / 96) * 25.4 - DEVICE_SCREEN_MM.width) < 1e-9)
+    assert.ok(Math.abs((scale.cssHeight / 96) * 25.4 - DEVICE_SCREEN_MM.height) < 1e-9)
+    assert.ok(Math.abs(scale.k - (scale.cssWidth * dpr) / 400) < 1e-9)
+  }
+  // Smaller than the default whole-pixel preview at dpr 1.5 (533 CSS px).
+  assert.ok(devicePhysicalScale(1.5).cssWidth < devicePreviewScale(1.5, 2000).cssWidth)
 })

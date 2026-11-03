@@ -107,12 +107,12 @@ static void render_tests(void) {
   CHECK(display_font_width(DISPLAY_TITLE, long_text) > 376);
   CHECK(display_font_width(DISPLAY_META, long_text) > 376);
   caption_test(long_text, DISPLAY_META, 266, true);
-  /* A caption that fits in the native 14px body must stay complete. */
+  /* A caption that fits in native Fusion12 metadata must stay complete. */
   long_text[78] = 0;
   CHECK(display_font_width(DISPLAY_TITLE, long_text) > 376);
   CHECK(display_font_width(DISPLAY_META, long_text) <= 376);
   caption_test(long_text, DISPLAY_META, 266, true);
-  strcpy(long_text + 66, "...."); /* Twenty-two 16px cells plus native punctuation. */
+  strcpy(long_text + 63, "...."); /* 21*16 ZhengGe + 4*10 Terminus20b = 376 native pixels. */
   CHECK(display_font_width(DISPLAY_TITLE, long_text) == 376);
   caption_test(long_text, DISPLAY_TITLE, 268, true);
   strcat(long_text, "1");
@@ -181,6 +181,6 @@ static void scale_tests(void) {
 }
 int main(void) {
   coverage_tests(); render_tests(); fallback_tests(); edge_tests(); refresh_tests(); scale_tests();
-  puts("PASS: full semantic coverage; native 16px SC caption, 14px body fallback/source, 376px boundary, legacy scale API compatibility, red bounds/inversion/cooldown");
+  puts("PASS: full semantic coverage; native ZhengGe16 caption, Fusion12 compact fallback/source, 376px boundary, probe-only scale API compatibility, red bounds/inversion/cooldown");
   return 0;
 }

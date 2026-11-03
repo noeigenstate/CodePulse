@@ -53,19 +53,18 @@ def main():
     # Text provenance pins the raw font/license bytes without applying LF
     # normalization to compressed inputs. The generator validates those pins.
     for name in ['scripts/generate-display-font.py','scripts/generate-hierarchy-font.py',
-                 'scripts/generate-native-font-masks.py','fonts/SOURCE.txt',
+                 'scripts/generate-native-font-masks.py','scripts/font-spacing.py','fonts/SOURCE.txt',
                  'scripts/generate-calendar-font-charset.mjs','fonts/sources/calendar-charset.json',
-                 'fonts/sources/noto-sources.json','fonts/sources/noto-native-masks.json',
+                 'fonts/sources/font-grid-sources.json','fonts/sources/grid-native-masks.json','fonts/sources/font-grid-fallbacks.json',
                  'fonts/sources/native-hierarchy.json']:
         files.add(root/name)
     for name in ['scripts/generate-life-assets.py','preview/life-icons.json','fonts/sources/life-assets.json','fonts/licenses/Terminus-OFL.txt']:
         files.add(root/name)
-    fonts=json.loads((root/'fonts/sources/noto-sources.json').read_text(encoding='utf-8'))
+    fonts=json.loads((root/'fonts/sources/font-grid-sources.json').read_text(encoding='utf-8'))
     for font in fonts:
         files.update(root/license['path'] for license in font['licenses'])
     generator=runpy.run_path(str(root/'scripts/generate-hierarchy-font.py'))
-    terminus='\n'+'='*72+'\nTerminus Bold32 (native BDF subset; life hero at integer 2x)\nCopyright (C) 2020 Dimitar Toshkov Zhekov\nSource: fonts/sources/terminus-ter-u32b.bdf.gz\nSHA256: 9bf7c8feb04601ed162e81f8e73dfccde946374f5dfa85395aaa7bab0cb714b0\n\n'+(root/'fonts/licenses/Terminus-OFL.txt').read_text(encoding='utf-8')
-    (out/'THIRD-PARTY-FONTS.txt').write_text(generator['third_party_text'](root)+terminus+code_notices(root,cjson),encoding='utf-8',newline='\n')
+    (out/'THIRD-PARTY-FONTS.txt').write_text(generator['third_party_text'](root)+code_notices(root,cjson),encoding='utf-8',newline='\n')
     files.add(root/'tests/vendor/miniz/LICENSE')
     hashes={str(p.relative_to(root)).replace('\\','/'):hashlib.sha256(p.read_bytes().replace(b'\r\n',b'\n')).hexdigest()
       for p in files if p.is_relative_to(root)}

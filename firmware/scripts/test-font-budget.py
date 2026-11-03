@@ -20,17 +20,20 @@ def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--baseline',required=True,type=Path)
     ap.add_argument('--previous',required=True,type=Path)
+    ap.add_argument('--baseline-name',default='0.0.28',help='Identify the actual saved source tree')
     ap.add_argument('--output',required=True,type=Path)
     ap.add_argument('--wasm',type=Path)
     args=ap.parse_args();root=Path(__file__).resolve().parents[1];out=args.output.resolve()
     cl=shutil.which('cl.exe')
     if not cl:raise SystemExit('Run in the initialized MSVC x64 environment')
     summary={'method':'MSVC x64 /O1 /Gy COFF .text + .rdata, including compressed atlas exactly once','versions':{}}
-    for label,tree in [('0.0.28',args.baseline.resolve()),('previous',args.previous.resolve()),('current',root)]:
+    for label,tree in [(args.baseline_name,args.baseline.resolve()),('previous',args.previous.resolve()),('current',root)]:
         folder=out/label;folder.mkdir(parents=True,exist_ok=True)
         includes=[tree/'main',root/'preview/include',root/'tests/vendor/miniz',root/'managed_components/espressif__cjson/cJSON']
         units={}
-        for unit in ['display_text','quiet_dashboard','codepulse_protocol']:
+        units_to_check=['display_text','quiet_dashboard','codepulse_protocol']
+        if (tree/'main/life_dashboard.c').exists():units_to_check.append('life_dashboard')
+        for unit in units_to_check:
             command=[cl,'/nologo','/std:c11','/utf-8','/O1','/Gy','/c','/D_CRT_SECURE_NO_WARNINGS',
                      *['/I'+str(p) for p in includes],str(tree/f'main/{unit}.c'),'/Fo:'+unit+'.obj']
             result=subprocess.run(command,cwd=folder,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
@@ -47,12 +50,13 @@ def main():
             entry['wasmBytes']=wasm.stat().st_size
             entry['wasmSha256']=hashlib.sha256(wasm.read_bytes()).hexdigest()
         summary['versions'][label]=entry
-    versions=summary['versions'];delta=versions['current']['combined']-versions['0.0.28']['combined']
+    summary['method']='MSVC x64 /O1 /Gy COFF .text + .rdata; includes life renderer when present; each atlas counted once'
+    versions=summary['versions'];delta=versions['current']['combined']-versions[args.baseline_name]['combined']
     summary['budget']={'limitDelta':-8192,'actualDelta':delta,'passed':delta<=-8192,
                        'expandedRamLimit':1086869,'expandedRamPassed':versions['current']['atlasExpanded']<=1086869}
     (out/'result.json').write_text(json.dumps(summary,indent=2)+'\n',encoding='utf-8')
     for label,v in versions.items():print(label,': compressed',v['atlasCompressed'],'expanded',v['atlasExpanded'],'text+RO',v['combined'])
-    print('Current minus 0.0.28:',delta,'bytes; budget',summary['budget'])
+    print('Current minus '+args.baseline_name+':',delta,'bytes; budget',summary['budget'])
     if not all(summary['budget'][k] for k in ['passed','expandedRamPassed']):raise SystemExit('Font/code budget failed')
 
 if __name__=='__main__':main()

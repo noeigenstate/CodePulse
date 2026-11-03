@@ -118,11 +118,67 @@ static void holiday_bar(void) {
     check(ink(actual_black, 387, y), "last holiday cell must end at content edge x387");
   }
 }
+static void native_grid_fit(void) {
+  display_text_bounds_t middle=bounds(MID,"0123456789");
+  display_text_bounds_t hero=bounds(HERO,"0123456789");
+  display_text_bounds_t temperature=bounds(WEATHER_HERO,"0123456789");
+  check(middle.bottom-middle.top==20,"Terminus32 native cap height");
+  check(hero.bottom-hero.top>=39 && hero.bottom-hero.top<=42,"Noto56 native hero cap height");
+  check(temperature.bottom-temperature.top>=43 && temperature.bottom-temperature.top<=45,"Noto60 native temperature cap height");
+  check(bounds(WEATHER_HERO,"3–17").advance+16<=178,"temperature must fit beside the native icon");
+  check(bounds(C14," ").advance==4,"sunset uses a four-pixel native spacer");
+  check(bounds(C16,"日落").advance+4+bounds(MID,"17:12").advance<=119,"sunset must stay inside its row");
+  check(bounds(MID," ").advance==8 && bounds(MID,"·").advance==7,"life uses the shared native32 spacing policy");
+  display_text_bounds_t range_dash=bounds(MID,"–");
+  check(range_dash.right-range_dash.left==13,"holiday range keeps its thirteen-pixel native dash");
+  check(display_text_supports("−") && font_index(HERO,0x2212)>=0,"mathematical minus remains supported");
+  check(display_font_height(DISPLAY_META)>=16,"Zheng16 compact fallback needs a full line box");
+  char shortened[512];
+  check(bounds(MID,"WWWWWWWWWWWWWWWWWWWW").advance>319,"wide native32 command exercises fallback");
+  fit(C16,"WWWWWWWWWWWWWWWWWWWW",319,shortened);
+  check(bounds(C16,shortened).advance<=319,"wide command native-title fallback must fit");
+}
+static void shared_spacing_views(void) {
+  epd_canvas_t actual={actual_black,actual_red},expected={expected_black,expected_red};
+  display_font_t f=DISPLAY_META;
+  check(display_font_bounds(f,"A · B").advance==30,"compact meta advance");
+  check(display_font_bounds(DISPLAY_TITLE," · ").advance==16,"compact title separator advance");
+  check(display_font_bounds(DISPLAY_DATE," · ").advance==23,"compact native32 separator advance");
+  epd_canvas_clear(&actual,W);epd_canvas_clear(&expected,W);
+  display_font_run(&actual,f,20,30,"A · B",DISPLAY_LEFT,K);
+  const char *parts[]={"A","·","B"};
+  const int pens[]={0,12,22};
+  int origin=20-display_font_bounds(f,"A").left;
+  for(unsigned i=0;i<3;i++) {
+    display_text_bounds_t b=display_font_bounds(f,parts[i]);
+    display_font_run(&expected,f,origin+pens[i]+b.left,30,parts[i],DISPLAY_LEFT,K);
+  }
+  check(!memcmp(actual_black,expected_black,sizeof(actual_black)),"run and measured advances disagree");
+  for(int diameter=24;diameter<=64;diameter+=20) {
+    bool inside=true;
+    for(int y=0;y<300;y++) {
+      for(int x=0;x<400;x++) {
+        if(ink(actual_black,(unsigned)x,(unsigned)y) && !display_circle_pixel(x,y,35,25,diameter)) {
+          inside=false;
+        }
+      }
+    }
+    check(display_font_circle_fit(f,20,30,"A · B",DISPLAY_LEFT,35,25,diameter)==inside,"circle fitting uses different spacing");
+  }
+  epd_canvas_clear(&actual,W);epd_canvas_clear(&expected,W);
+  check(display_font_lines(f,30,2,"A · B C")==2,"line measurement uses different spacing");
+  display_font_block(&actual,f,20,30,30,2,20,"A · B C",K);
+  display_font_run(&expected,f,20,30,"A · B",DISPLAY_LEFT,K);
+  display_font_run(&expected,f,20,50,"C",DISPLAY_LEFT,K);
+  check(!memcmp(actual_black,expected_black,sizeof(actual_black)),"line breaking and run spacing disagree");
+}
 int main(void) {
   check(display_text_init(), "font initialization");
   ellipsis_tests();
   gauge_precision();
   holiday_bar();
-  puts("PASS life text: 386 UTF-8 capacities, verbatim gauge precision, seven full-width holiday cells");
+  native_grid_fit();
+  shared_spacing_views();
+  puts("PASS life text: 386 UTF-8 capacities, source precision, seven holiday cells, native grid/hero fit and minus");
   return 0;
 }

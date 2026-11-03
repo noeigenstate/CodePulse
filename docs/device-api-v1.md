@@ -520,8 +520,11 @@ intervals have passed, it shows the published notice and
 the independently known fixed-holiday countdown. Media speculation remains pending.
 
 The renderer preserves rows 0–30 and 263–299 (existing header/quota footer). It draws
-native Noto SC14/16 text, pinned Terminus Bold32 secondary digits and exact 2× hero
-bitmaps. Red is firmware-drawn emphasis, never a desktop-sent `red` bitmap; the 3,072
+native glyphs: from 0.0.31-font, ZhengGe16/Fusion12 Chinese, native Terminus
+Latin/secondary digits up to 32px, and native Noto Sans Bold40/56/60 numeric heroes.
+All production glyphs draw 1:1; there is no integer enlargement. Boxes, icon pixels
+and fit/fallback guards remain shared. Red is firmware-drawn emphasis,
+never a desktop-sent `red` bitmap; the 3,072
 byte bitmap limit does not apply. Falling/closed stock cards are entirely black.
 There is no black outline, grey, antialiasing, dithering or overlapping black/red
 pigment. Existing inversion, attention priority, 120-second red-entry cooldown and

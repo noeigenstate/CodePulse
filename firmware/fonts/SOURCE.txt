@@ -1,3 +1,51 @@
+Current revision: 0.0.31-font / native designed pixel grid (2026-11-03)
+- font-grid-2 typography repair: BODY/META/STATE/MICRO Latin now use native
+  Terminus16b, matching the previous Noto Bold roles. Other bold strikes stay.
+  CJK masks and all Noto40/56/60 hero masks are unchanged. Shared packing helper
+  scripts/font-spacing.py halves native ASCII spaces (half-up) and centers
+  U+00B7 ink with 2px each side. 16b space/dot=4/6px; 18b/20b=5/6px;
+  32b=8/7px. Holiday ranges use native32's 13px en dash; sunset gets 4px gap.
+- Chinese body/title/pet/life: ZhengGeDianHei16 (original pinned BDF).
+  Compact/header/badge/calendar: Fusion Pixel proportional12 (original BDF).
+  Latin/punctuation <=32px: Terminus12n/16n/16b/18b/20b/32b, no scaling.
+  Shared baselines and bitmap rows stay native; only the space/dot metrics
+  above change. No synthetic bold/dilation. Closed calendar CJK stays Fusion12,
+  Latin is native Terminus16b bold (still 207 codepoints, no missing glyphs).
+- Fusion's 116 missing CJK glyphs (plus 22 symbols) use ZhengGe16 in >=16px
+  compact line boxes. Closed calendar207 has no missing glyph. Outside the
+  closed set MICRO uses full pixel16. 81 compatibility codepoints retain
+  Unifont16; the full16 base has 12 native Fusion symbol fallbacks. Exact
+  per-role/codepoint lists: sources/font-grid-fallbacks.json.
+- Only heroes >32px use Noto Sans Bold2.008 at native40/56/60px. Source-stage
+  FreeType2.13.2 / freetype-py2.5.1, Python3.12.10; flags RENDER|TARGET_NORMAL|
+  NO_HINTING|NO_AUTOHINT|NO_BITMAP at 8x. Integer box average on baseline-aligned
+  8x8 cells; set iff sum(samples)*2 >= 255*64. Threshold50% at all hero sizes.
+- Cleanup: one row-major removal of 1-neighbor spurs attached to >=3-neighbor
+  junctions, then one row-major fill of >=5-neighbor notches. Accept edits only
+  when foreground8 and padded-background4 component counts are unchanged.
+  Never remove an isolated dot, close a counter, join/split strokes or iterate
+  thinning. Source metadata records every edit count per native hero size.
+- U+2212 is accepted without changing the 7,752-codepoint charset: Terminus'
+  native minus/en-dash glyphs are byte-identical. Large Noto numeric subsets
+  alias U+2212 to the native same-size en-dash outline (the TTF lacks U+2212).
+- Active sources/licenses: sources/font-grid-sources.json; exact compressed
+  BDF/TTF SHA256 pins: scripts/generate-native-font-masks.py and
+  sources/grid-native-masks.json. Original license files are unmodified.
+  ZhengGe, Fusion and its four bundled license originals, Terminus, Noto Sans
+  Bold and Unifont notices ship verbatim with both preview renderers.
+- Generated source cache: grid-native-masks.json/.bin.gz. Main atlas remains
+  native-hierarchy.json/.bin.gz and main/display_font_data.h; two full shared
+  grid faces and sparse native overrides preserve all 14 semantic faces.
+  230494 compressed / 567665 expanded bytes, versus309408 /578597 before.
+  life-assets.json separately accounts for icons, native Terminus32 and the
+  Noto56/60 numeric subset. Every production draw uses glyph scale1.
+- Source stage: python -B firmware/scripts/generate-native-font-masks.py
+  --freetype-path <freetype-py-2.5.1>. Stdlib packing: python -S
+  firmware/scripts/generate-display-font.py --write-source; then python -S
+  firmware/scripts/generate-life-assets.py. No runtime font installation.
+
+Historical records below are superseded; original source hashes/licenses remain.
+
 Life-card numeric/command subset (0.0.30-life, 2026-11-03)
 Terminus Bold native 32px, integer 2x only for life heroes.
 Source: sources/terminus-ter-u32b.bdf.gz

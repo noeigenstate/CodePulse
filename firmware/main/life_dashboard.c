@@ -6,7 +6,7 @@
 #include <string.h>
 /* Approved B: body only (31..262). Existing header/footer and refresh policy stay shared. */
 typedef enum {
-  C14, C16, SMALL, MID, HERO
+  C14, C16, SMALL, MID, HERO, WEATHER_HERO
 }
 role_t;
 typedef struct {
@@ -16,7 +16,7 @@ typedef struct {
 }
 part_t;
 static display_font_t native(role_t r) {
-  return r == C14 ? DISPLAY_BODY : r == SMALL ? DISPLAY_SUMMARY : DISPLAY_TITLE;
+  return r == C14 ? DISPLAY_META : r == SMALL ? DISPLAY_SMALL_BOLD : DISPLAY_TITLE;
 }
 static void pixel(epd_canvas_t *c, int x, int y, epd_color_t color) {
   if (x >= 12 && x <= 387 && y >= 31 && y <= 262) {
@@ -64,12 +64,12 @@ static unsigned next(const char **text, char bytes[5]) {
   *text=(const char *)p;
   return cp;
 }
-static int font_index(unsigned cp) {
-  if(cp==0x2013 || cp==0x2212){
-    cp='-';
-  }
+static unsigned strike(role_t role) {
+  return role==HERO ? LIFE_FONT_HERO : role==WEATHER_HERO ? LIFE_FONT_WEATHER : LIFE_FONT_MID;
+}
+static int font_index(role_t role, unsigned cp) {
   for(unsigned i=0;i<LIFE_FONT_GLYPHS;i++){
-    if(life_font_codes[i]==cp){
+    if(life_font_codes[i]==cp && life_font_glyphs[strike(role)][i].advance){
       return (int)i;
     }
   }
@@ -82,20 +82,12 @@ static display_text_bounds_t bounds(role_t role,const char *text) {
   display_text_bounds_t b={
     0
   };
-  int pen=0,scale=role==HERO?2:1;
+  int pen=0;
   bool ink=false;
   while(*text){
     char utf8[5];
     unsigned cp=next(&text,utf8);
-    int index=font_index(cp),dx=0,advance=LIFE_FONT_ADVANCE*scale;
-    if(cp=='.'){
-      dx=role==HERO?-9:-4;
-      advance=role==HERO?14:9;
-    }
-    if(cp==':'){
-      dx=role==HERO?-7:-3;
-      advance=role==HERO?18:9;
-    }
+    int index=font_index(role,cp);
     if(index<0){
       const display_text_bounds_t g=display_font_bounds(DISPLAY_TITLE,utf8);
       if(g.right>g.left){
@@ -117,27 +109,24 @@ static display_text_bounds_t bounds(role_t role,const char *text) {
       pen+=g.advance;
       continue;
     }
-    for(int y=0;y<32;y++){
-      for(int x=0;x<16;x++){
-        if(life_font_rows[index][y]&(0x8000u>>x)){
-          int left=pen+dx+x*scale,right=left+scale,top=(LIFE_FONT_TOP+y)*scale,bottom=top+scale;
-          if(!ink || left<b.left){
-            b.left=left;
-          }
-          if(!ink || right>b.right){
-            b.right=right;
-          }
-          if(!ink || top<b.top){
-            b.top=top;
-          }
-          if(!ink || bottom>b.bottom){
-            b.bottom=bottom;
-          }
-          ink=true;
-        }
+    const life_font_glyph_t *g=&life_font_glyphs[strike(role)][index];
+    if(g->width && g->height){
+      int left=pen+g->left,right=left+g->width;
+      if(!ink || left<b.left){
+        b.left=left;
       }
+      if(!ink || right>b.right){
+        b.right=right;
+      }
+      if(!ink || g->top<b.top){
+        b.top=g->top;
+      }
+      if(!ink || g->top+g->height>b.bottom){
+        b.bottom=g->top+g->height;
+      }
+      ink=true;
     }
-    pen+=advance;
+    pen+=g->advance;
   }
   b.advance=pen;
   return b;
@@ -148,34 +137,27 @@ static void positioned(epd_canvas_t *c,role_t role,int x,int base,const char *te
     display_font_run(c,native(role),x+b.left,base,text,DISPLAY_LEFT,color);
     return;
   }
-  int pen=0,scale=role==HERO?2:1;
+  int pen=0;
   while(*text){
     char utf8[5];
     unsigned cp=next(&text,utf8);
-    int index=font_index(cp),dx=0,advance=LIFE_FONT_ADVANCE*scale;
-    if(cp=='.'){
-      dx=role==HERO?-9:-4;
-      advance=role==HERO?14:9;
-    }
-    if(cp==':'){
-      dx=role==HERO?-7:-3;
-      advance=role==HERO?18:9;
-    }
+    int index=font_index(role,cp);
     if(index<0){
       display_text_bounds_t b=display_font_bounds(DISPLAY_TITLE,utf8);
       display_font_run(c,DISPLAY_TITLE,x+pen+b.left,base,utf8,DISPLAY_LEFT,color);
       pen+=b.advance;
       continue;
     }
-    for(int row=0;row<32;row++){
-      for(int col=0;col<16;col++){
-        if(life_font_rows[index][row]&(0x8000u>>col))
-        {
-          rect(c,x+pen+dx+col*scale,base+(LIFE_FONT_TOP+row)*scale,scale,scale,color);
+    const life_font_glyph_t *g=&life_font_glyphs[strike(role)][index];
+    unsigned stride=(g->width+7)/8;
+    for(unsigned row=0;row<g->height;row++){
+      for(unsigned col=0;col<g->width;col++){
+        if(life_font_bits[g->offset+row*stride+col/8]&(128u>>(col%8))){
+          pixel(c,x+pen+g->left+(int)col,base+g->top+(int)row,color);
         }
       }
     }
-    pen+=advance;
+    pen+=g->advance;
   }
 }
 static int text(epd_canvas_t *c,role_t role,int x,int base,const char *s,display_align_t align,epd_color_t color){
@@ -342,9 +324,9 @@ static void weather(epd_canvas_t *c,const codepulse_life_weather_t *w){
   snprintf(right,sizeof(right),"%s%s今天",w->place,w->place[0]?" · ":"");
   label_row(c,inline_icons[w->icon],"元宝搜索 · 天气",right,false);
   icon(c,hero_icons[w->icon],12,72,false);
-  snprintf(hero,sizeof(hero),"%s-%s",w->low,w->high);
+  snprintf(hero,sizeof(hero),"%s–%s",w->low,w->high);
   part_t main[]={
-    P(HERO,hero,K),P(C16,"℃",K)
+    P(WEATHER_HERO,hero,K),P(C16,"℃",K)
   };
   runs(c,72,116,main,2,DISPLAY_LEFT);
   snprintf(detail,sizeof(detail),"%s%s%s%s",w->condition,w->feels[0]?" · 体感 ":"",w->feels,w->feels[0]?"℃":"");
@@ -375,16 +357,16 @@ static void weather(epd_canvas_t *c,const codepulse_life_weather_t *w){
   if(w->sunset[0]){
     icon(c,LIFE_ICON_INLINE16_SUNSET,252,167,false);
     part_t p[]={
-      P(C16,"日落 ",K),P(MID,w->sunset,K)
+      P(C16,"日落",K),P(C14," ",K),P(MID,w->sunset,K)
     };
-    runs(c,276,182,p,2,DISPLAY_LEFT);
+    runs(c,387,182,p,3,DISPLAY_RIGHT);
   }
   hline(c,12,387,200);
   text(c,C16,12,237,"明天",DISPLAY_LEFT,K);
   if(w->has_tomorrow){
     icon(c,inline_icons[w->tomorrow_icon],62,223,false);
     label(c,C16,84,237,w->tomorrow_condition,DISPLAY_LEFT,116);
-    snprintf(hero,sizeof(hero),"%s-%s",w->tomorrow_low,w->tomorrow_high);
+    snprintf(hero,sizeof(hero),"%s–%s",w->tomorrow_low,w->tomorrow_high);
     part_t p[]={
       P(MID,hero,K),P(C16,"℃",K)
     };
@@ -587,11 +569,11 @@ static void tool(epd_canvas_t *c,const codepulse_life_tool_t *t){
   rect(c,12,cy,32,30,R);
   text(c,MID,28,cy+26,">",DISPLAY_CENTER,W);
   rect(c,44,cy,343,30,K);
-  if(t->command[0]){
+  if(t->command[0] && bounds(MID,t->command).advance<=319){
     text(c,MID,56,cy+26,t->command,DISPLAY_LEFT,W);
   } else {
     char title[512];
-    fit(C16,t->title,319,title);
+    fit(C16,t->command[0]?t->command:t->title,319,title);
     text(c,C16,56,cy+23,title,DISPLAY_LEFT,W);
   }
   int dy=cy+46;
@@ -610,7 +592,9 @@ static void news(epd_canvas_t *c,const codepulse_life_news_t *n){
     part_t p[]={
       P(MID,number,W)
     };
-    runs(c,25,y+31,p,1,DISPLAY_CENTER);
+    display_text_bounds_t digit=bounds(MID,number);
+    int baseline=y+8+(26-(digit.bottom-digit.top))/2-digit.top;
+    runs(c,25,baseline,p,1,DISPLAY_CENTER);
     const char *source=n->headlines[i].source;
     int source_width=display_font_width(DISPLAY_BODY,source);
     label(c,C16,50,y+26,n->headlines[i].title,DISPLAY_LEFT,source[0]?325-source_width:337);
@@ -655,9 +639,9 @@ static void holiday(epd_canvas_t *c,const codepulse_life_holiday_t *h){
   snprintf(m,sizeof(m),"%u",h->end.month);
   snprintf(n,sizeof(n),"%u",h->end.day);
   part_t range[]={
-    P(MID,a,K),P(C16,"月",K),P(MID,b,K),P(C16,"日 — ",K),P(MID,m,K),P(C16,"月",K),P(MID,n,K),P(C16,"日",K)
+    P(MID,a,K),P(C16,"月",K),P(MID,b,K),P(C16,"日 ",K),P(MID,"–",K),P(C16," ",K),P(MID,m,K),P(C16,"月",K),P(MID,n,K),P(C16,"日",K)
   };
-  runs(c,72,138,range,8,DISPLAY_LEFT);
+  runs(c,72,138,range,10,DISPLAY_LEFT);
   snprintf(days,sizeof(days),"%u",h->days);
   part_t length[]={
     P(HERO,days,R),P(C16," 天",K)
@@ -749,13 +733,13 @@ bool life_dashboard_render(epd_canvas_t *c,const codepulse_life_t *life){
   if(life->kind==LIFE_WEATHER){
     const codepulse_life_weather_t *w=&life->data.weather;
     char hero[40];
-    snprintf(hero,sizeof(hero),"%s-%s",w->low,w->high);
-    if(w->icon>6 || (w->has_tomorrow && w->tomorrow_icon>6) || !w->condition[0] || !w->low[0] || !w->high[0] || bounds(HERO,hero).advance+16>178){
+    snprintf(hero,sizeof(hero),"%s–%s",w->low,w->high);
+    if(w->icon>6 || (w->has_tomorrow && w->tomorrow_icon>6) || !w->condition[0] || !w->low[0] || !w->high[0] || bounds(WEATHER_HERO,hero).advance+16>178){
       return false;
     }
     weather(c,w);
   } else if(life->kind==LIFE_GOLD){
-    if(!life->data.gold.hero[0] || bounds(HERO,life->data.gold.hero).advance+60>315){
+    if(!life->data.gold.hero[0] || bounds(HERO,life->data.gold.hero).advance+bounds(C16,"  元/克").advance>315){
       return false;
     }
     gold(c,&life->data.gold);

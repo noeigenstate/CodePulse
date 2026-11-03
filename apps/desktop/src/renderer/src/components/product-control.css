@@ -90,7 +90,7 @@
 .product-console-live-stage > .flex-1 { min-height:0; }
 /* Each agent panel keeps room for its header, quota and one full session card; the list scrolls inside the stage. */
 .product-console-live-stage main > .grid { height:auto; min-height:100%; grid-auto-rows:minmax(420px,1fr); }
-@media (max-width:1100px) {
+@media (max-width:860px) {
   .ink-control-workspace,.product-config-grid { grid-template-columns:minmax(0,1fr); }
 }
 @media (max-width:600px) {

@@ -15,7 +15,13 @@
   gap: 16px;
   align-items: start;
 }
+/* Side by side in any ordinary window; only a narrow one (<860px) stacks. */
 @media (max-width: 1180px) {
+  .ambient-grid {
+    grid-template-columns: 208px minmax(0, 1fr);
+  }
+}
+@media (max-width: 860px) {
   .ambient-grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -181,7 +187,7 @@
   gap: 20px;
   align-items: start;
 }
-@media (max-width: 900px) {
+@media (max-width: 1000px) {
   .ambient-inner {
     grid-template-columns: minmax(0, 1fr);
   }

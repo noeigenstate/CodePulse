@@ -202,7 +202,8 @@ static void header(epd_canvas_t *c, const codepulse_ui_model_t *m, bool is_hud) 
       snprintf(hum, sizeof(hum), "%.0f%%", (double)m->humidity_rh);
     } else { snprintf(temp, sizeof(temp), "--.-°C"); snprintf(hum, sizeof(hum), "--%%"); }
     icon(c, 174, 9, thermo);
-    display_font_block(c, DISPLAY_BRAND, 190, 20, 50, 1, 0, temp, EPD_COLOR_BLACK);
+    /* Seven native bold16 characters fit before the humidity icon at x246. */
+    display_font_block(c, DISPLAY_BRAND, 190, 20, 56, 1, 0, temp, EPD_COLOR_BLACK);
     icon(c, 246, 9, drop);
     display_font_block(c, DISPLAY_BRAND, 262, 20, 42, 1, 0, hum, EPD_COLOR_BLACK);
   }

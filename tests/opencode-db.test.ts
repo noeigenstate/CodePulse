@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { readOpencodeSessions } from '../packages/local-server/src/opencode-db.js'
 
 /** Builds a minimal OpenCode session database fixture. */
-async function makeFixtureDb(): Promise<string> {
+async function makeFixtureDb(now: number): Promise<string> {
   const home = await mkdtemp(join(tmpdir(), 'codepulse-opencode-db-'))
   const { default: Database } = await import('better-sqlite3')
   const db = new Database(join(home, 'opencode.db'))
@@ -22,7 +22,6 @@ async function makeFixtureDb(): Promise<string> {
       time_created INTEGER, time_updated INTEGER, data TEXT
     );
   `)
-  const now = Date.now()
   db.prepare(`INSERT INTO session_v2 VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
     'ses_ctx',
     'E:/work/ctx',
@@ -63,7 +62,8 @@ async function makeFixtureDb(): Promise<string> {
 }
 
 test('readOpencodeSessions maps tokens, model id, and context usage', async () => {
-  const home = await makeFixtureDb()
+  const fixtureNow = Date.now()
+  const home = await makeFixtureDb(fixtureNow)
   try {
     const [snapshot] = readOpencodeSessions(home)
     assert.ok(snapshot)
@@ -78,7 +78,8 @@ test('readOpencodeSessions maps tokens, model id, and context usage', async () =
     assert.ok(Math.abs((snapshot.token?.contextUsedPercent ?? 0) - 48.08) < 0.01)
 
     // Liveness prefers the streaming message write time over the session row.
-    assert.ok(snapshot.mtimeMs >= Date.now() - 2_000)
+    // Assert the exact row selected, independently of filesystem/scheduler latency.
+    assert.equal(snapshot.mtimeMs, fixtureNow - 1_000)
   } finally {
     await rm(home, { recursive: true, force: true })
   }

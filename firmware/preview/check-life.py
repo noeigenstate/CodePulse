@@ -64,7 +64,55 @@ def holiday_bar_reference(original):
     return adjusted
 
 
-def compare(output,record=False,update_holiday_bar=False):
+def geometry(pixels,name):
+    checks=0
+    def require(value,message):
+        nonlocal checks
+        if not value:raise ValueError(name+' layout: '+message)
+        checks+=1
+    black=(0,0,0);white=(255,255,255)
+    def line(y,start=12,end=387):
+        require(all(pixels[y*400+x]==black for x in range(start,end+1)),'separator '+str(y))
+    def frame(left,top,width,height,color):
+        for y in [top,top+height-1]:require(all(pixels[y*400+x]==color for x in range(left,left+width)),'frame horizontal')
+        for x in [left,left+width-1]:require(all(pixels[y*400+x]==color for y in range(top,top+height)),'frame vertical')
+    def badge(left,top,width,height):
+        for row in range(height):
+            edge=min(row,height-row-1);cut=[3,1,1,0][edge] if edge<4 else 0
+            require(pixels[(top+row)*400+left+cut]==RED and pixels[(top+row)*400+left+width-cut-1]==RED,'rounded badge edges')
+            for col in range(cut):
+                require(pixels[(top+row)*400+left+col]==white and pixels[(top+row)*400+left+width-col-1]==white,'rounded badge cutout')
+    line(30);line(58);line(263)
+    if name=='weather':line(149);line(200);badge(12,160,120,30)
+    elif name=='gold':line(206)
+    elif name.startswith('stock-'):frame(296,67,91,24,black)
+    elif name=='news':
+        for i in range(4):frame(12,75+i*46,26,26,RED)
+        for i in range(3):line(112+i*46,50)
+    elif name=='holiday-yes':
+        line(165)
+        for i in range(7):
+            left=12+i*352//7+i*4;right=12+(i+1)*352//7+i*4-1
+            frame(left,172,right-left+1,66,RED if i<3 else black)
+    elif name=='holiday-none':line(154);badge(252,118,135,30)
+    icons=json.loads((Path(__file__).parent/'life-icons.json').read_text(encoding='utf-8'))
+    header={'weather':'sun','gold':'ingot','stock-up':'chart','stock-down':'chart','stock-closed':'chart',
+            'tool-codex':'tool','tool-claude':'tool','news':'news','holiday-yes':'lantern','holiday-none':'calendar'}
+    def icon(group,icon_name,x,y,black_only=False):
+        for row,line_pixels in enumerate(icons[group][icon_name]):
+            for col,pixel in enumerate(line_pixels):
+                if pixel=='.':continue
+                expected=black if pixel=='#' or (pixel=='R' and black_only) else RED if pixel=='R' else white
+                require(pixels[(y+row)*400+x+col]==expected,'unchanged '+icon_name+' icon')
+    icon('inline16',header[name],12,38,name in ['stock-down','stock-closed'])
+    if name=='weather':icon('hero48','sun',12,72)
+    if name=='gold':icon('hero48','ingot',339,68)
+    if name=='holiday-yes':icon('hero48','lantern',12,82)
+    if name=='holiday-none':icon('hero48','calendar',12,74)
+    return checks
+
+
+def compare(output,record=False):
     reference=Path(__file__).resolve().parent/'baselines/life-approved';results={}
     for name in NAMES:
         black=(output/(name+'.black.bin')).read_bytes();red=(output/(name+'.red.bin')).read_bytes()
@@ -73,6 +121,7 @@ def compare(output,record=False,update_holiday_bar=False):
         pixels=[RED if not(red[i//8]&(128>>(i%8))) else (0,0,0) if not(black[i//8]&(128>>(i%8))) else (255,255,255) for i in range(120000)]
         expected=read_png(reference/(name+'.png'));diff=[];body=policy=chrome=red_count=unexpected=0
         approved=holiday_bar_reference(expected) if name=='holiday-yes' else expected
+        geometry_checks=geometry(pixels,name)
         for i,(actual,target) in enumerate(zip(pixels,expected)):
             y=i//400;inside=31<=y<=262
             if actual==RED and inside:red_count+=1
@@ -88,34 +137,25 @@ def compare(output,record=False,update_holiday_bar=False):
                 else:chrome+=1
         png(output/(name+'.png'),pixels);png(output/(name+'.diff.png'),diff)
         if name in ['stock-down','stock-closed'] and red_count:raise ValueError('Falling/closed stock must be black')
-        results[name]={'bodyPixelDiff':body,'approvedPolicyDiff':policy,'unexpectedBodyDiff':unexpected,
-                       'headerFooterDiff':chrome,'redPixels':red_count,'bodyPixels':92800,'redSharePercent':round(red_count/928,3)}
+        results[name]={'bodyPixelDiff':body,'approvedPolicyDiff':policy,'fontBodyDiff':unexpected,
+                       'headerFooterDiff':chrome,'layoutChecks':geometry_checks,'redPixels':red_count,'bodyPixels':92800,'redSharePercent':round(red_count/928,3)}
         print(name+': '+json.dumps(results[name]))
     (output/'pixel-report.json').write_text(json.dumps(results,indent=2)+'\n',encoding='utf-8')
-    if any(r['unexpectedBodyDiff'] or r['headerFooterDiff'] for r in results.values()):raise SystemExit('Unexpected pixels differ from approved B; inspect .diff.png')
     sha=lambda path:hashlib.sha256(path.read_bytes()).hexdigest()
-    baseline={'firmwareVersion':'0.0.30-life','design':'yb-life-v1 variant B; black falling/closed stocks; pending fixed-holiday countdown',
+    baseline={'firmwareVersion':'0.0.31-font','design':'yb-life-v1 B geometry; native ZhengGe/Fusion/Terminus; cleaned native Noto heroes',
       'pixels':{name:{'black':sha(output/(name+'.black.bin')),'red':sha(output/(name+'.red.bin')),
         'approvedPng':sha(reference/(name+'.png')),**results[name]} for name in NAMES}}
-    path=reference.parent/'0.0.30-life.json'
+    path=reference.parent/'0.0.31-font-life.json'
     if record:
-        if path.exists():raise SystemExit('Initial life baseline already exists; review changes instead of overwriting')
         path.write_text(json.dumps(baseline,indent=2)+'\n',encoding='utf-8')
-    elif update_holiday_bar:
-        prior=json.loads(path.read_text(encoding='utf-8'))
-        if prior['firmwareVersion']!=baseline['firmwareVersion'] or prior['design']!=baseline['design']:raise SystemExit('Unexpected baseline metadata changed')
-        for name in NAMES:
-            if name!='holiday-yes' and prior['pixels'][name]!=baseline['pixels'][name]:raise SystemExit('Only the reviewed holiday bar baseline may change: '+name)
-        prior['pixels']['holiday-yes']=baseline['pixels']['holiday-yes']
-        path.write_text(json.dumps(prior,indent=2)+'\n',encoding='utf-8')
     elif path.exists():
         if json.loads(path.read_text(encoding='utf-8'))!=baseline:raise SystemExit('Frozen life pixel baseline changed')
     else:raise SystemExit('Missing initial life baseline; verify pixels then use --record once')
-    print('PASS: approved B body pixels, with the explicit design/review overrides; header/footer identical')
+    print('PASS: frozen font-grid pixels, original B PNG differences reported, unchanged layout geometry/icons')
     return results
 
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('output',type=Path)
-    mode=parser.add_mutually_exclusive_group();mode.add_argument('--record',action='store_true');mode.add_argument('--update-holiday-bar',action='store_true')
-    args=parser.parse_args();compare(args.output,args.record,args.update_holiday_bar)
+    parser.add_argument('--update',action='store_true',help='Explicit font-grid baseline re-record after review')
+    args=parser.parse_args();compare(args.output,args.update)

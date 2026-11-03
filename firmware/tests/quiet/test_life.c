@@ -86,6 +86,6 @@ int main(void){
   CHECK(quiet_dashboard_update(&state,&canvas,&model,completed+120000,&result)==ESP_OK && result.red_full && any_red());
   pigments();
   printf("PASS life renderer: colors, unchanged chrome, invalid/unsupported/oversize fallback, 120s red cooldown; assets=%zu bytes\n",
-  sizeof(life_icon_pixels)+sizeof(life_icons)+sizeof(life_font_codes)+sizeof(life_font_rows));
+  sizeof(life_icon_pixels)+sizeof(life_icons)+sizeof(life_font_codes)+sizeof(life_font_glyphs)+sizeof(life_font_bits));
   return 0;
 }

@@ -1,0 +1,1748 @@
+{
+  "compactRoles": [
+    "DISPLAY_BADGE",
+    "DISPLAY_SMALL_BOLD",
+    "DISPLAY_META",
+    "DISPLAY_BRAND",
+    "DISPLAY_STATE",
+    "DISPLAY_SUMMARY"
+  ],
+  "fullRoles": [
+    "DISPLAY_BODY",
+    "DISPLAY_TITLE",
+    "DISPLAY_DENSE_TITLE",
+    "DISPLAY_NUMBER",
+    "DISPLAY_USAGE_NUMBER fallback",
+    "DISPLAY_USAGE_TITLE",
+    "DISPLAY_MICRO outside closed 207",
+    "DISPLAY_DATE fallback"
+  ],
+  "compactLineBoxMinimum": 16,
+  "calendarClosed": 207,
+  "fallbacks": {
+    "compactZheng16": [
+      {
+        "code": "U+02C9",
+        "char": "ˉ"
+      },
+      {
+        "code": "U+2044",
+        "char": "⁄"
+      },
+      {
+        "code": "U+2047",
+        "char": "⁇"
+      },
+      {
+        "code": "U+2048",
+        "char": "⁈"
+      },
+      {
+        "code": "U+2049",
+        "char": "⁉"
+      },
+      {
+        "code": "U+205A",
+        "char": "⁚"
+      },
+      {
+        "code": "U+205D",
+        "char": "⁝"
+      },
+      {
+        "code": "U+220F",
+        "char": "∏"
+      },
+      {
+        "code": "U+2211",
+        "char": "∑"
+      },
+      {
+        "code": "U+221D",
+        "char": "∝"
+      },
+      {
+        "code": "U+2220",
+        "char": "∠"
+      },
+      {
+        "code": "U+222B",
+        "char": "∫"
+      },
+      {
+        "code": "U+222E",
+        "char": "∮"
+      },
+      {
+        "code": "U+2234",
+        "char": "∴"
+      },
+      {
+        "code": "U+2235",
+        "char": "∵"
+      },
+      {
+        "code": "U+2236",
+        "char": "∶"
+      },
+      {
+        "code": "U+2237",
+        "char": "∷"
+      },
+      {
+        "code": "U+223D",
+        "char": "∽"
+      },
+      {
+        "code": "U+224C",
+        "char": "≌"
+      },
+      {
+        "code": "U+226E",
+        "char": "≮"
+      },
+      {
+        "code": "U+226F",
+        "char": "≯"
+      },
+      {
+        "code": "U+2299",
+        "char": "⊙"
+      },
+      {
+        "code": "U+5290",
+        "char": "劐"
+      },
+      {
+        "code": "U+5523",
+        "char": "唣"
+      },
+      {
+        "code": "U+57A1",
+        "char": "垡"
+      },
+      {
+        "code": "U+589A",
+        "char": "墚"
+      },
+      {
+        "code": "U+58BC",
+        "char": "墼"
+      },
+      {
+        "code": "U+5AB5",
+        "char": "媵"
+      },
+      {
+        "code": "U+5AE0",
+        "char": "嫠"
+      },
+      {
+        "code": "U+5B37",
+        "char": "嬷"
+      },
+      {
+        "code": "U+5C1C",
+        "char": "尜"
+      },
+      {
+        "code": "U+5CC1",
+        "char": "峁"
+      },
+      {
+        "code": "U+5D74",
+        "char": "嵴"
+      },
+      {
+        "code": "U+5E8B",
+        "char": "庋"
+      },
+      {
+        "code": "U+5EA5",
+        "char": "庥"
+      },
+      {
+        "code": "U+5F40",
+        "char": "彀"
+      },
+      {
+        "code": "U+5F58",
+        "char": "彘"
+      },
+      {
+        "code": "U+605D",
+        "char": "恝"
+      },
+      {
+        "code": "U+60AB",
+        "char": "悫"
+      },
+      {
+        "code": "U+63FF",
+        "char": "揿"
+      },
+      {
+        "code": "U+679E",
+        "char": "枞"
+      },
+      {
+        "code": "U+684A",
+        "char": "桊"
+      },
+      {
+        "code": "U+68FC",
+        "char": "棼"
+      },
+      {
+        "code": "U+6A7C",
+        "char": "橼"
+      },
+      {
+        "code": "U+6BC2",
+        "char": "毂"
+      },
+      {
+        "code": "U+6CB2",
+        "char": "沲"
+      },
+      {
+        "code": "U+6CD0",
+        "char": "泐"
+      },
+      {
+        "code": "U+6E53",
+        "char": "湓"
+      },
+      {
+        "code": "U+6E86",
+        "char": "溆"
+      },
+      {
+        "code": "U+6EF9",
+        "char": "滹"
+      },
+      {
+        "code": "U+6F2D",
+        "char": "漭"
+      },
+      {
+        "code": "U+70B1",
+        "char": "炱"
+      },
+      {
+        "code": "U+7266",
+        "char": "牦"
+      },
+      {
+        "code": "U+72F4",
+        "char": "狴"
+      },
+      {
+        "code": "U+7481",
+        "char": "璁"
+      },
+      {
+        "code": "U+7619",
+        "char": "瘙"
+      },
+      {
+        "code": "U+761B",
+        "char": "瘛"
+      },
+      {
+        "code": "U+78D9",
+        "char": "磙"
+      },
+      {
+        "code": "U+79ED",
+        "char": "秭"
+      },
+      {
+        "code": "U+7A78",
+        "char": "穸"
+      },
+      {
+        "code": "U+7A80",
+        "char": "窀"
+      },
+      {
+        "code": "U+7B2B",
+        "char": "笫"
+      },
+      {
+        "code": "U+7B3E",
+        "char": "笾"
+      },
+      {
+        "code": "U+7B47",
+        "char": "筇"
+      },
+      {
+        "code": "U+7B58",
+        "char": "筘"
+      },
+      {
+        "code": "U+7BFC",
+        "char": "篼"
+      },
+      {
+        "code": "U+7C0B",
+        "char": "簋"
+      },
+      {
+        "code": "U+7C0F",
+        "char": "簏"
+      },
+      {
+        "code": "U+7D77",
+        "char": "絷"
+      },
+      {
+        "code": "U+7E47",
+        "char": "繇"
+      },
+      {
+        "code": "U+7EA8",
+        "char": "纨"
+      },
+      {
+        "code": "U+7F7E",
+        "char": "罾"
+      },
+      {
+        "code": "U+8031",
+        "char": "耱"
+      },
+      {
+        "code": "U+82AA",
+        "char": "芪"
+      },
+      {
+        "code": "U+82C1",
+        "char": "苁"
+      },
+      {
+        "code": "U+831A",
+        "char": "茚"
+      },
+      {
+        "code": "U+8333",
+        "char": "茳"
+      },
+      {
+        "code": "U+839C",
+        "char": "莜"
+      },
+      {
+        "code": "U+83B8",
+        "char": "莸"
+      },
+      {
+        "code": "U+83BC",
+        "char": "莼"
+      },
+      {
+        "code": "U+83DD",
+        "char": "菝"
+      },
+      {
+        "code": "U+840F",
+        "char": "萏"
+      },
+      {
+        "code": "U+8411",
+        "char": "萑"
+      },
+      {
+        "code": "U+841C",
+        "char": "萜"
+      },
+      {
+        "code": "U+8497",
+        "char": "蒗"
+      },
+      {
+        "code": "U+84E5",
+        "char": "蓥"
+      },
+      {
+        "code": "U+8538",
+        "char": "蔸"
+      },
+      {
+        "code": "U+8579",
+        "char": "蕹"
+      },
+      {
+        "code": "U+8627",
+        "char": "蘧"
+      },
+      {
+        "code": "U+863C",
+        "char": "蘼"
+      },
+      {
+        "code": "U+869D",
+        "char": "蚝"
+      },
+      {
+        "code": "U+881B",
+        "char": "蠛"
+      },
+      {
+        "code": "U+886E",
+        "char": "衮"
+      },
+      {
+        "code": "U+8930",
+        "char": "褰"
+      },
+      {
+        "code": "U+897B",
+        "char": "襻"
+      },
+      {
+        "code": "U+89F3",
+        "char": "觳"
+      },
+      {
+        "code": "U+8C2E",
+        "char": "谮"
+      },
+      {
+        "code": "U+8D3D",
+        "char": "贽"
+      },
+      {
+        "code": "U+8D55",
+        "char": "赕"
+      },
+      {
+        "code": "U+8D91",
+        "char": "趑"
+      },
+      {
+        "code": "U+8E9E",
+        "char": "躞"
+      },
+      {
+        "code": "U+8F6B",
+        "char": "轫"
+      },
+      {
+        "code": "U+8F94",
+        "char": "辔"
+      },
+      {
+        "code": "U+8F98",
+        "char": "辘"
+      },
+      {
+        "code": "U+90C4",
+        "char": "郄"
+      },
+      {
+        "code": "U+928E",
+        "char": "銎"
+      },
+      {
+        "code": "U+93CA",
+        "char": "鏊"
+      },
+      {
+        "code": "U+955E",
+        "char": "镞"
+      },
+      {
+        "code": "U+955F",
+        "char": "镟"
+      },
+      {
+        "code": "U+956C",
+        "char": "镬"
+      },
+      {
+        "code": "U+96E0",
+        "char": "雠"
+      },
+      {
+        "code": "U+988D",
+        "char": "颍"
+      },
+      {
+        "code": "U+98E8",
+        "char": "飨"
+      },
+      {
+        "code": "U+9954",
+        "char": "饔"
+      },
+      {
+        "code": "U+9A9C",
+        "char": "骜"
+      },
+      {
+        "code": "U+9A9E",
+        "char": "骞"
+      },
+      {
+        "code": "U+9AA2",
+        "char": "骢"
+      },
+      {
+        "code": "U+9AB6",
+        "char": "骶"
+      },
+      {
+        "code": "U+9AF9",
+        "char": "髹"
+      },
+      {
+        "code": "U+9C9E",
+        "char": "鲞"
+      },
+      {
+        "code": "U+9CA7",
+        "char": "鲧"
+      },
+      {
+        "code": "U+9CB0",
+        "char": "鲰"
+      },
+      {
+        "code": "U+9CBA",
+        "char": "鲺"
+      },
+      {
+        "code": "U+9CCC",
+        "char": "鳌"
+      },
+      {
+        "code": "U+9CCF",
+        "char": "鳏"
+      },
+      {
+        "code": "U+9E28",
+        "char": "鸨"
+      },
+      {
+        "code": "U+9E37",
+        "char": "鸷"
+      },
+      {
+        "code": "U+9E3A",
+        "char": "鸺"
+      },
+      {
+        "code": "U+9E46",
+        "char": "鹆"
+      },
+      {
+        "code": "U+9E4C",
+        "char": "鹌"
+      },
+      {
+        "code": "U+9E5E",
+        "char": "鹞"
+      },
+      {
+        "code": "U+9E6D",
+        "char": "鹭"
+      },
+      {
+        "code": "U+9E71",
+        "char": "鹱"
+      },
+      {
+        "code": "U+9E87",
+        "char": "麇"
+      },
+      {
+        "code": "U+9EE7",
+        "char": "黧"
+      },
+      {
+        "code": "U+9F17",
+        "char": "鼗"
+      },
+      {
+        "code": "U+9F22",
+        "char": "鼢"
+      },
+      {
+        "code": "U+9F37",
+        "char": "鼷"
+      }
+    ],
+    "compactCjkZheng16": [
+      {
+        "code": "U+5290",
+        "char": "劐"
+      },
+      {
+        "code": "U+5523",
+        "char": "唣"
+      },
+      {
+        "code": "U+57A1",
+        "char": "垡"
+      },
+      {
+        "code": "U+589A",
+        "char": "墚"
+      },
+      {
+        "code": "U+58BC",
+        "char": "墼"
+      },
+      {
+        "code": "U+5AB5",
+        "char": "媵"
+      },
+      {
+        "code": "U+5AE0",
+        "char": "嫠"
+      },
+      {
+        "code": "U+5B37",
+        "char": "嬷"
+      },
+      {
+        "code": "U+5C1C",
+        "char": "尜"
+      },
+      {
+        "code": "U+5CC1",
+        "char": "峁"
+      },
+      {
+        "code": "U+5D74",
+        "char": "嵴"
+      },
+      {
+        "code": "U+5E8B",
+        "char": "庋"
+      },
+      {
+        "code": "U+5EA5",
+        "char": "庥"
+      },
+      {
+        "code": "U+5F40",
+        "char": "彀"
+      },
+      {
+        "code": "U+5F58",
+        "char": "彘"
+      },
+      {
+        "code": "U+605D",
+        "char": "恝"
+      },
+      {
+        "code": "U+60AB",
+        "char": "悫"
+      },
+      {
+        "code": "U+63FF",
+        "char": "揿"
+      },
+      {
+        "code": "U+679E",
+        "char": "枞"
+      },
+      {
+        "code": "U+684A",
+        "char": "桊"
+      },
+      {
+        "code": "U+68FC",
+        "char": "棼"
+      },
+      {
+        "code": "U+6A7C",
+        "char": "橼"
+      },
+      {
+        "code": "U+6BC2",
+        "char": "毂"
+      },
+      {
+        "code": "U+6CB2",
+        "char": "沲"
+      },
+      {
+        "code": "U+6CD0",
+        "char": "泐"
+      },
+      {
+        "code": "U+6E53",
+        "char": "湓"
+      },
+      {
+        "code": "U+6E86",
+        "char": "溆"
+      },
+      {
+        "code": "U+6EF9",
+        "char": "滹"
+      },
+      {
+        "code": "U+6F2D",
+        "char": "漭"
+      },
+      {
+        "code": "U+70B1",
+        "char": "炱"
+      },
+      {
+        "code": "U+7266",
+        "char": "牦"
+      },
+      {
+        "code": "U+72F4",
+        "char": "狴"
+      },
+      {
+        "code": "U+7481",
+        "char": "璁"
+      },
+      {
+        "code": "U+7619",
+        "char": "瘙"
+      },
+      {
+        "code": "U+761B",
+        "char": "瘛"
+      },
+      {
+        "code": "U+78D9",
+        "char": "磙"
+      },
+      {
+        "code": "U+79ED",
+        "char": "秭"
+      },
+      {
+        "code": "U+7A78",
+        "char": "穸"
+      },
+      {
+        "code": "U+7A80",
+        "char": "窀"
+      },
+      {
+        "code": "U+7B2B",
+        "char": "笫"
+      },
+      {
+        "code": "U+7B3E",
+        "char": "笾"
+      },
+      {
+        "code": "U+7B47",
+        "char": "筇"
+      },
+      {
+        "code": "U+7B58",
+        "char": "筘"
+      },
+      {
+        "code": "U+7BFC",
+        "char": "篼"
+      },
+      {
+        "code": "U+7C0B",
+        "char": "簋"
+      },
+      {
+        "code": "U+7C0F",
+        "char": "簏"
+      },
+      {
+        "code": "U+7D77",
+        "char": "絷"
+      },
+      {
+        "code": "U+7E47",
+        "char": "繇"
+      },
+      {
+        "code": "U+7EA8",
+        "char": "纨"
+      },
+      {
+        "code": "U+7F7E",
+        "char": "罾"
+      },
+      {
+        "code": "U+8031",
+        "char": "耱"
+      },
+      {
+        "code": "U+82AA",
+        "char": "芪"
+      },
+      {
+        "code": "U+82C1",
+        "char": "苁"
+      },
+      {
+        "code": "U+831A",
+        "char": "茚"
+      },
+      {
+        "code": "U+8333",
+        "char": "茳"
+      },
+      {
+        "code": "U+839C",
+        "char": "莜"
+      },
+      {
+        "code": "U+83B8",
+        "char": "莸"
+      },
+      {
+        "code": "U+83BC",
+        "char": "莼"
+      },
+      {
+        "code": "U+83DD",
+        "char": "菝"
+      },
+      {
+        "code": "U+840F",
+        "char": "萏"
+      },
+      {
+        "code": "U+8411",
+        "char": "萑"
+      },
+      {
+        "code": "U+841C",
+        "char": "萜"
+      },
+      {
+        "code": "U+8497",
+        "char": "蒗"
+      },
+      {
+        "code": "U+84E5",
+        "char": "蓥"
+      },
+      {
+        "code": "U+8538",
+        "char": "蔸"
+      },
+      {
+        "code": "U+8579",
+        "char": "蕹"
+      },
+      {
+        "code": "U+8627",
+        "char": "蘧"
+      },
+      {
+        "code": "U+863C",
+        "char": "蘼"
+      },
+      {
+        "code": "U+869D",
+        "char": "蚝"
+      },
+      {
+        "code": "U+881B",
+        "char": "蠛"
+      },
+      {
+        "code": "U+886E",
+        "char": "衮"
+      },
+      {
+        "code": "U+8930",
+        "char": "褰"
+      },
+      {
+        "code": "U+897B",
+        "char": "襻"
+      },
+      {
+        "code": "U+89F3",
+        "char": "觳"
+      },
+      {
+        "code": "U+8C2E",
+        "char": "谮"
+      },
+      {
+        "code": "U+8D3D",
+        "char": "贽"
+      },
+      {
+        "code": "U+8D55",
+        "char": "赕"
+      },
+      {
+        "code": "U+8D91",
+        "char": "趑"
+      },
+      {
+        "code": "U+8E9E",
+        "char": "躞"
+      },
+      {
+        "code": "U+8F6B",
+        "char": "轫"
+      },
+      {
+        "code": "U+8F94",
+        "char": "辔"
+      },
+      {
+        "code": "U+8F98",
+        "char": "辘"
+      },
+      {
+        "code": "U+90C4",
+        "char": "郄"
+      },
+      {
+        "code": "U+928E",
+        "char": "銎"
+      },
+      {
+        "code": "U+93CA",
+        "char": "鏊"
+      },
+      {
+        "code": "U+955E",
+        "char": "镞"
+      },
+      {
+        "code": "U+955F",
+        "char": "镟"
+      },
+      {
+        "code": "U+956C",
+        "char": "镬"
+      },
+      {
+        "code": "U+96E0",
+        "char": "雠"
+      },
+      {
+        "code": "U+988D",
+        "char": "颍"
+      },
+      {
+        "code": "U+98E8",
+        "char": "飨"
+      },
+      {
+        "code": "U+9954",
+        "char": "饔"
+      },
+      {
+        "code": "U+9A9C",
+        "char": "骜"
+      },
+      {
+        "code": "U+9A9E",
+        "char": "骞"
+      },
+      {
+        "code": "U+9AA2",
+        "char": "骢"
+      },
+      {
+        "code": "U+9AB6",
+        "char": "骶"
+      },
+      {
+        "code": "U+9AF9",
+        "char": "髹"
+      },
+      {
+        "code": "U+9C9E",
+        "char": "鲞"
+      },
+      {
+        "code": "U+9CA7",
+        "char": "鲧"
+      },
+      {
+        "code": "U+9CB0",
+        "char": "鲰"
+      },
+      {
+        "code": "U+9CBA",
+        "char": "鲺"
+      },
+      {
+        "code": "U+9CCC",
+        "char": "鳌"
+      },
+      {
+        "code": "U+9CCF",
+        "char": "鳏"
+      },
+      {
+        "code": "U+9E28",
+        "char": "鸨"
+      },
+      {
+        "code": "U+9E37",
+        "char": "鸷"
+      },
+      {
+        "code": "U+9E3A",
+        "char": "鸺"
+      },
+      {
+        "code": "U+9E46",
+        "char": "鹆"
+      },
+      {
+        "code": "U+9E4C",
+        "char": "鹌"
+      },
+      {
+        "code": "U+9E5E",
+        "char": "鹞"
+      },
+      {
+        "code": "U+9E6D",
+        "char": "鹭"
+      },
+      {
+        "code": "U+9E71",
+        "char": "鹱"
+      },
+      {
+        "code": "U+9E87",
+        "char": "麇"
+      },
+      {
+        "code": "U+9EE7",
+        "char": "黧"
+      },
+      {
+        "code": "U+9F17",
+        "char": "鼗"
+      },
+      {
+        "code": "U+9F22",
+        "char": "鼢"
+      },
+      {
+        "code": "U+9F37",
+        "char": "鼷"
+      }
+    ],
+    "compactUnifont16": [
+      {
+        "code": "U+007F",
+        "char": ""
+      },
+      {
+        "code": "U+0080",
+        "char": ""
+      },
+      {
+        "code": "U+0081",
+        "char": ""
+      },
+      {
+        "code": "U+0082",
+        "char": ""
+      },
+      {
+        "code": "U+0083",
+        "char": ""
+      },
+      {
+        "code": "U+0084",
+        "char": ""
+      },
+      {
+        "code": "U+0085",
+        "char": ""
+      },
+      {
+        "code": "U+0086",
+        "char": ""
+      },
+      {
+        "code": "U+0087",
+        "char": ""
+      },
+      {
+        "code": "U+0088",
+        "char": ""
+      },
+      {
+        "code": "U+0089",
+        "char": ""
+      },
+      {
+        "code": "U+008A",
+        "char": ""
+      },
+      {
+        "code": "U+008B",
+        "char": ""
+      },
+      {
+        "code": "U+008C",
+        "char": ""
+      },
+      {
+        "code": "U+008D",
+        "char": ""
+      },
+      {
+        "code": "U+008E",
+        "char": ""
+      },
+      {
+        "code": "U+008F",
+        "char": ""
+      },
+      {
+        "code": "U+0090",
+        "char": ""
+      },
+      {
+        "code": "U+0091",
+        "char": ""
+      },
+      {
+        "code": "U+0092",
+        "char": ""
+      },
+      {
+        "code": "U+0093",
+        "char": ""
+      },
+      {
+        "code": "U+0094",
+        "char": ""
+      },
+      {
+        "code": "U+0095",
+        "char": ""
+      },
+      {
+        "code": "U+0096",
+        "char": ""
+      },
+      {
+        "code": "U+0097",
+        "char": ""
+      },
+      {
+        "code": "U+0098",
+        "char": ""
+      },
+      {
+        "code": "U+0099",
+        "char": ""
+      },
+      {
+        "code": "U+009A",
+        "char": ""
+      },
+      {
+        "code": "U+009B",
+        "char": ""
+      },
+      {
+        "code": "U+009C",
+        "char": ""
+      },
+      {
+        "code": "U+009D",
+        "char": ""
+      },
+      {
+        "code": "U+009E",
+        "char": ""
+      },
+      {
+        "code": "U+009F",
+        "char": ""
+      },
+      {
+        "code": "U+2028",
+        "char": " "
+      },
+      {
+        "code": "U+2029",
+        "char": " "
+      },
+      {
+        "code": "U+202A",
+        "char": "‪"
+      },
+      {
+        "code": "U+202B",
+        "char": "‫"
+      },
+      {
+        "code": "U+202C",
+        "char": "‬"
+      },
+      {
+        "code": "U+202D",
+        "char": "‭"
+      },
+      {
+        "code": "U+202E",
+        "char": "‮"
+      },
+      {
+        "code": "U+202F",
+        "char": " "
+      },
+      {
+        "code": "U+2038",
+        "char": "‸"
+      },
+      {
+        "code": "U+203D",
+        "char": "‽"
+      },
+      {
+        "code": "U+203F",
+        "char": "‿"
+      },
+      {
+        "code": "U+2040",
+        "char": "⁀"
+      },
+      {
+        "code": "U+2041",
+        "char": "⁁"
+      },
+      {
+        "code": "U+2042",
+        "char": "⁂"
+      },
+      {
+        "code": "U+2045",
+        "char": "⁅"
+      },
+      {
+        "code": "U+2046",
+        "char": "⁆"
+      },
+      {
+        "code": "U+204A",
+        "char": "⁊"
+      },
+      {
+        "code": "U+204E",
+        "char": "⁎"
+      },
+      {
+        "code": "U+204F",
+        "char": "⁏"
+      },
+      {
+        "code": "U+2050",
+        "char": "⁐"
+      },
+      {
+        "code": "U+2051",
+        "char": "⁑"
+      },
+      {
+        "code": "U+2052",
+        "char": "⁒"
+      },
+      {
+        "code": "U+2053",
+        "char": "⁓"
+      },
+      {
+        "code": "U+2054",
+        "char": "⁔"
+      },
+      {
+        "code": "U+2055",
+        "char": "⁕"
+      },
+      {
+        "code": "U+2056",
+        "char": "⁖"
+      },
+      {
+        "code": "U+2058",
+        "char": "⁘"
+      },
+      {
+        "code": "U+2059",
+        "char": "⁙"
+      },
+      {
+        "code": "U+205B",
+        "char": "⁛"
+      },
+      {
+        "code": "U+205C",
+        "char": "⁜"
+      },
+      {
+        "code": "U+205E",
+        "char": "⁞"
+      },
+      {
+        "code": "U+205F",
+        "char": " "
+      },
+      {
+        "code": "U+2060",
+        "char": "⁠"
+      },
+      {
+        "code": "U+2061",
+        "char": "⁡"
+      },
+      {
+        "code": "U+2062",
+        "char": "⁢"
+      },
+      {
+        "code": "U+2063",
+        "char": "⁣"
+      },
+      {
+        "code": "U+2064",
+        "char": "⁤"
+      },
+      {
+        "code": "U+2065",
+        "char": "⁥"
+      },
+      {
+        "code": "U+2066",
+        "char": "⁦"
+      },
+      {
+        "code": "U+2067",
+        "char": "⁧"
+      },
+      {
+        "code": "U+2068",
+        "char": "⁨"
+      },
+      {
+        "code": "U+2069",
+        "char": "⁩"
+      },
+      {
+        "code": "U+206A",
+        "char": "⁪"
+      },
+      {
+        "code": "U+206B",
+        "char": "⁫"
+      },
+      {
+        "code": "U+206C",
+        "char": "⁬"
+      },
+      {
+        "code": "U+206D",
+        "char": "⁭"
+      },
+      {
+        "code": "U+206E",
+        "char": "⁮"
+      },
+      {
+        "code": "U+206F",
+        "char": "⁯"
+      }
+    ],
+    "calendar12": [],
+    "fullUnifont16": [
+      {
+        "code": "U+007F",
+        "char": ""
+      },
+      {
+        "code": "U+0080",
+        "char": ""
+      },
+      {
+        "code": "U+0081",
+        "char": ""
+      },
+      {
+        "code": "U+0082",
+        "char": ""
+      },
+      {
+        "code": "U+0083",
+        "char": ""
+      },
+      {
+        "code": "U+0084",
+        "char": ""
+      },
+      {
+        "code": "U+0085",
+        "char": ""
+      },
+      {
+        "code": "U+0086",
+        "char": ""
+      },
+      {
+        "code": "U+0087",
+        "char": ""
+      },
+      {
+        "code": "U+0088",
+        "char": ""
+      },
+      {
+        "code": "U+0089",
+        "char": ""
+      },
+      {
+        "code": "U+008A",
+        "char": ""
+      },
+      {
+        "code": "U+008B",
+        "char": ""
+      },
+      {
+        "code": "U+008C",
+        "char": ""
+      },
+      {
+        "code": "U+008D",
+        "char": ""
+      },
+      {
+        "code": "U+008E",
+        "char": ""
+      },
+      {
+        "code": "U+008F",
+        "char": ""
+      },
+      {
+        "code": "U+0090",
+        "char": ""
+      },
+      {
+        "code": "U+0091",
+        "char": ""
+      },
+      {
+        "code": "U+0092",
+        "char": ""
+      },
+      {
+        "code": "U+0093",
+        "char": ""
+      },
+      {
+        "code": "U+0094",
+        "char": ""
+      },
+      {
+        "code": "U+0095",
+        "char": ""
+      },
+      {
+        "code": "U+0096",
+        "char": ""
+      },
+      {
+        "code": "U+0097",
+        "char": ""
+      },
+      {
+        "code": "U+0098",
+        "char": ""
+      },
+      {
+        "code": "U+0099",
+        "char": ""
+      },
+      {
+        "code": "U+009A",
+        "char": ""
+      },
+      {
+        "code": "U+009B",
+        "char": ""
+      },
+      {
+        "code": "U+009C",
+        "char": ""
+      },
+      {
+        "code": "U+009D",
+        "char": ""
+      },
+      {
+        "code": "U+009E",
+        "char": ""
+      },
+      {
+        "code": "U+009F",
+        "char": ""
+      },
+      {
+        "code": "U+2028",
+        "char": " "
+      },
+      {
+        "code": "U+2029",
+        "char": " "
+      },
+      {
+        "code": "U+202A",
+        "char": "‪"
+      },
+      {
+        "code": "U+202B",
+        "char": "‫"
+      },
+      {
+        "code": "U+202C",
+        "char": "‬"
+      },
+      {
+        "code": "U+202D",
+        "char": "‭"
+      },
+      {
+        "code": "U+202E",
+        "char": "‮"
+      },
+      {
+        "code": "U+202F",
+        "char": " "
+      },
+      {
+        "code": "U+2038",
+        "char": "‸"
+      },
+      {
+        "code": "U+203D",
+        "char": "‽"
+      },
+      {
+        "code": "U+203F",
+        "char": "‿"
+      },
+      {
+        "code": "U+2040",
+        "char": "⁀"
+      },
+      {
+        "code": "U+2041",
+        "char": "⁁"
+      },
+      {
+        "code": "U+2042",
+        "char": "⁂"
+      },
+      {
+        "code": "U+2045",
+        "char": "⁅"
+      },
+      {
+        "code": "U+2046",
+        "char": "⁆"
+      },
+      {
+        "code": "U+204A",
+        "char": "⁊"
+      },
+      {
+        "code": "U+204E",
+        "char": "⁎"
+      },
+      {
+        "code": "U+204F",
+        "char": "⁏"
+      },
+      {
+        "code": "U+2050",
+        "char": "⁐"
+      },
+      {
+        "code": "U+2051",
+        "char": "⁑"
+      },
+      {
+        "code": "U+2052",
+        "char": "⁒"
+      },
+      {
+        "code": "U+2053",
+        "char": "⁓"
+      },
+      {
+        "code": "U+2054",
+        "char": "⁔"
+      },
+      {
+        "code": "U+2055",
+        "char": "⁕"
+      },
+      {
+        "code": "U+2056",
+        "char": "⁖"
+      },
+      {
+        "code": "U+2058",
+        "char": "⁘"
+      },
+      {
+        "code": "U+2059",
+        "char": "⁙"
+      },
+      {
+        "code": "U+205B",
+        "char": "⁛"
+      },
+      {
+        "code": "U+205C",
+        "char": "⁜"
+      },
+      {
+        "code": "U+205E",
+        "char": "⁞"
+      },
+      {
+        "code": "U+205F",
+        "char": " "
+      },
+      {
+        "code": "U+2060",
+        "char": "⁠"
+      },
+      {
+        "code": "U+2061",
+        "char": "⁡"
+      },
+      {
+        "code": "U+2062",
+        "char": "⁢"
+      },
+      {
+        "code": "U+2063",
+        "char": "⁣"
+      },
+      {
+        "code": "U+2064",
+        "char": "⁤"
+      },
+      {
+        "code": "U+2065",
+        "char": "⁥"
+      },
+      {
+        "code": "U+2066",
+        "char": "⁦"
+      },
+      {
+        "code": "U+2067",
+        "char": "⁧"
+      },
+      {
+        "code": "U+2068",
+        "char": "⁨"
+      },
+      {
+        "code": "U+2069",
+        "char": "⁩"
+      },
+      {
+        "code": "U+206A",
+        "char": "⁪"
+      },
+      {
+        "code": "U+206B",
+        "char": "⁫"
+      },
+      {
+        "code": "U+206C",
+        "char": "⁬"
+      },
+      {
+        "code": "U+206D",
+        "char": "⁭"
+      },
+      {
+        "code": "U+206E",
+        "char": "⁮"
+      },
+      {
+        "code": "U+206F",
+        "char": "⁯"
+      }
+    ],
+    "fullFusion12": [
+      {
+        "code": "U+2023",
+        "char": "‣"
+      },
+      {
+        "code": "U+2024",
+        "char": "․"
+      },
+      {
+        "code": "U+2027",
+        "char": "‧"
+      },
+      {
+        "code": "U+2034",
+        "char": "‴"
+      },
+      {
+        "code": "U+2035",
+        "char": "‵"
+      },
+      {
+        "code": "U+2036",
+        "char": "‶"
+      },
+      {
+        "code": "U+2037",
+        "char": "‷"
+      },
+      {
+        "code": "U+2043",
+        "char": "⁃"
+      },
+      {
+        "code": "U+204B",
+        "char": "⁋"
+      },
+      {
+        "code": "U+204C",
+        "char": "⁌"
+      },
+      {
+        "code": "U+204D",
+        "char": "⁍"
+      },
+      {
+        "code": "U+2057",
+        "char": "⁗"
+      }
+    ]
+  },
+  "policy": "Compact roles have >=16px line boxes; MICRO closed 207 uses Fusion12 CJK and native Terminus16b Latin, other characters use complete pixel16 fallback."
+}

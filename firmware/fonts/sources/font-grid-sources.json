@@ -1,0 +1,96 @@
+[
+  {
+    "name": "ZhengGeDianHei 16 / 正格点黑",
+    "version": "1.0",
+    "copyright": "Copyright 2026 yzdnn (https://github.com/yzdnn), Copyright 2020 The DotGothic16 Project Authors (https://github.com/fontworks-fonts/DotGothic16/)",
+    "url": "https://raw.githubusercontent.com/yzdnn/ZhengGeDianHei-16/main/Sources/ZhengGeDianHei-16.bdf",
+    "path": "fonts/sources/ZhengGeDianHei-16.bdf.gz",
+    "sha256": "6bc128a69a03b683fc3aaf1373b06a66e9efc76417834cad9946d23be0a81327",
+    "licenses": [
+      {
+        "path": "fonts/licenses/ZhengGeDianHei-OFL.txt",
+        "sha256": "b29df9c1b812ce7f74f694c2871323c4e8839e924ed65a316d1a4dfac3fc7772"
+      }
+    ]
+  },
+  {
+    "name": "Fusion Pixel proportional 12",
+    "version": "2026.10.25",
+    "copyright": "Copyright (c) 2022, TakWolf (https://takwolf.com)",
+    "url": "https://github.com/TakWolf/fusion-pixel-font/releases/download/2026.10.25/fusion-pixel-font-12px-proportional-bdf-v2026.10.25.zip",
+    "path": "fonts/sources/fusion-pixel-12px-proportional-2026.10.25.bdf.gz",
+    "sha256": "7fa678ba5ad903bee6c31534acf1ec2f801f4e09f0001fe46b60a940529ac40b",
+    "licenses": [
+      {
+        "path": "fonts/licenses/fusion-2026.10.25-OFL.txt",
+        "sha256": "bc518cf64b8032c07690f33cc270c35c179255a6ac8efa7c165ebae7e8f76a63"
+      },
+      {
+        "path": "fonts/licenses/fusion-2026.10.25-LICENSES--ark-pixel--OFL.txt",
+        "sha256": "3ab41567e68e3988ba1ef16dd2644eca95ca5648ea12e7d46e6287fc0bbe5aee"
+      },
+      {
+        "path": "fonts/licenses/fusion-2026.10.25-LICENSES--cubic-11--OFL.txt",
+        "sha256": "2b6e5938e5cffa0b9e183bd05f8c363e174e7ebed1a0556e2855fd1707fa2188"
+      },
+      {
+        "path": "fonts/licenses/fusion-2026.10.25-LICENSES--galmuri--LICENSE.txt",
+        "sha256": "86a3ee9495f942f0243f18c103da9faca27adb88142613edb8bb852e56c892c1"
+      }
+    ]
+  },
+  {
+    "name": "Terminus native 12n/16n/16b/18b/20b/32b",
+    "version": "4.49.1",
+    "copyright": "Copyright (C) 2020 Dimitar Toshkov Zhekov.",
+    "url": "https://distfiles.macports.org/terminus-font/terminus-font-4.49.1.tar.gz",
+    "path": "fonts/sources/terminus-ter-u12n.bdf.gz",
+    "sha256": "f9d54f02eec846fc04911eaf9792431efcc2a9a44c7b9ee0a9e605ce843fedd5",
+    "variants": {
+      "terminus-ter-u12n.bdf.gz": "f9d54f02eec846fc04911eaf9792431efcc2a9a44c7b9ee0a9e605ce843fedd5",
+      "terminus-ter-u16n.bdf.gz": "f2ba142483584ef5ecf644bdc636d49ef00b87b2efeb9b2a34a11d4b3680fb3b",
+      "terminus-ter-u16b.bdf.gz": "3f7b63f12162dcb2d29c8d32bfb0d1a5fa67fde42843b6254b45e14567addc08",
+      "terminus-ter-u18b.bdf.gz": "62ab52f8bc0052f1660320fedec159aa62cd24ee751c10895a50e5a6e51c75d2",
+      "terminus-ter-u20b.bdf.gz": "67557c2e8a5d2deba2c6caee7b5b4b6aa4d7fb7951d9f237f7360cec21e9cd70",
+      "terminus-ter-u32b.bdf.gz": "9bf7c8feb04601ed162e81f8e73dfccde946374f5dfa85395aaa7bab0cb714b0"
+    },
+    "licenses": [
+      {
+        "path": "fonts/licenses/Terminus-OFL.txt",
+        "sha256": "29e51260692fca30c51c3c81c5aa12205cfaa1be7180bf5e7c8192e745e78308"
+      }
+    ]
+  },
+  {
+    "name": "Noto Sans Bold",
+    "version": "2.008",
+    "copyright": "Copyright 2015-2021 Google LLC. All Rights Reserved.",
+    "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/main/hinted/ttf/NotoSans/NotoSans-Bold.ttf",
+    "sha256": "c976e4b1b99edc88775377fcc21692ca4bfa46b6d6ca6522bfda505b28ff9d6a",
+    "path": "fonts/sources/NotoSans-Bold.ttf",
+    "licenses": [
+      {
+        "path": "fonts/licenses/NotoSans-2.008-OFL.txt",
+        "sha256": "0dab92d0544f7b233403f14b84a663bdbfa746982eda629e7f4f9ffe1b036feb"
+      }
+    ]
+  },
+  {
+    "name": "GNU Unifont (legacy control-code compatibility glyphs)",
+    "version": "18.0.01",
+    "copyright": "Copyright (C) 1998-2026 Roman Czyborra, Paul Hardy, Qianqian Fang, Andrew Miller, Johnnie Weaver, David Corbett, Ælla Chiana Moskopp, Rebecca Bettencourt, Minseo Lee, Ho-Seok Ee, et al. License: SIL Open Font License version 1.1 and GPLv2+: GNU GPL version 2 or later <http://gnu.org/licenses/gpl.html> with the GNU Font Embedding Exception.",
+    "url": "https://www.unifoundry.com/pub/unifont/unifont-18.0.01/font-builds/unifont-18.0.01.bdf.gz",
+    "sha256": "2989e0211030d8219fd931aba599fc95c86bc327ce1423848ef949783b208257",
+    "path": "fonts/sources/unifont-18.0.01.bdf.gz",
+    "licenses": [
+      {
+        "path": "fonts/licenses/unifont-18.0.01-LICENSE.txt",
+        "sha256": "1e74cb82bf476843e97c2596297b04219b1a7e51f7238944a8c031cb9401fa87"
+      },
+      {
+        "path": "fonts/licenses/unifont-18.0.01-OFL-1.1.txt",
+        "sha256": "869692af094c57fb7258c57fe26820c759319603321d0ffeb278de3651763ded"
+      }
+    ]
+  }
+]

@@ -79,6 +79,27 @@ typedef struct {
   unsigned advance, width, height;
   int left, top;
 } glyph_t;
+bool display_text_supports(const char *text) {
+  if (!text) {
+    return false;
+  }
+  while (*text) {
+    const unsigned cp = next(&text);
+    unsigned lo = 0, hi = DISPLAY_FONT_GLYPHS;
+    while (lo < hi) {
+      unsigned mid = lo + (hi - lo) / 2;
+      if (font_codes[mid] < cp) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    if (lo == DISPLAY_FONT_GLYPHS || font_codes[lo] != cp) {
+      return false;
+    }
+  }
+  return true;
+}
 static unsigned u16(const uint8_t *p) { return p[0] | (unsigned)p[1] << 8; }
 static unsigned u24(const uint8_t *p) { return u16(p) | (unsigned)p[2] << 16; }
 static bool valid(display_font_t font) {

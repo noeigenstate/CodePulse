@@ -33,6 +33,8 @@ int display_font_block(epd_canvas_t *c, display_font_t font, int x, int baseline
                         int width, int lines, int step, const char *text,
                         epd_color_t color);
 int display_font_width(display_font_t font, const char *text);
+/* The shared complete repertoire; no atlas expansion or allocation is needed. */
+bool display_text_supports(const char *text);
 /* Legacy probe/source compatibility only; current pages use native strikes. */
 void display_font_run_scaled(epd_canvas_t *c, display_font_t font, int x, int baseline,
                              const char *text, display_align_t align, epd_color_t color, int scale);

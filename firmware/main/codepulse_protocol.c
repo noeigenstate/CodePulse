@@ -386,6 +386,254 @@ static bool parse_calendar(const cJSON *a, codepulse_calendar_t *out) {
   out->days = (uint8_t)days; out->week = (uint8_t)numbers[5];
   return true;
 }
+static bool life_string(const cJSON *p, const char *key, char *out, size_t size, unsigned max, bool required) {
+  if (!calendar_text(cJSON_GetObjectItemCaseSensitive(p, key), out, size, max) || (required && !out[0])) {
+    return false;
+  }
+  for (const unsigned char *c = (const unsigned char *)out; *c; c++)
+  {
+    if (c[0] == 0xc2 && c[1] >= 0x80 && c[1] <= 0x9f) {
+      return false;
+    }
+  }
+  return true;
+}
+static bool life_number(const cJSON *p, const char *key, char *out, bool required, bool percent) {
+  if (!life_string(p, key, out, 17, 16, required)) {
+    return false;
+  }
+  const char *s = out;
+  if (!*s) {
+    return true;
+  }
+  if (*s == '-' || *s == '+') {
+    s++;
+  }
+  unsigned before = 0, after = 0;
+  while (*s >= '0' && *s <= '9') {
+    before++;
+    s++;
+  }
+  if (!before || before > 10) {
+    return false;
+  }
+  if (*s == '.') {
+    s++;
+    while (*s >= '0' && *s <= '9') {
+      after++;
+      s++;
+    }
+    if (!after || after > 6) {
+      return false;
+    }
+  }
+  if (*s == '%' && percent) {
+    s++;
+  }
+  return !*s;
+}
+static bool life_enum(const cJSON *p, const char *key, const char *const *names, unsigned count, unsigned *out) {
+  const cJSON *value = cJSON_GetObjectItemCaseSensitive(p, key);
+  if (!cJSON_IsString(value)) {
+    return false;
+  }
+  for (unsigned i = 0; i < count; i++) {
+    if (!strcmp(value->valuestring, names[i])) {
+      *out = i;
+      return true;
+    }
+  }
+  return false;
+}
+static bool life_iso(const cJSON *p, const char *key, codepulse_life_date_t *out) {
+  char s[11];
+  if (!life_string(p, key, s, sizeof(s), 10, true) || strlen(s) != 10 || s[4] != '-' || s[7] != '-') {
+    return false;
+  }
+  unsigned y = 0, m = 0, d = 0;
+  for (unsigned i = 0; i < 10; i++) {
+    if (i != 4 && i != 7) {
+      if (s[i] < '0' || s[i] > '9') {
+        return false;
+      }
+      if (i < 4) {
+        y = y*10 + (unsigned)(s[i]-'0');
+      } else if (i < 7) {
+        m = m*10 + (unsigned)(s[i]-'0');
+      } else {
+        d = d*10 + (unsigned)(s[i]-'0');
+      }
+    }
+  }
+  if (y < 1900 || y > 2101 || m < 1 || m > 12 || d < 1 || d > life_month_days(y, m)) {
+    return false;
+  }
+  *out = (codepulse_life_date_t){
+    (uint16_t)y, (uint8_t)m, (uint8_t)d
+  };
+  return true;
+}
+#define LT(p,key,field,max,required) life_string(p,key,field,sizeof(field),max,required)
+#define LN(p,key,field,required,percent) life_number(p,key,field,required,percent)
+static bool parse_life(const cJSON *a, codepulse_life_t *out) {
+  const cJSON *p = cJSON_GetObjectItemCaseSensitive(a, "life");
+  unsigned version, kind, direction;
+  static const char *const kinds[] = {
+    "weather","gold","stock","tool","news","holiday"
+  };
+  static const char *const directions[] = {
+    "flat","up","down"
+  };
+  static const char *const weather_icons[] = {
+    "sun","cloudsun","cloud","rain","snow","thunder","fog"
+  };
+  if (!cJSON_IsObject(p) || !calendar_integer(cJSON_GetObjectItemCaseSensitive(p,"v"),1,1,&version) ||
+  !life_enum(p,"kind",kinds,6,&kind)) {
+    return false;
+  }
+  out->version = (uint8_t)version;
+  out->kind = (codepulse_life_kind_t)(kind + 1);
+  if (out->kind == LIFE_WEATHER) {
+    codepulse_life_weather_t *w = &out->data.weather;
+    unsigned icon;
+    if (!life_enum(p,"icon",weather_icons,7,&icon) || !LT(p,"place",w->place,20,false) ||
+    !LN(p,"low",w->low,true,false) || !LN(p,"high",w->high,true,false) || !LT(p,"condition",w->condition,16,true) ||
+    !LN(p,"feels",w->feels,false,false) || !LT(p,"wind",w->wind,24,false) ||
+    !LN(p,"humidity",w->humidity,false,false) || !LN(p,"air",w->air,false,false) ||
+    !LT(p,"restriction",w->restriction,16,false) || !LT(p,"sunset",w->sunset,5,false)) {
+      return false;
+    }
+    w->icon = (uint8_t)icon;
+    if (w->sunset[0] && (strlen(w->sunset) != 5 || w->sunset[2] != ':' ||
+    w->sunset[0] < '0' || w->sunset[0] > '2' || w->sunset[1] < '0' || w->sunset[1] > '9' ||
+    (w->sunset[0] == '2' && w->sunset[1] > '3') || w->sunset[3] < '0' || w->sunset[3] > '5' ||
+    w->sunset[4] < '0' || w->sunset[4] > '9')) {
+      return false;
+    }
+    const cJSON *t = cJSON_GetObjectItemCaseSensitive(p,"tomorrow");
+    if (t) {
+      if (!cJSON_IsObject(t) || !life_enum(t,"icon",weather_icons,7,&icon) ||
+      !LN(t,"low",w->tomorrow_low,true,false) || !LN(t,"high",w->tomorrow_high,true,false) ||
+      !LT(t,"condition",w->tomorrow_condition,16,true)) {
+        return false;
+      }
+      w->has_tomorrow = true;
+      w->tomorrow_icon = (uint8_t)icon;
+    }
+    return true;
+  }
+  if (out->kind == LIFE_GOLD) {
+    codepulse_life_gold_t *g = &out->data.gold;
+    if (!life_enum(p,"direction",directions,3,&direction) || !LN(p,"hero",g->hero,true,false) ||
+    !LN(p,"percent",g->percent,false,true) || !LN(p,"change",g->change,false,false) ||
+    !LN(p,"low",g->low,false,false) || !LN(p,"high",g->high,false,false) ||
+    !LN(p,"international",g->international,false,false) || !LN(p,"internationalPercent",g->international_percent,false,true) ||
+    !LT(p,"brand",g->brand,12,false) || !LN(p,"brandPrice",g->brand_price,false,false) || !LT(p,"source",g->source,20,false)) {
+      return false;
+    }
+    g->direction = (codepulse_life_direction_t)direction;
+    return true;
+  }
+  if (out->kind == LIFE_STOCK) {
+    static const char *const states[] = {
+      "unknown","open","closed"
+    };
+    codepulse_life_stock_t *s = &out->data.stock;
+    unsigned state;
+    if (!life_enum(p,"direction",directions,3,&direction) || !life_enum(p,"state",states,3,&state) ||
+    !LT(p,"name",s->name,20,false) || !LT(p,"symbol",s->symbol,16,true) ||
+    !LN(p,"hero",s->hero,true,false) || !LN(p,"percent",s->percent,false,true) || !LN(p,"change",s->change,false,false) ||
+    !LN(p,"low",s->low,false,false) || !LN(p,"high",s->high,false,false) ||
+    !LN(p,"open",s->open,false,false) || !LN(p,"previous",s->previous,false,false) || !LT(p,"source",s->source,20,false)) {
+      return false;
+    }
+    char *dot = strchr(s->symbol,'.');
+    if (!dot || dot == s->symbol || dot - s->symbol > 10 ||
+    (strcmp(dot,".US") && strcmp(dot,".HK") && strcmp(dot,".SH") && strcmp(dot,".SZ"))) {
+      return false;
+    }
+    for (const char *c = s->symbol; c < dot; c++) {
+      if (!(*c >= 'A' && *c <= 'Z') && !(*c >= '0' && *c <= '9')) {
+        return false;
+      }
+    }
+    s->direction = (codepulse_life_direction_t)direction;
+    s->state = (uint8_t)state;
+    return true;
+  }
+  if (out->kind == LIFE_TOOL) {
+    static const char *const icons[] = {
+      "codex","claude","tool"
+    };
+    codepulse_life_tool_t *t = &out->data.tool;
+    unsigned icon;
+    if (!life_enum(p,"icon",icons,3,&icon) || !LT(p,"name",t->name,24,true) || !LT(p,"date",t->date,12,false) ||
+    !LT(p,"source",t->source,8,false) || !LT(p,"command",t->command,20,false) ||
+    !LT(p,"title",t->title,48,true) || !LT(p,"summary",t->summary,96,false)) {
+      return false;
+    }
+    for (const unsigned char *c = (const unsigned char *)t->command; *c; c++) {
+      if (*c < 32 || *c > 126) {
+        return false;
+      }
+    }
+    t->icon = (uint8_t)icon;
+    return true;
+  }
+  if (out->kind == LIFE_NEWS) {
+    codepulse_life_news_t *n = &out->data.news;
+    const cJSON *items = cJSON_GetObjectItemCaseSensitive(p,"headlines");
+    if (!cJSON_IsArray(items) || cJSON_GetArraySize(items) < 1 || cJSON_GetArraySize(items) > CODEPULSE_LIFE_HEADLINES) {
+      return false;
+    }
+    const cJSON *item;
+    cJSON_ArrayForEach(item,items) {
+      codepulse_life_headline_t *h = &n->headlines[n->count];
+      if (!cJSON_IsObject(item) || !LT(item,"title",h->title,28,true) || !LT(item,"source",h->source,8,false)) {
+        return false;
+      }
+      n->count++;
+    }
+    return true;
+  }
+  if (out->kind == LIFE_HOLIDAY) {
+    static const char *const states[] = {
+      "pending","published"
+    };
+    codepulse_life_holiday_t *h = &out->data.holiday;
+    unsigned year, state, days;
+    if (!calendar_integer(cJSON_GetObjectItemCaseSensitive(p,"year"),1900,2100,&year) ||
+    !life_enum(p,"state",states,2,&state) || !LT(p,"label",h->label,12,false)) {
+      return false;
+    }
+    h->year = (uint16_t)year;
+    h->published = state == 1;
+    const cJSON *next = cJSON_GetObjectItemCaseSensitive(p,"next");
+    if (!cJSON_IsObject(next) || !LT(next,"name",h->next_name,12,true) || !life_iso(next,"date",&h->next) ||
+    !calendar_integer(cJSON_GetObjectItemCaseSensitive(next,"days"),0,366,&days)) {
+      return false;
+    }
+    h->next_days = (uint16_t)days;
+    const cJSON *r = cJSON_GetObjectItemCaseSensitive(p,"range");
+    if (r) {
+      if (!h->published || !cJSON_IsObject(r) || !LT(r,"name",h->name,12,true) || !life_iso(r,"start",&h->start) ||
+      !life_iso(r,"end",&h->end) || !calendar_integer(cJSON_GetObjectItemCaseSensitive(r,"days"),1,31,&days) ||
+      life_ordinal(h->end) - life_ordinal(h->start) + 1 != (int)days) {
+        return false;
+      }
+      h->days = (uint8_t)days;
+      h->has_range = true;
+      if (!((h->start.year == h->year && h->end.year == h->year) ||
+      (!strcmp(h->name,"元旦") && h->start.year + 1 == h->year && h->start.month == 12 && h->end.year == h->year && h->end.month == 1))) {
+        return false;
+      }
+    }
+    return true;
+  }
+  return false;
+}
+#undef LT
+#undef LN
 static bool parse_ambient(const cJSON *root, codepulse_ambient_t *out) {
   const cJSON *a = cJSON_GetObjectItemCaseSensitive(root, "ambient");
   if (!a || cJSON_IsNull(a)) return true;
@@ -396,6 +644,14 @@ static bool parse_ambient(const cJSON *root, codepulse_ambient_t *out) {
   if (manual && !cJSON_IsBool(manual)) return false;
   out->manual = cJSON_IsTrue(manual);
   const cJSON *layout = cJSON_GetObjectItemCaseSensitive(a, "layout");
+  if (cJSON_IsString(layout) && !strcmp(layout->valuestring, "life")) {
+    const cJSON *image = cJSON_GetObjectItemCaseSensitive(a,"imageHex");
+    if ((!image || cJSON_IsNull(image)) && !cJSON_GetObjectItemCaseSensitive(a,"items") && parse_life(a,&out->life)) {
+      out->layout = CODEPULSE_AMBIENT_LAYOUT_LIFE;
+      return true;
+    }
+    memset(&out->life,0,sizeof(out->life));
+  }
   if (cJSON_IsString(layout) && !strcmp(layout->valuestring, "calendar")) {
     if (parse_calendar(a, &out->calendar)) {
       out->layout = CODEPULSE_AMBIENT_LAYOUT_CALENDAR;

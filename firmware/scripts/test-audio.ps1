@@ -1,3 +1,4 @@
+param([string]$Output)
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
@@ -11,7 +12,7 @@ if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
         if ($entry -match '^([^=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process') }
     }
 }
-$output = Join-Path $root 'build-audio-host'
+$output = if ($Output) { [IO.Path]::GetFullPath($Output) } else { Join-Path $root 'build-audio-host' }
 New-Item -ItemType Directory -Path $output -Force | Out-Null
 Push-Location $output
 try {

@@ -8,10 +8,13 @@ import type {
 import type { HolidayTable } from './calendar/index.js'
 import { inQuietHours } from './ambient-rules.js'
 import { deviceText, deviceSupports } from './device-text.js'
+import { deviceLife } from './device-life.js'
 import {
   goldCard,
   holidayCard,
+  holidayPendingCard,
   holidayWatchYear,
+  holidayLife,
   newsCard,
   quoteTradingTime,
   stockCard,
@@ -117,6 +120,7 @@ function restore(raw: unknown, now: number): YuanbaoCache {
         if (typeof item.key !== 'string' || item.key.length >= 300 || !validCard(item.card))
           return []
         const card = item.card
+        const life = card.layout === 'life' ? deviceLife(card.life) : undefined
         return [
           {
             key: item.key,
@@ -134,6 +138,7 @@ function restore(raw: unknown, now: number): YuanbaoCache {
               publishedAt: card.publishedAt,
               expiresAt: card.expiresAt,
               score: card.score,
+              ...(life ? { layout: 'life' as const, life } : {}),
             },
           },
         ]
@@ -261,6 +266,23 @@ export class YuanbaoSource {
     return [...latest.values()].map((entry) => this.present(entry.card))
   }
   present(card: AmbientCard): AmbientCard {
+    if (card.life?.kind === 'holiday') {
+      const previous = card.life
+      if (previous.state === 'pending') {
+        return { ...holidayPendingCard(previous.year, this.now()), expiresAt: card.expiresAt }
+      }
+      const next = holidayLife(previous.year, previous.state, this.now(), previous.range).next
+      const oldName = previous.next.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const oldCountdown = new RegExp(
+        `距\\s*${previous.next.date.slice(0, 4)}\\s*${oldName}\\s*${previous.next.days}\\s*天`,
+        'g',
+      )
+      const text = card.text.replace(
+        oldCountdown,
+        () => `距 ${next.date.slice(0, 4)} ${next.name} ${next.days} 天`,
+      )
+      return { ...card, text, life: { ...previous, next } }
+    }
     if (card.kind !== 'life' || card.topic !== 'gold') return card
     const raw = this.cache.entries.find(
       (entry) => card.id === entry.card.id || card.id.startsWith(entry.card.id + ':view:'),
@@ -271,8 +293,7 @@ export class YuanbaoSource {
     const keys = new Set(this.jobs().map((job) => job.key))
     return this.cache.entries.some(
       (entry) =>
-        (entry.card.id === card.id ||
-          (entry.card.topic === 'gold' && card.id.startsWith(entry.card.id + ':view:'))) &&
+        (entry.card.id === card.id || this.present(entry.card).id === card.id) &&
         keys.has(entry.key),
     )
   }
@@ -487,6 +508,8 @@ export class YuanbaoSource {
       }
       const now = this.now()
       const pages = sanitizeYuanbaoResponse(result.pages, key) as YuanbaoPage[]
+      const official =
+        job.topic === 'holiday' ? holidayCard(pages, Number(job.value), now) : undefined
       const parsed =
         job.topic === 'weather'
           ? weatherCard(pages, job.value, now)
@@ -497,7 +520,7 @@ export class YuanbaoSource {
               : job.topic === 'tools'
                 ? toolCard(pages, job.value, now)
                 : job.topic === 'holiday'
-                  ? holidayCard(pages, Number(job.value), now)
+                  ? (official ?? holidayPendingCard(Number(job.value), now))
                   : newsCard(pages, now)
       const card = parsed ? { ...parsed, expiresAt: now + YUANBAO_TTL_MS[job.topic] } : undefined
       const real = this.cache.entries.find(
@@ -510,7 +533,7 @@ export class YuanbaoSource {
         ]
           .filter((entry) => entry.card.expiresAt > now)
           .slice(-64)
-        if (job.topic === 'holiday') this.cache.published[job.value] = true
+        if (official) this.cache.published[job.value] = true
       }
       const error = card
         ? card.score > 0

@@ -362,13 +362,13 @@ is chosen from live status and local time when the card is built.
 
 ### Pet layout (firmware 0.0.28+)
 
-`ambient.layout` is an optional string; the only value is `"pet"`. The desktop sets it on pixel
+`ambient.layout` is an optional string; `"pet"` is its bitmap-specific value. The desktop sets it on pixel
 pet cards, and only sends it when the card also carries `imageHex`. It is part of the card
 projection, so a change of layout changes the response revision. The firmware redraws a card only
 when `ambient.id` changes, so for bitmap cards the desktop derives the id (still 24 hex characters)
 from the card id together with the layout, `imageHex` and `red`: the same card with another
 layout or picture is a new id, an identical one keeps its id. Cards without a bitmap keep the
-plain hash of the card id.
+plain hash of the card id unless they carry the calendar or life extensions below.
 
 - A `"pet"` card with a bitmap is laid out as: picture 384×208 at screen pixel (8, 32) (`red`
   keeps picture-area coordinates and follows the same origin), a 1 px divider at y=243, `text`
@@ -441,6 +441,103 @@ year; dates may also fall in 20–31 December before it or 1–10 January after 
 can cross the year, e.g. `2023.json` lists 2022-12-31) and are filed under their own date. It then
 replaces the built-in table for that year (other years are added) and is cached in the user data
 directory as `calendar-holidays.json`. Any failure is silent and leaves the previous table.
+
+### Life cards (firmware 0.0.30-life+)
+
+Yuanbao cards retain `ambient.text` and `source` and add `layout: "life"` plus a bounded
+`ambient.life` object. This is an additive v1 extension, not a bitmap. Old firmware's
+unknown-layout branch ignores it and draws the unchanged text. New firmware drops an
+invalid/future/partial life object and draws that same text. An invalid independent
+`imageHex` remains a status error; life never bypasses image validation. Life does not
+combine with bitmap or todo payloads.
+
+```json
+{
+  "ambient": {
+    "id": "…24 hex…",
+    "source": "元宝搜索 · 腾讯自选股",
+    "text": "苹果 AAPL.US 340.57 ↓1.18%（-4.06）交易中 · 高 343.78 低 339.61 · 10:24",
+    "layout": "life",
+    "life": {
+      "v": 1,
+      "kind": "stock",
+      "name": "苹果",
+      "symbol": "AAPL.US",
+      "hero": "340.57",
+      "direction": "down",
+      "state": "open",
+      "percent": "1.18%",
+      "change": "-4.06",
+      "low": "339.61",
+      "high": "343.78",
+      "open": "342.67",
+      "previous": "344.63",
+      "source": "腾讯自选股"
+    }
+  }
+}
+```
+
+All listed keys for a kind are required; unavailable optional values use `""`, never
+invented numbers. Only `tomorrow` and `range` may be absent. Version is exactly integer
+`v: 1`. Unknown properties are ignored. Strings are UTF-8, contain no controls, and
+are bounded by Unicode code points below (firmware reserves up to four bytes per
+code point plus NUL). Numeric strings have at most 16 ASCII characters: optional
+`+`/`-`, 1–10 integer digits, optional decimal point and 1–6 fractional digits.
+Only percent fields may end in `%`. Required numbers may not be empty.
+
+| kind      | Fields and limits                                                                                                                                                                                                                                                                                                    |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `weather` | `icon` = sun/cloudsun/cloud/rain/snow/thunder/fog; `place` ≤20, `condition` 1–16, `wind` ≤24, `restriction` ≤16, `sunset` empty or valid HH:MM. Required numeric `low/high`; optional numeric `feels/humidity/air`. Optional `tomorrow` is a complete `{icon, low, high, condition}` using the same rules.           |
+| `gold`    | Required numeric `hero`; `direction` = up/down/flat; optional numeric `percent/change/low/high/international/internationalPercent/brandPrice`; `brand` ≤12 and `source` ≤20.                                                                                                                                         |
+| `stock`   | `name` ≤20; required `symbol` ≤16 (`[A-Z0-9]{1,10}.US/HK/SH/SZ`); required numeric `hero`; `direction` as above; `state` = open/closed/unknown; optional numeric `percent/change/low/high/open/previous`; `source` ≤20.                                                                                              |
+| `tool`    | `icon` = codex/claude/tool; `name` 1–24; `date` ≤12; `source` ≤8; `command` ≤20 printable ASCII characters, empty when no actual command was found; `title` 1–48; `summary` ≤96. A missing command displays the actual title in its place, not a fabricated shell command.                                           |
+| `news`    | `headlines` contains 1–4 `{title,source}` items; title 1–28, source ≤8. Desktop keeps only complete supported titles, then truncates. No placeholder headlines are inserted. The legacy text retains up to three titles.                                                                                             |
+| `holiday` | `year` 1900–2100; `state` pending/published; `label` ≤12; `next` = `{name,date,days}` with name 1–12, real ISO Gregorian date (1900–2101), integer days 0–366. Optional published-only `range` = `{name,start,end,days}` with name 1–12, valid ISO dates and inclusive days 1–31 exactly equal to the date interval. |
+
+Desktop `deviceLife()` checks the shape, normalizes every nested string with
+`deviceText()`, and rejects unsupported code points against the checked-in 7,752-code
+device character set. The firmware validates types, capacities, UTF-8, numbers, dates
+and enums, and checks glyph coverage before drawing any life ink. Oversized hero
+runs fall back atomically to text. Unknown objects never alter canonical tasks or
+the applied playlist.
+
+Published date ranges must belong to the notice's year; only a New Year break may
+start in December of the previous year and end in January of the notice's year.
+An otherwise valid date interval quoted as a historical example is not used.
+
+The pending holiday row uses the China civil calendar (`Asia/Shanghai`), consistently
+with holiday watch and pending-card IDs, to count down to the next fixed Gregorian
+anchor (1 January, 1 May or 1 October, including today at zero days). It is **not** an
+estimate of State Council leave dates. The desktop supplies the count; firmware
+does not read a clock. For example, 3 November 2026 → 1 January 2027 is 59 days.
+Both pending and published cards recompute the countdown at presentation time after
+China midnight without requesting another search or extending the original expiry.
+Pending card IDs also carry the China date; published life JSON changes the device
+projection ID/revision while retaining the announced range. A published notice only supplies
+`range` for the first parsed interval whose end is today or later in China; when all
+intervals have passed, it shows the published notice and
+the independently known fixed-holiday countdown. Media speculation remains pending.
+
+The renderer preserves rows 0–30 and 263–299 (existing header/quota footer). It draws
+native Noto SC14/16 text, pinned Terminus Bold32 secondary digits and exact 2× hero
+bitmaps. Red is firmware-drawn emphasis, never a desktop-sent `red` bitmap; the 3,072
+byte bitmap limit does not apply. Falling/closed stock cards are entirely black.
+There is no black outline, grey, antialiasing, dithering or overlapping black/red
+pigment. Existing inversion, attention priority, 120-second red-entry cooldown and
+safe panel shutdown remain unchanged.
+
+Gauge low/high labels draw validated strings verbatim, including precision and
+trailing zeros (`0.385`, `375.200`). The seven holiday cells fill x=12..387 with six
+four-pixel gaps and widths 50/50/50/51/50/50/51. Pre-market/after-market stocks use the
+neutral `unknown` state, never the closed-market badge. Source humidity may include
+a trailing `%`; desktop strips it before adding the display unit. Tool metadata is
+entity-decoded, glyph-filtered and marked with `…` when truncated.
+
+The 24-hex projection ID and response revision include the validated life JSON. At
+the 32,000-byte response limit, desktop removes the entire `layout/life` pair first,
+preserves text under its plain ID, then falls back to work only if text cannot fit.
+The feature adds no device command, port, credentials or network fetch on firmware.
 
 ### 0.0.26：设备展示减频与局部窗口候选
 

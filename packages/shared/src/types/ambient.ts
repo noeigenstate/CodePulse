@@ -1,3 +1,4 @@
+import type { DeviceLife } from './life.js'
 /** Pixel pets drawn for the multimedia area. Names and art live in the desktop main process. */
 export const PET_IDS = ['tuantuan', 'yaya', 'fangfang', 'rongrong', 'lulu'] as const
 export type PetId = (typeof PET_IDS)[number]
@@ -225,8 +226,9 @@ export interface AmbientCard {
   imageHex?: string
   /** Red ink on top of `imageHex`; only cards with a bitmap may carry it. */
   red?: AmbientRedPlane
-  /** Screen layout: `'pet'` for a bitmap card (larger picture, 20px line), `'calendar'` with `calendar`. */
-  layout?: 'pet' | 'calendar'
+  /** Additive firmware layouts; life cards retain text for older firmware. */
+  layout?: 'pet' | 'calendar' | 'life'
+  life?: DeviceLife
   /** Pet cards only: which pet this is and the mood it was drawn for. */
   pet?: { id: PetId; mood: PetMood }
   /** Calendar cards only: the month grid the device draws (no bitmap). */
@@ -243,8 +245,9 @@ export interface DeviceAmbientCard {
   imageHex?: string
   /** Optional; devices drop it (and show black only) if it is invalid. */
   red?: AmbientRedPlane
-  /** `'pet'` needs `imageHex` (firmware 0.0.28+); `'calendar'` needs `calendar` (0.0.29+). Older firmware ignores both. */
-  layout?: 'pet' | 'calendar'
+  /** pet (0.0.28+), calendar (0.0.29+), life (0.0.30+). Unknown layouts render the legacy text. */
+  layout?: 'pet' | 'calendar' | 'life'
+  life?: DeviceLife
   /** Optional; firmware drops an invalid one and shows `text` as a plain card. */
   calendar?: DeviceCalendar
 }

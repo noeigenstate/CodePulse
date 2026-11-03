@@ -1,7 +1,17 @@
 import { createHash, createHmac } from 'node:crypto'
-import type { AmbientCard, YuanbaoConfig, YuanbaoKeyInput, YuanbaoTopic } from '@codepulse/shared'
+import {
+  lifeDate,
+  type AmbientCard,
+  type YuanbaoConfig,
+  type YuanbaoKeyInput,
+  type YuanbaoTopic,
+  type LifeDirection,
+  type LifeHoliday,
+  type LifeWeatherIcon,
+} from '@codepulse/shared'
 import type { HolidayTable } from './calendar/index.js'
 import { deviceText, deviceSupports } from './device-text.js'
+import { deviceLife } from './device-life.js'
 
 export const YUANBAO_TIMEOUT_MS = 8000
 export const YUANBAO_MAX_BYTES = 512000
@@ -473,7 +483,9 @@ function makeCard(
   publishedAt: number,
   fetchedAt: number,
   valid = true,
+  life?: unknown,
 ): AmbientCard {
+  const structured = deviceLife(life)
   return {
     id,
     kind: ['weather', 'gold', 'stock'].includes(topic) ? 'life' : 'search',
@@ -485,7 +497,36 @@ function makeCard(
     // TTL bounds our observation; the provider timestamp stays intact, including a market's last quote.
     expiresAt: fetchedAt + YUANBAO_TTL_MS[topic],
     score: valid ? 1 : 0,
+    ...(structured ? { layout: 'life' as const, life: structured } : {}),
   }
+}
+const lifeNumber = (value: string | undefined) => {
+  const n = cleanNumber(value)
+  return n === '—' ? '' : n
+}
+function lifeDirection(fields: Record<string, string>): LifeDirection | undefined {
+  const state = deviceText(fields['涨跌状态'])
+  if (state === 'up' || state === 'down') return state
+  if (state === 'draw') return 'flat'
+  const delta = lifeNumber(fields['涨跌额'] ?? fields['涨跌值'])
+  return delta ? (Number(delta) > 0 ? 'up' : Number(delta) < 0 ? 'down' : 'flat') : undefined
+}
+function weatherIcon(condition: string): LifeWeatherIcon | undefined {
+  return /雷/.test(condition)
+    ? 'thunder'
+    : /雪/.test(condition)
+      ? 'snow'
+      : /雨/.test(condition)
+        ? 'rain'
+        : /雾|霾|沙尘/.test(condition)
+          ? 'fog'
+          : /多云/.test(condition)
+            ? 'cloudsun'
+            : /阴|云/.test(condition)
+              ? 'cloud'
+              : /晴/.test(condition)
+                ? 'sun'
+                : undefined
 }
 function quoteChange(fields: Record<string, string>) {
   const change = cleanNumber(fields['涨跌值'] ?? fields['涨跌额'])
@@ -548,7 +589,7 @@ export function weatherCard(
     const updated = sourceTime(deviceText(top['更新时间'] ?? page.date), now)
     const published = Number.isFinite(updated) ? updated : now
     const felt = cleanNumber(day['体感温度（摄氏度）']),
-      humidity = cleanNumber(day['湿度']),
+      humidity = cleanNumber(day['湿度']).replace(/%$/, ''),
       air = cleanNumber(day['空气质量'])
     const restricted = displayField(day['尾号限行'] || '—'),
       sunset = displayField(day['日落时间'] || '—')
@@ -577,6 +618,35 @@ export function weatherCard(
       page,
       published,
       now,
+      true,
+      {
+        v: 1,
+        kind: 'weather',
+        icon: weatherIcon(condition),
+        place: displayField(city),
+        low: lifeNumber(day['最低温度（摄氏度）']),
+        high: lifeNumber(day['最高温度（摄氏度）']),
+        condition,
+        feels: lifeNumber(day['体感温度（摄氏度）']),
+        wind: !wind || wind === '—' ? '' : windFields.map(displayField).join(' · '),
+        humidity: humidity === '—' ? '' : humidity,
+        air: lifeNumber(day['空气质量']),
+        restriction: restricted === '—' ? '' : restricted,
+        sunset: sunset === '—' ? '' : sunset,
+        ...(next &&
+        weatherIcon(displayField(next['当天天气状态'] || next['白天天气状态'])) &&
+        lifeNumber(next['最低温度（摄氏度）']) &&
+        lifeNumber(next['最高温度（摄氏度）'])
+          ? {
+              tomorrow: {
+                icon: weatherIcon(displayField(next['当天天气状态'] || next['白天天气状态'])),
+                condition: displayField(next['当天天气状态'] || next['白天天气状态']),
+                low: lifeNumber(next['最低温度（摄氏度）']),
+                high: lifeNumber(next['最高温度（摄氏度）']),
+              },
+            }
+          : {}),
+      },
     )
   }
   return undefined
@@ -602,6 +672,8 @@ export function goldCard(
   )
   const published = Number.isFinite(updated) ? updated : now
   let brandLine = ''
+  let brandName = '',
+    brandPrice = ''
   if (brand) {
     const physical = pages.find(
       (item) => item.vr && item.category === 'gold' && item.title.includes('实物黄金价格'),
@@ -614,7 +686,11 @@ export function goldCard(
     if (first) {
       const name = displayField(first['品牌名称']),
         price = displayField(first['价格（元）'])
-      if (name && price) brandLine = ` · ${name} ${price}`
+      if (name && price) {
+        brandLine = ` · ${name} ${price}`
+        brandName = take(name, 12)
+        brandPrice = price.match(/\d+(?:\.\d+)?/)?.[0] ?? ''
+      }
     }
   }
   const price = cleanNumber(domestic['价格']),
@@ -631,6 +707,25 @@ export function goldCard(
     published,
     now,
     Boolean(price && price !== '—'),
+    {
+      v: 1,
+      kind: 'gold',
+      hero: lifeNumber(domestic['价格']),
+      direction: lifeDirection(domestic),
+      percent:
+        lifeNumber(domestic['涨跌幅']).replace(/^[+-]/, '') +
+        (lifeNumber(domestic['涨跌幅']) && !lifeNumber(domestic['涨跌幅']).endsWith('%')
+          ? '%'
+          : ''),
+      change: lifeNumber(domestic['涨跌值'] ?? domestic['涨跌额']),
+      low: lifeNumber(blocks.find((b) => b['价格值类型'] === '最低')?.['价格值']),
+      high: lifeNumber(blocks.find((b) => b['价格值类型'] === '最高')?.['价格值']),
+      international: lifeNumber(international?.['价格']),
+      internationalPercent: lifeNumber(international?.['涨跌幅']),
+      brand: brandName,
+      brandPrice,
+      source: take(displayField(page.site), 20),
+    },
   )
 }
 export function stockCard(pages: YuanbaoPage[], symbol: string, now: number): AmbientCard {
@@ -677,6 +772,32 @@ export function stockCard(pages: YuanbaoPage[], symbol: string, now: number): Am
         published,
         now,
         Boolean(price && price !== '—'),
+        {
+          v: 1,
+          kind: 'stock',
+          name: take(name === '—' ? '' : name, 20),
+          symbol: label,
+          hero: lifeNumber(fields['实时股价']),
+          direction: lifeDirection(fields),
+          state: /盘前|盘后/.test(state)
+            ? 'unknown'
+            : /交易中/.test(state)
+              ? 'open'
+              : /休市|收盘/.test(state)
+                ? 'closed'
+                : 'unknown',
+          percent:
+            lifeNumber(fields['涨跌幅']).replace(/^[+-]/, '') +
+            (lifeNumber(fields['涨跌幅']) && !lifeNumber(fields['涨跌幅']).endsWith('%')
+              ? '%'
+              : ''),
+          change: lifeNumber(fields['涨跌额']),
+          low: lifeNumber(fields['今日最低价']),
+          high: lifeNumber(fields['今日最高价']),
+          open: lifeNumber(fields['今日开盘价']),
+          previous: lifeNumber(fields['昨日收盘价']),
+          source: take(displayField(page.site), 20),
+        },
       )
     }
   }
@@ -781,6 +902,106 @@ export function toolCard(pages: YuanbaoPage[], tool: string, now: number): Ambie
     page,
     published,
     now,
+    true,
+    {
+      v: 1,
+      kind: 'tool',
+      name: take(toolName, 24),
+      icon: /codex/i.test(toolName) ? 'codex' : /claude/i.test(toolName) ? 'claude' : 'tool',
+      date,
+      source: shortened(displayField(page.site), 8),
+      command: take(
+        deviceText(
+          page.passage.match(
+            /\b(?:codex|claude)\s+(?:doctor|update|login|status|mcp)(?:\s+--[a-z-]+)?\b|\/compact\b/i,
+          )?.[0] ?? '',
+        ),
+        20,
+      ),
+      title: shortened(displayField(page.title), 48),
+      summary: take(summary, 96),
+    },
+  )
+}
+/** Uses the China civil calendar consistently with holiday watch and presentation IDs. */
+export function holidayLife(
+  year: number,
+  state: 'pending' | 'published',
+  now: number,
+  range?: LifeHoliday['range'],
+): LifeHoliday {
+  const calendar = zonedParts(now),
+    today = Date.UTC(calendar.year, calendar.month - 1, calendar.date)
+  const anchors = [calendar.year, calendar.year + 1].flatMap((y) =>
+    [
+      [1, 1, '元旦'],
+      [5, 1, '劳动节'],
+      [10, 1, '国庆节'],
+    ].map(([m, d, name]) => ({ name: String(name), time: Date.UTC(y, Number(m) - 1, Number(d)) })),
+  )
+  const next = anchors.filter((a) => a.time >= today).sort((a, b) => a.time - b.time)[0]!
+  return {
+    v: 1,
+    kind: 'holiday',
+    year,
+    state,
+    label: '',
+    next: {
+      name: next.name,
+      date: new Date(next.time).toISOString().slice(0, 10),
+      days: (next.time - today) / 86400000,
+    },
+    ...(range ? { range } : {}),
+  }
+}
+function officialHolidayRange(
+  passage: string,
+  year: number,
+  now: number,
+): LifeHoliday['range'] | undefined {
+  const text = deviceText(webText(passage))
+  const today = lifeDate(zonedParts(now).day)!
+  const pattern =
+    /(元旦|春节|清明节|劳动节|端午节|中秋节|国庆节)[:：]?\s*(?:(\d{4})年)?(\d{1,2})月(\d{1,2})日(?:[（(][^）)]{0,12}[）)])?\s*(?:至|—|–|-)\s*(?:(\d{4})年)?(?:(\d{1,2})月)?(\d{1,2})日/g
+  for (const match of text.matchAll(pattern)) {
+    const startYear = Number(match[2] || year),
+      startMonth = Number(match[3]),
+      endMonth = Number(match[6] || startMonth)
+    const endYear = Number(match[5] || (endMonth < startMonth ? startYear + 1 : startYear))
+    if (
+      !(
+        (startYear === year && endYear === year) ||
+        (match[1] === '元旦' &&
+          startYear === year - 1 &&
+          startMonth === 12 &&
+          endYear === year &&
+          endMonth === 1)
+      )
+    )
+      continue
+    const iso = (y: number, m: number, d: number) =>
+      `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    const start = iso(startYear, startMonth, Number(match[4])),
+      end = iso(endYear, endMonth, Number(match[7]))
+    const a = lifeDate(start),
+      b = lifeDate(end)
+    if (a === undefined || b === undefined || b < today) continue
+    const days = (b - a) / 86400000 + 1
+    if (days >= 1 && days <= 31) return { name: match[1]!, start, end, days }
+  }
+  return undefined
+}
+export function holidayPendingCard(year: number, now: number): AmbientCard {
+  const life = holidayLife(year, 'pending', now)
+  return makeCard(
+    'holiday',
+    `search:holiday:${year}:pending:${zonedParts(now).day}`,
+    `${year} 年节假日安排：尚未发布 · 距 ${life.next.date.slice(0, 4)} ${life.next.name} ${life.next.days} 天`,
+    undefined,
+    now,
+    now,
+    true,
+    life,
   )
 }
 export function holidayCard(
@@ -813,6 +1034,8 @@ export function holidayCard(
     page,
     published,
     now,
+    true,
+    holidayLife(year, 'published', now, officialHolidayRange(page.passage, year, now)),
   )
 }
 export function newsCard(pages: YuanbaoPage[], now: number): AmbientCard | undefined {
@@ -825,19 +1048,29 @@ export function newsCard(pages: YuanbaoPage[], now: number): AmbientCard | undef
     if (page.vr || !title || !deviceSupports(title) || seen.has(title)) continue
     seen.add(title)
     top.push({ ...page, title, site: displayField(page.site) })
-    if (top.length === 3) break
+    if (top.length === 4) break
   }
   if (!top.length) return undefined
   const body = top
+    .slice(0, 3)
     .map((page) => `${shortened(page.title, 28)}${page.site ? `（${take(page.site, 8)}）` : ''}`)
     .join(' · ')
   return makeCard(
     'news',
     `search:news:${Math.floor(now / 10800000)}`,
     body,
-    { ...top[0]!, site: [...new Set(top.map((page) => page.site || '网页'))].join('、') },
+    {
+      ...top[0]!,
+      site: [...new Set(top.slice(0, 3).map((page) => page.site || '网页'))].join('、'),
+    },
     now,
     now,
+    true,
+    {
+      v: 1,
+      kind: 'news',
+      headlines: top.map((p) => ({ title: shortened(p.title, 28), source: take(p.site, 8) })),
+    },
   )
 }
 export function yuanbaoSample(topic: YuanbaoTopic, now = Date.now()): AmbientCard {
@@ -851,8 +1084,88 @@ export function yuanbaoSample(topic: YuanbaoTopic, now = Date.now()): AmbientCar
     news: '示例要闻一（示例站点） · 示例要闻二（示例站点）',
   }
   if (typeof topic !== 'string' || !Object.hasOwn(samples, topic)) throw Error('示例类型无效')
+  const structured: Record<YuanbaoTopic, unknown> = {
+    weather: {
+      v: 1,
+      kind: 'weather',
+      icon: 'sun',
+      place: '北京',
+      low: '4',
+      high: '22',
+      condition: '晴',
+      feels: '15',
+      wind: '西北风 · 3级',
+      humidity: '32',
+      air: '60',
+      restriction: '4和9',
+      sunset: '17:15',
+    },
+    gold: {
+      v: 1,
+      kind: 'gold',
+      hero: '852.80',
+      direction: 'down',
+      percent: '0.90%',
+      change: '-7.77',
+      low: '',
+      high: '',
+      international: '3984.98',
+      internationalPercent: '',
+      brand: '周大福',
+      brandPrice: '1199',
+      source: '示例',
+    },
+    stock: {
+      v: 1,
+      kind: 'stock',
+      name: '腾讯控股',
+      symbol: '00700.HK',
+      hero: '384.200',
+      direction: 'up',
+      state: 'open',
+      percent: '1.75%',
+      change: '6.600',
+      low: '375.200',
+      high: '387.600',
+      open: '',
+      previous: '',
+      source: '示例',
+    },
+    tools: {
+      v: 1,
+      kind: 'tool',
+      icon: 'tool',
+      name: 'Codex',
+      date: '示例',
+      source: '示例',
+      command: '',
+      title: '工具更新公告示例',
+      summary: '非实时结果，仅用于预览。',
+    },
+    news: {
+      v: 1,
+      kind: 'news',
+      headlines: [
+        { title: '示例要闻一', source: '示例站点' },
+        { title: '示例要闻二', source: '示例站点' },
+      ],
+    },
+    holiday: {
+      ...holidayLife(holidayWatchYear(now) ?? new Date(now).getFullYear() + 1, 'pending', now),
+      label: '示例',
+    },
+  }
   return {
-    ...makeCard(topic, `yuanbao-sample:${topic}`, samples[topic], undefined, now, now, false),
+    ...makeCard(
+      topic,
+      `yuanbao-sample:${topic}`,
+      samples[topic],
+      undefined,
+      now,
+      now,
+      false,
+      structured[topic],
+    ),
     source: '元宝搜索 · 示例',
   }
 }
@@ -876,5 +1189,12 @@ export function yuanbaoFeatureEnabled(config: YuanbaoConfig, topic: YuanbaoTopic
 export function yuanbaoGoldPresentation(card: AmbientCard, withBrand: boolean): AmbientCard {
   if (card.kind !== 'life' || card.topic !== 'gold') return card
   const body = withBrand ? card.text : card.text.split(' · ').slice(0, 2).join(' · ')
-  return { ...card, id: `${card.id}:view:${hash(body).slice(0, 12)}`, text: body }
+  return {
+    ...card,
+    id: `${card.id}:view:${hash(body).slice(0, 12)}`,
+    text: body,
+    ...(card.life?.kind === 'gold' && !withBrand
+      ? { life: { ...card.life, brand: '', brandPrice: '' } }
+      : {}),
+  }
 }

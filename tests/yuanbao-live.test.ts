@@ -206,7 +206,10 @@ test('live holiday speculation remains pending without a false published state',
   const f = source({ holidayEnabled: true }, fixture('holiday'))
   await f.service.tick()
   assert.deepEqual(f.service.snapshot().holiday, { year: 2027, state: 'pending' })
-  assert.deepEqual(f.service.cards(), [])
+  assert.equal(f.service.cards().length, 1)
+  const card = f.service.cards()[0]!
+  assert.equal(card.life?.kind === 'holiday' && card.life.state, 'pending')
+  assert.equal(card.life?.kind === 'holiday' && card.life.range, undefined)
   assert.equal(f.saved().published['2027'], undefined)
 })
 test('trimmed live fixtures retain RequestId and only the public parser fields', () => {

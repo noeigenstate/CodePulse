@@ -5,6 +5,7 @@ Pinned toolchain: Zig 0.13.0 (bundled Clang/WASI libc). Only compiler output is
 shipped; no Zig/WASI installation is required on the user's desktop.
 """
 from pathlib import Path
+import sys
 import argparse,base64,hashlib,json,os,re,subprocess,runpy,textwrap
 
 def code_notices(root,cjson):
@@ -24,13 +25,14 @@ def main():
     parser.add_argument('--cjson',type=Path)
     args=parser.parse_args()
     root=Path(__file__).resolve().parents[1]
+    subprocess.run([sys.executable,str(root/'scripts/generate-life-assets.py'),'--check'],check=True)
     zig=str(Path(args.zig).resolve())
     version=subprocess.check_output([zig,'version'],text=True).strip()
     if version!='0.13.0':raise SystemExit('Expected Zig 0.13.0, got '+version)
     out=args.output.resolve();out.mkdir(parents=True,exist_ok=True)
     cjson=(args.cjson or root/'managed_components/espressif__cjson/cJSON').resolve()
     sources=[root/p for p in ['preview/renderer.c','main/codepulse_protocol.c',
-      'main/quiet_dashboard.c','main/display_text.c','main/epd_canvas.c',
+      'main/quiet_dashboard.c','main/life_dashboard.c','main/display_text.c','main/epd_canvas.c',
       'tests/vendor/miniz/miniz_tinfl.c']]+[cjson/'cJSON.c']
     includes=[root/'main',root/'preview/include',root/'tests/vendor/miniz',cjson]
     exports=['preview_input','preview_capacity','preview_frame','preview_red_frame','preview_size','preview_render']
@@ -56,11 +58,14 @@ def main():
                  'fonts/sources/noto-sources.json','fonts/sources/noto-native-masks.json',
                  'fonts/sources/native-hierarchy.json']:
         files.add(root/name)
+    for name in ['scripts/generate-life-assets.py','preview/life-icons.json','fonts/sources/life-assets.json','fonts/licenses/Terminus-OFL.txt']:
+        files.add(root/name)
     fonts=json.loads((root/'fonts/sources/noto-sources.json').read_text(encoding='utf-8'))
     for font in fonts:
         files.update(root/license['path'] for license in font['licenses'])
     generator=runpy.run_path(str(root/'scripts/generate-hierarchy-font.py'))
-    (out/'THIRD-PARTY-FONTS.txt').write_text(generator['third_party_text'](root)+code_notices(root,cjson),encoding='utf-8',newline='\n')
+    terminus='\n'+'='*72+'\nTerminus Bold32 (native BDF subset; life hero at integer 2x)\nCopyright (C) 2020 Dimitar Toshkov Zhekov\nSource: fonts/sources/terminus-ter-u32b.bdf.gz\nSHA256: 9bf7c8feb04601ed162e81f8e73dfccde946374f5dfa85395aaa7bab0cb714b0\n\n'+(root/'fonts/licenses/Terminus-OFL.txt').read_text(encoding='utf-8')
+    (out/'THIRD-PARTY-FONTS.txt').write_text(generator['third_party_text'](root)+terminus+code_notices(root,cjson),encoding='utf-8',newline='\n')
     files.add(root/'tests/vendor/miniz/LICENSE')
     hashes={str(p.relative_to(root)).replace('\\','/'):hashlib.sha256(p.read_bytes().replace(b'\r\n',b'\n')).hexdigest()
       for p in files if p.is_relative_to(root)}
@@ -72,7 +77,7 @@ def main():
       'sourceHashFormat':'sha256-text-lf',
       'compiler':'Zig 0.13.0 / Clang WASI','sources':dict(sorted(hashes.items())),
       'wasmSha256':hashlib.sha256((out/'renderer.wasm').read_bytes()).hexdigest()}
-    (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n',encoding='utf-8')
+    (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n',encoding='utf-8',newline='\n')
     print('Built shared 400x300 renderer:',(out/'renderer.wasm').stat().st_size,'bytes')
 
 if __name__=='__main__':main()

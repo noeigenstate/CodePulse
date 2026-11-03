@@ -1,10 +1,11 @@
 param(
     [Parameter(Mandatory = $true)][string]$Zig,
     [string]$Python = 'python',
-    [string]$Firmware = (Join-Path (Split-Path $PSScriptRoot -Parent) 'firmware')
+    [string]$Firmware
 )
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path $PSScriptRoot -Parent
+if (-not $Firmware) { $Firmware = Join-Path $workspace 'firmware' }
 $firmwareRoot = (Resolve-Path -LiteralPath $Firmware).Path
 $output = Join-Path $workspace '.tmpshots/device-preview-build'
 # Never ship leftovers from an earlier build; the compiler cache stays.

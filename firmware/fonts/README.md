@@ -1,6 +1,14 @@
 # Active Scheme C / native Noto MONO
 
-The active hierarchy uses Noto Sans Bold 2.008 and Noto Sans SC Regular 2.004, rasterized natively at each target size. Body is SC14, title/caption SC16; calendar labels use sparse native SC12 with the complete body14 fallback. All 14 semantic layers can draw 7,752 codepoints. Runtime pages do not enlarge glyphs.
+The active hierarchy uses Noto Sans Bold 2.008 and Noto Sans SC Regular 2.004, rasterized natively at each target size. Body is SC14, title/caption SC16; calendar labels use sparse native SC12 with the complete body14 fallback. All 14 semantic layers can draw 7,752 codepoints. Ordinary pages do not enlarge glyphs.
+
+The approved `life` B layout (0.0.30-life) is the explicit exception for numeric heroes:
+its pinned Terminus Bold32 BDF subset is drawn at native 32px for secondary numbers
+and exact integer 2x for heroes. Chinese stays native SC14/16; no black outline,
+antialiasing or dithering. `python scripts/generate-life-assets.py --check` verifies
+the original BDF hash, generated subset and exact approved 2bpp icons. The 14 Noto
+semantic tables and their fallback policy are unchanged. Terminus attribution/OFL
+ships with both preview renderers; see SOURCE.txt and `licenses/Terminus-OFL.txt`.
 
 Source-stage FreeType is isolated in `scripts/generate-native-font-masks.py`; `python -S scripts/generate-display-font.py --write-source` rebuilds the atlas using only stdlib and checked-in masks. Validate with `python tests/test_bitmap_fonts.py`. Exact versions, source hashes, native-size policy and licenses are in [SOURCE.txt](SOURCE.txt).
 

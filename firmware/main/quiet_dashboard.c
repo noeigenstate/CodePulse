@@ -1,5 +1,6 @@
 #include "quiet_dashboard.h"
 #include "display_text.h"
+#include "life_dashboard.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -333,6 +334,9 @@ static void calendar(epd_canvas_t *c, const codepulse_calendar_t *a, bool white_
   }
 }
 static void ambient(epd_canvas_t *c, const codepulse_ambient_t *a) {
+  if (a->layout == CODEPULSE_AMBIENT_LAYOUT_LIFE && life_dashboard_render(c, &a->life)) {
+    return;
+  }
   if (a->layout == CODEPULSE_AMBIENT_LAYOUT_CALENDAR) { calendar(c, &a->calendar, false, EPD_COLOR_WHITE); return; }
   const bool pet = a->has_image && a->layout == CODEPULSE_AMBIENT_LAYOUT_PET;
   const unsigned image_y = pet ? 32 : 60;

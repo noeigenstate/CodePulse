@@ -50,5 +50,23 @@ export function deviceInspectScale(dpr: number): DevicePreviewScale {
   return scaleFor(Math.max(2, Math.round(2 * ratio)), ratio)
 }
 
+/** Active area of the 4.2-inch panel in millimetres. */
+export const DEVICE_SCREEN_MM = { width: 84.8, height: 63.6 } as const
+
+/**
+ * Approximate real size: CSS assumes 96 px per inch, so on a display whose OS scaling matches
+ * its density the canvas covers the same 84.8 x 63.6 mm as the panel. `k` is fractional here;
+ * the caller draws it smoothed, the way the eye blends 0.21 mm pixels at reading distance.
+ */
+export function devicePhysicalScale(dpr: number): DevicePreviewScale {
+  const ratio = safeDpr(dpr)
+  const cssWidth = (DEVICE_SCREEN_MM.width / 25.4) * 96
+  return {
+    k: (cssWidth * ratio) / DEVICE_SCREEN_WIDTH,
+    cssWidth,
+    cssHeight: (cssWidth * DEVICE_SCREEN_HEIGHT) / DEVICE_SCREEN_WIDTH,
+  }
+}
+
 /** Short label such as "1:2 像素": one device pixel is `k` physical pixels. */
 export const devicePixelRatioLabel = (k: number): string => `1:${k} 像素`

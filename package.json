@@ -1,7 +1,7 @@
 {
   "name": "codepulse-desktop",
   "private": true,
-  "version": "1.4.11",
+  "version": "1.5.0",
   "description": "CodePulse unified desktop, HUD and e-paper configuration workbench",
   "license": "MIT",
   "type": "module",

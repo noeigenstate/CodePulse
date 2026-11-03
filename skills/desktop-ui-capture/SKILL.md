@@ -47,6 +47,7 @@ description: Use when you need screenshots or measurements of the running CodePu
 - This machine runs at 150 % scale; CI runs at 100 % (dpr 1). A 1:1 device preview is 400 CSS px wide at dpr 1 but about 267 at 1.5, so a layout that fits locally can clip on CI (`assertCanvasPure` fails with pixels outside white/black/red).
 - Reproduce dpr 1 locally: copy `scripts/test-surfaces.mjs`, change `spawnSync(electron, [bundle]` to `spawnSync(electron, ['--force-device-scale-factor=1', bundle]`, run the copy, then delete it. Run the normal `pnpm test:surfaces` too.
 - Prefer layouts that react to the preview's real width (e.g. a wrapping flex row with `min-width: min-content` on the preview column) over viewport breakpoints tuned at one scale.
+
 ## Rules
 
 - Never kill browsers or Electron by image name: the user's own windows die too. Stop only the PID you started.

@@ -19,6 +19,7 @@ import { StatusHub } from '@codepulse/core'
 const now = Date.parse('2026-10-30T07:33:41Z')
 const response = (name: string) =>
   JSON.parse(readFileSync(`tests/fixtures/yuanbao/yuanbao-${name}.json`, 'utf8')).response
+const localHour = new Date(now).getHours()
 const localDay = (time: number) => {
   const d = new Date(time)
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
@@ -206,7 +207,8 @@ for (const [name, options] of [
     'limit reached',
     { yuanbao: { dailyRequestLimit: 1 }, cache: { day: localDay(now), requests: 1 } },
   ],
-  ['quiet hours', { quiet: [15, 16] }],
+  // Quiet hours are local time: derive the window from the runner's own clock, not UTC+8.
+  ['quiet hours', { quiet: [localHour, (localHour + 1) % 24] }],
   [
     'outside A-share trading',
     { yuanbao: { weatherEnabled: false, stocksEnabled: true, stocks: ['600519.sh'] } },

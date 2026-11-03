@@ -473,3 +473,30 @@ test('old X refresh and non-source settings cannot overwrite the independent Yua
   )
   assert.equal(qualifies({ ...cards[0]!, score: 0 }, service.getConfig(), now), false)
 })
+test('cards cached before the life layout are refreshed once after an upgrade, never on every start', async () => {
+  const first = fixture()
+  await first.source.tick()
+  assert.equal(first.calls(), 1)
+  const current = first.saved()
+  assert.equal(current.layoutVersion, 1)
+  assert.equal(current.entries[0]!.card.layout, 'life')
+  const { layoutVersion: _drop, ...legacy } = structuredClone(current)
+  legacy.entries = legacy.entries.map(({ key, card }) => {
+    const { layout: _layout, life: _life, ...text } = card
+    return { key, card: text }
+  })
+  // An upgraded cache: text-only cards and no layoutVersion. The topic becomes due once.
+  const upgraded = fixture({ cache: legacy })
+  await upgraded.source.tick()
+  assert.equal(upgraded.calls(), 1)
+  assert.equal(upgraded.saved().entries[0]!.card.layout, 'life')
+  // Already migrated: a text-only card (e.g. a validation fallback) does not refetch.
+  const migrated = fixture({ cache: { ...legacy, layoutVersion: 1 } })
+  await migrated.source.tick()
+  assert.equal(migrated.calls(), 0)
+  // A pre-1.5 cache whose cards already carry life keeps its schedule.
+  const { layoutVersion: _v, ...withLife } = structuredClone(current)
+  const kept = fixture({ cache: withLife })
+  await kept.source.tick()
+  assert.equal(kept.calls(), 0)
+})

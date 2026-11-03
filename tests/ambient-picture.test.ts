@@ -38,6 +38,25 @@ test('a dark photo is tone-mapped instead of turning into a black slab', () => {
   assert.equal(picture.red, undefined, 'red only when asked for')
 })
 
+test('plain white stays clean while a near-white face keeps a little shading', () => {
+  // Left half pure white background, right half a pale (near-white) area like a lit face.
+  const scene = bitmap(384, 208, (x, y) => {
+    if (y < 20) return [20, 20, 20] // a dark band so the picture has a real tonal range
+    return x < 192 ? [255, 255, 255] : [238, 236, 232]
+  })
+  const { imageHex } = packPicture(scene, 384, 208)
+  let white = 0,
+    pale = 0
+  for (let y = 60; y < 200; y++)
+    for (let x = 0; x < 384; x++) {
+      if (!isSet(imageHex, y * 384 + x)) continue
+      if (x < 180) white++
+      else if (x > 204) pale++
+    }
+  assert.equal(white, 0, 'no stray dots on a plain white background')
+  assert.ok(pale > 200, `pale area keeps shading dots: ${pale}`)
+})
+
 test('saturated red becomes red ink inside one protocol-sized rectangle, never on skin or black', () => {
   const skin: [number, number, number] = [224, 172, 140]
   const scene = bitmap(384, 208, (x, y) => {

@@ -114,7 +114,23 @@ function tone(luma: Float32Array, w: number, h: number): Float32Array {
   for (let i = 0; i < x.length; i++) x[i] = clamp(x[i]! + 0.6 * (x[i]! - wide[i]!))
   const fine = blur(x, w, h, 1.2)
   for (let i = 0; i < x.length; i++) x[i] = clamp(x[i]! + 1.2 * (x[i]! - fine[i]!))
+  for (let i = 0; i < x.length; i++) x[i] = rollOff(x[i]!)
   return x
+}
+
+/**
+ * Final roll-off, after all contrast steps (earlier it would be undone): near-black shadows get
+ * sparse light dots so they keep texture, near-white areas such as faces get a few dots of shading.
+ * Exactly white stays white, so plain backgrounds stay clean.
+ */
+function rollOff(v: number): number {
+  const toe = 0.15,
+    shoulder = 0.75,
+    top = 0.9
+  if (v < toe) return toe * 0.25 + v * 0.75
+  if (v > shoulder && v < 0.995)
+    return shoulder + ((v - shoulder) / (0.995 - shoulder)) * (top - shoulder)
+  return v
 }
 
 /** 0..1: how strongly a pixel is a saturated red (hue about 0-16 degrees). Skin and wood drop out. */

@@ -311,7 +311,9 @@ export class AmbientService {
       ...this.calendarCards(),
       ...petCards(this.deps.status(), this.now()),
       ...builtinCards(this.now()),
-    ].filter((c) => c.expiresAt > this.now())
+    ].filter(
+      (c, index, all) => c.expiresAt > this.now() && all.findIndex((o) => o.id === c.id) === index,
+    )
   }
   private calendarCards(): AmbientCard[] {
     try {
@@ -529,7 +531,16 @@ export class AmbientService {
             (!this.history.seen[c.id] && !this.history.seen[contentKey(c)])),
       ))
         unique.set(contentKey(card), card)
-      const candidates = [...unique.values()]
+      // The same post can come back with new text or score: one card per id, keeping a prepared image.
+      const byId = new Map<string, AmbientCard>()
+      for (const card of unique.values()) {
+        const earlier = byId.get(card.id)
+        byId.set(
+          card.id,
+          earlier?.imageHex && !card.imageHex ? { ...card, imageHex: earlier.imageHex } : card,
+        )
+      }
+      const candidates = [...byId.values()]
         .sort(
           (a, b) =>
             b.score /

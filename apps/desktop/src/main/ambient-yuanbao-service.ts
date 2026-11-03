@@ -42,6 +42,8 @@ export interface YuanbaoCache {
   lastCheckedAt: number
   lastLatencyMs: number | null
   lastError: string
+  /** 1 once cards cached before the e-ink life layout (v1.5.0) have been queued for one refresh. */
+  layoutVersion?: 1
 }
 interface Dependencies {
   config: () => AmbientConfig
@@ -101,6 +103,25 @@ function uniqueJobs(entries: { key: string; card: AmbientCard }[], now: number) 
   return [...unique.values()].slice(-64)
 }
 function restore(raw: unknown, now: number): YuanbaoCache {
+  const cache = restoreFields(raw, now)
+  if (obj(raw).layoutVersion === 1) return { ...cache, layoutVersion: 1 }
+  // Cards cached by a version without the life layout cannot be rebuilt (only the card is
+  // cached, not the search result). Make their topics due once; later text-only fallbacks are
+  // left alone, so this never turns into a request on every start.
+  const stale = new Set<string>(
+    cache.entries
+      .filter((entry) => entry.card.layout !== 'life')
+      .map((entry) => String(entry.card.topic)),
+  )
+  return {
+    ...cache,
+    checks: Object.fromEntries(
+      Object.entries(cache.checks).filter(([key]) => !stale.has(key.split(':')[0]!)),
+    ),
+    layoutVersion: 1,
+  }
+}
+function restoreFields(raw: unknown, now: number): YuanbaoCache {
   const value = obj(raw)
   return {
     version: 1,

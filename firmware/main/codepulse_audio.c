@@ -39,6 +39,7 @@ static i2s_chan_handle_t s_rx;
 static bool s_amp_ready;
 static char s_device_id[CODEPULSE_DEVICE_ID_MAX_BYTES + 1];
 static char s_last_announcement[81];
+static char s_last_work_announcement[81];
 static uint64_t gpio_mask(int pin) { return pin<0||pin>48?0:UINT64_C(1)<<((unsigned)pin&63U); }
 #if defined(CODEPULSE_AUDIO_COMPILE_TEST)
 static volatile const bool s_compile_only = true;
@@ -136,7 +137,8 @@ static esp_err_t request(const char *path,const void *body,size_t length,const c
   esp_err_t err=codepulse_device_config_load(&config);
   if(err!=ESP_OK)return err;
   char url[256];
-  int n=snprintf(url,sizeof(url),"http://%s:%u/api/v1/device/assistant/%s",config.server_host,(unsigned)config.server_port,path);
+  int n=snprintf(url,sizeof(url),"http://%s:%u/api/v1/device/%s%s",config.server_host,(unsigned)config.server_port,
+    !strncmp(path,"work/",5)?"":"assistant/",path);
   if(n<=0||(size_t)n>=sizeof(url))return ESP_ERR_INVALID_SIZE;
   esp_http_client_config_t cfg={.url=url,.timeout_ms=65000,.event_handler=on_http,.user_data=response,.disable_auto_redirect=true,.buffer_size=2048,.buffer_size_tx=1024};
   esp_http_client_handle_t http=esp_http_client_init(&cfg);
@@ -210,13 +212,50 @@ static void poll_announcement(void) {
   }
   cJSON_Delete(root);
 }
+static bool work_id_valid(const char *id) {
+  if (!id || strlen(id) != 36) return false;
+  for (size_t i = 0; i < 36; i++) {
+    if (i == 8 || i == 13 || i == 18 || i == 23) { if (id[i] != '-') return false; }
+    else if (!((id[i] >= '0' && id[i] <= '9') || (id[i] >= 'a' && id[i] <= 'f'))) return false;
+  }
+  return true;
+}
+/* Host owns attention policy; firmware only plays a leased, still-valid PCM clip. */
+static void poll_work_announcement(void) {
+  char body[256] = {0}; audio_response_t response = {.json=body,.capacity=sizeof(body)-1};
+  if (request("work/voice",NULL,0,NULL,&response) != ESP_OK) return;
+  cJSON *root = cJSON_Parse(body), *item = cJSON_GetObjectItemCaseSensitive(root,"announcement");
+  cJSON *id = cJSON_GetObjectItemCaseSensitive(item,"id");
+  if (cJSON_IsString(id) && work_id_valid(id->valuestring) && !s_stopped) {
+    char path[100]; esp_err_t err = ESP_OK;
+    if (strcmp(s_last_work_announcement,id->valuestring)) {
+      snprintf(path,sizeof(path),"work/voice/%s/audio",id->valuestring);
+      audio_response_t audio = {.audio=true};
+      err = i2s_channel_enable(s_tx);
+      if (err == ESP_OK) {
+        amp(true); err = request(path,NULL,0,NULL,&audio);
+        if (err == ESP_OK && audio.audio_length == 0) err = ESP_ERR_INVALID_RESPONSE;
+        if (err == ESP_OK) for (unsigned i=0;i<12&&!s_stopped;i++) vTaskDelay(pdMS_TO_TICKS(10));
+        amp(false); i2s_channel_disable(s_tx);
+      }
+      if (err == ESP_OK && !s_stopped) snprintf(s_last_work_announcement,sizeof(s_last_work_announcement),"%s",id->valuestring);
+    }
+    if (err == ESP_OK && !s_stopped) {
+      snprintf(path,sizeof(path),"work/voice/%s/ack",id->valuestring);
+      char out[129]={0}; audio_response_t ack={.json=out,.capacity=sizeof(out)-1};
+      request(path,"{}",2,"application/json",&ack);
+    }
+  }
+  cJSON_Delete(root);
+}
+
 static void audio_task(void *arg) {
   (void)arg;int64_t poll_at=0;
   while(!s_stopped){
 #if CODEPULSE_AUDIO_INPUT_ENABLED
     if(gpio_get_level(CODEPULSE_AUDIO_TALK_BUTTON)==0){vTaskDelay(pdMS_TO_TICKS(35));if(!s_stopped&&gpio_get_level(CODEPULSE_AUDIO_TALK_BUTTON)==0)capture_and_respond();}
 #endif
-    if(!s_stopped&&esp_timer_get_time()>=poll_at){poll_announcement();poll_at=esp_timer_get_time()+5000000;}
+    if(!s_stopped&&esp_timer_get_time()>=poll_at){poll_work_announcement();if(!s_stopped)poll_announcement();poll_at=esp_timer_get_time()+5000000;}
     vTaskDelay(pdMS_TO_TICKS(25));
   }
   amp(false);s_task=NULL;vTaskDelete(NULL);

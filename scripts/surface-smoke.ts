@@ -70,7 +70,7 @@ app.whenReady().then(async()=>{
     assert.equal(sqlite.prepare('SELECT value FROM smoke LIMIT 1').get().value, 'isolated')
     sqlite.close()
     const hub = new StatusHub()
-    hub.ingest({id:'shell-fixture',source:'codex',eventType:'session_start',externalSessionId:'shell-ui',workspacePath:'F:/example/codepulse',timestamp:Date.now()})
+    hub.ingest({id:'shell-fixture',source:'codex',eventType:'prompt_submit',externalSessionId:'shell-ui',workspacePath:'F:/example/codepulse',timestamp:Date.now()})
     const before=JSON.stringify(hub.snapshot().agents)
     let config: DeviceDisplayConfig={...DEFAULT_DEVICE_DISPLAY,agents:[...DEFAULT_DEVICE_DISPLAY.agents]}
     let inkConnected = true
@@ -153,9 +153,13 @@ app.whenReady().then(async()=>{
     const imageDir = join(output, 'image-library'); mkdirSync(imageDir, { recursive: true })
     const imageRuntime = createAmbientRuntime(imageDir, { status: () => hub.snapshot(), changed: () => {} })
     registerAmbientIpc(measuredIpc,{service:ambient,setKey:()=>ambient.snapshot(),setYuanbaoKey:input=>{yuanbaoKey=yuanbaoCredentials(input);ambient.yuanbao.credentialsChanged();return ambient.snapshot()},importImage:(bytes,name)=>{const card=imageRuntime.importImage(bytes,name);return ambient.addPersonal('image',card.text,card.imageHex)}},()=>device().status,async()=>{},()=>assistant.clearTemporaryInk())
+    const voiceState = () => ({ settings: { enabled: false, intervention: true, failures: true }, supported: true, speaking: false, error: null })
+    const voiceFixture = { version: 2, desktop: voiceState(), ink: {...voiceState(),deviceAvailable:false} }
     const handlers: Record<string, (...args:any[])=>any>={
       'ink-status-get':()=>inkSnapshot(),'ink-apply':(_e,request)=>applyInk(request,inkApplyDependencies),
       'ink-temporary-end':()=>{endInkTemporary(ambient,assistant);publishInk();return inkSnapshot()},
+      'work-voice-get':()=>voiceFixture,'work-voice-set':(_e,target:'desktop'|'ink',value)=>{voiceFixture[target].settings=value;broadcast('codepulse:work-voice',voiceFixture);return voiceFixture},
+      'work-voice-test':()=>voiceFixture,'work-voice-stop':()=>voiceFixture,
       'get-status':(event)=>hud.owns(event.sender)?hud.snapshot():hub.snapshot(),'sync-sessions':(event)=>hud.owns(event.sender)?hud.snapshot():hub.snapshot(),
       'detect-agents':()=>[],'get-update':()=>null,'get-version':()=> '1.4.11','get-notifications':()=>false,'set-notifications':(_e,v)=>v,
       'hud-preview':()=>hud.snapshot(),'get-usage':()=>null,'mimo-login-status':()=>false,'set-locale':(_e,v)=>v,'set-window-theme':(_e,v)=>v,
@@ -762,6 +766,25 @@ app.whenReady().then(async()=>{
     await click(main,'[data-view=settings]')
     assert.equal(await main.webContents.executeJavaScript(`Boolean(document.querySelector('.product-topbar'))`),false)
     assert.ok(await main.webContents.executeJavaScript(`Boolean(document.querySelector('.settings-embedded'))`))
+    assert.equal(await main.webContents.executeJavaScript(`Boolean(document.querySelector('.settings-embedded .work-voice-options'))`),false)
+    await click(main,'[data-view=control]');await click(main,'#endpoint-desktop')
+    await until(()=>main!.webContents.executeJavaScript(`Boolean(document.querySelector('section[aria-label="桌面端语音提醒"] input:not(:disabled)'))`),'voice preferences loaded')
+    assert.equal((await main.webContents.executeJavaScript('window.codepulse.getWorkVoice()')).desktop.settings.enabled,false)
+    assert.equal(await main.webContents.executeJavaScript(`document.querySelector('.work-voice-details').open`),false)
+    await click(main,'section[aria-label="桌面端语音提醒"] summary')
+    await main.webContents.executeJavaScript(`document.querySelector('section[aria-label="桌面端语音提醒"] input').click()`)
+    await until(async()=>(await main!.webContents.executeJavaScript('window.codepulse.getWorkVoice()')).desktop.settings.enabled,'voice opt-in through preload IPC')
+    const voiceTestsBefore=readCount('work-voice-test')
+    await button(main,'试听语音')
+    await until(()=>Promise.resolve(readCount('work-voice-test')===voiceTestsBefore+1),'voice preview through IPC fixture')
+    await main.webContents.executeJavaScript(`document.querySelector('section[aria-label="桌面端语音提醒"] input').click()`)
+    await until(async()=>!(await main!.webContents.executeJavaScript('window.codepulse.getWorkVoice()')).desktop.settings.enabled,'voice can be disabled')
+    await click(main,'section[aria-label="桌面端语音提醒"] summary')
+    await click(main,'.product-language-toggle')
+    await until(()=>main!.webContents.executeJavaScript(`document.documentElement.lang==='en'`),'rail switches to English without opening Settings')
+    await click(main,'.product-language-toggle')
+    await until(()=>main!.webContents.executeJavaScript(`document.documentElement.lang==='zh-CN'`),'rail switches back to Chinese')
+    await click(main,'[data-view=settings]')
     await click(main,'[data-view=ambient]');assert.equal(product.snapshot().view,'ambient')
     await click(main,'[data-view=settings]');await click(main,'.theme-swatch-dark');await wait(500)
     await click(main,'[data-view=control]');await capture('control-dark')
@@ -844,7 +867,7 @@ app.whenReady().then(async()=>{
     // The expected unauthorized native-window rejection is visible to Electron's console.
     const unexpected=errors.filter(e=>!e.includes('Only the screen window'))
     assert.deepEqual(unexpected,[])
-    writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,views:5,assistantTasks:true,todoPlan:true,focusRoundTrip:true,consolidatedNavigation:true,fixedPixelResize:true,inspectionPixelEquality:true,visibleApply:true,stablePreviewFrames:true,previewMenuStable:true,previewCapRecovery:true,playlistSelect:true,rowSwitchIsolation:true,connectionOwnership:true,pendingOnlyApply:true,temporaryExit:true,invertedStyle:true,conceptCard:true,thoughtPrompt:true,personalNote:true,imageDrop:true,pixelPet:true,calendar:true,hudCoexistence:true,largePreview:true,independentScreen:true,draftPreserved:true,settingsShortcuts:true,globalAttention:true,canonicalStatePreserved:true,nativePinApplied,errors:unexpected},null,2))
+    writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,workVoiceSettings:true,views:5,assistantTasks:true,todoPlan:true,focusRoundTrip:true,consolidatedNavigation:true,fixedPixelResize:true,inspectionPixelEquality:true,visibleApply:true,stablePreviewFrames:true,previewMenuStable:true,previewCapRecovery:true,playlistSelect:true,rowSwitchIsolation:true,connectionOwnership:true,pendingOnlyApply:true,temporaryExit:true,invertedStyle:true,conceptCard:true,thoughtPrompt:true,personalNote:true,imageDrop:true,pixelPet:true,calendar:true,hudCoexistence:true,largePreview:true,independentScreen:true,draftPreserved:true,settingsShortcuts:true,globalAttention:true,canonicalStatePreserved:true,nativePinApplied,errors:unexpected},null,2))
     assistant.stop();assistantStore.close();ambient.stop();BrowserWindow.getAllWindows().forEach(w=>w.destroy());screen.destroy();clearTimeout(deadline);app.exit(0)
   }catch(error){writeFileSync(join(output,'failure.txt'),(error instanceof Error ? error.stack : String(error))+'\n'+JSON.stringify(errors));clearTimeout(deadline);app.exit(1)}
 })

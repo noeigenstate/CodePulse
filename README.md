@@ -240,6 +240,9 @@ hardware/         PCB designs by board and revision
 tests/            Unit tests
 ```
 
+Development targets `main`; desktop, HUD and firmware share one repository. See
+[workspace and validation](docs/WORKSPACE.md) and [repository policy](docs/REPOSITORY.md).
+
 Built with Electron, TypeScript, React, Tailwind, Fastify, better-sqlite3 and Drizzle ORM.
 
 <details>
@@ -257,8 +260,9 @@ The API listens on `127.0.0.1:17888` only. Set `CODEPULSE_URL` to point the hook
 | `GET`  | `/api/health`        | Liveness probe                                   |
 | `WS`   | `/ws`                | Pushes `status` and `notification` messages      |
 
-The LAN device API on port `17889` is off by default. It is read-only, needs its own device
-token and shares only project basenames. See [LAN device protocol v1](docs/device-api-v1.md).
+The LAN device API on port `17889` is off by default and requires its own device token.
+Task status is read-only and shares only project basenames; optional assistant and
+work-voice routes provide their own bounded operations. See [LAN device protocol v1](docs/device-api-v1.md).
 
 </details>
 

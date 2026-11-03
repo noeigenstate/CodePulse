@@ -11,11 +11,11 @@ desk content are capabilities of the product, not separate applications.
 
 ## One checkout
 
-This experimental branch integrates the standard desktop, HUD and screen
+The product main branch integrates the standard desktop, HUD and screen
 configuration preview. Firmware source is included under `firmware/`. Its toolchain is optional for desktop development; see [repository layout](REPOSITORY.md).
 
 ```powershell
-git clone --branch codex/unified-product --single-branch https://github.com/noeigenstate/CodePulse.git CodePulse
+git clone --branch main https://github.com/noeigenstate/CodePulse.git CodePulse
 cd CodePulse
 pnpm install --frozen-lockfile
 pnpm build
@@ -134,6 +134,19 @@ before enabling it. No always-listening or wake-word models are included.
 
 See [LumaDesk integration](LUMADESK-INTEGRATION.md) for provider setup, provenance,
 hardware conflicts, privacy, protocol additions and precise verification limits.
+
+## Work voice alerts
+
+Control provides independent desktop/e-paper work speech preferences; the HUD
+shares desktop speaker output. Both default off. The host generates local PCM
+for audio-capable firmware; old boards remain audio-disabled. See
+[work voice and bilingual states](WORK-VOICE-AND-STATES.md) for rules, protocol,
+hook coverage, hardware limits and the remaining English-localization gaps.
+
+The work voice block is collapsed by default and shows its saved On/Off state.
+Expanding or collapsing never changes speech preferences. The rail offers a
+visible **中 / EN** action beside Settings; it changes the existing saved locale
+without navigating away from the current page.
 
 ## Device configuration and preview
 

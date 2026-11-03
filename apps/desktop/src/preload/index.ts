@@ -14,6 +14,7 @@ import type {
   DeviceProvisioningRequest,
   DeviceProvisioningSnapshot,
   StatusSnapshot,
+  WorkVoiceSettings, WorkVoiceTargetsSnapshot, WorkVoiceTarget,
   UiLocale,
   UpdateDownloadProgress,
   UpdateInfo,
@@ -97,6 +98,11 @@ const api = {
   getStatus: (): Promise<StatusSnapshot> => ipcRenderer.invoke('codepulse:get-status'),
   ack: (agent: AgentType, workspacePath?: string): Promise<boolean> =>
     ipcRenderer.invoke('codepulse:ack', agent, workspacePath),
+  getWorkVoice: (): Promise<WorkVoiceTargetsSnapshot> => ipcRenderer.invoke('codepulse:work-voice-get'),
+  setWorkVoice: (target: WorkVoiceTarget, settings: WorkVoiceSettings): Promise<WorkVoiceTargetsSnapshot> => ipcRenderer.invoke('codepulse:work-voice-set', target, settings),
+  testWorkVoice: (target: WorkVoiceTarget, locale: UiLocale): Promise<WorkVoiceTargetsSnapshot> => ipcRenderer.invoke('codepulse:work-voice-test', target, locale),
+  stopWorkVoice: (target: WorkVoiceTarget): Promise<WorkVoiceTargetsSnapshot> => ipcRenderer.invoke('codepulse:work-voice-stop', target),
+  onWorkVoice: (cb: (snapshot: WorkVoiceTargetsSnapshot) => void): Unsubscribe => subscribe('codepulse:work-voice', cb),
   getNotifications: (): Promise<boolean> => ipcRenderer.invoke('codepulse:get-notifications'),
   setNotifications: (enabled: boolean): Promise<boolean> =>
     ipcRenderer.invoke('codepulse:set-notifications', enabled),

@@ -1,7 +1,7 @@
 name: Verify firmware
 on:
   push:
-    branches: [codex/unified-product]
+    branches: [main, codex/unified-product]
     paths:
       - 'firmware/**'
       - 'apps/desktop/src/main/calendar/**'

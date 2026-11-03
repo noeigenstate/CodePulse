@@ -15,6 +15,7 @@ import type {
   DeviceProvisioningRequest,
   DeviceProvisioningSnapshot,
   StatusSnapshot,
+  WorkVoiceSettings, WorkVoiceTargetsSnapshot, WorkVoiceTarget,
   UiLocale,
   UpdateDownloadProgress,
   UpdateInfo,
@@ -92,6 +93,11 @@ export interface CodePulseApi {
   platform: NodeJS.Platform
   getStatus: () => Promise<StatusSnapshot>
   ack: (agent: AgentType, workspacePath?: string) => Promise<boolean>
+  getWorkVoice: () => Promise<WorkVoiceTargetsSnapshot>
+  setWorkVoice: (target: WorkVoiceTarget, settings: WorkVoiceSettings) => Promise<WorkVoiceTargetsSnapshot>
+  testWorkVoice: (target: WorkVoiceTarget, locale: UiLocale) => Promise<WorkVoiceTargetsSnapshot>
+  stopWorkVoice: (target: WorkVoiceTarget) => Promise<WorkVoiceTargetsSnapshot>
+  onWorkVoice: (cb: (snapshot: WorkVoiceTargetsSnapshot) => void) => () => void
   getNotifications: () => Promise<boolean>
   setNotifications: (enabled: boolean) => Promise<boolean>
   setLocale: (locale: UiLocale) => Promise<UiLocale>

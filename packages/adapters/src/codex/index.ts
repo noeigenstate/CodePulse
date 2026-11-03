@@ -39,7 +39,9 @@ export function fromCodexHook(raw: unknown): AgentEventInput | null {
   const hookEvent = pickString(r, 'hook_event_name', 'hookEvent', 'event', 'type')
   if (!hookEvent) return null
 
-  const eventType = mapCodexEvent(hookEvent)
+  const questionTool = pickString(r, 'tool_name', 'toolName', 'tool')?.replace(/^functions\./, '') === 'request_user_input'
+  const eventType = questionTool && (hookEvent === 'PreToolUse' || hookEvent === 'PermissionRequest')
+    ? 'user_input_required' : mapCodexEvent(hookEvent)
   if (!eventType) return null
 
   const event: AgentEventInput = {
@@ -83,6 +85,10 @@ export function fromCodexHook(raw: unknown): AgentEventInput | null {
       event.toolName = pickString(r, 'tool_name', 'toolName', 'tool')
       event.command = pickString(r, 'command', 'cmd')
       event.message = pickString(r, 'message') ?? '请求执行操作'
+      break
+    case 'user_input_required':
+      event.toolName = 'request_user_input'
+      event.message = pickString(r, 'message') ?? '等待回答问题'
       break
     case 'prompt_submit':
       event.message = preview(pickString(r, 'prompt', 'user_prompt'))

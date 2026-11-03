@@ -25,6 +25,8 @@ import { PageHeader } from './PageHeader.js'
 import { inkPlanChoice, selectInkPlan, inkControlChanges, nextInkBaseline, type InkBaseline } from './product-control-state.js'
 import './product-control.css'
 import './device-display.css'
+import { WorkVoiceSettingsPanel } from './WorkVoiceSettings.js'
+import { WorkStateGuide } from './WorkStateGuide.js'
 
 const HUD_TOOLS: { key: HudToolKey; label: string }[] = [
   { key: 'codex', label: 'Codex' },
@@ -876,6 +878,8 @@ function InkControlWorkspace({
           ))}
           <option value="fixed">{zh ? '只显示工作画面' : 'Work screen only'}</option>
         </select>
+        <WorkVoiceSettingsPanel locale={locale} target="ink" active={active} />
+        <WorkStateGuide locale={locale} />
         {shownCount > 0 && (
           <footer className="product-config-actions" aria-live="polite">
             <strong>
@@ -1037,6 +1041,10 @@ export function ProductControl({
         {(target === 'desktop' || visited.has('desktop')) && (
           <div className="product-desktop-panel">
             <div className="product-console-live-stage">{desktopContent.current}</div>
+            <div className="product-desktop-options">
+              <WorkVoiceSettingsPanel locale={locale} target="desktop" active={active && target === 'desktop'} />
+              <WorkStateGuide locale={locale} />
+            </div>
           </div>
         )}
       </section>

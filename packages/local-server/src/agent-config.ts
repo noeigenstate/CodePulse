@@ -6,9 +6,11 @@ const CLAUDE_EVENTS = [
   'SessionStart',
   'UserPromptSubmit',
   'PreToolUse',
+  'PermissionRequest',
   'PostToolUse',
   'Notification',
   'Stop',
+  'StopFailure',
   'SessionEnd',
 ] as const
 

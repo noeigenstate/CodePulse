@@ -226,6 +226,9 @@ hardware/         按板型和修订存放的 PCB 设计
 tests/            单元测试
 ```
 
+日常开发与推送统一使用 `main`；桌面、HUD 与固件共用根仓库。详见
+[工作区与验证](docs/WORKSPACE.md)及[仓库约定](docs/REPOSITORY.md)。
+
 技术栈：Electron、TypeScript、React、Tailwind、Fastify、better-sqlite3、Drizzle ORM。
 
 <details>
@@ -243,7 +246,7 @@ API 只监听 `127.0.0.1:17888`。设置 `CODEPULSE_URL` 可以让 hook 指向�
 | `GET`  | `/api/health`        | 存活检查                             |
 | `WS`   | `/ws`                | 推送 `status` 和 `notification` 消息 |
 
-端口 `17889` 上的局域网设备 API 默认关闭。它只读、使用独立的设备 token，项目只显示目录名。详见[局域网设备协议 v1](docs/device-api-v1.md)。
+端口 `17889` 上的局域网设备 API 默认关闭，需要独立的设备 token。任务状态只读、项目只显示目录名；可选的助手及工作语音路由另提供范围受限的操作。详见[局域网设备协议 v1](docs/device-api-v1.md)。
 
 </details>
 

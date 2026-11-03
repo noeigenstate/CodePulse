@@ -363,7 +363,12 @@ export class StatusHub extends EventEmitter {
     let latest: AgentRuntimeState | undefined
     for (const agent of this.agents.values()) {
       if (agent.agentType !== agentType || workspaceKey(agent.workspacePath) !== workspace) continue
-      if (!latest || compareRuntimeState(agent, latest) < 0) latest = agent
+      // Metadata-only rows have no work clock. Their first observation may still
+      // resolve a workspace lookup without becoming activity on any surface.
+      const order = latest && agent.lastEventAt === 0 && latest.lastEventAt === 0
+        ? (latest.terminalAt ?? 0) - (agent.terminalAt ?? 0) || compareRuntimeState(agent, latest)
+        : latest ? compareRuntimeState(agent, latest) : -1
+      if (order < 0) latest = agent
     }
     return latest ? this.usageStability.projectAgent(latest) : undefined
   }

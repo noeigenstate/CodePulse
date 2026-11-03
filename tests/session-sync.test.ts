@@ -241,7 +241,7 @@ test('SessionSyncService synchronizes Codex native active and completed task tim
 
       await writeFile(
         rollout,
-        `\n${JSON.stringify({ type: 'event_msg', payload: { type: 'progress' } })}`,
+        `\n${JSON.stringify({ type: 'event_msg', payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 101, total_tokens: 101 } } } })}`,
         { encoding: 'utf8', flag: 'a' },
       )
       await utimes(rollout, new Date(restartNow), new Date(restartNow))

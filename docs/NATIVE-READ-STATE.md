@@ -6,6 +6,31 @@ the matching completed turn's `unread` flag. HUD, desktop and the device
 projection share that acknowledgement. Layout, card identity/order, titles and
 the device's low-flicker refresh policy are unchanged.
 
+## Browsing does not admit work (2026-11-02)
+
+SessionStart/resume, context/model changes, file mtimes and old completed records
+do not create HUD/e-paper task cards. New runtime rows remain hidden metadata and
+quota sources until actual prompt/model/tool/approval/input activity is observed.
+An already visible result keeps its state, unread bit and original retention anchor
+when the conversation is opened. Only the explicit read evidence below acknowledges it.
+
+Codex synchronization separates discovery/configuration from measured turn/token
+progress. Metadata-only changes do not refresh the watchdog or revive an expired
+card. A recent native active start can recover a missed prompt at host startup;
+an old abandoned active record needs later execution evidence before appearing.
+The cold-start window is 10 minutes, with a 5-second forward-clock tolerance;
+normal live hook activity is immediate and has no discovery delay.
+
+Closing a hidden, browsing-only transport also leaves its work lifecycle untouched.
+Real jobs continue to use the existing shared HUD/device retention and attention
+rules. Quota/model metadata still synchronize without becoming visible work.
+No firmware, renderer, protocol or refresh-policy change is required.
+
+Regression fixtures cover passive opening, re-opening expired results, retained
+unread results, actual prompts after browsing, native active recovery, abandoned
+starts, metadata-only writes and genuine subsequent execution. Fixtures do not
+navigate users' live conversations or inject activity into their sessions.
+
 ## Why polling alone missed reads
 
 The earlier adapter also used the ordinary dashboard snapshot. After that

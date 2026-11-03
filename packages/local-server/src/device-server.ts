@@ -48,6 +48,7 @@ export interface DeviceServerOptions {
   onStatusRead?: () => void
   /** Optional local assistant endpoints. Omitted hosts retain the read-only contract. */
   registerAssistantRoutes?: (app: FastifyInstance) => void | Promise<void>
+  registerWorkVoiceRoutes?: (app: FastifyInstance) => void | Promise<void>
   /** Optional host presentation projection, shared with desktop configuration previews. */
   projectStatus?: (snapshot: StatusSnapshot, config?: DeviceDisplayConfig) => DeviceStatusV1
   getDisplayConfig?: () => DeviceDisplayConfig
@@ -128,6 +129,7 @@ export async function startDeviceServer(options: DeviceServerOptions): Promise<D
   const app = Fastify({ logger: options.logger ?? false })
   registerDeviceAuthGuard(app, authToken)
   if (options.registerAssistantRoutes) await options.registerAssistantRoutes(app)
+  if (options.registerWorkVoiceRoutes) await options.registerWorkVoiceRoutes(app)
 
   app.get(DEVICE_HEALTH_PATH, async (_request, reply) => {
     reply.header('x-codepulse-protocol-version', String(DEVICE_PROTOCOL_VERSION))

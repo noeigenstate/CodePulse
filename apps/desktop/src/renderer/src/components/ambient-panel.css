@@ -181,17 +181,22 @@
   flex-wrap: wrap;
   gap: 8px 12px;
 }
+/* Items beside the preview while the 1:1 canvas fits (its CSS width depends on the display
+   scale); otherwise the preview wraps above the items. wrap-reverse puts the second line on top,
+   so cross-axis "end" is the top edge. */
 .ambient-inner {
-  display: grid;
-  grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
+  display: flex;
+  flex-wrap: wrap-reverse;
   gap: 20px;
-  align-items: start;
+  align-items: flex-end;
 }
-/* Below 1100px the 208px category column leaves the preview column narrower than the 1:1 canvas. */
-@media (max-width: 1100px) {
-  .ambient-inner {
-    grid-template-columns: minmax(0, 1fr);
-  }
+.ambient-inner > .ambient-items-col {
+  flex: 1 1 280px;
+  min-width: 200px;
+}
+.ambient-inner > .ambient-stage-col {
+  flex: 1000 1 0;
+  min-width: min-content;
 }
 .ambient-items-col {
   display: flex;

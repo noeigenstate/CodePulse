@@ -145,11 +145,20 @@ app.whenReady().then(async () => {
     throw new Error('HUD window did not load')
   })()
   await wait(500)
+  win.webContents.setBackgroundThrottling(false)
+  // Morphs run after a state change arrives: wait for every transition, never a fixed guess.
+  const settle = async () => {
+    await wait(120)
+    await win.webContents.executeJavaScript(
+      `Promise.race([Promise.all(document.getAnimations().filter((a) => a instanceof CSSTransition).map((a) => a.finished.catch(() => {}))), new Promise((r) => setTimeout(r, 1500))])`,
+    )
+    await wait(60)
+  }
   const set = async (style: HudSurfaceStyle, scene: string, theme: 'light' | 'dark') => {
     settings({ hudStyle: style, theme })
     fixture = { overall: 'idle', updatedAt: Date.now(), agents: SCENES[scene]!() as never }
     hud.broadcast('codepulse:status', fixture)
-    await wait(450)
+    await settle()
   }
   const capture = async (name: string) =>
     writeFileSync(join(output, name + '.png'), (await win.webContents.capturePage()).toPNG())
@@ -166,10 +175,10 @@ app.whenReady().then(async () => {
       if (opener) {
         await set(style, 'many', theme)
         await js(`document.querySelector(${JSON.stringify(opener)}).click()`)
-        await wait(450)
+        await settle()
         await capture(`${style}-open-${theme}`)
         await js(`window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}))`)
-        await wait(450)
+        await settle()
       }
     }
     measured[style] = await js(`(()=>{const s={fs:new Set(),fw:new Set(),r:new Set(),d:new Set()};
@@ -201,20 +210,34 @@ app.whenReady().then(async () => {
     await move(box.x, box.y)
     await wait(200)
     const overPill = windowFromPoint(pill.x, pill.y)
-    const stillTransparent = hud.debugState().ignoringMouse
+    const ignoringOverPill = hud.debugState().ignoringMouse
     await move(4, bounds.height - 4)
     await wait(200)
     const left = windowFromPoint(pill.x, pill.y)
-    clickThrough = { own, idleOverPill, transparent, overPill, stillTransparent, left }
+    clickThrough = { own, idleOverPill, transparent, overPill, ignoringOverPill, left }
     assert.notEqual(idleOverPill, own, 'an idle stage passes the pointer through')
     assert.notEqual(transparent, own, 'transparent stage area passes the pointer through')
     assert.equal(overPill, own, 'the drawn pill takes the pointer after the hit test')
-    assert.equal(stillTransparent, false)
+    assert.equal(ignoringOverPill, false)
     assert.notEqual(left, own, 'leaving the pill restores click-through')
+  }
+  // The morph itself, sampled in a shown window: width must pass through in-between values.
+  let morph: number[] = []
+  if (!hidden) {
+    await set('island', 'idle', 'light')
+    fixture = { overall: 'idle', updatedAt: Date.now(), agents: SCENES.wait!() as never }
+    hud.broadcast('codepulse:status', fixture)
+    morph = (await js(
+      `new Promise((done)=>{const el=document.querySelector('.hud-c-island'),out=[],t0=performance.now();(function tick(){out.push(Math.round(el.getBoundingClientRect().width));performance.now()-t0<600?setTimeout(tick,40):done(out)})()})`,
+    )) as number[]
+    assert.ok(
+      new Set(morph).size >= 3,
+      `island morph animates through in-between widths: ${morph.join(',')}`,
+    )
   }
   writeFileSync(
     join(output, 'report.json'),
-    JSON.stringify({ clickThrough, measured, errors }, null, 2),
+    JSON.stringify({ clickThrough, morph, measured, errors }, null, 2),
   )
   assert.deepEqual(errors, [])
   app.exit(0)

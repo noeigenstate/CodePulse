@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react'
 import { isUrgent } from '../../lib/hudCompact.js'
 import { turnStateLabel } from '../../lib/i18n.js'
 import { StateMark } from './StateMark.js'
-import { PeekText, TaskList, useMeasuredHeight } from './TaskRow.js'
+import { PeekText, TaskList, useLastDefined, useMeasuredHeight } from './TaskRow.js'
 import type { SurfaceProps } from './types.js'
 
 const DRAWER_MAX_HEIGHT = 420
@@ -12,6 +12,7 @@ export function EdgeSurface({ list, onToggle, open, peek }: SurfaceProps): JSX.E
   const { copy, locale, tasks } = list
   const [measureRef, listHeight] = useMeasuredHeight()
   const peeking = Boolean(peek) && !open
+  const shownPeek = useLastDefined(peek)
   const style = {
     '--pc': peek?.level === 'fault' ? 'var(--c-fault)' : 'var(--c-action)',
   } as CSSProperties
@@ -24,9 +25,9 @@ export function EdgeSurface({ list, onToggle, open, peek }: SurfaceProps): JSX.E
         data-hud-hit=""
         onClick={peeking ? onToggle : undefined}
       >
-        {peek ? (
+        {shownPeek ? (
           <div className="hud-c-bubble-in">
-            <PeekText copy={copy} locale={locale} others={tasks.length - 1} task={peek} />
+            <PeekText copy={copy} locale={locale} others={tasks.length - 1} task={shownPeek} />
           </div>
         ) : null}
       </div>

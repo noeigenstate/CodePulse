@@ -11,7 +11,6 @@ export interface CompactTask {
 }
 
 export interface CompactSummary {
-  total: number
   /** Tasks the agent is still working on. */
   running: number
   /** Finished or failed tasks the user has not acknowledged. */
@@ -45,6 +44,12 @@ export function islandBox(input: {
   return { width: 128, height: 36, radius: 18 }
 }
 
+const LEVEL_RANK: Partial<Record<HudStateLevel, number>> = {
+  fault: 4,
+  action: 3,
+  notice: 2,
+  active: 1,
+}
 const PEEK_RANK: Partial<Record<HudStateLevel, number>> = { fault: 2, action: 1 }
 
 /** Keeps the deck's stable list order; the compact surfaces never reorder tasks. */
@@ -64,7 +69,6 @@ export function flattenTasks(
 
 export function summarize(tasks: readonly CompactTask[]): CompactSummary {
   return {
-    total: tasks.length,
     running: tasks.filter((task) => task.level === 'active').length,
     unread: tasks.filter((task) => task.level === 'notice' || task.level === 'fault').length,
   }
@@ -74,6 +78,49 @@ export function summarize(tasks: readonly CompactTask[]): CompactSummary {
 export function peekKey(task: CompactTask): string {
   const agent: AgentRuntimeState = task.card.agent
   return `${task.card.id}|${agent.state}|${agent.terminalAt ?? agent.lastEventAt}`
+}
+
+/** The task with the most urgent level, first in list order on a tie; `quiet` counts as none. */
+export function topTask(tasks: readonly CompactTask[]): CompactTask | undefined {
+  let best: CompactTask | undefined
+  let bestRank = 0
+  for (const task of tasks) {
+    const rank = LEVEL_RANK[task.level] ?? 0
+    if (rank > bestRank) {
+      best = task
+      bestRank = rank
+    }
+  }
+  return best
+}
+
+/** Largest orb popup, in px; the list scrolls past it. */
+export const ORB_POPUP_MAX_HEIGHT = 392
+const ORB_POPUP_MIN_HEIGHT = 96
+const ORB_POPUP_OFFSET = 88
+const ORB_POPUP_MARGIN = 8
+
+/**
+ * Room for the orb popup on short displays. The popup starts 88px from the stage edge
+ * next to the orb and opens toward the other edge; it may use the display work area
+ * minus a small margin, never more than 392px and never less than a few rows.
+ */
+export function orbPopupMaxHeight(input: {
+  anchorV: 'top' | 'bottom'
+  /** `window.screenY` and `window.innerHeight` of the stage window. */
+  windowY: number
+  stageHeight: number
+  /** `screen.availTop` and `screen.availHeight` of the display holding the window. */
+  availTop: number
+  availHeight: number
+}): number {
+  const { anchorV, windowY, stageHeight, availTop, availHeight } = input
+  const room =
+    anchorV === 'top'
+      ? availTop + availHeight - (windowY + ORB_POPUP_OFFSET) - ORB_POPUP_MARGIN
+      : windowY + stageHeight - ORB_POPUP_OFFSET - availTop - ORB_POPUP_MARGIN
+  if (!Number.isFinite(room)) return ORB_POPUP_MAX_HEIGHT
+  return Math.round(Math.max(ORB_POPUP_MIN_HEIGHT, Math.min(ORB_POPUP_MAX_HEIGHT, room)))
 }
 
 /** Fault and action alerts stay until the state changes; a notice peeks once. */

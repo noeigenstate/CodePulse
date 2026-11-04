@@ -13,14 +13,30 @@ export function fill(template: string, n: number): string {
   return template.replace('{n}', String(n))
 }
 
-/** `5m 03s · 31%`: elapsed (or time since the last change) plus the context percent. */
-export function taskMetrics(task: CompactTask, now: number, locale: Locale): string {
+/**
+ * `5m 03s · 31%`: elapsed (or time since the last change) plus the context percent.
+ * Pass the word for "context" to get `5m 03s · Context 31%`.
+ */
+export function taskMetrics(
+  task: CompactTask,
+  now: number,
+  locale: Locale,
+  contextWord?: string,
+): string {
   const { card } = task
   const elapsed = elapsedMs(card.agent, now)
   const time =
     elapsed != null ? formatDuration(elapsed, locale) : formatRelative(card.updatedAt, now, locale)
   const context = formatContextLabel(card.agent, locale)?.match(/\d+%/)?.[0]
-  return context ? `${time} · ${context}` : time
+  if (!context) return time
+  return `${time} · ${contextWord ? `${contextWord} ${context}` : context}`
+}
+
+/** Keeps showing the last value while a surface animates closed, so it never fades out blank. */
+export function useLastDefined<T>(value: T | undefined): T | undefined {
+  const last = useRef<T>()
+  if (value !== undefined) last.current = value
+  return value ?? last.current
 }
 
 /** `CLAUDE · E:/path`: the agent and, when known, its project directory. */

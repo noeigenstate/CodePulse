@@ -159,7 +159,7 @@ export function HudWorkspace({
         </section>
         <aside className="product-config hud-inline-config">
           <h3>{zh ? 'HUD 样式' : 'HUD Style'}</h3>
-          <div className="product-segments is-wrap">
+          <div className="product-segments is-grid">
             {HUD_STYLE_OPTIONS.map((option) => (
               <button
                 key={option.value}

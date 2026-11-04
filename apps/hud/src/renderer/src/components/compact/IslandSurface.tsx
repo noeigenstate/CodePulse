@@ -7,6 +7,7 @@ import {
   TaskList,
   fill,
   toggleOnBackground,
+  useLastDefined,
   useMeasuredHeight,
 } from './TaskRow.js'
 import type { SurfaceProps } from './types.js'
@@ -29,6 +30,7 @@ export function IslandSurface(props: SurfaceProps): JSX.Element {
   const { list, onToggle, open, peek } = props
   const [measureRef, listHeight] = useMeasuredHeight()
   const peeking = Boolean(peek) && !open
+  const shownPeek = useLastDefined(peek)
   const size = islandBox({ open, peeking, summary: props.summary, listHeight })
   const urgent = isUrgent(peek) && !open
   const style = {
@@ -61,19 +63,19 @@ export function IslandSurface(props: SurfaceProps): JSX.Element {
         </div>
       </div>
       <div className={`hud-c-pane is-peek${peeking ? ' is-on' : ''}`}>
-        {peek ? (
+        {shownPeek ? (
           <div className="hud-c-peek">
             <PeekText
               copy={list.copy}
               locale={list.locale}
               others={list.tasks.length - 1}
-              task={peek}
+              task={shownPeek}
             />
             <TaskActions
               copy={list.copy}
               onAck={list.onAck}
               onDismiss={list.onDismiss}
-              task={peek}
+              task={shownPeek}
             />
           </div>
         ) : null}

@@ -104,7 +104,7 @@ body[data-surface='hud-compact'] {
   --c-level-ink: var(--c-muted);
 }
 
-/* The surface fades with the HUD opacity setting but never below 72%, so text stays legible. */
+/* The surface fades with the HUD opacity setting but never below 86%, so text stays legible. */
 .hud-c-surface {
   pointer-events: auto;
   color: var(--c-ink);
@@ -682,6 +682,21 @@ body[data-surface='hud-compact'] {
   position: relative;
 }
 
+/* The top task's mark, so state does not rest on ring colour alone. Inside the 56px ball. */
+.hud-c-badge {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgb(var(--c-surface-rgb));
+  box-shadow: 0 0 0 1px var(--c-line);
+  pointer-events: none;
+}
+
 .hud-c-say,
 .hud-c-pop {
   position: absolute;
@@ -720,7 +735,7 @@ body[data-surface='hud-compact'] {
 
 .hud-c-pop {
   height: 0;
-  max-height: min(392px, calc(100cqh - 112px));
+  max-height: min(var(--c-pop-max, 392px), calc(100cqh - 112px));
   border-radius: 16px;
 }
 

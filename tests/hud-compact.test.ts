@@ -7,9 +7,11 @@ import {
   flattenTasks,
   islandBox,
   isUrgent,
+  orbPopupMaxHeight,
   peekKey,
   pickPeek,
   summarize,
+  topTask,
 } from '../apps/hud/src/renderer/src/lib/hudCompact.js'
 import { buildProjectDeckGroups } from '../apps/hud/src/renderer/src/lib/projectDeck.js'
 import {
@@ -64,8 +66,8 @@ test('flattening keeps the deck order and attaches title and level', () => {
 
 test('summary counts running tasks and unread results', () => {
   const summary = summarize(tasksOf([RUN('a'), RUN('b'), DONE('c'), FAIL('d'), WAIT('e')]))
-  assert.deepEqual(summary, { total: 5, running: 2, unread: 2 })
-  assert.deepEqual(summarize([]), { total: 0, running: 0, unread: 0 })
+  assert.deepEqual(summary, { running: 2, unread: 2 })
+  assert.deepEqual(summarize([]), { running: 0, unread: 0 })
   assert.equal(summarize(tasksOf([DONE('a', { unread: false })])).unread, 0)
 })
 
@@ -107,12 +109,93 @@ test('island sizes follow the design', () => {
   const box = (summary: typeof idle, extra: Partial<Parameters<typeof islandBox>[0]> = {}) =>
     islandBox({ open: false, peeking: false, summary, listHeight: 300, ...extra })
   assert.deepEqual(box(idle), { width: 128, height: 36, radius: 18 })
-  assert.equal(box({ total: 2, running: 2, unread: 0 }).width, 216)
-  assert.equal(box({ total: 1, running: 0, unread: 1 }).width, 216)
-  assert.equal(box({ total: 3, running: 2, unread: 1 }).width, 272)
+  assert.equal(box({ running: 2, unread: 0 }).width, 216)
+  assert.equal(box({ running: 0, unread: 1 }).width, 216)
+  assert.equal(box({ running: 2, unread: 1 }).width, 272)
   assert.deepEqual(box(idle, { peeking: true }), { width: 420, height: 64, radius: 32 })
   assert.deepEqual(box(idle, { open: true }), { width: 460, height: 300, radius: 16 })
   assert.equal(box(idle, { open: true, listHeight: 900 }).height, 420)
+})
+
+test('the orb badge shows the most urgent task, or none when everything is quiet', () => {
+  const level = (agents: AgentRuntimeState[]) => topTask(tasksOf(agents))?.level
+  assert.equal(level([RUN('a'), DONE('b'), WAIT('c'), FAIL('d')]), 'fault')
+  assert.equal(level([RUN('a'), DONE('b'), WAIT('c')]), 'action')
+  assert.equal(level([RUN('a'), DONE('b')]), 'notice')
+  assert.equal(level([agent('a', TurnState.IDLE), RUN('b')]), 'active')
+  assert.equal(level([agent('a', TurnState.IDLE)]), undefined)
+  assert.equal(topTask([]), undefined)
+  const [first] = tasksOf([DONE('a'), DONE('b')])
+  assert.equal(topTask(tasksOf([DONE('a'), DONE('b')]))?.card.id, first?.card.id)
+})
+
+test('orb popup is capped by the room left on short displays', () => {
+  const base = { stageHeight: 504, availTop: 0, availHeight: 1040 }
+  assert.equal(orbPopupMaxHeight({ ...base, anchorV: 'top', windowY: 40 }), 392)
+  // Orb near the bottom of a 600px work area: popup starts at windowY + 88.
+  assert.equal(
+    orbPopupMaxHeight({
+      anchorV: 'top',
+      windowY: 200,
+      stageHeight: 504,
+      availTop: 0,
+      availHeight: 600,
+    }),
+    304,
+  )
+  // Bottom anchored: the popup ends 88px above the stage bottom and opens upward.
+  assert.equal(
+    orbPopupMaxHeight({
+      anchorV: 'bottom',
+      windowY: -100,
+      stageHeight: 504,
+      availTop: 0,
+      availHeight: 600,
+    }),
+    308,
+  )
+  assert.equal(
+    orbPopupMaxHeight({
+      anchorV: 'bottom',
+      windowY: 0,
+      stageHeight: 504,
+      availTop: 0,
+      availHeight: 600,
+    }),
+    392,
+  )
+  // Never below a few rows, and bad input falls back to the full height.
+  assert.equal(
+    orbPopupMaxHeight({
+      anchorV: 'top',
+      windowY: 560,
+      stageHeight: 504,
+      availTop: 0,
+      availHeight: 600,
+    }),
+    96,
+  )
+  assert.equal(
+    orbPopupMaxHeight({
+      anchorV: 'top',
+      windowY: Number.NaN,
+      stageHeight: 504,
+      availTop: 0,
+      availHeight: 600,
+    }),
+    392,
+  )
+  // A second display above or to the side has its own availTop.
+  assert.equal(
+    orbPopupMaxHeight({
+      anchorV: 'top',
+      windowY: -900,
+      stageHeight: 504,
+      availTop: -1080,
+      availHeight: 1080,
+    }),
+    392,
+  )
 })
 
 test('formatters moved out of the project deck keep their output', () => {
@@ -127,6 +210,19 @@ test('formatters moved out of the project deck keep their output', () => {
 })
 
 const compactDir = 'apps/hud/src/renderer/src/components/compact'
+
+/** The body of the first block that opens with `header`, braces balanced. */
+function cssBlock(css: string, header: string): string {
+  const start = css.indexOf(header)
+  assert.ok(start >= 0, header)
+  const open = css.indexOf('{', start)
+  let depth = 0
+  for (let index = open; index < css.length; index += 1) {
+    if (css[index] === '{') depth += 1
+    if (css[index] === '}' && --depth === 0) return css.slice(open + 1, index)
+  }
+  throw new Error('unbalanced block: ' + header)
+}
 
 test('compact surfaces never reach into the preload API directly', () => {
   for (const file of readdirSync(compactDir).filter((name) => name.endsWith('.tsx'))) {
@@ -144,7 +240,11 @@ test('compact stylesheet keeps to the type scale and respects the window rules',
   assert.deepEqual([...weights].sort(), ['400', '600'])
   assert.match(css, /body\[data-surface='hud-compact'\]\s*\{\s*padding: 0/)
   assert.match(css, /\[data-hud-surface='compact'\]::before\s*\{\s*display: none/)
-  assert.match(css, /prefers-reduced-motion: reduce/)
+  const reduced = cssBlock(css, '@media (prefers-reduced-motion: reduce)')
+  assert.match(reduced, /\.hud-c-spin\s*\{\s*animation: none/)
+  assert.match(reduced, /\[data-attention-effect\] \.hud-c-urgent\s*\{\s*animation: none/)
+  // Only loops stop; the morph between states keeps its transition.
+  assert.doesNotMatch(reduced, /transition\s*:/)
   assert.match(css, /0\.86 \+ 0\.14 \* var\(--hud-opacity/)
   assert.match(css, /--c-action-ink: #c2410c/)
   assert.match(css, /\[data-attention-effect='breathe'\] \.hud-c-urgent/)
@@ -160,4 +260,17 @@ test('app shell marks the surface and keeps modals clickable on the transparent 
     readFileSync('apps/hud/src/renderer/src/index.css', 'utf8'),
     /hud-compact|data-hud-surface/,
   )
+})
+
+test('only the settings window writes through the shell, and the compact preview is inert', () => {
+  const app = readFileSync('apps/hud/src/renderer/src/App.tsx', 'utf8')
+  assert.match(app, /if \(standaloneSettings\) void window\.codepulse\.setHudSettings\(patch\)/)
+  assert.equal(app.match(/window\.codepulse\.setHudSettings/g)?.length, 1)
+  assert.match(app, /ready=\{ready\}/)
+  const preview = readFileSync('apps/hud/src/renderer/src/components/HudPreview.tsx', 'utf8')
+  const compact = preview.slice(preview.indexOf("settings.hudStyle !== 'panel'"))
+  const compactOnly = compact.slice(0, compact.indexOf('<fieldset'))
+  assert.match(compactOnly, /role="group"/)
+  assert.equal(compactOnly.match(/\{\.\.\.INERT\}/g)?.length, 2)
+  assert.doesNotMatch(compactOnly, /<fieldset/)
 })

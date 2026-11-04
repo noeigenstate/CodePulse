@@ -14,6 +14,8 @@ import { uiCopy, type Locale } from '../lib/i18n.js'
 import './project-deck-preview.css'
 
 const ignore = () => {}
+// `inert` is not in React 18's DOM types; the preview must neither focus nor react to clicks.
+const INERT = { inert: '' } as object
 // The unified host supports providers beyond this HUD build. Narrow at the
 // presentation boundary instead of changing either checkout's provider model.
 type PreviewAgent = Omit<AgentRuntimeState, 'agentType'> & { agentType: string }
@@ -69,14 +71,15 @@ export function HudPreview({
       onDismiss: ignore,
       panels,
       preview: true,
+      ready: true,
       showUsageStrip: settings.showUsageStrip,
       style: settings.hudStyle,
       theme: resolvedTheme,
     }
     // Compact styles live on a transparent stage: show the everyday state and the open list.
     return (
-      <fieldset
-        disabled
+      <div
+        role="group"
         className="hud-compact-preview"
         aria-label={locale === 'zh' ? 'HUD 实时预览' : 'Live HUD preview'}
         data-attention-effect={settings.attentionEffect}
@@ -84,17 +87,27 @@ export function HudPreview({
       >
         <figure>
           <figcaption>{copy.compact.previewIdle}</figcaption>
-          <div className="hud-c-preview-stage" data-c-style={settings.hudStyle} data-part="idle">
+          <div
+            className="hud-c-preview-stage"
+            data-c-style={settings.hudStyle}
+            data-part="idle"
+            {...INERT}
+          >
             <HudCompact {...compactProps} forcePeek />
           </div>
         </figure>
         <figure>
           <figcaption>{copy.compact.previewOpen}</figcaption>
-          <div className="hud-c-preview-stage" data-c-style={settings.hudStyle} data-part="open">
+          <div
+            className="hud-c-preview-stage"
+            data-c-style={settings.hudStyle}
+            data-part="open"
+            {...INERT}
+          >
             <HudCompact {...compactProps} forceOpen />
           </div>
         </figure>
-      </fieldset>
+      </div>
     )
   }
   return (

@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { hudWindowBoundsForReveal, type HudDisplay } from '../apps/desktop/src/main/hud-window.js'
+import { DEFAULT_HUD_SETTINGS, TurnState, type AgentRuntimeState } from '@codepulse/shared'
+import {
+  hudAlertKeys,
+  hudWindowBoundsForReveal,
+  type HudDisplay,
+} from '../apps/desktop/src/main/hud-window.js'
 
 const primary: HudDisplay = {
   id: 1,
@@ -40,4 +45,105 @@ test('reveal preserves a manually positioned HUD that still fits', () => {
 test('partly off-screen and oversized HUDs remain within the work area', () => {
   inside(hudWindowBoundsForReveal(primary, { x: 1800, y: 950, width: 470, height: 500 }), primary)
   inside(hudWindowBoundsForReveal(left, { x: -1000, y: 150, width: 3000, height: 3000 }), left)
+})
+
+const now = 1_800_000_000_000
+const tools = DEFAULT_HUD_SETTINGS.visibleTools
+const agent = (patch: Partial<AgentRuntimeState> = {}): AgentRuntimeState => ({
+  agentType: 'codex',
+  externalSessionId: 'session-one',
+  state: TurnState.DONE,
+  lastEventAt: now,
+  unread: true,
+  toolCallCount: 0,
+  needPermission: false,
+  needUserInput: false,
+  ...patch,
+})
+
+test('alert keys include both waiting states even without unread, and unread terminal states', () => {
+  for (const state of [TurnState.WAITING_PERMISSION, TurnState.WAITING_USER_INPUT]) {
+    assert.equal(hudAlertKeys([agent({ state, unread: false })], tools, now).size, 1)
+  }
+  for (const state of [
+    TurnState.DONE,
+    TurnState.ERROR,
+    TurnState.TIMEOUT,
+    TurnState.USAGE_LIMITED,
+  ]) {
+    assert.equal(hudAlertKeys([agent({ state })], tools, now).size, 1)
+    assert.equal(hudAlertKeys([agent({ state, unread: false })], tools, now).size, 0)
+  }
+})
+
+test('quiet and active states never reveal the HUD', () => {
+  for (const state of [
+    TurnState.IDLE,
+    TurnState.PROMPT_SUBMITTED,
+    TurnState.THINKING,
+    TurnState.TOOL_RUNNING,
+  ]) {
+    assert.equal(hudAlertKeys([agent({ state })], tools, now).size, 0)
+  }
+})
+
+test('a running agent does not mask another agent alert', () => {
+  const alert = agent({ agentType: 'claude_code' })
+  assert.deepEqual(
+    hudAlertKeys([agent({ state: TurnState.THINKING }), alert], tools, now),
+    hudAlertKeys([alert], tools, now),
+  )
+})
+
+test('alert keys respect tool visibility, unsupported tools, and hidden tasks', () => {
+  assert.equal(hudAlertKeys([agent()], { ...tools, codex: false }, now).size, 0)
+  assert.equal(hudAlertKeys([agent({ agentType: 'opencode' })], tools, now).size, 0)
+  assert.equal(hudAlertKeys([agent({ taskHidden: true })], tools, now).size, 0)
+  for (const agentType of ['codex', 'claude_code', 'grok', 'kimi', 'antigravity'] as const) {
+    assert.equal(hudAlertKeys([agent({ agentType })], tools, now).size, 1)
+  }
+})
+
+test('alerts expire after 60 seconds and invalid or future timestamps are ignored', () => {
+  assert.equal(hudAlertKeys([agent({ lastEventAt: now - 60_000 })], tools, now).size, 1)
+  for (const lastEventAt of [now - 60_001, now + 1, NaN, Infinity]) {
+    assert.equal(hudAlertKeys([agent({ lastEventAt })], tools, now).size, 0)
+  }
+})
+
+test('terminal time prevents session scans from creating a fresh key or refreshing an expired alert', () => {
+  const terminalAt = now - 5_000
+  assert.deepEqual(
+    hudAlertKeys([agent({ terminalAt, lastEventAt: now - 100 })], tools, now),
+    hudAlertKeys([agent({ terminalAt, lastEventAt: now })], tools, now),
+  )
+  assert.equal(hudAlertKeys([agent({ terminalAt: now - 60_001 })], tools, now).size, 0)
+})
+
+test('alert identity includes the session, provider, state and event time', () => {
+  const original = agent()
+  const keys = hudAlertKeys(
+    [
+      original,
+      original,
+      agent({ externalSessionId: 'session-two' }),
+      agent({ agentType: 'claude_code' }),
+      agent({ state: TurnState.ERROR }),
+      agent({ terminalAt: now - 1 }),
+    ],
+    tools,
+    now,
+  )
+  assert.equal(keys.size, 5)
+  assert.deepEqual(
+    hudAlertKeys([agent({ workspacePath: 'E:/transient/cwd' })], tools, now),
+    hudAlertKeys([original], tools, now),
+  )
+})
+
+test('path-only agents use their workspace identity without changing the input', () => {
+  const first = Object.freeze(agent({ externalSessionId: undefined, workspacePath: 'E:/one' }))
+  const second = agent({ externalSessionId: undefined, workspacePath: 'E:/two' })
+  assert.equal(hudAlertKeys([first, second], tools, now).size, 2)
+  assert.equal(first.workspacePath, 'E:/one')
 })

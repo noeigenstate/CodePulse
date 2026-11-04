@@ -11,9 +11,11 @@ import { StatusHub } from '@codepulse/core'
 import {
   DEFAULT_AMBIENT,
   DEFAULT_DEVICE_DISPLAY,
+  TurnState,
   normalizeDeviceDisplay,
   normalizeShellPreferences,
   type DeviceDisplayConfig,
+  type StatusSnapshot,
 } from '@codepulse/shared'
 import { ProductShell, shellPreferenceStore } from '../apps/desktop/src/main/product-shell.js'
 import { registerProductIpc } from '../apps/desktop/src/main/product-ipc.js'
@@ -23,6 +25,7 @@ import { createAmbientRuntime } from '../apps/desktop/src/main/ambient-runtime.j
 import { registerAmbientIpc } from '../apps/desktop/src/main/ambient-ipc.js'
 import { withAmbient } from '../apps/desktop/src/main/ambient-rules.js'
 import { HudSurface } from '../apps/desktop/src/main/hud-surface.js'
+import { hudOrbPositionForStage } from '../apps/desktop/src/main/hud-window.js'
 import { createDeviceDisplayProjector } from '../apps/desktop/src/main/device-display-projection.js'
 import { AssistantStore } from '../apps/desktop/src/main/assistant-store.js'
 import { AssistantService } from '../apps/desktop/src/main/assistant-service.js'
@@ -119,8 +122,334 @@ function assertWholePixels(
 }
 // k of a measured canvas, for the readability checks.
 const pixelRatio = ([width]: number[], dpr: number) => Math.round((width! * dpr) / 400)
+
+async function verifyHudStyles(
+  hub: StatusHub,
+  hud: HudSurface,
+  product: ProductShell,
+  preload: string,
+) {
+  const saved = product.snapshot().hudSettings
+  const snapshot = hub.snapshotForPresentation
+  const originalCursor = screenApi.getCursorScreenPoint
+  let fixture: StatusSnapshot = { ...hub.snapshot(), agents: [] }
+  let inactive = 0,
+    focused = 0,
+    stageEvents = 0
+  const loaded = new Set<number>()
+  const order: string[] = []
+  const created = (_event: Electron.Event, win: BrowserWindow) => {
+    if (win.getTitle() !== 'CodePulse HUD') return
+    const showInactive = win.showInactive.bind(win)
+    win.showInactive = () => {
+      inactive++
+      showInactive()
+    }
+    win.focus = () => {
+      focused++
+    }
+    win.webContents.on('did-finish-load', () => loaded.add(win.id))
+    const send = win.webContents.send.bind(win.webContents)
+    win.webContents.send = (channel, ...args) => {
+      if (channel === 'codepulse:hud-stage') {
+        assert.ok(loaded.has(win.id), 'stage is delivered after load')
+        stageEvents++
+        order.push('stage')
+      }
+      send(channel, ...args)
+    }
+  }
+  const getWindow = () =>
+    BrowserWindow.getAllWindows().find((win) => win.getTitle() === 'CodePulse HUD')
+  const bridge = new BrowserWindow({
+    show: false,
+    webPreferences: { preload, sandbox: false, contextIsolation: true, nodeIntegration: false },
+  })
+  await bridge.loadURL('about:blank')
+  const invoke = (win: BrowserWindow, call: string) =>
+    win.webContents.executeJavaScript(`window.codepulse.${call}`)
+  const status = (terminalAt: number, state = TurnState.DONE, lastEventAt = terminalAt) => {
+    fixture = {
+      overall: 'idle',
+      updatedAt: Date.now(),
+      agents: [
+        {
+          agentType: 'codex',
+          externalSessionId: 'hud-alert-fixture',
+          workspacePath: 'F:/fixture/hud-alert',
+          state,
+          lastEventAt,
+          terminalAt,
+          unread: true,
+          toolCallCount: 0,
+          needPermission: false,
+          needUserInput: false,
+        },
+      ],
+    }
+    hud.broadcast('codepulse:status', fixture)
+  }
+  hub.snapshotForPresentation = () => fixture
+  app.on('browser-window-created', created)
+  try {
+    product.setHudSettings({ hudStyle: 'island', autoReveal: true })
+    assert.equal(
+      (await invoke(bridge, 'getHudStage()')).style,
+      'island',
+      'stage getter works without a HUD window',
+    )
+    const firstTime = Date.now() - 1000
+    const project = hud.snapshot
+    let projectionReads = 0
+    hud.snapshot = () => {
+      projectionReads++
+      return project.call(hud)
+    }
+    status(firstTime)
+    assert.equal(projectionReads, 0, 'seeding alerts without a surface does not bind projects')
+    hud.snapshot = project
+    assert.equal(getWindow(), undefined, 'first observation only seeds alerts')
+    status(firstTime + 1, TurnState.ERROR)
+    await until(() => hud.isVisible(), 'passive HUD creation')
+    let win = getWindow()!
+    assert.equal(inactive, 1, 'new alert shows an inactive HUD')
+    assert.equal(focused, 0, 'passive creation never focuses')
+    assert.equal(stageEvents, 1, 'new window publishes its stage once after load')
+    hud.hide()
+    status(firstTime + 1, TurnState.ERROR, Date.now())
+    assert.equal(hud.isVisible(), false, 'a session scan cannot reopen a manually hidden HUD')
+    product.setHudSettings({ autoReveal: false })
+    status(firstTime + 2)
+    assert.equal(hud.isVisible(), false, 'auto reveal is opt-in')
+    product.setHudSettings({ autoReveal: true })
+    status(firstTime + 2)
+    assert.equal(hud.isVisible(), false, 'enabling auto reveal does not replay an observed alert')
+    status(firstTime - 70_000)
+    assert.equal(hud.isVisible(), false, 'expired alerts do not reveal')
+    win.destroy()
+    const beforeHiddenLoad = inactive
+    status(firstTime + 3, TurnState.WAITING_PERMISSION)
+    win = getWindow()!
+    hud.hide()
+    await until(() => loaded.has(win.id), 'hidden HUD load')
+    await wait(50)
+    assert.equal(inactive, beforeHiddenLoad, 'a HUD hidden during load stays hidden')
+    assert.equal(hud.isVisible(), false)
+    product.setHudSettings({ autoReveal: false, hudStyle: 'panel' })
+    hud.open()
+    assert.equal(focused, 1, 'explicit open focuses')
+    const area = screenApi.getDisplayMatching(win.getBounds()).workArea
+    win.setBounds({ x: area.x + 80, y: area.y + 80, width: 470, height: 260 })
+    await wait(50)
+    const panelBounds = win.getBounds()
+    const sizes = {
+      island: [508, 460],
+      pills: [388, 720],
+      edge: [460, 640],
+      orb: [448, 504],
+    } as const
+    for (const style of ['island', 'pills', 'edge', 'orb'] as const) {
+      product.setHudSettings({ hudStyle: style, orbPosition: undefined })
+      const bounds = win.getBounds()
+      // Native coordinate conversion can round a size by one DIP.
+      assert.ok(
+        Math.abs(bounds.width - Math.min(area.width, sizes[style][0])) <= 1,
+        `${style} width: ${JSON.stringify(bounds)}`,
+      )
+      assert.ok(
+        Math.abs(bounds.height - Math.min(area.height, sizes[style][1])) <= 1,
+        `${style} height: ${JSON.stringify(bounds)}`,
+      )
+      assert.equal(win.isResizable(), false, `${style} is fixed-size`)
+      assert.equal((await invoke(win, 'getHudStage()')).style, style)
+      const visibleBounds =
+        style === 'orb'
+          ? { ...hudOrbPositionForStage(bounds, hud.debugState().stage), width: 56, height: 56 }
+          : bounds
+      assert.ok(
+        visibleBounds.x >= area.x &&
+          visibleBounds.y >= area.y &&
+          visibleBounds.x + visibleBounds.width <= area.x + area.width &&
+          visibleBounds.y + visibleBounds.height <= area.y + area.height,
+        `${style} visible surface stays in the display`,
+      )
+      if (style !== 'orb') assert.equal(bounds.y, area.y)
+      assert.equal(await invoke(win, 'setHudContentHeight(9999)'), false)
+      assert.deepEqual(win.getBounds(), bounds, `${style} ignores renderer content height`)
+      assert.equal(await invoke(win, 'setHudInteractive(true)'), true)
+      assert.equal(hud.debugState().ignoringMouse, false)
+      assert.equal(await invoke(win, 'setHudInteractive(false)'), true)
+      assert.equal(hud.debugState().ignoringMouse, process.platform !== 'linux')
+      assert.equal(
+        await invoke(bridge, 'setHudInteractive(true)'),
+        false,
+        'another window cannot change hit testing',
+      )
+      assert.equal(
+        await invoke(bridge, "hudDrag('start')"),
+        false,
+        'another window cannot drag the orb',
+      )
+    }
+    let mutations = 0
+    const setBounds = win.setBounds.bind(win),
+      setMinimumSize = win.setMinimumSize.bind(win),
+      setResizable = win.setResizable.bind(win)
+    win.setBounds = (...args) => {
+      mutations++
+      order.push('bounds')
+      setBounds(...args)
+    }
+    win.setMinimumSize = (...args) => {
+      mutations++
+      setMinimumSize(...args)
+    }
+    win.setResizable = (...args) => {
+      mutations++
+      setResizable(...args)
+    }
+    product.setHudSettings({ hudOpacity: 55 })
+    product.setHudSettings({ hudOpacity: 55 })
+    assert.equal(mutations, 0, 'unrelated or unchanged settings do no native geometry work')
+    product.setHudSettings({ orbPosition: { x: 50000, y: 50000 } })
+    const defaultOrb = hudOrbPositionForStage(win.getBounds(), hud.debugState().stage)
+    assert.deepEqual(
+      defaultOrb,
+      { x: area.x + area.width - 48 - 56, y: area.y + 64 },
+      'disconnected saved positions use the default',
+    )
+    const frozen = hud.debugState().stage
+    let cursor = { x: defaultOrb.x + 12, y: defaultOrb.y + 15 }
+    screenApi.getCursorScreenPoint = () => ({ ...cursor })
+    assert.equal(await invoke(win, "hudDrag('move')"), false, 'move requires a drag start')
+    assert.equal(await invoke(win, "hudDrag('invalid')"), false)
+    assert.equal(await invoke(win, "hudDrag('start')"), true)
+    assert.equal(hud.debugState().ignoringMouse, false)
+    await invoke(win, 'setHudInteractive(false)')
+    assert.equal(hud.debugState().ignoringMouse, false, 'drag stays interactive')
+    const start = win.getBounds()
+    cursor = { x: area.x + 32 + 12, y: area.y + 32 + 15 }
+    await invoke(win, "hudDrag('move')")
+    assert.deepEqual(hud.debugState().stage, frozen, 'drag anchors stay frozen during movement')
+    assert.equal(win.getBounds().width, start.width)
+    assert.equal(win.getBounds().height, start.height)
+    for (let move = 0; move < 12; move++) await invoke(win, "hudDrag('move')")
+    assert.equal(win.getBounds().width, start.width, 'repeated moves do not grow the native window')
+    assert.equal(win.getBounds().height, start.height, 'repeated moves keep the native height')
+    const finalOrb = { x: area.x + 32, y: area.y + area.height - 8 - 56 }
+    cursor = { x: finalOrb.x + 12, y: finalOrb.y + 15 }
+    order.length = 0
+    await invoke(win, "hudDrag('end')")
+    assert.deepEqual(order, ['stage', 'bounds'], 'end publishes anchors before applying bounds')
+    assert.deepEqual(
+      hudOrbPositionForStage(win.getBounds(), hud.debugState().stage),
+      finalOrb,
+      'end reads the final cursor position',
+    )
+    assert.equal(hud.debugState().stage.anchorH, 'left')
+    assert.equal(hud.debugState().stage.anchorV, 'bottom')
+    assert.deepEqual(product.snapshot().hudSettings.orbPosition, finalOrb)
+    assert.deepEqual(
+      shellPreferenceStore(join(output, 'product-shell.json')).read().hudSettings.orbPosition,
+      finalOrb,
+      'orb position is persisted',
+    )
+    win.setBounds = setBounds
+    win.setMinimumSize = setMinimumSize
+    win.setResizable = setResizable
+    product.setHudSettings({ hudStyle: 'panel' })
+    assert.deepEqual(win.getBounds(), panelBounds, 'panel position and height are restored')
+    assert.equal(win.getBounds().width, 470)
+    assert.deepEqual(win.getMinimumSize(), [470, 132])
+    assert.equal(win.isResizable(), true)
+    assert.equal(hud.debugState().ignoringMouse, false)
+    assert.equal(
+      await invoke(win, 'setHudInteractive(false)'),
+      false,
+      'panel never enables click-through',
+    )
+    assert.equal(await invoke(win, "hudDrag('start')"), false, 'panel is not orb-draggable')
+    writeFileSync(
+      join(output, 'hud-styles.json'),
+      JSON.stringify(
+        {
+          passed: true,
+          styles: 5,
+          alertScenarios: 8,
+          stageHandshake: true,
+          dragEndCursor: true,
+          dragMoves: 13,
+          orbPersisted: true,
+          panelRestored: true,
+          linuxBlocksTransparentArea: process.platform === 'linux',
+        },
+        null,
+        2,
+      ),
+    )
+  } finally {
+    hub.snapshotForPresentation = snapshot
+    screenApi.getCursorScreenPoint = originalCursor
+    product.setHudSettings({ ...saved, hudStyle: 'panel', orbPosition: saved.orbPosition })
+    getWindow()?.destroy()
+    bridge.destroy()
+    app.removeListener('browser-window-created', created)
+  }
+}
+
+async function runHudStyleSmoke() {
+  const host = resolve(process.env.CODEPULSE_SMOKE_ASSETS ?? 'apps/desktop')
+  const root = join(output, 'hud-fixture')
+  mkdirSync(join(root, 'renderer'), { recursive: true })
+  mkdirSync(join(root, 'preload'), { recursive: true })
+  writeFileSync(join(root, 'package.json'), '{"type":"commonjs"}')
+  writeFileSync(
+    join(root, 'renderer/index.html'),
+    '<!doctype html><title>CodePulse HUD</title><style>html,body{background:transparent}</style>',
+  )
+  const preload = join(root, 'preload/index.js')
+  writeFileSync(preload, readFileSync(join(host, 'out/hud/preload/index.js')))
+  const hub = new StatusHub()
+  let product: ProductShell
+  const hud = new HudSurface(
+    hub,
+    root,
+    join(output, 'hud-workspaces.json'),
+    () => product?.refresh(),
+    () => {},
+    (orbPosition) => product.setHudSettings({ orbPosition }),
+  )
+  hud.registerIpc()
+  const store = shellPreferenceStore(join(output, 'product-shell.json'))
+  product = new ProductShell(
+    store.read(),
+    store.write,
+    {
+      hudAvailable: () => true,
+      hudVisible: () => hud.isVisible(),
+      standard: () => {},
+      hud: () => hud.open(),
+      screen: () => {},
+      hideStandard: () => {},
+      hideHud: () => hud.hide(),
+      hudSettingsChanged: (settings) => hud.syncSettings(settings),
+    },
+    () => {},
+  )
+  hud.syncSettings(product.snapshot().hudSettings)
+  await verifyHudStyles(hub, hud, product, preload)
+  assert.deepEqual(errors, [], 'HUD fixture and preload have no console errors')
+  writeFileSync(
+    join(output, 'result.json'),
+    JSON.stringify({ passed: true, hudStyles: true, rendererAgnostic: true }, null, 2),
+  )
+  clearTimeout(deadline)
+  app.exit(0)
+}
+
 app.whenReady().then(async () => {
   try {
+    if (process.env.CODEPULSE_SMOKE_HUD_ONLY === '1') return await runHudStyleSmoke()
     // This harness never calls bootstrap/startLocalServer or modifies real hooks.
     const sqlite = new Database(join(output, 'smoke.sqlite'))
     sqlite.exec('CREATE TABLE IF NOT EXISTS smoke (value TEXT)')
@@ -153,6 +482,8 @@ app.whenReady().then(async () => {
       join(host, 'out/hud'),
       join(output, 'hud-workspaces.json'),
       () => product?.refresh(),
+      () => {},
+      (orbPosition) => product.setHudSettings({ orbPosition }),
     )
     hud.registerIpc()
     const screen = new ScreenWorkbenchWindow({
@@ -184,12 +515,14 @@ app.whenReady().then(async () => {
         screen: () => screen.open(),
         hideStandard: () => main?.hide(),
         hideHud: () => hud.hide(),
+        hudSettingsChanged: (settings) => hud.syncSettings(settings),
       },
       (s) => {
         broadcast('codepulse:shell-status', s)
         publishInk()
       },
     )
+    hud.syncSettings(product.snapshot().hudSettings)
     let targetDelay = 0,
       failTarget: string | undefined
     registerProductIpc(
@@ -503,6 +836,7 @@ app.whenReady().then(async () => {
     })
     await main.loadFile(join(host, 'out/renderer/index.html'))
     await wait(700)
+    await verifyHudStyles(hub, hud, product, join(host, 'out/hud/preload/index.js'))
     product.restore()
     await until(
       () =>

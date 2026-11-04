@@ -745,6 +745,9 @@ async function bootstrap(): Promise<void> {
       if (shutdownStarted) return
       notifyInkDisplayChanged()
     },
+    (orbPosition) => {
+      if (!shutdownStarted) productShell?.setHudSettings({ orbPosition })
+    },
   )
   hudSurface.registerIpc()
   screenWorkbench = new ScreenWorkbenchWindow({

@@ -30,6 +30,12 @@ exports.default = async function afterPack(context) {
   const candidates = []
 
   if (platform === 'win32') {
+    const arch = require('electron-builder').Arch[context.arch]
+    if (!fs.existsSync(path.join(appOutDir, 'resources', 'performance-gpu-' + arch + '.exe'))) {
+      throw new Error(
+        'The Windows package needs its matching GPU reader. Build it with MSVC and the Windows SDK.',
+      )
+    }
     // Software Vulkan fallback only — ffmpeg.dll must stay.
     candidates.push('vk_swiftshader.dll', 'vk_swiftshader_icd.json', 'vulkan-1.dll')
   } else if (platform === 'darwin') {

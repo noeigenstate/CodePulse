@@ -72,6 +72,9 @@
   opacity: 0.4;
 }
 
+/* Live local content uses the same item list and native-size preview as the other categories. */
+.ambient-inner[hidden] { display: none; }
+.desk-performance-fields select { max-width: 100%; }
 /* Left: one list of categories, each with its own on/off rule. */
 .ambient-catlist {
   margin: 0;

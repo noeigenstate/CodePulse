@@ -13,7 +13,7 @@ export type InkConnection = 'connected' | 'disconnected' | 'server-off'
 export type InkShowing =
   | { kind: 'work' }
   /** `id` is the projected card's id (the one the device compares), so a page can tell which card is on screen. */
-  | { kind: 'ambient' | 'todos'; title: string; id?: string }
+  | { kind: 'ambient' | 'todos' | 'performance'; title: string; id?: string }
 
 /**
  * Single source for "what is on the e-ink screen" across every desktop page.
@@ -39,6 +39,8 @@ export interface InkScreenStatus {
 
 /** Applied together by the main process: the playlist plus the work-screen details. */
 export interface InkApplyRequest {
+  /** Present for Control drafts so a concurrent content edit is preserved. */
+  basePlan?: InkDisplayPlan
   plan: InkDisplayPlan
   display: DeviceDisplayConfig
 }

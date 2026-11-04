@@ -4,6 +4,9 @@ import {
   DEFAULT_HUD_SETTINGS,
   DEFAULT_INK_PLAN,
   DISPLAY_AGENT_TYPES,
+  deskContentIncluded,
+  setDeskContentIncluded,
+  mergeInkControlPlan,
   type AmbientSnapshot,
   type DeviceDisplayConfig,
   type DeviceDisplaySnapshot,
@@ -324,6 +327,8 @@ function InkControlWorkspace({
   const [ambient, setAmbient] = useState<AmbientSnapshot>()
   const [source, setSource] = useState<DevicePreviewSource>('live')
   const [connectOpen, setConnectOpen] = useState(false)
+  const viewCurrent = useRef(false)
+  viewCurrent.current = active && source === 'live'
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [previewError, setPreviewError] = useState('')
@@ -358,7 +363,7 @@ function InkControlWorkspace({
   }, [])
   useEffect(() => {
     const previous = savedPlanRef.current
-    setPlan((draft) => (equal(draft, previous) ? savedPlan : draft))
+    setPlan((draft) => mergeInkControlPlan(previous, draft, savedPlan))
     savedPlanRef.current = savedPlan
   }, [savedPlan])
   useEffect(() => {
@@ -398,7 +403,10 @@ function InkControlWorkspace({
       }
       busy = true
       try {
-        const snapshot = await window.codepulse.getDeviceDisplay()
+        const snapshot = await window.codepulse.getDeviceDisplay(
+          undefined,
+          viewCurrent.current && document.visibilityState === 'visible',
+        )
         if (alive) {
           acceptDisplay(snapshot)
           setPreviewError('')
@@ -486,6 +494,21 @@ function InkControlWorkspace({
   }, [ink?.temporary?.until])
 
   const display = filterDisplay(displayDraft)
+  useEffect(() => {
+    if (!active || source !== 'live' || ink?.current !== 'performance') return
+    const read = () => {
+      if (document.visibilityState === 'visible') scheduleRef.current()
+    }
+    read()
+    const warm = setTimeout(read, 1600),
+      timer = setInterval(read, 30000)
+    document.addEventListener('visibilitychange', read)
+    return () => {
+      clearTimeout(warm)
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', read)
+    }
+  }, [active, source, ink?.current])
   const pending = inkControlChanges(plan, display, savedPlan, displaySnap?.config)
   const count = pending.length
   // Offline changes auto-apply (the count above drops to zero), but they stay pending for the device.
@@ -506,7 +529,11 @@ function InkControlWorkspace({
     busyRef.current = true
     setSaving(true)
     setMessage('')
-    const request = { plan: planRef.current, display: filterDisplay(draftRef.current) }
+    const request = {
+      basePlan: savedPlanRef.current,
+      plan: planRef.current,
+      display: filterDisplay(draftRef.current),
+    }
     try {
       const result = await window.codepulse.applyInk(request)
       if (!aliveRef.current) return
@@ -553,13 +580,16 @@ function InkControlWorkspace({
     setMessage('')
   }
   const toggleItem = (item: 'ambient' | 'todos') => {
-    setPlan((current) => ({
-      ...current,
-      fixed: 'work',
-      items: current.items.includes(item)
-        ? current.items.filter((value) => value !== item)
-        : [...current.items, item],
-    }))
+    setPlan((current) =>
+      item === 'ambient'
+        ? setDeskContentIncluded(current, !deskContentIncluded(current))
+        : {
+            ...current,
+            items: current.items.includes('todos')
+              ? current.items.filter((id) => id !== 'todos')
+              : [...current.items, 'todos'],
+          },
+    )
     setMessage('')
   }
   const endTemporary = async () => {
@@ -788,7 +818,15 @@ function InkControlWorkspace({
           <svg
             className="ink-work-lock"
             role="img"
-            aria-label={zh ? '始终显示工作画面' : 'Work screen always included'}
+            aria-label={
+              plan.mode === 'single' && plan.fixed === 'performance'
+                ? zh
+                  ? '工作提醒优先'
+                  : 'Urgent work takes priority'
+                : zh
+                  ? '始终显示工作画面'
+                  : 'Work screen always included'
+            }
             width="16"
             height="16"
             viewBox="0 0 24 24"
@@ -824,7 +862,9 @@ function InkControlWorkspace({
             className="ink-switch"
             role="switch"
             aria-label={zh ? '桌边内容加入节目单' : 'Include desk content'}
-            aria-checked={plan.items.includes('ambient')}
+            aria-checked={
+              plan.mode === 'single' ? plan.fixed === 'performance' : deskContentIncluded(plan)
+            }
             disabled={plan.mode === 'single'}
             onClick={(event) => {
               event.stopPropagation()
@@ -883,6 +923,11 @@ function InkControlWorkspace({
             </option>
           ))}
           <option value="fixed">{zh ? '只显示工作画面' : 'Work screen only'}</option>
+          {plan.mode === 'single' && plan.fixed === 'performance' && (
+            <option value="desk-fixed" disabled>
+              {zh ? '已固定桌边内容' : 'Desk content pinned'}
+            </option>
+          )}
         </select>
         <WorkVoiceSettingsPanel locale={locale} target="ink" active={active} />
         <WorkStateGuide locale={locale} />

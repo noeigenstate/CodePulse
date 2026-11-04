@@ -13,6 +13,7 @@ export function isSourceProblem(text: string | undefined): boolean {
 }
 
 export type AmbientCategory =
+  | 'performance'
   | 'concept'
   | 'prompt'
   | 'pet'

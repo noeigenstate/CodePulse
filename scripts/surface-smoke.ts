@@ -12,6 +12,7 @@ import {
   DEFAULT_AMBIENT,
   DEFAULT_DEVICE_DISPLAY,
   normalizeDeviceDisplay,
+  normalizePerformanceOptions,
   normalizeShellPreferences,
   type DeviceDisplayConfig,
 } from '@codepulse/shared'
@@ -30,6 +31,10 @@ import { LumaAssistantProvider } from '../apps/desktop/src/main/assistant-provid
 import { registerAssistantIpc } from '../apps/desktop/src/main/assistant-ipc.js'
 import { inkFeatureAt } from '../apps/desktop/src/main/ambient-plan.js'
 import { selectDeskContent } from '../apps/desktop/src/main/assistant-presentation.js'
+import {
+  makePerformancePreview,
+  PerformanceFrames,
+} from '../apps/desktop/src/main/performance-card.js'
 import { computeInkStatus } from '../apps/desktop/src/main/ink-status.js'
 import { applyInk, endInkTemporary } from '../apps/desktop/src/main/ink-apply.js'
 import {
@@ -423,7 +428,29 @@ app.whenReady().then(async () => {
       desktop: voiceState(),
       ink: { ...voiceState(), deviceAvailable: false },
     }
+    const performanceLayouts: string[] = []
+    const performanceFrames = new PerformanceFrames()
+    const performanceSample = {
+      cpu: 25,
+      cores: Array.from({ length: 24 }, (_, i) => (i * 7) % 101),
+      model: 'Fixture CPU',
+      used: 3 * 2 ** 30,
+      total: 8 * 2 ** 30,
+      gpus: ['pci-01:00.0', 'pci-06:00.0'].map((id, i) => ({
+        id,
+        name: 'Fixture GPU',
+        engine: 'CUDA' as const,
+        compute: 18 + i,
+        graphics: 5,
+        used: 2 ** 30,
+        total: 8 * 2 ** 30,
+      })),
+    }
     const handlers: Record<string, (...args: any[]) => any> = {
+      'performance-preview': (_event, input, display) => {
+        performanceLayouts.push(normalizePerformanceOptions(input).layout)
+        return makePerformancePreview(performanceSample, input, display, performanceFrames)
+      },
       'ink-status-get': () => inkSnapshot(),
       'ink-apply': (_e, request) => applyInk(request, inkApplyDependencies),
       'ink-temporary-end': () => {
@@ -731,6 +758,139 @@ app.whenReady().then(async () => {
       'synced playlist has no apply area',
     )
     const beforePlayback = structuredClone(product.snapshot().inkPlan)
+    // Test visibility changes in a headless fixture without exposing a window or polling the host.
+    const previewVisibility = async (value?: 'visible' | 'hidden') => {
+      await main!.webContents.executeJavaScript(
+        value
+          ? `Object.defineProperty(document,'visibilityState',{configurable:true,value:${JSON.stringify(value)}});document.dispatchEvent(new Event('visibilitychange'))`
+          : `delete document.visibilityState;document.dispatchEvent(new Event('visibilitychange'))`,
+      )
+    }
+    assert.equal(readCount('performance-preview'), 0)
+    assert.equal(
+      await main.webContents.executeJavaScript(
+        "document.querySelector('.ink-config').textContent.includes('电脑性能')",
+      ),
+      false,
+      'performance has no top-level playlist controls',
+    )
+    await click(main, '[data-view=ambient]')
+    await previewVisibility('visible')
+    assert.equal(
+      readCount('performance-preview'),
+      0,
+      'browsing desk content does not sample the host',
+    )
+    await click(main, '[data-cat=performance]')
+    const performanceCanvasReady = () =>
+      main!.webContents.executeJavaScript(
+        "document.querySelector('[data-desk-performance] .device-preview')?.getAttribute('data-render-state')==='ready'",
+      )
+    await until(
+      async () => performanceLayouts.at(-1) === 'detail' && (await performanceCanvasReady()),
+      'default core detail renders on opening',
+    )
+    await button(main, '均衡总览')
+    await until(
+      async () => performanceLayouts.at(-1) === 'balanced' && (await performanceCanvasReady()),
+      'overview renders',
+    )
+    await previewVisibility('hidden')
+    const hiddenReads = readCount('performance-preview')
+    await button(main, 'GPU 优先')
+    assert.equal(readCount('performance-preview'), hiddenReads, 'a hidden preview cannot sample')
+    await previewVisibility('visible')
+    await until(() => performanceLayouts.at(-1) === 'gpu', 'GPU layout resumes on visibility')
+    assert.deepEqual(
+      product.snapshot().inkPlan,
+      beforePlayback,
+      'preview does not edit the playlist',
+    )
+    const selectPerformanceField = (selector: string, value: string) =>
+      main!.webContents.executeJavaScript(
+        `(()=>{const s=document.querySelector(${JSON.stringify(selector)});s.value=${JSON.stringify(value)};s.dispatchEvent(new Event('change',{bubbles:true}))})()`,
+      )
+    await until(
+      () =>
+        main!.webContents.executeJavaScript(
+          "Boolean(document.querySelector('[data-performance-gpu]') && document.querySelector('[data-performance-page]'))",
+        ),
+      'GPU and logical group available',
+    )
+    await selectPerformanceField('[data-performance-gpu]', 'pci-06:00.0')
+    await until(
+      () =>
+        main!.webContents.executeJavaScript(
+          "Boolean(document.querySelector('[data-performance-page]'))",
+        ),
+      'second GPU preview',
+    )
+    await selectPerformanceField('[data-performance-page]', '1')
+    await until(performanceCanvasReady, 'native performance frame')
+    await capture('desk-performance')
+    const selectPerformancePlayback = (value: string) =>
+      main!.webContents.executeJavaScript(
+        `(()=>{const s=document.querySelector('[data-performance-playback]');s.value=${JSON.stringify(value)};s.dispatchEvent(new Event('change',{bubbles:true}))})()`,
+      )
+    await selectPerformancePlayback('fixed')
+    await button(main, '应用')
+    assert.equal(product.snapshot().inkPlan.fixed, 'performance')
+    assert.equal(product.snapshot().inkPlan.performance?.layout, 'gpu')
+    assert.equal(product.snapshot().inkPlan.performance?.gpu, 'pci-06:00.0')
+    assert.equal(product.snapshot().inkPlan.performance?.page, 1)
+    await click(main, '[data-cat=calendar]')
+    const closedReads = readCount('performance-preview')
+    await previewVisibility('hidden')
+    await previewVisibility('visible')
+    assert.equal(
+      readCount('performance-preview'),
+      closedReads,
+      'leaving the category stops its sampling',
+    )
+    await click(main, '[data-view=control]')
+    await click(main, '#endpoint-ink')
+    assert.equal(
+      await main.webContents.executeJavaScript(
+        "document.querySelector('.ink-playback-select').selectedOptions[0].textContent",
+      ),
+      '已固定桌边内容',
+    )
+    await click(main, '[data-view=ambient]')
+    await click(main, '[data-cat=performance]')
+    await until(() => performanceLayouts.at(-1) === 'gpu', 'saved layout revisited')
+    await selectPerformancePlayback('cycle')
+    await button(main, '应用')
+    assert.ok(product.snapshot().inkPlan.items.includes('performance'))
+    await click(main, '[data-view=control]')
+    await click(main, '#endpoint-ink')
+    await click(main, 'button[role=switch][aria-label="桌边内容加入节目单"]')
+    await button(main, '应用')
+    assert.equal(
+      product.snapshot().inkPlan.deskContentPaused,
+      true,
+      'pausing desk content pauses performance',
+    )
+    assert.ok(
+      product.snapshot().inkPlan.items.includes('performance'),
+      'the selected rotation survives pausing',
+    )
+    await click(main, 'button[role=switch][aria-label="桌边内容加入节目单"]')
+    await button(main, '应用')
+    assert.equal(product.snapshot().inkPlan.deskContentPaused, undefined)
+    await click(main, '[data-view=ambient]')
+    await click(main, '[data-cat=performance]')
+    await button(main, '逐核明细')
+    await selectPerformancePlayback('preview')
+    await button(main, '应用')
+    assert.deepEqual(
+      product.snapshot().inkPlan.items,
+      beforePlayback.items,
+      'removing performance preserves other items',
+    )
+    await click(main, '[data-cat=concept]')
+    await previewVisibility()
+    await click(main, '[data-view=control]')
+    await click(main, '#endpoint-ink')
     await selectPlayback('fixed')
     assert.equal(
       await main.webContents.executeJavaScript(
@@ -1478,6 +1638,7 @@ app.whenReady().then(async () => {
         '思考实验',
         '像素宠物',
         '日历',
+        '电脑性能',
         '科技热议',
         'X 与 meme',
         '我的图片与便签',

@@ -12,6 +12,7 @@ import {
   type YuanbaoStatus,
   type YuanbaoTopic,
 } from '@codepulse/shared'
+import { DeskPerformanceContent } from './DeskPerformanceContent.js'
 import { DeviceScreenPreview } from './DeviceScreenPreview.js'
 import { PageHeader } from './PageHeader.js'
 import { InfoTip } from './InfoTip.js'
@@ -159,6 +160,7 @@ const CATEGORIES: { id: Category; label: string }[] = [
   { id: 'prompt', label: '思考实验' },
   { id: 'pet', label: '像素宠物' },
   { id: 'calendar', label: '日历' },
+  { id: 'performance', label: '电脑性能' },
   { id: 'news', label: '科技热议' },
   { id: 'social', label: 'X 与 meme' },
   { id: 'local', label: '我的图片与便签' },
@@ -683,6 +685,11 @@ export function AmbientPanel({
       {label}
     </label>
   )
+  const performanceSelected = category === 'performance'
+  const categoryLabel =
+    performanceSelected && locale === 'en'
+      ? 'PC performance'
+      : CATEGORIES.find((c) => c.id === category)!.label
   const tempReason = !online
     ? '连接设备后可临时展示'
     : sampleTopic
@@ -775,8 +782,12 @@ export function AmbientPanel({
                         setRefreshNote('')
                       }}
                     >
-                      <span>{label}</span>
-                      <span className="ambient-cat-count">{count} 条</span>
+                      <span>
+                        {id === 'performance' && locale === 'en' ? 'PC performance' : label}
+                      </span>
+                      <span className="ambient-cat-count">
+                        {id === 'performance' ? (locale === 'zh' ? '实时' : 'Live') : count + ' 条'}
+                      </span>
                     </button>
                     {id === 'local' && <span className="ambient-manual-tag">仅手动</span>}
                     {isYuanbao(id) && (
@@ -853,28 +864,28 @@ export function AmbientPanel({
             </fieldset>
           </details>
         </div>
-        <div
-          className="ambient-card ambient-detail"
-          aria-label={CATEGORIES.find((c) => c.id === category)!.label}
-        >
+        <div className="ambient-card ambient-detail" aria-label={categoryLabel}>
           <div className="page-card-head">
             <div className="ambient-detail-title">
-              <h2>{CATEGORIES.find((c) => c.id === category)!.label}</h2>
+              <h2>{categoryLabel}</h2>
               {problem && <span className="page-chip is-warn">{problem}</span>}
             </div>
             <span
               className={`page-saved ${savedFlash || refreshNote ? 'is-shown' : ''}`}
               role="status"
             >
-              {refreshNote || (savedFlash ? '已保存' : '')}
+              {!performanceSelected && (refreshNote || (savedFlash ? '已保存' : ''))}
             </span>
           </div>
-          {saveFailed && (
+          {!performanceSelected && saveFailed && (
             <p className="ambient-message" role="alert">
               保存未完成，请检查输入后重试。
             </p>
           )}
-          <div className="ambient-inner">
+          {performanceSelected && (
+            <DeskPerformanceContent active={active} display={target?.config} locale={locale} />
+          )}
+          <div className="ambient-inner" hidden={performanceSelected}>
             <div className="ambient-items-col">
               <ul className="ambient-items" aria-label="条目">
                 {items.length === 0 && !isYuanbao(category) && (
@@ -1288,7 +1299,7 @@ export function AmbientPanel({
             </div>
             <div className="ambient-stage-col">
               <section className="ambient-stage">
-                {preview || target ? (
+                {!performanceSelected && (preview || target) ? (
                   <DeviceScreenPreview
                     status={previewStatus ?? target!.status}
                     sample={Boolean(preview)}

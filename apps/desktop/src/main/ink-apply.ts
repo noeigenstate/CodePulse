@@ -2,6 +2,8 @@ import {
   DISPLAY_AGENT_TYPES,
   normalizeDeviceDisplay,
   normalizeInkPlan,
+  inkRotationItems,
+  mergeInkControlPlan,
   type DeviceDisplayConfig,
   type DeviceDisplaySnapshot,
   type InkApplyRequest,
@@ -20,7 +22,8 @@ function validateRequest(request: unknown): InkApplyRequest {
   const raw = record(request),
     plan = record(raw.plan),
     display = record(raw.display)
-  const feature = (value: unknown) => value === 'work' || value === 'ambient' || value === 'todos'
+  const feature = (value: unknown) =>
+    value === 'work' || value === 'ambient' || value === 'todos' || value === 'performance'
   if (
     !['single', 'cycle'].includes(plan.mode as string) ||
     !feature(plan.fixed) ||
@@ -47,7 +50,11 @@ function validateRequest(request: unknown): InkApplyRequest {
   ) {
     throw new Error('画面配置格式无效')
   }
-  return { plan: normalizeInkPlan(plan), display: normalizeDeviceDisplay(display) }
+  return {
+    plan: normalizeInkPlan(plan),
+    display: normalizeDeviceDisplay(display),
+    ...(raw.basePlan === undefined ? {} : { basePlan: normalizeInkPlan(record(raw.basePlan)) }),
+  }
 }
 
 export function applyInk(
@@ -61,11 +68,15 @@ export function applyInk(
     committed: () => void
   },
 ) {
-  const { plan, display } = validateRequest(request)
+  const validated = validateRequest(request)
+  const { display, basePlan } = validated
+  const plan = basePlan
+    ? mergeInkControlPlan(basePlan, validated.plan, deps.shell.snapshot().inkPlan)
+    : validated.plan
   const previousDisplay = deps.readDisplay()
   const shell = deps.shell.prepareInkPlan(plan)
   const ambientConfig = deps.ambient.getConfig()
-  const enabled = plan.mode === 'cycle' && plan.items.includes('ambient')
+  const enabled = plan.mode === 'cycle' && inkRotationItems(plan).includes('ambient')
   const ambient =
     ambientConfig.enabled === enabled && ambientConfig.displayMinutes === plan.intervalMinutes
       ? undefined

@@ -1,3 +1,10 @@
+import { PerformanceCollector, systemCounters } from './performance-collector.js'
+import { PerformanceFrames, attachPerformance, makePerformancePreview } from './performance-card.js'
+import {
+  normalizePerformanceOptions,
+  hudStateLevel,
+  type PerformancePreview,
+} from '@codepulse/shared'
 import { DeviceViewLeases } from './device-view-leases.js'
 import { createAssistantRuntime } from './assistant-runtime.js'
 import { registerAssistantIpc } from './assistant-ipc.js'
@@ -370,11 +377,29 @@ function setWindowTheme(value: unknown, targetWindow: BrowserWindow | null): Win
   return windowTheme
 }
 
+let performanceCollector: PerformanceCollector | undefined
+const physicalPerformance = new PerformanceFrames()
+const previewPerformance = new PerformanceFrames()
+function hostPerformance() {
+  const binary = 'performance-gpu-' + process.arch + '.exe'
+  return (performanceCollector ??= new PerformanceCollector(
+    systemCounters(
+      app.isPackaged
+        ? join(process.resourcesPath, binary)
+        : join(app.getAppPath(), 'out/performance', binary),
+    ),
+  ))
+}
+function visiblePerformanceWindow(sender: Electron.WebContents) {
+  const win = BrowserWindow.fromWebContents(sender)
+  return !!win && !win.isDestroyed() && win.isVisible() && !win.isMinimized()
+}
 let deviceProjector: ReturnType<typeof createDeviceDisplayProjector> | undefined
 function projectDeviceDisplay(
   snapshot: StatusSnapshot,
   config?: import('@codepulse/shared').DeviceDisplayConfig,
   includeAmbient = true,
+  viewing = false,
 ) {
   deviceProjector ??= createDeviceDisplayProjector(
     join(app.getPath('userData'), 'device-thread-order.json'),
@@ -385,18 +410,36 @@ function projectDeviceDisplay(
   )
   // Both preview and LAN transport consume the same retained, dismissed and ordered HUD source.
   const work = hudSurface?.snapshot() ?? snapshot
-  return withAmbient(
-    deviceProjector(work, config),
-    includeAmbient
-      ? selectDeskContent(
-          assistantRuntime?.service.inkCard(work),
-          ambientRuntime?.service.current(work),
-        )
-      : undefined,
+  const status = deviceProjector(work, config)
+  if (!includeAmbient) return status
+  const plan = productShell?.snapshot().inkPlan
+  const content = selectDeskContent(
+    assistantRuntime?.service.inkCard(work),
+    ambientRuntime?.service.current(work),
   )
+  if (plan && inkFeatureAt(plan, Date.now()) === 'performance' && !content?.manual) {
+    const fixed = plan.mode === 'single'
+    const attention = work.agents.some((agent) => {
+      if (agent.taskHidden) return false
+      const level = hudStateLevel(agent)
+      return level === 'action' || level === 'fault' || (!fixed && level === 'notice')
+    })
+    if (attention) return status
+    if (viewing) void hostPerformance().pull()
+    const data = performanceCollector?.recent()
+    if (!data || (data.cpu === null && data.cores.length)) return status
+    const card = physicalPerformance.get(
+      data,
+      normalizePerformanceOptions(plan.performance),
+      Date.now(),
+      true,
+    )
+    return attachPerformance(status, fixed ? { ...card, manual: true } : card)
+  }
+  return withAmbient(status, content)
 }
 
-function deviceDisplaySnapshot(preview?: unknown) {
+function deviceDisplaySnapshot(preview?: unknown, viewing = false) {
   const config = readDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json'))
   return {
     config,
@@ -404,6 +447,7 @@ function deviceDisplaySnapshot(preview?: unknown) {
       hub.snapshot(),
       preview === undefined ? config : normalizeDeviceDisplay(preview),
       preview === undefined,
+      viewing,
     ),
     serverAvailable: Boolean(deviceServer),
   }
@@ -527,8 +571,17 @@ function registerIpc(): void {
     (url) => shell.openExternal(url),
     () => assistantRuntime?.service.clearTemporaryInk(),
   )
-  ipcMain.handle('codepulse:get-device-display', (_event, preview: unknown) =>
-    deviceDisplaySnapshot(preview),
+  ipcMain.handle('codepulse:get-device-display', (event, preview: unknown, viewing: unknown) =>
+    deviceDisplaySnapshot(preview, viewing === true && visiblePerformanceWindow(event.sender)),
+  )
+  ipcMain.handle(
+    'codepulse:performance-preview',
+    async (event, options: unknown, display: unknown): Promise<PerformancePreview> => {
+      const data = visiblePerformanceWindow(event.sender)
+        ? await hostPerformance().pull()
+        : undefined
+      return makePerformancePreview(data, options, display, previewPerformance)
+    },
   )
   ipcMain.handle('codepulse:set-device-display', (_event, input: unknown) => {
     writeDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json'), input)
@@ -888,7 +941,7 @@ async function bootstrap(): Promise<void> {
         registerAssistantRoutes: assistantRuntime
           ? (app) => registerAssistantRoutes(app, assistantRuntime!.service)
           : undefined,
-        projectStatus: projectDeviceDisplay,
+        projectStatus: (snapshot, config) => projectDeviceDisplay(snapshot, config, true, true),
         getDisplayConfig: () =>
           readDeviceDisplayConfig(join(app.getPath('userData'), 'device-display.json')),
         onStatusRead: () => {

@@ -15,6 +15,7 @@ import type {
   PresentationTarget,
   DesktopLayout,
   InkDisplayPlan,
+  DeskPerformanceEdit,
   HudAppearanceSettings,
   InkScreenStatus,
   InkApplyRequest,
@@ -96,6 +97,8 @@ const api = {
     ipcRenderer.invoke('codepulse:shell-focus', focus),
   setDesktopLayout: (layout: DesktopLayout): Promise<ShellSnapshot> =>
     ipcRenderer.invoke('codepulse:shell-desktop-layout', layout),
+  setDeskPerformance: (edit: DeskPerformanceEdit): Promise<ShellSnapshot> =>
+    ipcRenderer.invoke('codepulse:desk-performance-set', edit),
   setInkPlan: (plan: InkDisplayPlan): Promise<ShellSnapshot> =>
     ipcRenderer.invoke('codepulse:shell-ink-plan', plan),
   setHudSettings: (patch: Partial<HudAppearanceSettings>): Promise<ShellSnapshot> =>
@@ -207,8 +210,16 @@ const api = {
   loginMimo: (): Promise<boolean> => ipcRenderer.invoke('codepulse:mimo-login'),
   /** Clears the MiMo console login. */
   logoutMimo: (): Promise<boolean> => ipcRenderer.invoke('codepulse:mimo-logout'),
-  getDeviceDisplay: (preview?: DeviceDisplayConfig): Promise<DeviceDisplaySnapshot> =>
-    ipcRenderer.invoke('codepulse:get-device-display', preview),
+  getDeviceDisplay: (
+    preview?: DeviceDisplayConfig,
+    viewing?: boolean,
+  ): Promise<DeviceDisplaySnapshot> =>
+    ipcRenderer.invoke('codepulse:get-device-display', preview, viewing),
+  getPerformancePreview: (
+    options: import('@codepulse/shared').InkPerformanceOptions,
+    display: DeviceDisplayConfig,
+  ): Promise<import('@codepulse/shared').PerformancePreview> =>
+    ipcRenderer.invoke('codepulse:performance-preview', options, display),
   setDeviceDisplay: (config: DeviceDisplayConfig): Promise<DeviceDisplaySnapshot> =>
     ipcRenderer.invoke('codepulse:set-device-display', config),
   getDeviceProvisioning: (): Promise<DeviceProvisioningSnapshot> =>

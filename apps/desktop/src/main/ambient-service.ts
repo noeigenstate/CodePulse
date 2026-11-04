@@ -1,5 +1,6 @@
 import {
   normalizeAmbient,
+  inkRotationItems,
   INK_TEMPORARY_MINUTES,
   hudStateLevel,
   type AmbientCard,
@@ -213,7 +214,7 @@ export class AmbientService {
     if (
       !config.enabled ||
       this.history.shown >= config.dailyLimit ||
-      (plan && (plan.mode !== 'cycle' || !plan.items.includes('ambient'))) ||
+      (plan && (plan.mode !== 'cycle' || !inkRotationItems(plan).includes('ambient'))) ||
       (!plan && this.deps.automaticAllowed?.() === false)
     )
       return null

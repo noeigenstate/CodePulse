@@ -1,6 +1,7 @@
 import {
   INK_CONNECTED_WINDOW_MS,
   normalizeInkPlan,
+  inkRotationItems,
   type DeviceStatusV1,
   type InkDisplayPlan,
   type InkScreenStatus,
@@ -32,7 +33,7 @@ export function computeInkStatus(input: InkStatusInput): InkScreenStatus {
   const dwell = plan.intervalMinutes * 60000
   const nextAt = (Math.floor(now / dwell) + 1) * dwell
   const card = input.projected.ambient
-  const kind = card?.items ? 'todos' : 'ambient'
+  const kind = card?.id.startsWith('perf-') ? 'performance' : card?.items ? 'todos' : 'ambient'
   const ambient =
     input.ambientTemporary && input.ambientTemporary.until > now ? input.ambientTemporary : null
   const todo = input.assistantUntil > now ? { title: '待办', until: input.assistantUntil } : null
@@ -62,7 +63,7 @@ export function computeInkStatus(input: InkStatusInput): InkScreenStatus {
     mode: plan.mode,
     current,
     next:
-      plan.mode === 'cycle' && plan.items.length > 1
+      plan.mode === 'cycle' && inkRotationItems(plan).length > 1
         ? { feature: inkFeatureAt(plan, nextAt), at: nextAt }
         : null,
     slotNote,

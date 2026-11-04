@@ -13,3 +13,4 @@ firmware/experiments/
 firmware/README.md
 docs/fixtures/
 **/*.generated.ts
+apps/desktop/src/main/performance-font.generated.json

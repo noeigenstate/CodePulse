@@ -1,3 +1,4 @@
+import { updateDeskPerformance, type DeskPerformanceEdit } from '@codepulse/shared'
 import type { IpcMain } from 'electron'
 import type { ProductShell } from './product-shell.js'
 import type { ScreenWorkbenchWindow } from './screen-workbench-window.js'
@@ -15,8 +16,10 @@ export function registerProductIpc(
   ipc.handle('codepulse:shell-desktop-layout', (_event, layout: unknown) =>
     shell.setDesktopLayout(layout),
   )
-  ipc.handle('codepulse:shell-ink-plan', (_event, plan: unknown) =>
-    applyPlan ? applyPlan(plan) : shell.setInkPlan(plan),
+  const savePlan = applyPlan ?? ((plan: unknown) => shell.setInkPlan(plan))
+  ipc.handle('codepulse:shell-ink-plan', (_event, plan: unknown) => savePlan(plan))
+  ipc.handle('codepulse:desk-performance-set', (_event, edit: DeskPerformanceEdit) =>
+    savePlan(updateDeskPerformance(shell.snapshot().inkPlan, edit)),
   )
   ipc.handle('codepulse:shell-hud-settings', (_event, patch: unknown) =>
     shell.setHudSettings(patch),

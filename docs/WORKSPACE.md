@@ -40,6 +40,20 @@ On Windows, enable the optional LAN device service with:
 .\scripts\start-desktop.ps1 -Build -DeviceServer
 ```
 
+In **Desk content → PC performance**, preview Core detail (default), Overview or GPU first.
+Choose Preview only, Include in rotation or Pin to e-paper and apply the selection.
+Control handles the Desk content group as a whole. Pausing and resuming it preserves
+the selected content and its order. More than 20 logical CPUs can be paged manually. With multiple GPUs the PCI address distinguishes otherwise identical cards.
+
+The preview and an authenticated device requesting the active performance slot share
+one in-memory sample. After an initial pair of reads, the minimum sample interval is
+30 seconds. Leaving the preview and the physical slot stops requests. The physical
+frame stays unchanged for at least 60 seconds between ordinary metric updates and
+ignores minor fluctuations. CPU and RAM are available through Node on supported
+hosts. On Windows the small build-time MSVC/Windows SDK helper reads adapter-wide
+WDDM engine times and dedicated video memory. A driver that exposes only a compute
+engine is labelled Compute. Missing counters use dashes. No process list is collected.
+
 Start **one** Electron host. Quit an existing CodePulse instance from its tray
 before starting another build, without stopping Codex. CLI hooks use port 17888;
 the opt-in LAN device service uses 17889. The launcher refuses a conflicting

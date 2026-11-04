@@ -17,9 +17,9 @@ export function ScreenWorkbench({
   standalone?: boolean
   active?: boolean
 }): JSX.Element {
-  const { target, error } = useScreenTarget(active)
   const [device, setDevice] = useState<DeviceProvisioningSnapshot>()
   const [section, setSection] = useState('screen')
+  const { target, error } = useScreenTarget(active && section === 'screen', true)
   const [visited, setVisited] = useState(new Set(['screen']))
   const [presentation, setPresentation] = useState(false)
   const [windowState, setWindowState] = useState<WorkbenchWindowState>({
@@ -77,7 +77,9 @@ export function ScreenWorkbench({
     }
   }
   const mode = target?.status.ambient
-    ? '信息推送'
+    ? target.status.ambient.id.startsWith('perf-')
+      ? '电脑性能'
+      : '信息推送'
     : target?.config.mode === 'usage'
       ? '用量看板'
       : '工作状态'

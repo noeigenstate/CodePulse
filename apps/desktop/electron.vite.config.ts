@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import type { Plugin } from 'vite'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
@@ -48,6 +49,26 @@ export default defineConfig({
       },
     },
     plugins: [
+      {
+        name: 'build-windows-performance-reader',
+        buildStart() {
+          if (process.platform === 'win32')
+            execFileSync(
+              'powershell.exe',
+              [
+                '-NoProfile',
+                '-NonInteractive',
+                '-ExecutionPolicy',
+                'Bypass',
+                '-File',
+                resolve(__dirname, 'scripts/build-performance-gpu.ps1'),
+                '-Arch',
+                process.arch,
+              ],
+              { stdio: 'inherit', windowsHide: true },
+            )
+        },
+      },
       stubOptionalWsNatives(),
       // Only keep better-sqlite3 (native) external; pack everything else into out/main.
       externalizeDepsPlugin({

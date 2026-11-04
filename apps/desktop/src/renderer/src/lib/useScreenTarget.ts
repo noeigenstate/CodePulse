@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DeviceDisplaySnapshot } from '@codepulse/shared'
 
 /** Coalesce source events into one read; rendering never starts another collector. */
-export function useScreenTarget(active = true) {
+export function useScreenTarget(active = true, viewing = false) {
   const [target, setTarget] = useState<DeviceDisplaySnapshot>()
   const [error, setError] = useState(false)
   const reader = useRef<() => Promise<void>>()
@@ -19,7 +19,10 @@ export function useScreenTarget(active = true) {
       }
       busy = true
       try {
-        const next = await window.codepulse.getDeviceDisplay()
+        const next = await window.codepulse.getDeviceDisplay(
+          undefined,
+          viewing && document.visibilityState === 'visible',
+        )
         if (alive) {
           setTarget(next)
           setError(false)
@@ -56,7 +59,7 @@ export function useScreenTarget(active = true) {
       clearInterval(heartbeat)
       clearTimeout(timer)
     }
-  }, [active])
+  }, [active, viewing])
   const retry = useCallback(() => void reader.current?.(), [])
   return { target, error, retry }
 }

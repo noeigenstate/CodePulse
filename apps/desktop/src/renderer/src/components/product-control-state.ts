@@ -1,9 +1,14 @@
+import { deskContentIncluded } from '@codepulse/shared'
 import type { DeviceDisplayConfig, InkCycleInterval, InkDisplayPlan } from '@codepulse/shared'
 
-export type InkPlanChoice = 'fixed' | '5' | '10' | '15' | '30'
+export type InkPlanChoice = 'fixed' | 'desk-fixed' | '5' | '10' | '15' | '30'
 
 export function inkPlanChoice(plan: InkDisplayPlan): InkPlanChoice {
-  return plan.mode === 'single' ? 'fixed' : (String(plan.intervalMinutes) as InkPlanChoice)
+  return plan.mode === 'single'
+    ? plan.fixed === 'performance'
+      ? 'desk-fixed'
+      : 'fixed'
+    : (String(plan.intervalMinutes) as InkPlanChoice)
 }
 
 /** The select changes playback only; fixed work retains the user's next cycle configuration. */
@@ -25,10 +30,10 @@ export function inkControlChanges(
   savedDisplay?: DeviceDisplayConfig,
 ): string[] {
   return [
-    ...(['ambient', 'todos'] as const).filter(
-      (item) => plan.items.includes(item) !== savedPlan.items.includes(item),
-    ),
+    ...(deskContentIncluded(plan) !== deskContentIncluded(savedPlan) ? ['ambient'] : []),
+    ...(plan.items.includes('todos') !== savedPlan.items.includes('todos') ? ['todos'] : []),
     ...(plan.mode !== savedPlan.mode ||
+    plan.fixed !== savedPlan.fixed ||
     (plan.mode === 'cycle' && plan.intervalMinutes !== savedPlan.intervalMinutes)
       ? ['playback']
       : []),

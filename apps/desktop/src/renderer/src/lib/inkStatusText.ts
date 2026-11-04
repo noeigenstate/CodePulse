@@ -1,3 +1,4 @@
+import { deskContentIncluded, inkRotationItems } from '@codepulse/shared'
 import type {
   InkConnection,
   InkDisplayPlan,
@@ -33,12 +34,14 @@ const FEATURE_NAMES: Record<InkFeatureId, [string, string]> = {
   work: ['工作画面', 'Work screen'],
   ambient: ['桌边内容', 'Desk content'],
   todos: ['待办与提醒', 'Tasks & reminders'],
+  performance: ['电脑性能', 'PC performance'],
 }
 /** Short names for the one-line pill. */
 const SHORT_NAMES: Record<InkFeatureId, [string, string]> = {
   work: ['工作画面', 'Work'],
   ambient: ['桌边内容', 'Desk'],
   todos: ['待办', 'Tasks'],
+  performance: ['电脑性能', 'Performance'],
 }
 
 export function inkFeatureName(feature: InkFeatureId, locale: Locale): string {
@@ -60,6 +63,7 @@ export function showingText(status: InkScreenStatus, locale: Locale): string {
   const zh = locale === 'zh'
   const { showing } = status
   if (showing.kind === 'work') return zh ? '正在显示：工作画面' : 'Showing: work screen'
+  if (showing.kind === 'performance') return zh ? '正在显示：电脑性能' : 'Showing: PC performance'
   if (showing.kind === 'todos') return zh ? '正在显示：待办' : 'Showing: tasks'
   const title = showing.title.trim()
   const label = zh ? '桌边内容' : 'Desk content'
@@ -129,8 +133,8 @@ export function inkPillText(status: InkScreenStatus, now: number, locale: Locale
       ? ` · 下一项：${inkFeatureName(status.next.feature, locale)} ${clockText(status.next.at)}（${left} 分钟后）`
       : ` · Next: ${inkFeatureName(status.next.feature, locale)} ${clockText(status.next.at)} (in ${left} min)`
   } else if (status.mode === 'single') {
-    label = zh ? '固定 · 工作画面' : 'Fixed · Work'
-    detail += zh ? ' · 固定显示工作画面' : ' · Fixed on the work screen'
+    label = (zh ? '固定 · ' : 'Fixed · ') + short(status.current)
+    detail += (zh ? ' · 固定显示' : ' · Fixed on ') + inkFeatureName(status.current, locale)
   } else {
     label = zh ? '仅工作画面' : 'Work only'
     detail += zh ? ' · 节目单里只有工作画面' : ' · The playlist has only the work screen'
@@ -160,9 +164,21 @@ export function inkPlanChip(
   const later =
     connection === 'connected' ? '' : zh ? '（连接后生效）' : ' (applies once connected)'
   if (plan.mode === 'single') {
-    return { included: false, text: (zh ? '只显示工作画面' : 'Work screen only') + later }
+    return {
+      included: plan.fixed === feature || (feature === 'ambient' && plan.fixed === 'performance'),
+      text:
+        (plan.fixed === 'performance'
+          ? zh
+            ? '固定显示电脑性能'
+            : 'PC performance only'
+          : zh
+            ? '只显示工作画面'
+            : 'Work screen only') + later,
+    }
   }
-  if (!plan.items.includes(feature))
+  if (
+    !(feature === 'ambient' ? deskContentIncluded(plan) : inkRotationItems(plan).includes(feature))
+  )
     return { included: false, text: zh ? '未加入节目单' : 'Not in the playlist' }
   return {
     included: true,

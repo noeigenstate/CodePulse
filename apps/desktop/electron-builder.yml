@@ -74,6 +74,9 @@ asarUnpack:
   - '**/*.node'
   - '**/node_modules/better-sqlite3/**'
 win:
+  extraResources:
+    - from: out/performance/performance-gpu-${arch}.exe
+      to: performance-gpu-${arch}.exe
   icon: build/icon.png
   artifactName: CodePulse_${version}_${arch}-setup.${ext}
   target:

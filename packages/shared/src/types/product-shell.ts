@@ -1,3 +1,5 @@
+import { normalizePerformanceOptions } from './performance.js'
+
 /** Legacy routes remain accepted for saved preferences and older tray links. */
 export const PRODUCT_VIEWS = [
   'control',
@@ -14,11 +16,14 @@ export type DesktopForm = 'standard' | 'hud'
 export type PresentationTarget = 'desktop' | 'hud' | 'ink'
 export type DesktopLayout = 'work' | 'usage' | 'board'
 export type InkDisplayMode = 'single' | 'cycle'
-export type InkFeatureId = 'work' | 'ambient' | 'todos'
+export type InkFeatureId = 'work' | 'ambient' | 'todos' | 'performance'
 export type InkCycleInterval = 5 | 10 | 15 | 30
 export interface InkDisplayPlan {
   mode: InkDisplayMode
   fixed: InkFeatureId
+  /** Pause all desk-content slots without forgetting their order or selected sources. */
+  deskContentPaused?: true
+  performance?: import('./performance.js').InkPerformanceOptions
   items: InkFeatureId[]
   intervalMinutes: InkCycleInterval
 }
@@ -102,7 +107,8 @@ export function normalizeInkPlan(input: unknown): InkDisplayPlan {
   const mode: InkDisplayMode = value.mode === 'single' && !legacyFixed ? 'single' : 'cycle'
   const rawItems = Array.isArray(value.items)
     ? value.items.filter(
-        (item): item is InkFeatureId => item === 'work' || item === 'ambient' || item === 'todos',
+        (item): item is InkFeatureId =>
+          item === 'work' || item === 'ambient' || item === 'todos' || item === 'performance',
       )
     : (['work', 'ambient'] as InkFeatureId[])
   const items: InkFeatureId[] = legacyFixed
@@ -112,7 +118,18 @@ export function normalizeInkPlan(input: unknown): InkDisplayPlan {
     value.intervalMinutes === 5 || value.intervalMinutes === 10 || value.intervalMinutes === 30
       ? value.intervalMinutes
       : 15
-  return { mode, fixed: 'work', items, intervalMinutes }
+  const fixed = mode === 'single' && value.fixed === 'performance' ? 'performance' : 'work'
+  return {
+    mode,
+    fixed,
+    items,
+    intervalMinutes,
+    ...(value.deskContentPaused === true &&
+    items.some((item) => item === 'ambient' || item === 'performance')
+      ? { deskContentPaused: true as const }
+      : {}),
+    ...(value.performance ? { performance: normalizePerformanceOptions(value.performance) } : {}),
+  }
 }
 export function normalizeHudSettings(input: unknown): HudAppearanceSettings {
   const value = input && typeof input === 'object' ? (input as Record<string, unknown>) : {}

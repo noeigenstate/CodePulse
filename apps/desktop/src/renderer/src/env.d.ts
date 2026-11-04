@@ -22,6 +22,7 @@ import type {
   PresentationTarget,
   DesktopLayout,
   InkDisplayPlan,
+  DeskPerformanceEdit,
   HudAppearanceSettings,
   AmbientConfig,
   AmbientCard,
@@ -74,6 +75,7 @@ export interface CodePulseApi {
   setPresentationTarget: (target: PresentationTarget) => Promise<ShellSnapshot>
   setFocusMode: (focus: boolean) => Promise<ShellSnapshot>
   setDesktopLayout: (layout: DesktopLayout) => Promise<ShellSnapshot>
+  setDeskPerformance: (edit: DeskPerformanceEdit) => Promise<ShellSnapshot>
   setInkPlan: (plan: InkDisplayPlan) => Promise<ShellSnapshot>
   setHudSettings: (patch: Partial<HudAppearanceSettings>) => Promise<ShellSnapshot>
   setHudVisible: (visible: boolean) => Promise<ShellSnapshot>
@@ -151,7 +153,14 @@ export interface CodePulseApi {
   loginMimo: () => Promise<boolean>
   /** Clears the MiMo console login. */
   logoutMimo: () => Promise<boolean>
-  getDeviceDisplay: (preview?: DeviceDisplayConfig) => Promise<DeviceDisplaySnapshot>
+  getDeviceDisplay: (
+    preview?: DeviceDisplayConfig,
+    viewing?: boolean,
+  ) => Promise<DeviceDisplaySnapshot>
+  getPerformancePreview: (
+    options: import('@codepulse/shared').InkPerformanceOptions,
+    display: DeviceDisplayConfig,
+  ) => Promise<import('@codepulse/shared').PerformancePreview>
   setDeviceDisplay: (config: DeviceDisplayConfig) => Promise<DeviceDisplaySnapshot>
   getDeviceProvisioning: () => Promise<DeviceProvisioningSnapshot>
   startDeviceScan: () => Promise<DeviceProvisioningSnapshot>

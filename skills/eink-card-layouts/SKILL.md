@@ -60,5 +60,11 @@ node tests/run-tests.mjs; pnpm typecheck; pnpm lint
 
 - `test-preview.ps1` freezes the old life pixels and the reading-card pixels. After a reviewed change, re-record
   with `python firmware/preview/check-life.py <out>/life --update-reading`.
+- The task screen (HUD) is frozen in `firmware/preview/baselines/0.0.31-font-legacy.json`. Before re-recording
+  with `test-preview.ps1 -UpdateBaseline`, list which frames changed: compare each `<out>/legacy/<name>.*.bin`
+  hash with the baseline and read `display.mode` / `ambient` from `<name>.json`. Only the intended screens may
+  differ.
+- Red on the task screen costs a full refresh (about 16 s of flashing) for every change while it is visible. Keep
+  red for states that need the user.
 - Run the Python tests without `-I`. Some of them read UTF-8 sources and need the UTF-8 mode set by the environment.
 - Pixels in the desktop preview are not proof that the device works. Flash only after the user confirms.

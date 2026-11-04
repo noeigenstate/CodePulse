@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { DEFAULT_HUD_SETTINGS, TurnState, type AgentRuntimeState } from '@codepulse/shared'
+import {
+  DEFAULT_HUD_SETTINGS,
+  TurnState,
+  type AgentRuntimeState,
+  type AgentEvent,
+} from '@codepulse/shared'
+import { reduce } from '../packages/core/src/state-machine/index.js'
 import {
   hudAlertKeys,
   hudWindowBoundsForReveal,
@@ -146,4 +152,70 @@ test('path-only agents use their workspace identity without changing the input',
   const second = agent({ externalSessionId: undefined, workspacePath: 'E:/two' })
   assert.equal(hudAlertKeys([first, second], tools, now).size, 2)
   assert.equal(first.workspacePath, 'E:/one')
+})
+
+for (const eventType of ['permission_request', 'user_input_required'] as const) {
+  test(`${eventType} keeps its alert key across token updates and repeated requests`, () => {
+    const event: AgentEvent = {
+      id: 'waiting',
+      source: 'codex',
+      externalSessionId: 'session-one',
+      timestamp: now - 1000,
+      eventType,
+      toolName: 'Bash',
+      message: 'Request command',
+    }
+    const waiting = reduce(
+      agent({ state: TurnState.THINKING, unread: false, externalTurnId: 'turn-one' }),
+      event,
+    ).next
+    const before = hudAlertKeys([waiting], tools, now)
+    assert.equal(before.size, 1)
+    for (const patch of [
+      { eventType: 'token_snapshot', internal: { sessionSync: true, activityRefresh: true } },
+      { eventType: 'token_snapshot', internal: { sessionSync: true } },
+      { eventType: 'token_snapshot' },
+      { eventType },
+    ] as const) {
+      const next = reduce(waiting, { ...event, id: 'updated', timestamp: now - 1, ...patch }).next
+      assert.equal(next.state, waiting.state)
+      assert.deepEqual(hudAlertKeys([next], tools, now), before)
+    }
+    for (const patch of [
+      { externalTurnId: 'turn-two' },
+      { toolName: 'Read' },
+      { activity: 'Request something else' },
+    ]) {
+      assert.notDeepEqual(hudAlertKeys([{ ...waiting, ...patch }], tools, now), before)
+    }
+  })
+}
+
+test('presence keys retain an ongoing wait after freshness expires and forget it when it ends', () => {
+  const waiting = agent({
+    state: TurnState.WAITING_PERMISSION,
+    terminalAt: undefined,
+    externalTurnId: 'turn-one',
+    toolName: 'Bash',
+  })
+  const initial = hudAlertKeys([waiting], tools, now)
+  assert.equal(hudAlertKeys([waiting], tools, now + 60_001).size, 0)
+  const present = hudAlertKeys([waiting], tools, now + 60_001, false)
+  assert.deepEqual(present, initial)
+  assert.deepEqual(
+    hudAlertKeys([{ ...waiting, lastEventAt: now + 60_001 }], tools, now + 60_001),
+    present,
+  )
+  assert.equal(
+    hudAlertKeys([{ ...waiting, state: TurnState.THINKING }], tools, now + 60_001, false).size,
+    0,
+  )
+})
+
+test('stale presence keys still exclude invisible, hidden and acknowledged alerts', () => {
+  const old = agent({ lastEventAt: now - 70_000 })
+  assert.equal(hudAlertKeys([old], tools, now, false).size, 1)
+  assert.equal(hudAlertKeys([old], { ...tools, codex: false }, now, false).size, 0)
+  assert.equal(hudAlertKeys([{ ...old, taskHidden: true }], tools, now, false).size, 0)
+  assert.equal(hudAlertKeys([{ ...old, unread: false }], tools, now, false).size, 0)
 })

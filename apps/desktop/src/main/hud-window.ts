@@ -18,8 +18,8 @@ export const HUD_WINDOW_MARGIN = 24
 /** A narrow right-hand lane keeps the HUD project-first instead of dashboard-like. */
 export const HUD_WINDOW_PREFERRED_SIZE = { width: 470, height: 240 } as const
 export const HUD_WINDOW_MIN_SIZE = { width: 470, height: 132 } as const
-export const HUD_ORB_SIZE = 56
-export const HUD_ORB_INSET = 24
+const HUD_ORB_SIZE = 56
+const HUD_ORB_INSET = 24
 const HUD_ORB_MARGIN = 8
 const HUD_STAGE_SIZES = {
   island: { width: 508, height: 460 },
@@ -129,7 +129,9 @@ export function hudStageForStyle(
       ? clampHudOrbPosition(orbPosition, display)
       : defaultHudOrbPosition(display)
   stage.anchorH = position.x + HUD_ORB_SIZE / 2 >= area.x + area.width / 2 ? 'right' : 'left'
-  stage.anchorV = position.y + HUD_ORB_SIZE / 2 >= area.y + area.height / 2 ? 'bottom' : 'top'
+  const below = area.y + area.height - position.y
+  const above = position.y - area.y
+  stage.anchorV = below >= 480 || below >= above ? 'top' : 'bottom'
   const offset = hudOrbPositionForStage({ x: 0, y: 0, width, height }, stage)
   return { bounds: { x: position.x - offset.x, y: position.y - offset.y, width, height }, stage }
 }
@@ -295,11 +297,12 @@ export function deriveHudOverall(snapshot: StatusSnapshot): OverallState {
   return 'idle'
 }
 
-/** Session scans can refresh lastEventAt without producing a new terminal result. */
+/** Include stale keys when tracking an alert's continued presence. */
 export function hudAlertKeys(
   agents: readonly AgentRuntimeState[],
   visibleTools: HudAppearanceSettings['visibleTools'],
   now: number,
+  freshOnly = true,
 ): Set<string> {
   const keys = new Set<string>()
   for (const agent of agents) {
@@ -307,9 +310,7 @@ export function hudAlertKeys(
     if (
       agent.taskHidden ||
       !visibleTools[agent.agentType as HudToolKey] ||
-      !Number.isFinite(timestamp) ||
-      timestamp > now ||
-      now - timestamp > 60_000 ||
+      (freshOnly && (!Number.isFinite(timestamp) || timestamp > now || now - timestamp > 60_000)) ||
       !shouldRevealHud(deriveHudOverall({ agents: [agent], overall: 'idle', updatedAt: now }))
     )
       continue
@@ -318,7 +319,10 @@ export function hudAlertKeys(
         agent.agentType,
         agent.externalSessionId ?? agent.workspacePath ?? '',
         agent.state,
-        timestamp,
+        ...(agent.state === TurnState.WAITING_PERMISSION ||
+        agent.state === TurnState.WAITING_USER_INPUT
+          ? [agent.externalTurnId ?? '', agent.toolName ?? '', agent.activity ?? '']
+          : [timestamp]),
       ]),
     )
   }

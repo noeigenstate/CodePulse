@@ -102,3 +102,30 @@ test('orb positions use whole DIP and invalid positions use the default', () => 
     assert.deepEqual(hudStageForStyle('orb', display, position), hudStageForStyle('orb', display))
   }
 })
+
+for (const [width, height, y] of [
+  [1280, 680, 320],
+  [1366, 728, 340],
+] as const) {
+  test(`orb uses available room near the middle of a ${width}x${height} work area`, () => {
+    const screen = {
+      id: 3,
+      bounds: { x: 100, y: -200, width, height },
+      workArea: { x: 100, y: -200, width, height },
+    }
+    const position = { x: 100 + width - 120, y: -200 + y }
+    const result = hudStageForStyle('orb', screen, position)
+    assert.equal(result.stage.anchorV, 'top')
+    assert.equal(result.stage.anchorH, 'right')
+    assert.deepEqual(hudOrbPositionForStage(result.bounds, result.stage), position)
+    assert.equal(
+      hudStageForStyle('orb', screen, { ...position, y: -200 + height - y + 1 }).stage.anchorV,
+      'bottom',
+    )
+  })
+}
+
+test('orb prefers opening below when all 480 DIP fit, then chooses the roomier side', () => {
+  assert.equal(hudStageForStyle('orb', display, { x: 100, y: 560 }).stage.anchorV, 'top')
+  assert.equal(hudStageForStyle('orb', display, { x: 100, y: 561 }).stage.anchorV, 'bottom')
+})

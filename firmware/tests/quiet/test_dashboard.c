@@ -216,12 +216,13 @@ int main(void) {
   for (unsigned y = 0; y < 300; y++)
     for (unsigned x = 30; x < 400; x++)
       CHECK(black[y * 50 + x / 8] & (0x80u >> (x % 8)));
-  CHECK(display_text_width("WWW") > display_text_width("iii"));
-  CHECK(display_text_width("周剩余") == 42);
+  CHECK(display_text_width("WWW") == 24 && display_text_width("iii") == 24); /* Native Terminus16n grid. */
+  CHECK(display_text_width("周剩余") == 48);
   CHECK(display_font_width(DISPLAY_TITLE, "中文标题") == 64);
   display_text_bounds_t title_ink = display_font_bounds(DISPLAY_TITLE, "中文");
   display_text_bounds_t body_ink = display_font_bounds(DISPLAY_BODY, "中文");
-  CHECK(title_ink.bottom - title_ink.top > body_ink.bottom - body_ink.top);
+  CHECK(title_ink.top == body_ink.top && title_ink.bottom == body_ink.bottom); /* Both native ZhengGe16, no synthetic bold. */
+  CHECK(display_text_supports("−") && display_text_width("−") == display_text_width("–"));
   CHECK(display_font_width(DISPLAY_TITLE, "Codex") == display_font_width(DISPLAY_USAGE_TITLE, "Codex"));
   CHECK(display_font_width(DISPLAY_TITLE, "Codex") > display_font_width(DISPLAY_META, "Codex"));
   CHECK(display_text_width("周剩余") <= 56);
@@ -233,6 +234,32 @@ int main(void) {
   CHECK(display_text_width("\xf0\x9f\x98\x80") >
          0); /* unsupported glyph fallback */
   CHECK(display_text_init());
+  /* One packed spacing rule fits the native title without rewriting its text. */
+  m = model(9);
+  strcpy(m.threads[0].title, "固件 · 状态同步");
+  quiet_dashboard_render(&c, &m);
+  memcpy(physical, black, sizeof(black));
+  CHECK(!strcmp(m.threads[0].title, "固件 · 状态同步"));
+  strcpy(m.threads[0].title, "固件·状态同步");
+  quiet_dashboard_render(&c, &m);
+  CHECK(display_font_width(DISPLAY_TITLE, "固件 · 状态同步") <= 117);
+  CHECK(display_font_lines(DISPLAY_TITLE,117,2,"固件 · 状态同步") == 1);
+  CHECK(memcmp(physical, black, sizeof(black)) != 0); /* Spaces retain their real narrow advances. */
+  /* The original bold weight and complete negative reading fit before x246. */
+  m = model(0);
+  m.environment_valid = true;
+  m.temperature_c = -40.0f;
+  m.humidity_rh = 50.0f;
+  m.display.show_environment = true;
+  quiet_dashboard_render(&c, &m);
+  memcpy(physical, black, sizeof(black));
+  epd_canvas_clear(&c, EPD_COLOR_WHITE);
+  display_font_run(&c, DISPLAY_MICRO, 190, 20, "-40.0°C", DISPLAY_LEFT, EPD_COLOR_BLACK);
+  for (unsigned yy = 4; yy < 29; yy++) {
+    for (unsigned xx = 190; xx < 246; xx++) {
+      CHECK((black[yy*50+xx/8] & (128u>>(xx%8))) == (physical[yy*50+xx/8] & (128u>>(xx%8))));
+    }
+  }
   for (int font = 0; font < DISPLAY_FONT_COUNT; font++) {
     epd_canvas_clear(&c, EPD_COLOR_WHITE);
     display_font_text(&c, (display_font_t)font, 10, 10, 31, 2,

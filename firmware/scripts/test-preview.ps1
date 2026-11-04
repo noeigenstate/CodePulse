@@ -43,6 +43,6 @@ try {
     & node (Join-Path $root 'preview/render-life.mjs') (Join-Path $output 'renderer.wasm') `
         (Join-Path $output 'life') (Join-Path $output 'preview-native.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Life fixture native/Wasm parity failed.' }
-    & $Python (Join-Path $root 'preview/check-life.py') (Join-Path $output 'life')
+    & $Python (Join-Path $root 'preview/check-life.py') (Join-Path $output 'life') @baselineOptions
     if ($LASTEXITCODE -ne 0) { throw 'Life approved-pixel regression failed.' }
 } finally { Pop-Location }

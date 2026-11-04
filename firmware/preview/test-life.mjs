@@ -51,6 +51,10 @@ const names = [
   'news',
   'holiday-yes',
   'holiday-none',
+  'concept',
+  'concept-long',
+  'prompt',
+  'hn',
 ]
 for (const name of names) {
   const input = JSON.parse(
@@ -77,6 +81,9 @@ for (const name of names) {
   const unsupported = structuredClone(input),
     p = unsupported.ambient.life
   if (p.kind === 'news') p.headlines[0].title = '😀'
+  else if (p.kind === 'concept') p.term = '😀'
+  else if (p.kind === 'prompt') p.question = ['😀']
+  else if (p.kind === 'hn') p.stories[0].title = '😀'
   else if (p.kind === 'holiday') p.next.name = '😀'
   else if (p.kind === 'weather') p.condition = '😀'
   else p.source = '😀'

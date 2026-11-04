@@ -84,7 +84,12 @@ bool display_text_supports(const char *text) {
     return false;
   }
   while (*text) {
-    const unsigned cp = next(&text);
+    /* Terminus' native U+2212 and U+2013 masks/metrics are byte-identical.
+     * Keep the historical 7,752-codepoint table while accepting math minus. */
+    unsigned cp = next(&text);
+    if (cp == 0x2212) {
+      cp = 0x2013;
+    }
     unsigned lo = 0, hi = DISPLAY_FONT_GLYPHS;
     while (lo < hi) {
       unsigned mid = lo + (hi - lo) / 2;
@@ -106,6 +111,9 @@ static bool valid(display_font_t font) {
   return font >= 0 && font < DISPLAY_FONT_COUNT && display_text_init();
 }
 static glyph_t glyph(display_font_t font, unsigned cp) {
+  if (cp == 0x2212) {
+    cp = 0x2013;
+  }
   unsigned lo = 0, hi = DISPLAY_FONT_GLYPHS;
   while (lo < hi) {
     unsigned mid = lo + (hi - lo) / 2;

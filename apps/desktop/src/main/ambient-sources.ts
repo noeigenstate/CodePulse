@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { AmbientCard, AmbientConfig } from '@codepulse/shared'
 import { cleanText, xMinimumLikes } from './ambient-rules.js'
 
@@ -170,7 +171,10 @@ export async function fetchBytes(
 export const fetchJson: JsonRequest = async (url, headers) =>
   JSON.parse(Buffer.from(await fetchBytes(url, headers)).toString('utf8'))
 
-/** One public page, only current front-page stories with substantial discussion. */
+/**
+ * One public page, only current front-page stories with substantial discussion, as a single
+ * digest card of the four most-voted stories (the device draws it as a ranked list).
+ */
 export async function collectNews(now: number, request: JsonRequest): Promise<AmbientCard[]> {
   const params = new URLSearchParams({
     tags: 'front_page',
@@ -179,30 +183,68 @@ export async function collectNews(now: number, request: JsonRequest): Promise<Am
   })
   const body = object(await request('https://hn.algolia.com/api/v1/search?' + params))
   if (!Array.isArray(body.hits)) throw new Error('数据源返回格式异常')
-  return list(body.hits).flatMap((raw) => {
+  const stories = list(body.hits).flatMap((raw) => {
     const h = object(raw),
       id = String(h.objectID),
-      publishedAt = Number(h.created_at_i) * 1000
-    if (
-      !/^\d+$/.test(id) ||
-      !Number.isFinite(publishedAt) ||
-      publishedAt > now ||
-      score(h.points) < 100
-    )
+      publishedAt = Number(h.created_at_i) * 1000,
+      points = score(h.points)
+    if (!/^\d+$/.test(id) || !Number.isFinite(publishedAt) || publishedAt > now || points < 100)
       return []
-    const text = cleanText(h.title, 300)
-    if (!text) return []
-    return [
-      {
-        id: 'hn:' + id,
-        kind: 'news' as const,
-        source: 'Hacker News · 热议',
-        text,
-        url: 'https://news.ycombinator.com/item?id=' + id,
-        publishedAt,
-        expiresAt: publishedAt + 86400000,
-        score: score(h.points),
-      },
-    ]
+    const title = cleanText(h.title, 120)
+    if (!title) return []
+    let site = ''
+    try {
+      if (typeof h.url === 'string') site = new URL(h.url).hostname.replace(/^www\./, '')
+    } catch {
+      site = ''
+    }
+    return [{ id, title, points, comments: score(h.num_comments), site, publishedAt }]
   })
+  const top = stories.sort((a, b) => b.points - a.points).slice(0, 4)
+  if (!top.length) return []
+  const age = (at: number) => {
+    const minutes = Math.max(1, Math.floor((now - at) / 60000))
+    return minutes < 60 ? `${minutes} 分钟前` : `${Math.floor(minutes / 60)} 小时前`
+  }
+  const clock = new Date(now)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return [
+    {
+      // The same four stories keep one id while their points move; a new story makes a new card.
+      id:
+        'hn:' +
+        createHash('sha256')
+          .update(
+            top
+              .map((s) => s.id)
+              .sort()
+              .join(','),
+          )
+          .digest('hex')
+          .slice(0, 24),
+      kind: 'news' as const,
+      source: 'Hacker News · 热议',
+      text: top
+        .slice(0, 3)
+        .map((s) => s.title)
+        .join(' · '),
+      url: 'https://news.ycombinator.com/',
+      publishedAt: Math.max(...top.map((s) => s.publishedAt)),
+      expiresAt: now + 12 * 3600000,
+      score: top[0]!.points,
+      layout: 'life' as const,
+      life: {
+        v: 1 as const,
+        kind: 'hn' as const,
+        updated: `${pad(clock.getHours())}:${pad(clock.getMinutes())}`,
+        stories: top.map((s) => ({
+          title: s.title,
+          points: Math.min(999999, Math.round(s.points)),
+          comments: Math.min(999999, Math.round(s.comments)),
+          site: s.site.slice(0, 32),
+          age: age(s.publishedAt),
+        })),
+      },
+    },
+  ]
 }

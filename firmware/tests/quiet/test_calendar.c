@@ -84,7 +84,9 @@ static void render_tests(void) {
   CHECK(mark > 0);
 }
 static void label_and_circle_tests(void) {
-  const char *labels[] = {"", "月", "初一", "国庆节", "重阳节", "春节快乐", "WWWW"};
+  /* Native bold16's WWWW is narrow (32px). Keep it, and retain a genuinely
+   * wide four-character pressure case from the closed 12px vocabulary. */
+  const char *labels[] = {"", "月", "初一", "国庆节", "重阳节", "春节快乐", "四字标签", "WWWW"};
   epd_canvas_t c = {black, red}; codepulse_ui_model_t m = model(0); m.ambient = &card;
   for (unsigned rows = 4; rows <= 6; rows++) {
     for (unsigned i = 0; i < sizeof(labels)/sizeof(labels[0]); i++) {

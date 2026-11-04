@@ -21,6 +21,10 @@ for (const name of [
   'news',
   'holiday-yes',
   'holiday-none',
+  'concept',
+  'concept-long',
+  'prompt',
+  'hn',
 ]) {
   const path = new URL(`./fixtures/life-${name}.json`, import.meta.url)
   const input = JSON.parse(readFileSync(path, 'utf8')),
@@ -40,6 +44,6 @@ for (const name of [
   }
 }
 console.log(
-  'Rendered ten life fixtures; no black/red overlap' +
+  'Rendered fourteen life fixtures; no black/red overlap' +
     (nativePath ? ', native/Wasm planes identical' : ''),
 )

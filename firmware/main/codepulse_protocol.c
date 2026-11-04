@@ -386,8 +386,8 @@ static bool parse_calendar(const cJSON *a, codepulse_calendar_t *out) {
   out->days = (uint8_t)days; out->week = (uint8_t)numbers[5];
   return true;
 }
-static bool life_string(const cJSON *p, const char *key, char *out, size_t size, unsigned max, bool required) {
-  if (!calendar_text(cJSON_GetObjectItemCaseSensitive(p, key), out, size, max) || (required && !out[0])) {
+static bool life_value(const cJSON *v, char *out, size_t size, unsigned max, bool required) {
+  if (!calendar_text(v, out, size, max) || (required && !out[0])) {
     return false;
   }
   for (const unsigned char *c = (const unsigned char *)out; *c; c++)
@@ -397,6 +397,9 @@ static bool life_string(const cJSON *p, const char *key, char *out, size_t size,
     }
   }
   return true;
+}
+static bool life_string(const cJSON *p, const char *key, char *out, size_t size, unsigned max, bool required) {
+  return life_value(cJSON_GetObjectItemCaseSensitive(p, key), out, size, max, required);
 }
 static bool life_number(const cJSON *p, const char *key, char *out, bool required, bool percent) {
   if (!life_string(p, key, out, 17, 16, required)) {
@@ -479,7 +482,7 @@ static bool parse_life(const cJSON *a, codepulse_life_t *out) {
   const cJSON *p = cJSON_GetObjectItemCaseSensitive(a, "life");
   unsigned version, kind, direction;
   static const char *const kinds[] = {
-    "weather","gold","stock","tool","news","holiday"
+    "weather","gold","stock","tool","news","holiday","concept","prompt","hn"
   };
   static const char *const directions[] = {
     "flat","up","down"
@@ -488,7 +491,7 @@ static bool parse_life(const cJSON *a, codepulse_life_t *out) {
     "sun","cloudsun","cloud","rain","snow","thunder","fog"
   };
   if (!cJSON_IsObject(p) || !calendar_integer(cJSON_GetObjectItemCaseSensitive(p,"v"),1,1,&version) ||
-  !life_enum(p,"kind",kinds,6,&kind)) {
+  !life_enum(p,"kind",kinds,9,&kind)) {
     return false;
   }
   out->version = (uint8_t)version;
@@ -627,6 +630,52 @@ static bool parse_life(const cJSON *a, codepulse_life_t *out) {
       (!strcmp(h->name,"元旦") && h->start.year + 1 == h->year && h->start.month == 12 && h->end.year == h->year && h->end.month == 1))) {
         return false;
       }
+    }
+    return true;
+  }
+  if (out->kind == LIFE_CONCEPT) {
+    codepulse_life_concept_t *c = &out->data.concept;
+    return LT(p,"subject",c->subject,6,true) && LT(p,"position",c->position,9,false) &&
+      LT(p,"term",c->term,6,true) && LT(p,"english",c->english,24,false) &&
+      LT(p,"definition",c->definition,44,true) && LT(p,"example",c->example,44,false) &&
+      LT(p,"question",c->question,20,false);
+  }
+  if (out->kind == LIFE_PROMPT) {
+    codepulse_life_prompt_t *t = &out->data.prompt;
+    const cJSON *lines = cJSON_GetObjectItemCaseSensitive(p,"question");
+    if (!LT(p,"tag",t->tag,6,false) || !LT(p,"lead",t->lead,22,false) || !LT(p,"follow",t->follow,23,false) ||
+    !cJSON_IsArray(lines) || cJSON_GetArraySize(lines) < 1 || cJSON_GetArraySize(lines) > 2) {
+      return false;
+    }
+    const cJSON *line;
+    cJSON_ArrayForEach(line,lines) {
+      if (!life_value(line,t->lines[t->line_count],sizeof(t->lines[0]),11,true)) {
+        return false;
+      }
+      t->line_count++;
+    }
+    return true;
+  }
+  if (out->kind == LIFE_HN) {
+    codepulse_life_hn_t *h = &out->data.hn;
+    const cJSON *items = cJSON_GetObjectItemCaseSensitive(p,"stories");
+    if (!LT(p,"updated",h->updated,5,false) || !cJSON_IsArray(items) || cJSON_GetArraySize(items) < 1 ||
+    cJSON_GetArraySize(items) > CODEPULSE_LIFE_STORIES) {
+      return false;
+    }
+    const cJSON *item;
+    cJSON_ArrayForEach(item,items) {
+      codepulse_life_story_t *story = &h->stories[h->count];
+      unsigned points, comments;
+      if (!cJSON_IsObject(item) || !LT(item,"title",story->title,120,true) || !LT(item,"site",story->site,32,false) ||
+      !LT(item,"age",story->age,8,false) ||
+      !calendar_integer(cJSON_GetObjectItemCaseSensitive(item,"points"),0,999999,&points) ||
+      !calendar_integer(cJSON_GetObjectItemCaseSensitive(item,"comments"),0,999999,&comments)) {
+        return false;
+      }
+      story->points = points;
+      story->comments = comments;
+      h->count++;
     }
     return true;
   }

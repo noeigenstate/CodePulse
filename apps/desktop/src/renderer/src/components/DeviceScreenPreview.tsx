@@ -11,6 +11,7 @@ import {
 import { createPortal } from 'react-dom'
 import {
   deviceInspectScale,
+  devicePhysicalScale,
   devicePixelRatioLabel,
   devicePreviewScale,
   type DeviceStatusV1,
@@ -35,6 +36,36 @@ function loadRenderer(): ReturnType<typeof createDevicePlaneRenderer> {
       })
   }
   return renderer
+}
+
+/** Pixel view (whole physical pixels) or approximate real panel size; shared by every preview and remembered. */
+type PreviewView = 'pixel' | 'physical'
+const VIEW_KEY = 'codepulse.devicePreview.view'
+const viewListeners = new Set<(view: PreviewView) => void>()
+function readView(): PreviewView {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'physical' ? 'physical' : 'pixel'
+  } catch {
+    return 'pixel'
+  }
+}
+function usePreviewView(): [PreviewView, (view: PreviewView) => void] {
+  const [view, setView] = useState(readView)
+  useEffect(() => {
+    viewListeners.add(setView)
+    return () => {
+      viewListeners.delete(setView)
+    }
+  }, [])
+  const change = useCallback((next: PreviewView) => {
+    try {
+      localStorage.setItem(VIEW_KEY, next)
+    } catch {
+      /* the choice then lasts for this session only */
+    }
+    for (const listener of viewListeners) listener(next)
+  }, [])
+  return [view, change]
 }
 
 /** Device pixel ratio of the window the preview is on; follows zoom and moves between monitors. */
@@ -257,7 +288,10 @@ export function DeviceScreenPreview({
   const frame = useRef<HTMLDivElement>(null)
   const dpr = useDevicePixelRatio()
   const available = useAvailableSize(scroll, frame)
-  const scale = devicePreviewScale(dpr, available.width, false, available.height)
+  const [view, setView] = usePreviewView()
+  const physical = view === 'physical'
+  const pixelScale = devicePreviewScale(dpr, available.width, false, available.height)
+  const scale = physical ? devicePhysicalScale(dpr) : pixelScale
   const inspectScale = deviceInspectScale(dpr)
   useWholePixelAlign(canvas, frame, scroll, dpr)
   useLayoutEffect(() => {
@@ -386,7 +420,16 @@ export function DeviceScreenPreview({
         · 400 × 300
       </span>
       <div>
-        <span className="device-preview-scale">{devicePixelRatioLabel(scale.k)}</span>
+        <span className="device-preview-scale">
+          {physical ? '约实物大小' : devicePixelRatioLabel(scale.k)}
+        </span>
+        <button
+          type="button"
+          aria-pressed={physical}
+          onClick={() => setView(physical ? 'pixel' : 'physical')}
+        >
+          实物大小
+        </button>
         <button ref={inspectTrigger} type="button" onClick={() => inspector.current?.showModal()}>
           2 倍检查
         </button>
@@ -413,7 +456,8 @@ export function DeviceScreenPreview({
     <div
       className={'device-preview ' + (fit ? 'device-preview-fit' : '')}
       data-render-state={state}
-      data-pixel-ratio={scale.k}
+      data-pixel-ratio={physical ? undefined : scale.k}
+      data-view={view}
     >
       {/* The preview state stays available to assistive tech without a visible pill. */}
       {compact && cornerTag && (
@@ -444,6 +488,9 @@ export function DeviceScreenPreview({
                 style={{
                   width: scale.cssWidth,
                   height: scale.cssHeight,
+                  // Real size is a fractional scale: smooth it like the eye does instead of
+                  // letting nearest-neighbour make strokes alternate between widths.
+                  imageRendering: physical ? 'auto' : undefined,
                   visibility: state === 'error' ? 'hidden' : 'visible',
                 }}
                 role="img"
@@ -480,11 +527,25 @@ export function DeviceScreenPreview({
               <div className="device-preview-menu-buttons" role="group" aria-label="显示比例">
                 <button
                   type="button"
-                  aria-pressed="true"
-                  title={devicePixelRatioLabel(scale.k)}
-                  onClick={() => closeMenu(true)}
+                  aria-pressed={!physical}
+                  title={`原始像素 · ${devicePixelRatioLabel(pixelScale.k)}`}
+                  onClick={() => {
+                    setView('pixel')
+                    closeMenu(true)
+                  }}
                 >
                   1:1
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={physical}
+                  title="按 4.2 英寸屏的实际尺寸（84.8 × 63.6 mm）近似显示"
+                  onClick={() => {
+                    setView('physical')
+                    closeMenu(true)
+                  }}
+                >
+                  实物大小
                 </button>
                 <button
                   ref={inspectTrigger}
@@ -540,8 +601,8 @@ export function DeviceScreenPreview({
             <summary>预览说明</summary>
             <p>
               画面版本 {manifest.firmwareVersion}
-              。预览保持原始像素，按屏幕物理像素整数倍显示，放大检查至少为 2
-              倍。温湿度、电量和联网读数未回传时显示未知；目标画面不代表实体屏已刷新，也不模拟残影。
+              。预览保持原始像素，按屏幕物理像素整数倍显示，放大检查至少为 2 倍。「实物大小」按 4.2
+              英寸屏的实际尺寸近似显示，并像人眼一样柔化像素边缘；实际大小取决于显示器的缩放设置。温湿度、电量和联网读数未回传时显示未知；目标画面不代表实体屏已刷新，也不模拟残影。
             </p>
           </details>
         </div>

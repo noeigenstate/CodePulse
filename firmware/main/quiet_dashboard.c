@@ -70,58 +70,85 @@ static const char *thread_state_name(const codepulse_ui_thread_t *t) {
   if (!strcmp(t->state_reason, "waiting_permission")) return "待授权";
   return state_name(t->state);
 }
-static void badge(epd_canvas_t *c, int x, int y, int w, int h,
-                  const codepulse_ui_thread_t *t) {
-  const codepulse_ui_level_t level = codepulse_thread_level(t);
-  const bool filled = level >= CODEPULSE_LEVEL_NOTICE;
-  display_font_t f = level == CODEPULSE_LEVEL_QUIET ? DISPLAY_META :
-                     level >= CODEPULSE_LEVEL_NOTICE ? DISPLAY_BADGE : DISPLAY_STATE;
+/* Task colours (approved HUD A, 2026-11-04): red needs you (action or fault), black is ready
+ * to review, a black outline is working; quiet tasks are plain text. */
+typedef enum { TONE_NONE, TONE_OUTLINE, TONE_BLACK, TONE_RED } tone_t;
+static tone_t tone(const codepulse_ui_thread_t *t) {
+  switch (codepulse_thread_level(t)) {
+  case CODEPULSE_LEVEL_ACTION: case CODEPULSE_LEVEL_FAULT: return TONE_RED;
+  case CODEPULSE_LEVEL_NOTICE: return TONE_BLACK;
+  case CODEPULSE_LEVEL_ACTIVE: return TONE_OUTLINE;
+  default: return TONE_NONE;
+  }
+}
+static void outline(epd_canvas_t *c, int x, int y, int w, int h) {
+  epd_canvas_fill_rect(c, x, y, w, 1, EPD_COLOR_BLACK);
+  epd_canvas_fill_rect(c, x, y + h - 1, w, 1, EPD_COLOR_BLACK);
+  epd_canvas_fill_rect(c, x, y, 1, h, EPD_COLOR_BLACK);
+  epd_canvas_fill_rect(c, x + w - 1, y, 1, h, EPD_COLOR_BLACK);
+}
+static void pill(epd_canvas_t *c, int x, int y, int w, int h, const codepulse_ui_thread_t *t,
+                 display_font_t f) {
+  const tone_t k = tone(t);
   const char *s = thread_state_name(t);
   display_text_bounds_t b = display_font_bounds(f, s);
-  if (filled) rounded_color(c, x, y, w, h, EPD_COLOR_BLACK);
-  if (level == CODEPULSE_LEVEL_FAULT) line(c, x + 2, y - 3, x + w - 3, y - 3);
-  int baseline = y + (h - (b.bottom - b.top) + 1) / 2 - b.top;
-  display_font_run(c, f, x + w / 2, baseline, s, DISPLAY_CENTER,
-                   filled ? EPD_COLOR_WHITE : EPD_COLOR_BLACK);
+  const int baseline = y + (h - (b.bottom - b.top) + 1) / 2 - b.top;
+  epd_color_t ink = EPD_COLOR_BLACK;
+  if (k == TONE_RED || k == TONE_BLACK) {
+    rounded_color(c, x, y, w, h, k == TONE_RED ? EPD_COLOR_RED : EPD_COLOR_BLACK);
+    ink = EPD_COLOR_WHITE;
+  } else if (k == TONE_OUTLINE) outline(c, x, y, w, h);
+  display_font_run(c, f, x + w / 2, baseline, s, DISPLAY_CENTER, ink);
 }
+/* Left colour bar for tasks that need you (red) or are ready to review (black). */
+static void bar(epd_canvas_t *c, int y, int h, const codepulse_ui_thread_t *t) {
+  const tone_t k = tone(t);
+  if (k == TONE_RED || k == TONE_BLACK)
+    epd_canvas_fill_rect(c, 12, y, 4, h, k == TONE_RED ? EPD_COLOR_RED : EPD_COLOR_BLACK);
+}
+static void fit(display_font_t f, const char *s, int width, char *out, size_t cap) {
+  snprintf(out, cap, "%s", s);
+  if (display_font_width(f, out) <= width) return;
+  size_t n = strlen(out);
+  while (n) {
+    do n--; while (n && ((unsigned char)out[n] & 0xc0) == 0x80);
+    if (n + 4 > cap) continue;
+    strcpy(out + n, "…");
+    if (display_font_width(f, out) <= width) return;
+  }
+}
+/* Quota lives only in the footer; rows carry the task, its agent and its state. */
 static void hud(epd_canvas_t *c, const codepulse_ui_model_t *m) {
   const size_t n = m->thread_count > 9 ? 9 : m->thread_count;
-  const int cols = n > 6 ? 3 : n > 3 ? 2 : 1;
-  const int width = (376 - (cols - 1) * 12) / cols;
+  if (!n) { type(c, DISPLAY_STATE, 200, 138, "暂无活动任务", DISPLAY_CENTER); return; }
+  char text[200], clipped[200];
+  if (n <= 3) {
+    for (size_t i = 0; i < n; i++) {
+      const codepulse_ui_thread_t *t = &m->threads[i];
+      const int y = 32 + (int)i * 77;
+      if (i) epd_canvas_fill_rect(c, 26, y - 1, 362, 1, EPD_COLOR_BLACK);
+      bar(c, y + 4, 68, t);
+      const int lines = display_font_block(c, DISPLAY_TITLE, 26, y + 24, 286, 2, 22, t->title, EPD_COLOR_BLACK);
+      const char *detail = codepulse_thread_level(t) == CODEPULSE_LEVEL_ACTIVE ? "AI 正在处理任务" : t->detail;
+      snprintf(text, sizeof(text), detail[0] ? "%s · %s" : "%s", name(t->type), detail);
+      fit(DISPLAY_META, text, 286, clipped, sizeof(clipped));
+      display_font_run(c, DISPLAY_META, 26, y + (lines > 1 ? 68 : 48), clipped, DISPLAY_LEFT,
+                       tone(t) == TONE_RED ? EPD_COLOR_RED : EPD_COLOR_BLACK);
+      pill(c, 322, y + 22, 66, 32, t, DISPLAY_BADGE);
+    }
+    return;
+  }
+  const int h = n > 6 ? 25 : 37;
   for (size_t i = 0; i < n; i++) {
     const codepulse_ui_thread_t *t = &m->threads[i];
-    const int x = 12 + (int)(i / 3) * (width + 12), y = 34 + (int)(i % 3) * 76;
-    if (i % 3) line(c, x, y - 2, x + width - 1, y - 2);
-    int tw = cols == 1 ? (m->display.show_quota ? 254 : 308) : width;
-    int lines = display_font_block(c, DISPLAY_TITLE, x, y + 22, tw, 2, 20, t->title, EPD_COLOR_BLACK);
-    if (cols == 1) {
-      type(c, DISPLAY_META, x, y + (lines > 1 ? 63 : 43), name(t->type), DISPLAY_LEFT);
-      if (lines <= 1) display_font_block(c, DISPLAY_META, x, y + 63, tw, 1, 0,
-          codepulse_thread_level(t) == CODEPULSE_LEVEL_ACTIVE ? "AI 正在处理任务" : t->detail, EPD_COLOR_BLACK);
-      if (m->display.show_quota) {
-        const codepulse_ui_agent_t a = agent(m, t->type);
-        char value[12], label[24];
-        if (t->type == CODEPULSE_UI_AGENT_CLAUDE) {
-          type(c, DISPLAY_META, 320, y + 15, remaining(m) ? "额度剩余" : "额度已用", DISPLAY_RIGHT);
-          percent(value, sizeof(value), a.five_hour_percent, remaining(m));
-          snprintf(label, sizeof(label), "5h %s", value);
-          type(c, DISPLAY_SUMMARY, 320, y + 35, label, DISPLAY_RIGHT);
-          percent(value, sizeof(value), a.weekly_percent, remaining(m));
-          snprintf(label, sizeof(label), "周 %s", value);
-          type(c, DISPLAY_SUMMARY, 320, y + 55, label, DISPLAY_RIGHT);
-        } else {
-          percent(value, sizeof(value), a.weekly_percent, remaining(m));
-          type(c, DISPLAY_META, 320, y + 28, remaining(m) ? "周剩余" : "周已用", DISPLAY_RIGHT);
-          type(c, DISPLAY_NUMBER, 320, y + 49, value, DISPLAY_RIGHT);
-        }
-      }
-      badge(c, 334, y + 13, 54, 40, t);
-    } else {
-      display_font_block(c, DISPLAY_META, x, y + 68, width - 54, 1, 0, name(t->type), EPD_COLOR_BLACK);
-      badge(c, x + width - 48, y + 51, 48, 23, t);
-    }
+    const int y = 33 + (int)i * h;
+    if (i) epd_canvas_fill_rect(c, 26, y - 1, 362, 1, EPD_COLOR_BLACK);
+    bar(c, y + 3, h - 6, t);
+    fit(DISPLAY_TITLE, t->title, 200, clipped, sizeof(clipped));
+    display_font_run(c, DISPLAY_TITLE, 26, y + h / 2 + 7, clipped, DISPLAY_LEFT, EPD_COLOR_BLACK);
+    display_font_run(c, DISPLAY_META, 314, y + h / 2 + 6, name(t->type), DISPLAY_RIGHT, EPD_COLOR_BLACK);
+    pill(c, 322, y + (h - 21) / 2, 66, 21, t, DISPLAY_META);
   }
-  if (!n) type(c, DISPLAY_STATE, 200, 138, "暂无活动任务", DISPLAY_CENTER);
 }
 static void usage(epd_canvas_t *c, const codepulse_ui_model_t *m) {
   int row = 0;
@@ -190,8 +217,11 @@ static void header(epd_canvas_t *c, const codepulse_ui_model_t *m, bool is_hud) 
   for (unsigned i = 1; i < sizeof(points) / sizeof(points[0]); i++)
     line(c, points[i-1][0], points[i-1][1], points[i][0], points[i][1]);
   type(c, DISPLAY_BRAND, 29, 20, "CodePulse", DISPLAY_LEFT);
-  line(c, 107, 10, 107, 21);
-  type(c, DISPLAY_BRAND, 114, 20, m->ambient ? "动态" : is_hud ? "HUD" : "用量", DISPLAY_LEFT);
+  /* The task screen shows only the brand; other screens name themselves. */
+  if (m->ambient || !is_hud) {
+    line(c, 107, 10, 107, 21);
+    type(c, DISPLAY_BRAND, 114, 20, m->ambient ? "动态" : "用量", DISPLAY_LEFT);
+  }
   static const uint16_t thermo[12] = {0x000,0x060,0x090,0x090,0x0d0,0x0d0,0x0f0,0x0d0,0x1d8,0x168,0x090,0x060};
   static const uint16_t drop[12] = {0x000,0x040,0x0a0,0x090,0x110,0x208,0x204,0x402,0x402,0x402,0x204,0x1f8};
   static const uint16_t wifi[12] = {0x000,0x000,0x1f0,0x20c,0x402,0x8f1,0x108,0x264,0x090,0x060,0x000,0x000};
@@ -202,7 +232,8 @@ static void header(epd_canvas_t *c, const codepulse_ui_model_t *m, bool is_hud) 
       snprintf(hum, sizeof(hum), "%.0f%%", (double)m->humidity_rh);
     } else { snprintf(temp, sizeof(temp), "--.-°C"); snprintf(hum, sizeof(hum), "--%%"); }
     icon(c, 174, 9, thermo);
-    display_font_block(c, DISPLAY_BRAND, 190, 20, 50, 1, 0, temp, EPD_COLOR_BLACK);
+    /* Seven native bold16 characters fit before the humidity icon at x246. */
+    display_font_block(c, DISPLAY_BRAND, 190, 20, 56, 1, 0, temp, EPD_COLOR_BLACK);
     icon(c, 246, 9, drop);
     display_font_block(c, DISPLAY_BRAND, 262, 20, 42, 1, 0, hum, EPD_COLOR_BLACK);
   }

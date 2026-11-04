@@ -8,15 +8,15 @@ typedef enum {
   DISPLAY_DENSE_TITLE,
   DISPLAY_BADGE,
   DISPLAY_NUMBER,
-  DISPLAY_USAGE_NUMBER, /* Native Noto Sans Bold40; complete SC16 fallback. */
+  DISPLAY_USAGE_NUMBER, /* Native cleaned Noto Bold40; complete pixel16 fallback. */
   DISPLAY_SMALL_BOLD,
-  DISPLAY_META,  /* Noto SC14 / Noto Sans Bold16, complete repertoire. */
-  DISPLAY_BRAND, /* Native Latin12 with the complete SC14 fallback. */
-  DISPLAY_USAGE_TITLE, /* SC16 / native Latin20. */
-  DISPLAY_STATE, /* Complete SC14 / native Latin16. */
-  DISPLAY_SUMMARY, /* Complete SC14 / native Latin14. */
-  DISPLAY_MICRO, /* Native calendar12 / Latin12; complete SC14 fallback. */
-  DISPLAY_DATE, /* Complete SC16 fallback / native Latin24 dates. */
+  DISPLAY_META,  /* Fusion12 / Terminus16b; bounded pixel16 compatibility fallback. */
+  DISPLAY_BRAND, /* Fusion12 / native Terminus16b. */
+  DISPLAY_USAGE_TITLE, /* ZhengGe16 / native Terminus20b. */
+  DISPLAY_STATE, /* Fusion12 / native Terminus16b. */
+  DISPLAY_SUMMARY, /* Fusion12 / native Terminus16b. */
+  DISPLAY_MICRO, /* Closed Fusion12/Terminus16b; complete pixel16 fallback. */
+  DISPLAY_DATE, /* Complete pixel16 fallback / native Terminus32b dates. */
   DISPLAY_FONT_COUNT
 } display_font_t;
 

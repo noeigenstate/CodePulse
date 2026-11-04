@@ -170,8 +170,12 @@ app
       hud.broadcast('codepulse:status', fixture)
       await settle()
     }
-    const capture = async (name: string) =>
+    // A hidden window hands back its previous frame first, so the first capture is discarded.
+    const capture = async (name: string) => {
+      await win.webContents.capturePage()
+      await wait(150)
       writeFileSync(join(output, name + '.png'), (await win.webContents.capturePage()).toPNG())
+    }
     const js = (code: string) => win.webContents.executeJavaScript(code)
 
     const size = (selector: string) =>

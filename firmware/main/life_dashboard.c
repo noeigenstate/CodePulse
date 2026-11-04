@@ -1,5 +1,6 @@
 #include "life_dashboard.h"
 #include "life_assets.generated.h"
+#include "card_hero.generated.h"
 #include "display_text.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -195,7 +196,11 @@ static int runs(epd_canvas_t *c,int x,int base,const part_t *parts,unsigned coun
 #define R EPD_COLOR_RED
 #define W EPD_COLOR_WHITE
 #define P(role,s,color) (part_t){role,s,color}
+static void fit_font(display_font_t font,const char *s,int width,char out[512]);
 static void fit(role_t role,const char *s,int width,char out[512]){
+  fit_font(native(role),s,width,out);
+}
+static void fit_font(display_font_t font,const char *s,int width,char out[512]){
   size_t n=0;
   bool cut=false;
   while(*s){
@@ -207,7 +212,7 @@ static void fit(role_t role,const char *s,int width,char out[512]){
       break;
     }
     memcpy(out+n,utf8,size+1);
-    if(display_font_width(native(role),out)>width){
+    if(display_font_width(font,out)>width){
       out[n]=0;
       cut=true;
       break;
@@ -218,7 +223,7 @@ static void fit(role_t role,const char *s,int width,char out[512]){
   if(cut){
     while(n){
       strcpy(out+n,"…");
-      if(display_font_width(native(role),out)<=width){
+      if(display_font_width(font,out)<=width){
         return;
       }
       do{
@@ -675,6 +680,248 @@ static void holiday(epd_canvas_t *c,const codepulse_life_holiday_t *h){
     day=life_next_date(day);
   }
 }
+/* Reading cards (0.0.32-cards): concept, prompt and Hacker News digest. */
+static const card_hero_glyph_t *hero_glyph(unsigned cp){
+  int low=0,high=CARD_HERO_GLYPHS-1;
+  while(low<=high){
+    int mid=(low+high)/2;
+    if(card_hero_glyphs[mid].code==cp){
+      return &card_hero_glyphs[mid];
+    }
+    if(card_hero_glyphs[mid].code<cp){
+      low=mid+1;
+    } else {
+      high=mid-1;
+    }
+  }
+  return NULL;
+}
+/* The host sends ASCII punctuation (it folds full-width forms); large lines use the full-width glyph. */
+static const card_hero_glyph_t *hero_char(unsigned cp){
+  const card_hero_glyph_t *g=hero_glyph(cp);
+  if(!g && cp>0x20 && cp<0x7f && !((cp>='0' && cp<='9') || (cp>='A' && cp<='Z') || (cp>='a' && cp<='z'))){
+    g=hero_glyph(cp+0xfee0u);
+  }
+  return g;
+}
+/* Advance of a native 32px line, or -1 when any character is outside the strike. */
+static int hero_width(const char *s){
+  int pen=0;
+  while(*s){
+    char utf8[5];
+    const card_hero_glyph_t *g=hero_char(next(&s,utf8));
+    if(!g){
+      return -1;
+    }
+    pen+=g->advance;
+  }
+  return pen;
+}
+/* Draws a line at native 32px when it fits; otherwise the same line in the native 16px face. */
+static void hero(epd_canvas_t *c,int x,int base,const char *s,int width,epd_color_t color){
+  int advance=hero_width(s);
+  if(advance<0 || advance>width){
+    char clipped[512];
+    fit(C16,s,width,clipped);
+    text(c,C16,x,base,clipped,DISPLAY_LEFT,color);
+    return;
+  }
+  int pen=0;
+  while(*s){
+    char utf8[5];
+    const card_hero_glyph_t *g=hero_char(next(&s,utf8));
+    unsigned stride=(g->width+7u)/8u;
+    for(unsigned row=0;row<g->height;row++){
+      for(unsigned col=0;col<g->width;col++){
+        if(card_hero_bits[g->offset+row*stride+col/8]&(128u>>(col%8))){
+          pixel(c,x+pen+g->left+(int)col,base+g->top+(int)row,color);
+        }
+      }
+    }
+    pen+=g->advance;
+  }
+}
+static bool closing(const char *s){
+  static const char *const marks[]={
+    "，","。","、","：","；","？","！","）","”","’","…"
+  };
+  for(unsigned i=0;i<sizeof(marks)/sizeof(marks[0]);i++){
+    if(!strncmp(s,marks[i],strlen(marks[i]))){
+      return true;
+    }
+  }
+  return *s==',' || *s=='.' || *s==':' || *s==';' || *s=='?' || *s=='!' || *s==')';
+}
+static size_t back(const char *s,size_t at){
+  do{
+    at--;
+  }
+  while(at && ((unsigned char)s[at]&0xc0)==0x80);
+  return at;
+}
+/*
+ * Greedy wrap in a native face: Latin breaks at spaces, CJK anywhere, no closing mark starts a
+ * line, the line before a one- or two-character remainder gives two characters to it, and the
+ * last allowed line ends in an ellipsis. Returns the number of lines drawn.
+ */
+static int flow(epd_canvas_t *c,display_font_t font,int x,int base,int width,int step,int lines,const char *s,epd_color_t color){
+  int used=0;
+  while(*s==' '){
+    s++;
+  }
+  while(*s && used<lines){
+    char line[512];
+    size_t n=0,last=0,space=0;
+    while(s[n]){
+      char utf8[5];
+      const char *p=s+n;
+      next(&p,utf8);
+      size_t size=strlen(utf8);
+      if(n+size>=sizeof(line)-4){
+        break;
+      }
+      memcpy(line,s,n+size);
+      line[n+size]=0;
+      if(display_font_width(font,line)>width){
+        break;
+      }
+      n+=size;
+      last=n;
+      if(s[n]==' '){
+        space=n;
+      }
+    }
+    if(!last){
+      break;
+    }
+    if(s[last]){
+      const unsigned char after=(unsigned char)s[last];
+      size_t rest=0;
+      for(const char *p=s+last;*p;rest++){
+        char utf8[5];
+        next(&p,utf8);
+      }
+      if(space && after!=' ' && after<0x80 && (unsigned char)s[last-1]<0x80){
+        last=space;
+      } else if(used+1<lines && rest<=2 && last>2){
+        last=back(s,back(s,last));
+      } else if(closing(s+last) && last>1){
+        last=back(s,last);
+      }
+    }
+    if(used+1==lines && s[last]){
+      fit_font(font,s,width,line);
+      /* "word …" reads as a stray gap: keep the ellipsis against the last word. */
+      size_t n=strlen(line);
+      if(n>=4 && !strcmp(line+n-3,"…")){
+        size_t end=n-3;
+        while(end && line[end-1]==' '){
+          end--;
+        }
+        if(end<n-3){
+          strcpy(line+end,"…");
+        }
+      }
+    } else {
+      memcpy(line,s,last);
+      line[last]=0;
+    }
+    display_font_run(c,font,x,base+used*step,line,DISPLAY_LEFT,color);
+    used++;
+    s+=last;
+    while(*s==' '){
+      s++;
+    }
+  }
+  return used;
+}
+static void concept(epd_canvas_t *c,const codepulse_life_concept_t *t){
+  char name[64];
+  snprintf(name,sizeof(name),"概念卡 · %s",t->subject);
+  label_row(c,LIFE_ICON_INLINE16_BOOK,name,t->position,false);
+  int term=hero_width(t->term);
+  hero(c,12,98,t->term,376,K);
+  if(term<0){
+    term=bounds(C16,t->term).advance;
+  }
+  if(t->english[0] && term+16+bounds(C14,t->english).advance<=376){
+    text(c,C14,387,98,t->english,DISPLAY_RIGHT,K);
+  }
+  int lines=flow(c,DISPLAY_TITLE,26,130,361,22,2,t->definition,K);
+  rect(c,12,114,4,22*lines+2,R);
+  if(t->example[0]){
+    int y=130+22*lines+14;
+    rect(c,12,y-15,20,20,K);
+    text(c,C14,22,y,"例",DISPLAY_CENTER,W);
+    flow(c,DISPLAY_TITLE,42,y,345,22,2,t->example,K);
+  }
+  if(t->question[0]){
+    rect(c,12,222,30,30,R);
+    display_font_run(c,DISPLAY_USAGE_TITLE,27,244,"?",DISPLAY_CENTER,W);
+    rect(c,42,222,346,30,K);
+    char question[512];
+    fit(C16,t->question,326,question);
+    text(c,C16,54,243,question,DISPLAY_LEFT,W);
+  }
+}
+static void prompt(epd_canvas_t *c,const codepulse_life_prompt_t *t){
+  label_row(c,LIFE_ICON_INLINE16_BULB,"思考实验 · 一分钟",t->tag,false);
+  if(t->lead[0]){
+    char lead[512];
+    fit(C16,t->lead,376,lead);
+    text(c,C16,12,84,lead,DISPLAY_LEFT,R);
+  }
+  for(unsigned i=0;i<t->line_count;i++){
+    hero(c,12,124+(int)i*40,t->lines[i],376,K);
+  }
+  int y=124+((int)t->line_count-1)*40+26;
+  for(int i=0;i<3;i++){
+    int x=12+i*128;
+    char number[4];
+    snprintf(number,sizeof(number),"%d",i+1);
+    rect(c,x,y,20,20,R);
+    display_font_run(c,DISPLAY_BRAND,x+10,y+15,number,DISPLAY_CENTER,W);
+    for(int dx=x+26;dx<x+116;dx+=4){
+      rect(c,dx,y+18,2,1,K);
+    }
+  }
+  if(t->follow[0]){
+    label(c,C16,12,y+54,t->follow,DISPLAY_LEFT,376);
+  }
+}
+static void hn(epd_canvas_t *c,const codepulse_life_hn_t *h){
+  char right[48]="";
+  if(h->updated[0]){
+    snprintf(right,sizeof(right),"%s 更新",h->updated);
+  }
+  label_row(c,LIFE_ICON_INLINE16_FLAME,"Hacker News · 科技热议",right,false);
+  const codepulse_life_story_t *top=&h->stories[0];
+  rect(c,12,66,28,28,R);
+  display_font_run(c,DISPLAY_USAGE_TITLE,26,87,"1",DISPLAY_CENTER,W);
+  flow(c,DISPLAY_USAGE_TITLE,50,82,337,22,2,top->title,K);
+  char points[24],meta[256];
+  snprintf(points,sizeof(points),"%u 分",(unsigned)top->points);
+  int pw=display_font_width(DISPLAY_BRAND,points);
+  snprintf(meta,sizeof(meta),"%u 评论%s%s%s%s",(unsigned)top->comments,top->site[0]?" · ":"",top->site,top->age[0]?" · ":"",top->age);
+  char clipped[512];
+  fit(C14,meta,337-pw-12,clipped);
+  text(c,C14,50,126,clipped,DISPLAY_LEFT,K);
+  display_font_run(c,DISPLAY_BRAND,387,126,points,DISPLAY_RIGHT,R);
+  for(unsigned i=1;i<h->count;i++){
+    const codepulse_life_story_t *s=&h->stories[i];
+    int y=136+(int)(i-1)*38;
+    hline(c,50,387,y);
+    char number[4];
+    snprintf(number,sizeof(number),"%u",i+1);
+    rect(c,16,y+10,20,20,K);
+    display_font_run(c,DISPLAY_BRAND,26,y+25,number,DISPLAY_CENTER,W);
+    snprintf(points,sizeof(points),"%u 分",(unsigned)s->points);
+    pw=display_font_width(DISPLAY_BRAND,points);
+    fit_font(DISPLAY_TITLE,s->title,337-pw-12,clipped);
+    display_font_run(c,DISPLAY_TITLE,50,y+26,clipped,DISPLAY_LEFT,K);
+    display_font_run(c,DISPLAY_BRAND,387,y+26,points,DISPLAY_RIGHT,K);
+  }
+}
 static bool supported_strings(const char *const *values,unsigned count){
   for(unsigned i=0;i<count;i++){
     if(!display_text_supports(values[i])){
@@ -717,6 +964,26 @@ static bool supported(const codepulse_life_t *life){
     case LIFE_HOLIDAY:{
       const codepulse_life_holiday_t *h=&life->data.holiday;
       return SUPPORT(h->name,h->next_name,h->label);
+    }
+    case LIFE_CONCEPT:{
+      const codepulse_life_concept_t *t=&life->data.concept;
+      return SUPPORT(t->subject,t->position,t->term,t->english,t->definition,t->example,t->question);
+    }
+    case LIFE_PROMPT:{
+      const codepulse_life_prompt_t *t=&life->data.prompt;
+      return t->line_count>=1 && t->line_count<=2 && SUPPORT(t->tag,t->lead,t->lines[0],t->lines[1],t->follow);
+    }
+    case LIFE_HN:{
+      const codepulse_life_hn_t *h=&life->data.hn;
+      if(h->count<1 || h->count>CODEPULSE_LIFE_STORIES || !display_text_supports(h->updated)){
+        return false;
+      }
+      for(unsigned i=0;i<h->count;i++){
+        if(!SUPPORT(h->stories[i].title,h->stories[i].site,h->stories[i].age)){
+          return false;
+        }
+      }
+      return true;
     }
     default:return false;
   }
@@ -763,6 +1030,18 @@ bool life_dashboard_render(epd_canvas_t *c,const codepulse_life_t *life){
       return false;
     }
     holiday(c,&life->data.holiday);
+  } else if(life->kind==LIFE_CONCEPT){
+    if(!life->data.concept.term[0] || !life->data.concept.definition[0]){
+      return false;
+    }
+    concept(c,&life->data.concept);
+  } else if(life->kind==LIFE_PROMPT){
+    prompt(c,&life->data.prompt);
+  } else if(life->kind==LIFE_HN){
+    if(!life->data.hn.stories[0].title[0]){
+      return false;
+    }
+    hn(c,&life->data.hn);
   } else {
     return false;
   }

@@ -35,9 +35,14 @@ for (const file of [
   assert.ok(manifest.sources[file], `Life renderer source omitted from manifest: ${file}`)
 }
 assert.ok(
-  ['Terminus native', 'ZhengGeDianHei', 'Fusion Pixel', 'Noto Sans Bold', 'Unifont'].every((name) =>
-    text(join(desktop, 'THIRD-PARTY-NOTICES.txt')).includes(name),
-  ),
+  [
+    'Terminus native',
+    'ZhengGeDianHei',
+    'Fusion Pixel',
+    'Noto Sans Bold',
+    'Noto Sans SC',
+    'Unifont',
+  ].every((name) => text(join(desktop, 'THIRD-PARTY-NOTICES.txt')).includes(name)),
   'Missing shipped native font attribution',
 )
 assert.equal(sha(bytes(join(desktop, 'renderer.wasm'))), manifest.wasmSha256)

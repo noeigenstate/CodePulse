@@ -181,7 +181,7 @@
     }
   ],
   "iconsSource": "preview/life-icons.json",
-  "iconsSha256": "30b31fbe0b7891d05e133531b35a51ab4bf940ab649dc12c93c753afc40e1c16",
+  "iconsSha256": "7ff2dd50cfe72ef5325749fb379fc1019fe7772af3bd7dfb725a061e83ae79c7",
   "glyphCodes": [
     32,
     33,
@@ -283,10 +283,10 @@
     8211,
     8722
   ],
-  "icons": 37,
-  "iconBytes": 9696,
+  "icons": 40,
+  "iconBytes": 9888,
   "fontBitmapBytes": 7797,
   "fontCodeBytes": 396,
   "fontDescriptorBytes": 2376,
-  "iconDescriptorBytes": 148
+  "iconDescriptorBytes": 160
 }

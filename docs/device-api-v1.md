@@ -295,6 +295,22 @@ If-None-Match: W/"v1-5db1f203"
 
 The unified host uses the retained HUD projection for both preview and LAN status. Optional thread level/unread/groupId and agent quotaSummary fields carry shared display semantics; legacy fields remain compatible. See [the implementation and firmware acceptance contract](WORK-PRESENTATION-HANDOFF.md). Old firmware ignores these fields; displaying their semantics requires an updated production renderer.
 
+From firmware 0.0.32-cards the task screen draws each level in its own colour:
+
+| Level              | Drawn as                                  |
+| ------------------ | ----------------------------------------- |
+| `action` / `fault` | red bar, red detail line, red filled pill |
+| `notice`           | black bar, black filled pill              |
+| `active`           | black-outlined pill                       |
+| `quiet`            | plain text                                |
+
+- One to three tasks use roomy two-line rows. Four to nine tasks use single-line rows with the title, agent and state.
+- Quota appears only in the footer.
+- The header shows only the brand; the "HUD" label is gone.
+- Inversion swaps black and white; red stays red.
+- Red needs a full panel refresh. While a red task is on screen, each change of the task screen is a full refresh.
+  The existing 120-second red-entry cooldown still folds newly arriving red into black.
+
 ### Optional BW inversion (firmware 0.0.24+)
 
 `display.inverted` is an optional boolean, default false. Old devices ignore it;
@@ -541,6 +557,32 @@ The 24-hex projection ID and response revision include the validated life JSON. 
 the 32,000-byte response limit, desktop removes the entire `layout/life` pair first,
 preserves text under its plain ID, then falls back to work only if text cannot fit.
 The feature adds no device command, port, credentials or network fetch on firmware.
+
+### Reading cards (firmware 0.0.32-cards+)
+
+概念卡, 思考实验 and 科技热议 use the same `layout: "life"` envelope with three more
+kinds. They keep `ambient.text`, so older firmware draws the plain text card, and new
+firmware falls back to that text atomically for an invalid object, as for the other kinds.
+Desktop sends each kind only with its own card kind (`concept`, `prompt`, `news`).
+
+| kind      | Fields and limits (code points)                                                                                                                                                                        |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `concept` | `subject` 1–6, `position` ≤9 (e.g. `3 / 24`), `term` 1–6, `english` ≤24, `definition` 1–44, `example` ≤44, `question` ≤20. All keys required; empty optional values are `""`.                          |
+| `prompt`  | `tag` ≤6, `lead` ≤22, `question` an array of 1–2 lines of 1–11 characters, `follow` ≤23.                                                                                                               |
+| `hn`      | `updated` ≤5 (`HH:MM`); `stories` holds 1–4 `{title,points,comments,site,age}`: title 1–120, integer `points`/`comments` 0–999999, `site` ≤32 (host name, `""` when none), `age` ≤8 (e.g. `3 小时前`). |
+
+The concept `term` and the prompt `question` lines are drawn from a native 32px CJK strike:
+Noto Sans SC Regular rendered at 32px with 8x supersampling, a 3/8px outline for a medium
+weight and one 50% coverage threshold (`firmware/scripts/generate-card-hero.py`). It is not
+an enlarged 16px face. It holds only the characters in
+`firmware/fonts/sources/card-hero-charset.txt`, which covers every built-in line
+(`tests/ambient-reading.test.ts` checks this). ASCII punctuation, which `deviceText()` sends
+in place of full-width forms, is drawn with the strike's full-width glyph. A line with any
+other character, or wider than 376px, is drawn in the native 16px face instead.
+
+The Hacker News digest is one card for the four most-voted front-page stories of the last
+24 hours with at least 100 points. Its card id depends only on which stories are in it, so
+moving points refresh the device projection without counting as a new card.
 
 ### 0.0.26：设备展示减频与局部窗口候选
 

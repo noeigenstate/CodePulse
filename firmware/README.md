@@ -4,7 +4,7 @@ ESP32-S3 firmware for the CodePulse desk terminal. This is a normal directory
 in [CodePulse](https://github.com/noeigenstate/CodePulse), not a submodule or
 a separately published repository. No old GitLab account is needed to build it.
 
-当前源码 **0.0.31-font** 使用原生正格/Fusion/Terminus 像素字形及原生大数字，包含结构化元宝生活卡、工作状态、额度、图片/便签、待办、像素宠物、
+当前源码 **0.0.32-cards** 使用原生正格/Fusion/Terminus 像素字形及原生大数字，包含结构化元宝生活卡、概念卡/思考实验/科技热议排版（原生 32px 中文大字）、三色任务列表、工作状态、额度、图片/便签、待办、像素宠物、
 日历与原生单色字体。首次入库完整保留驱动、生产 C 渲染器、字体源、实验和测试的
 目录结构，不改变 GPIO、协议语义或刷新策略。[迁移来源](../docs/FIRMWARE-IMPORT.md)。
 
@@ -46,13 +46,13 @@ python tests/test_bitmap_fonts.py
 | --- | --- |
 | 已有板 | Board1，ESP32-S3-WROOM-1-N16R8，16 MiB flash / 8 MiB octal PSRAM |
 | 屏幕 | legacy WFT0420CZ15，400×300 黑/白/红 |
-| 默认构建 | `0.0.31-font`，PAIR125、窄窗口关闭、音频关闭 |
+| 默认构建 | `0.0.32-cards`，PAIR125、窄窗口关闭、音频关闭 |
 | 已有板的可选配置 | `CODEPULSE_QUIET_PAIR150_TRIAL=ON` 与 `CODEPULSE_QUIET_RECT_TRIAL=ON` |
 | 音频 | 新板参数未定，默认关闭；禁止驱动的单独编译入口见 `scripts/build-audio-check.ps1` |
 | 真实板最新记录 | 2026-10-30 已刷 **0.0.28-desk-region-pair150**，写入校验、开机、Wi-Fi、桌面连接通过 |
 
 0.0.29 尚未在本次迁移中刷入；不能用 0.0.28 的回执证明新字体/日历实机通过。
-0.0.31-font 本机只做 native/Wasm 和 host 验证；本机无 ESP-IDF，未执行 ESP32 编译/链接、刷机或设备验证。原生字体、完整回退清单与预算见 [fonts README](fonts/README.md)。
+0.0.31-font 与 0.0.32-cards 本机只做 native/Wasm 和 host 验证；本机无 ESP-IDF，未执行 ESP32 编译/链接、刷机或设备验证。原生字体、完整回退清单与预算见 [fonts README](fonts/README.md)。
 [life 布局与逐卡软件验证记录](../docs/YUANBAO-LIFE-2026-11-03.md)包含协议、像素差异、许可及内存估算。
 残影、红色全刷效果和新板音频仍需各自实测。默认构建不等于每块旧板正在使用的
 PAIR150/region 配置；更新已有设备时先核对版本、分区和实物板型。

@@ -1,0 +1,22 @@
+{
+  "firmwareVersion": "0.0.32-cards",
+  "design": "reading cards approved 2026-11-04; native 32px Noto Sans SC strike",
+  "pixels": {
+    "concept": {
+      "black": "3b4ac0e01b1abc2c30fda104812a5b8181209abee7c38a805fdb89ef60826947",
+      "red": "55a23fa5528710b510acefd78de8772576bf8cfff64d5cadf8bb17678a7cd589"
+    },
+    "concept-long": {
+      "black": "5a7da7b15142cafd0e9303b5e9f97624d1f444e4b7ac507d3e1cdbff5ba66637",
+      "red": "10de8758cdf419fb5a2f57f7fa32aa96cfa6a23145148038769c569e62123e53"
+    },
+    "prompt": {
+      "black": "5448f99a426c7994676e985662cd1eb296f1a01c28ef607f52a11dfe5b1ba164",
+      "red": "5adf955af3b6845991cc7ee7cf184b41a51faf41de2c0e1e7c43c733c282c64d"
+    },
+    "hn": {
+      "black": "0cea77afaa132c4db77b411e0729feb6e0f686ab7da75507615ad79c21b274fb",
+      "red": "83498619e4e50c8168abf7d5bb78cd868e6d9a7abbd3e737cd07de7dcbb3c421"
+    }
+  }
+}

@@ -36,7 +36,7 @@ Pipeline in `packPicture` (`ambient-image.ts`), in this order:
 
 The user prefers clean, high-contrast results over "photographic" ones.
 
-- **CLAHE local equalisation + Floyd–Steinberg + XDoG outlines** (bench `v3`). It scored best on the detail metric
+- **CLAHE local equalization + Floyd–Steinberg + XDoG outlines** (bench `v3`). It scored best on the detail metric
   (0.772 vs 0.714) but looked grey and grainy; the user picked A over it. Don't trust the metric over the user's eye.
 - **Lighter target (median → 0.58) + outlines** (`v5`). Not preferred either.
 - **Widening red to hue ≤ 22–28°** (`a4`, `v4`). Skin and warm-lit faces get red dots. A warm subject (a red panda)

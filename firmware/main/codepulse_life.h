@@ -3,8 +3,10 @@
 #include <stdint.h>
 #define CODEPULSE_LIFE_VERSION 1
 #define CODEPULSE_LIFE_HEADLINES 4
+#define CODEPULSE_LIFE_STORIES 4
 typedef enum {
-  LIFE_NONE, LIFE_WEATHER, LIFE_GOLD, LIFE_STOCK, LIFE_TOOL, LIFE_NEWS, LIFE_HOLIDAY
+  LIFE_NONE, LIFE_WEATHER, LIFE_GOLD, LIFE_STOCK, LIFE_TOOL, LIFE_NEWS, LIFE_HOLIDAY,
+  LIFE_CONCEPT, LIFE_PROMPT, LIFE_HN
 }
 codepulse_life_kind_t;
 typedef enum {
@@ -60,6 +62,27 @@ typedef struct {
   codepulse_life_date_t next, start, end;
 }
 codepulse_life_holiday_t;
+/* Reading cards (0.0.32-cards): built-in concepts and prompts, and the Hacker News digest. */
+typedef struct {
+  char subject[25], position[37], term[25], english[97], definition[177], example[177], question[81];
+}
+codepulse_life_concept_t;
+typedef struct {
+  uint8_t line_count;
+  char tag[25], lead[89], lines[2][45], follow[93];
+}
+codepulse_life_prompt_t;
+typedef struct {
+  uint32_t points, comments;
+  char title[481], site[129], age[33];
+}
+codepulse_life_story_t;
+typedef struct {
+  uint8_t count;
+  char updated[21];
+  codepulse_life_story_t stories[CODEPULSE_LIFE_STORIES];
+}
+codepulse_life_hn_t;
 typedef struct {
   uint8_t version;
   codepulse_life_kind_t kind;
@@ -70,6 +93,9 @@ typedef struct {
     codepulse_life_tool_t tool;
     codepulse_life_news_t news;
     codepulse_life_holiday_t holiday;
+    codepulse_life_concept_t concept;
+    codepulse_life_prompt_t prompt;
+    codepulse_life_hn_t hn;
   }
   data;
 }

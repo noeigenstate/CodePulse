@@ -34,5 +34,12 @@ test('tech source requests a bounded high-signal front page and uses a safe sour
     }
   })
   assert.equal(cards.length, 1)
-  assert.equal(cards[0]!.url, 'https://news.ycombinator.com/item?id=123')
+  assert.equal(cards[0]!.url, 'https://news.ycombinator.com/')
+  assert.equal(cards[0]!.life?.kind, 'hn')
+  if (cards[0]!.life?.kind === 'hn')
+    assert.deepEqual(
+      cards[0]!.life.stories.map((s) => s.site),
+      [''],
+      'a script URL gives no site name',
+    )
 })

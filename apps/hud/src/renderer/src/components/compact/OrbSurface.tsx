@@ -138,6 +138,8 @@ export function OrbSurface({
       if (moved <= DRAG_THRESHOLD) return
       current.dragging = true
       suppressClick.current = true
+      // The list's height cap depends on where the orb is, so it closes when the orb moves.
+      if (open) onToggle()
       hit.hold.current = true
       void bridge.drag('start')
     }

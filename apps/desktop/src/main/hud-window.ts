@@ -321,7 +321,9 @@ export function hudAlertKeys(
         agent.state,
         ...(agent.state === TurnState.WAITING_PERMISSION ||
         agent.state === TurnState.WAITING_USER_INPUT
-          ? [agent.externalTurnId ?? '', agent.toolName ?? '', agent.activity ?? '']
+          ? // One prompt can arrive as two hooks with different tool and text. The next
+            // request in a turn leaves this state first, so it still fires again.
+            [agent.externalTurnId ?? '']
           : [timestamp]),
       ]),
     )

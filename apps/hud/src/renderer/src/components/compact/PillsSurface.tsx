@@ -74,10 +74,9 @@ export function PillsSurface({
   const [choice, setChoice] = useState<Choice>()
   const folded = choice?.auto === autoId ? choice : undefined
   const bigId = folded ? folded.id : autoId
-  // Escape or a lost focus folds whatever is open.
+  // Escape or a lost focus folds a pill the user opened; an alert keeps its card, as everywhere.
   useEffect(() => {
-    if (collapseTick > 0) setChoice({ auto: autoId, id: null })
-    // Only a new collapse request matters; a changing alert already resets the choice.
+    if (collapseTick > 0) setChoice((current) => (current?.id ? undefined : current))
   }, [collapseTick])
 
   const toggle = (id: string): void => setChoice({ auto: autoId, id: bigId === id ? null : id })

@@ -296,8 +296,15 @@ async function verifyHudStyles(
     status(Date.now(), TurnState.WAITING_PERMISSION, Date.now(), {
       externalTurnId: 'next-waiting-turn',
       toolName: 'Read',
+      activity: 'Same prompt, second hook',
     })
-    assert.equal(hud.isVisible(), true, 'a new waiting tool reveals')
+    assert.equal(hud.isVisible(), false, 'a second hook for one prompt cannot reopen the HUD')
+    status(Date.now(), TurnState.THINKING, Date.now(), { externalTurnId: 'next-waiting-turn' })
+    status(Date.now(), TurnState.WAITING_PERMISSION, Date.now(), {
+      externalTurnId: 'next-waiting-turn',
+      toolName: 'Read',
+    })
+    assert.equal(hud.isVisible(), true, 'the next request in a turn reveals')
     hud.hide()
     const realNow = Date.now
     const later = realNow() + 61_000
@@ -328,7 +335,9 @@ async function verifyHudStyles(
       await invoke(win, "dismissProjectCard('codex','F:/fixture/hud-alert','hud-alert-fixture')"),
       true,
     )
-    fixture.agents = [{ ...fixture.agents[0]!, toolName: 'Write', lastEventAt: realNow() }]
+    fixture.agents = [
+      { ...fixture.agents[0]!, externalTurnId: 'after-dismiss', lastEventAt: realNow() },
+    ]
     hud.broadcast('codepulse:status', fixture)
     assert.equal(
       hud.isVisible(),

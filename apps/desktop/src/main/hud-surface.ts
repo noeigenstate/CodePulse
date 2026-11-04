@@ -308,6 +308,8 @@ export class HudSurface {
     window.webContents.on('did-finish-load', () => {
       if (this.window !== window || window.isDestroyed()) return
       this.loaded = true
+      // A reloaded renderer can never finish a drag it started before the reload.
+      this.drag = undefined
       this.syncSettings(this.latestSettings)
       this.sendStage()
       this.present()

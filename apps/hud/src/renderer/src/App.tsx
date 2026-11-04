@@ -278,10 +278,13 @@ export function App(): JSX.Element {
     [pushHudPatch, updateDashboardSettings],
   )
 
+  const opacityPush = useRef<number>()
   const setHudOpacity = useCallback(
     (hudOpacity: number): void => {
       updateDashboardSettings((current) => ({ ...current, hudOpacity }))
-      pushHudPatch({ hudOpacity })
+      // A slider drag sends many values; an injected older one must not pull the thumb back.
+      window.clearTimeout(opacityPush.current)
+      opacityPush.current = window.setTimeout(() => pushHudPatch({ hudOpacity }), 150)
     },
     [pushHudPatch, updateDashboardSettings],
   )

@@ -181,13 +181,14 @@ for (const eventType of ['permission_request', 'user_input_required'] as const) 
       assert.equal(next.state, waiting.state)
       assert.deepEqual(hudAlertKeys([next], tools, now), before)
     }
-    for (const patch of [
-      { externalTurnId: 'turn-two' },
-      { toolName: 'Read' },
-      { activity: 'Request something else' },
-    ]) {
-      assert.notDeepEqual(hudAlertKeys([{ ...waiting, ...patch }], tools, now), before)
+    // PermissionRequest and permission_prompt describe one prompt with different tool and text.
+    for (const patch of [{ toolName: undefined }, { activity: 'Claude needs your permission' }]) {
+      assert.deepEqual(hudAlertKeys([{ ...waiting, ...patch }], tools, now), before)
     }
+    assert.notDeepEqual(
+      hudAlertKeys([{ ...waiting, externalTurnId: 'turn-two' }], tools, now),
+      before,
+    )
   })
 }
 

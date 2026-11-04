@@ -53,7 +53,7 @@
     "main/life_assets.generated.h": "4c5551197324b51b9809a8b3ab55e0c92541878b1e7677f1c9d660e1017e6b5f",
     "main/life_dashboard.c": "5f6b70dc2b12d0fb4c31c7dc08a9b287f49e3aae44657b0315350d0bae11df4d",
     "main/life_dashboard.h": "f07b25635567ba7e840a53def31991a37afc95fd15eb381fe80174e0f0e901cf",
-    "main/quiet_dashboard.c": "ec24db6ae658368221c516d02e7ac05552e19931f0ddd77757ac4c6289ab8023",
+    "main/quiet_dashboard.c": "ac4e21b60a93abcba8616381f95fb8447e044513c566ea4dfa6a5ceadbf08cac",
     "main/quiet_dashboard.h": "f8c2e279b91177edc9e5bdf3db30e7125f29fdacf8984c479fd0279fe205c448",
     "main/quiet_lut.h": "5d64b674b61d3bddfa37a9db1e71be793ef10a9251056c6fa74148ef1b57435f",
     "main/quiet_profile.h": "70eca7dd70c80b4406f817f6be6f4040092ebe4f8183161a6714f96cbae9fa48",
@@ -81,5 +81,5 @@
     "tests/vendor/miniz/miniz_tinfl.c": "9b7edc1fab708166e10f5e90a618a91c95a91496c4692e38160fdae810c1149a",
     "tests/vendor/miniz/miniz_tinfl.h": "040aad2d9ca23c487652c150277d950be12e72c5453ae1f7c6713ed2efd16b4e"
   },
-  "wasmSha256": "c052b1eae1b8e97a1fa064d36a7f649fc61204a5e754ee63d1322beff87fc69a"
+  "wasmSha256": "f2bbaad243fdd3bdd62f6c6f45781bbe5abf5daf76e459a6ca5d736515d55325"
 }

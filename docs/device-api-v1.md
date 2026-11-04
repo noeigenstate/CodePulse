@@ -295,6 +295,22 @@ If-None-Match: W/"v1-5db1f203"
 
 The unified host uses the retained HUD projection for both preview and LAN status. Optional thread level/unread/groupId and agent quotaSummary fields carry shared display semantics; legacy fields remain compatible. See [the implementation and firmware acceptance contract](WORK-PRESENTATION-HANDOFF.md). Old firmware ignores these fields; displaying their semantics requires an updated production renderer.
 
+From firmware 0.0.32-cards the task screen draws each level in its own colour:
+
+| Level              | Drawn as                                  |
+| ------------------ | ----------------------------------------- |
+| `action` / `fault` | red bar, red detail line, red filled pill |
+| `notice`           | black bar, black filled pill              |
+| `active`           | black-outlined pill                       |
+| `quiet`            | plain text                                |
+
+- One to three tasks use roomy two-line rows. Four to nine tasks use single-line rows with the title, agent and state.
+- Quota appears only in the footer.
+- The header shows only the brand; the "HUD" label is gone.
+- Inversion swaps black and white; red stays red.
+- Red needs a full panel refresh. While a red task is on screen, each change of the task screen is a full refresh.
+  The existing 120-second red-entry cooldown still folds newly arriving red into black.
+
 ### Optional BW inversion (firmware 0.0.24+)
 
 `display.inverted` is an optional boolean, default false. Old devices ignore it;

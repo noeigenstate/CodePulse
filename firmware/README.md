@@ -4,7 +4,7 @@ ESP32-S3 firmware for the CodePulse desk terminal. This is a normal directory
 in [CodePulse](https://github.com/noeigenstate/CodePulse), not a submodule or
 a separately published repository. No old GitLab account is needed to build it.
 
-当前源码 **0.0.32-cards** 使用原生正格/Fusion/Terminus 像素字形及原生大数字，包含结构化元宝生活卡、概念卡/思考实验/科技热议排版（原生 32px 中文大字）、工作状态、额度、图片/便签、待办、像素宠物、
+当前源码 **0.0.32-cards** 使用原生正格/Fusion/Terminus 像素字形及原生大数字，包含结构化元宝生活卡、概念卡/思考实验/科技热议排版（原生 32px 中文大字）、三色任务列表、工作状态、额度、图片/便签、待办、像素宠物、
 日历与原生单色字体。首次入库完整保留驱动、生产 C 渲染器、字体源、实验和测试的
 目录结构，不改变 GPIO、协议语义或刷新策略。[迁移来源](../docs/FIRMWARE-IMPORT.md)。
 

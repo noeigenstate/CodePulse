@@ -106,7 +106,7 @@ is just as useful without the hardware:
 | Surface                 | What it does                                                                                |
 | ----------------------- | ------------------------------------------------------------------------------------------- |
 | **Desktop console**     | Control, multimedia, usage and settings in one window. Focus mode keeps only the dashboard. |
-| **HUD**                 | A compact floating window with task cards in a stable order and read controls.              |
+| **HUD**                 | An always-on-top floating window in five styles: panel, island, pills, edge drawer or orb.  |
 | **E-paper workbench**   | Previews the 400×300 device screen pixel for pixel and saves what the display shows.        |
 | **Tasks and assistant** | Local todos and reminders that can also appear on the e-paper display.                      |
 

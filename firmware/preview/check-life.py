@@ -155,7 +155,35 @@ def compare(output,record=False):
     return results
 
 
+READING={'concept':'book','concept-long':'book','prompt':'bulb','hn':'flame'}
+
+
+def reading(output,record=False):
+    """0.0.32-cards reading layouts: shared chrome, label row and icon, frozen planes."""
+    black=(0,0,0);white=(255,255,255);icons=json.loads((Path(__file__).parent/'life-icons.json').read_text(encoding='utf-8'))
+    sha=lambda path:hashlib.sha256(path.read_bytes()).hexdigest();frozen={}
+    for name,icon_name in READING.items():
+        b=(output/(name+'.black.bin')).read_bytes();r=(output/(name+'.red.bin')).read_bytes()
+        if any(x|y!=255 for x,y in zip(b,r)):raise ValueError(name+': black/red overlap')
+        pixels=[RED if not(r[i//8]&(128>>(i%8))) else black if not(b[i//8]&(128>>(i%8))) else white for i in range(120000)]
+        for y in (30,58,263):
+            if any(pixels[y*400+x]!=black for x in range(12,388)):raise ValueError(name+': separator '+str(y))
+        for row,line in enumerate(icons['inline16'][icon_name]):
+            for col,p in enumerate(line):
+                if p!='.' and pixels[(38+row)*400+12+col]!=(black if p=='#' else RED if p=='R' else white):raise ValueError(name+': icon')
+        if not any(p==RED for p in pixels[31*400:263*400]):raise ValueError(name+': no red accent')
+        png(output/(name+'.png'),pixels)
+        frozen[name]={'black':sha(output/(name+'.black.bin')),'red':sha(output/(name+'.red.bin'))}
+    path=Path(__file__).resolve().parent/'baselines/0.0.32-cards-reading.json'
+    baseline={'firmwareVersion':'0.0.32-cards','design':'reading cards approved 2026-11-04; native 32px Noto Sans SC strike','pixels':frozen}
+    if record:path.write_text(json.dumps(baseline,indent=2)+'\n',encoding='utf-8')
+    elif not path.exists():raise SystemExit('Missing reading-card baseline; verify pixels then use --update-reading once')
+    elif json.loads(path.read_text(encoding='utf-8'))!=baseline:raise SystemExit('Frozen reading-card pixels changed')
+    print('PASS: reading cards keep chrome, icons, red accents and frozen pixels')
+
+
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('output',type=Path)
     parser.add_argument('--update',action='store_true',help='Explicit font-grid baseline re-record after review')
-    args=parser.parse_args();compare(args.output,args.update)
+    parser.add_argument('--update-reading',action='store_true',help='Record the reading-card baseline after review')
+    args=parser.parse_args();compare(args.output,args.update);reading(args.output,args.update_reading)

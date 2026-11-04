@@ -542,6 +542,32 @@ the 32,000-byte response limit, desktop removes the entire `layout/life` pair fi
 preserves text under its plain ID, then falls back to work only if text cannot fit.
 The feature adds no device command, port, credentials or network fetch on firmware.
 
+### Reading cards (firmware 0.0.32-cards+)
+
+概念卡, 思考实验 and 科技热议 use the same `layout: "life"` envelope with three more
+kinds. They keep `ambient.text`, so older firmware draws the plain text card, and new
+firmware falls back to that text atomically for an invalid object, as for the other kinds.
+Desktop sends each kind only with its own card kind (`concept`, `prompt`, `news`).
+
+| kind      | Fields and limits (code points)                                                                                                                                                                        |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `concept` | `subject` 1–6, `position` ≤9 (e.g. `3 / 24`), `term` 1–6, `english` ≤24, `definition` 1–44, `example` ≤44, `question` ≤20. All keys required; empty optional values are `""`.                          |
+| `prompt`  | `tag` ≤6, `lead` ≤22, `question` an array of 1–2 lines of 1–11 characters, `follow` ≤23.                                                                                                               |
+| `hn`      | `updated` ≤5 (`HH:MM`); `stories` holds 1–4 `{title,points,comments,site,age}`: title 1–120, integer `points`/`comments` 0–999999, `site` ≤32 (host name, `""` when none), `age` ≤8 (e.g. `3 小时前`). |
+
+The concept `term` and the prompt `question` lines are drawn from a native 32px CJK strike:
+Noto Sans SC Regular rendered at 32px with 8x supersampling, a 3/8px outline for a medium
+weight and one 50% coverage threshold (`firmware/scripts/generate-card-hero.py`). It is not
+an enlarged 16px face. It holds only the characters in
+`firmware/fonts/sources/card-hero-charset.txt`, which covers every built-in line
+(`tests/ambient-reading.test.ts` checks this). ASCII punctuation, which `deviceText()` sends
+in place of full-width forms, is drawn with the strike's full-width glyph. A line with any
+other character, or wider than 376px, is drawn in the native 16px face instead.
+
+The Hacker News digest is one card for the four most-voted front-page stories of the last
+24 hours with at least 100 points. Its card id depends only on which stories are in it, so
+moving points refresh the device projection without counting as a new card.
+
 ### 0.0.26：设备展示减频与局部窗口候选
 
 仍读取同一 v1 快照，不改变桌面/HUD 的任务、已读、保留或顺序语义。

@@ -56,7 +56,7 @@ def sharpen(x, amount=1.2, sigma=1.2):
 
 
 def clahe(x, tiles=(3, 6), clip=2.5, bins=256):
-    """Contrast-limited adaptive histogram equalisation with bilinear blending of tile maps."""
+    """Contrast-limited adaptive histogram equalization with bilinear blending of tile maps."""
     h, w = x.shape
     ty, tx = tiles
     maps = np.zeros((ty, tx, bins), np.float32)
@@ -167,7 +167,7 @@ def v2(rgb, L, red=True):
 
 
 def v3(rgb, L, red=True):
-    """CLAHE local equalisation blended 60/40 with v1 tone, Floyd-Steinberg with clamped error, outlines."""
+    """CLAHE local equalization blended 60/40 with v1 tone, Floyd-Steinberg with clamped error, outlines."""
     base = gamma_mid(stretch(L))
     x = np.clip(0.6 * clahe(base) + 0.4 * base, 0, 1)
     x = sharpen(x, 0.8)

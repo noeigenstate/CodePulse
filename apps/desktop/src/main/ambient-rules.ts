@@ -104,16 +104,23 @@ export function contentKey(card: AmbientCard): string {
 export function deviceCard(
   card: AmbientCard & Pick<DeviceAmbientCard, 'manual'>,
 ): DeviceAmbientCard {
+  // Reading cards reuse the life layout with their own kinds; old firmware shows the text.
+  const reading = { concept: 'concept', prompt: 'prompt', news: 'hn' } as const
   const candidate =
     card.layout === 'life' &&
     !card.imageHex &&
     !card.items &&
     !card.calendar &&
-    (card.kind === 'life' || card.kind === 'search')
+    (card.kind === 'life' || card.kind === 'search' || card.kind in reading)
       ? deviceLife(card.life)
       : undefined
-  const life =
-    candidate?.kind === (card.topic === 'tools' ? 'tool' : card.topic) ? candidate : undefined
+  const expected =
+    card.kind in reading
+      ? reading[card.kind as keyof typeof reading]
+      : card.topic === 'tools'
+        ? 'tool'
+        : card.topic
+  const life = candidate?.kind === expected ? candidate : undefined
   const utf8 = (s: string, bytes: number) => {
     let out = ''
     for (const c of s) {

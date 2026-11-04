@@ -81,7 +81,48 @@ export interface LifeHoliday extends LifeBase {
   range?: { name: string; start: string; end: string; days: number }
   label: string
 }
-export type DeviceLife = LifeWeather | LifeGold | LifeStock | LifeTool | LifeNews | LifeHoliday
+/** Reading cards (firmware 0.0.32-cards+): built-in concept explanation. */
+export interface LifeConcept extends LifeBase {
+  kind: 'concept'
+  subject: string
+  position: string
+  term: string
+  english: string
+  definition: string
+  example: string
+  question: string
+}
+/** Built-in one-minute prompt; `question` lines are drawn at 32px. */
+export interface LifePrompt extends LifeBase {
+  kind: 'prompt'
+  tag: string
+  lead: string
+  question: [string] | [string, string]
+  follow: string
+}
+export interface LifeHnStory {
+  title: string
+  points: number
+  comments: number
+  site: string
+  age: string
+}
+/** Hacker News front-page digest, one to four stories. */
+export interface LifeHn extends LifeBase {
+  kind: 'hn'
+  updated: string
+  stories: LifeHnStory[]
+}
+export type DeviceLife =
+  | LifeWeather
+  | LifeGold
+  | LifeStock
+  | LifeTool
+  | LifeNews
+  | LifeHoliday
+  | LifeConcept
+  | LifePrompt
+  | LifeHn
 
 const object = (v: unknown): Record<string, unknown> =>
   v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
@@ -235,6 +276,52 @@ export function normalizeDeviceLife(value: unknown): DeviceLife | undefined {
       }
       break
     }
+    case 'concept':
+      if (
+        !strings(
+          {
+            subject: 6,
+            position: 9,
+            term: 6,
+            english: 24,
+            definition: 44,
+            example: 44,
+            question: 20,
+          },
+          ['subject', 'term', 'definition'],
+        )
+      )
+        return undefined
+      break
+    case 'prompt':
+      if (
+        !strings({ tag: 6, lead: 22, follow: 23 }) ||
+        !Array.isArray(p.question) ||
+        p.question.length < 1 ||
+        p.question.length > 2 ||
+        !p.question.every((line) => string(line, 11, true))
+      )
+        return undefined
+      break
+    case 'hn':
+      if (
+        !string(p.updated, 5) ||
+        !Array.isArray(p.stories) ||
+        p.stories.length < 1 ||
+        p.stories.length > 4 ||
+        !p.stories.every((item) => {
+          const s = object(item)
+          return (
+            string(s.title, 120, true) &&
+            string(s.site, 32) &&
+            string(s.age, 8) &&
+            integer(s.points, 0, 999999) &&
+            integer(s.comments, 0, 999999)
+          )
+        })
+      )
+        return undefined
+      break
     default:
       return undefined
   }
@@ -284,6 +371,9 @@ export function normalizeDeviceLife(value: unknown): DeviceLife | undefined {
     tool: ['icon', 'name', 'date', 'source', 'command', 'title', 'summary'],
     news: ['headlines'],
     holiday: ['year', 'state', 'next', 'range', 'label'],
+    concept: ['subject', 'position', 'term', 'english', 'definition', 'example', 'question'],
+    prompt: ['tag', 'lead', 'question', 'follow'],
+    hn: ['updated', 'stories'],
   }
   const clean = Object.fromEntries(
     ['v', 'kind', ...keys[p.kind as string]!]
@@ -298,6 +388,15 @@ export function normalizeDeviceLife(value: unknown): DeviceLife | undefined {
     clean.headlines = (p.headlines as Record<string, unknown>[]).map((h) => ({
       title: h.title,
       source: h.source,
+    }))
+  if (p.kind === 'prompt') clean.question = [...(p.question as string[])]
+  if (p.kind === 'hn')
+    clean.stories = (p.stories as Record<string, unknown>[]).map((s) => ({
+      title: s.title,
+      points: s.points,
+      comments: s.comments,
+      site: s.site,
+      age: s.age,
     }))
   if (p.kind === 'holiday') {
     const n = object(p.next)

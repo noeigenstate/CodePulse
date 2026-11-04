@@ -1,0 +1,80 @@
+{
+  "protocolVersion": 1,
+  "revision": "life-B",
+  "mainState": "idle",
+  "agents": [
+    {
+      "type": "claude_code",
+      "state": "idle",
+      "quotas": [],
+      "quotaSummary": {
+        "fiveHourUsedPercent": 17,
+        "weeklyUsedPercent": 2
+      }
+    },
+    {
+      "type": "codex",
+      "state": "idle",
+      "quotas": [],
+      "quotaSummary": {
+        "fiveHourUsedPercent": null,
+        "weeklyUsedPercent": 87
+      }
+    }
+  ],
+  "display": {
+    "version": 1,
+    "mode": "hud",
+    "metric": "remaining",
+    "showQuota": true,
+    "showEnvironment": true,
+    "agents": [
+      "claude_code",
+      "codex"
+    ],
+    "page": 0
+  },
+  "threadTotal": 0,
+  "threads": [],
+  "ambient": {
+    "id": "life-hn",
+    "source": "元宝搜索 · 示例",
+    "text": "hn · 兼容旧固件的文字内容（合成排版样例）",
+    "layout": "life",
+    "life": {
+      "v": 1,
+      "kind": "hn",
+      "updated": "09:30",
+      "stories": [
+        {
+          "title": "Show HN: A tiny e-paper dashboard that runs for a month on one charge (example)",
+          "points": 412,
+          "comments": 238,
+          "site": "example.com",
+          "age": "1 小时前"
+        },
+        {
+          "title": "Example: a programming language edition is now stable",
+          "points": 298,
+          "comments": 120,
+          "site": "",
+          "age": ""
+        },
+        {
+          "title": "Example: why an embedded database compiles queries to bytecode",
+          "points": 265,
+          "comments": 98,
+          "site": "",
+          "age": ""
+        },
+        {
+          "title": "Example: the hidden cost of always-on agents",
+          "points": 187,
+          "comments": 64,
+          "site": "",
+          "age": ""
+        }
+      ]
+    }
+  }
+}

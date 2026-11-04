@@ -140,6 +140,72 @@ export const LIFE_FIXTURES = {
     label: '示例',
     range: { name: '元旦', start: '2027-01-01', end: '2027-01-03', days: 3 },
   },
+  concept: {
+    v: 1,
+    kind: 'concept',
+    subject: '经济学',
+    position: '1 / 24',
+    term: '机会成本',
+    english: 'Opportunity cost',
+    definition: '选择一件事时，放弃的最佳替代方案的价值。',
+    example: '今晚多写一小时代码，成本也包括少掉的一小时休息。',
+    question: '你放弃的最好选项是什么？',
+  },
+  'concept-long': {
+    v: 1,
+    kind: 'concept',
+    subject: '物理学',
+    position: '10 / 24',
+    term: '状态函数',
+    english: 'State function',
+    definition: '只由系统当前状态决定的量，与经过的路径无关；热和功却与过程有关。',
+    example: '从山脚到山顶，海拔差是固定的，走过的路程却取决于路线。',
+    question: '你在意的是结果还是过程？',
+  },
+  prompt: {
+    v: 1,
+    kind: 'prompt',
+    tag: '反向思考',
+    lead: '换个方向想：',
+    // As the desktop sends it: full-width punctuation folded to ASCII.
+    question: ['想让项目变得难用,', '你会加哪三个设计?'],
+    follow: '再看看：其中有没有一个已经存在？',
+  },
+  hn: {
+    v: 1,
+    kind: 'hn',
+    updated: '09:30',
+    stories: [
+      {
+        title: 'Show HN: A tiny e-paper dashboard that runs for a month on one charge (example)',
+        points: 412,
+        comments: 238,
+        site: 'example.com',
+        age: '1 小时前',
+      },
+      {
+        title: 'Example: a programming language edition is now stable',
+        points: 298,
+        comments: 120,
+        site: '',
+        age: '',
+      },
+      {
+        title: 'Example: why an embedded database compiles queries to bytecode',
+        points: 265,
+        comments: 98,
+        site: '',
+        age: '',
+      },
+      {
+        title: 'Example: the hidden cost of always-on agents',
+        points: 187,
+        comments: 64,
+        site: '',
+        age: '',
+      },
+    ],
+  },
 }
 if (process.argv.includes('--write') || process.argv.includes('--check')) {
   for (const [name, life] of Object.entries(LIFE_FIXTURES)) {
@@ -158,5 +224,5 @@ if (process.argv.includes('--write') || process.argv.includes('--check')) {
     if (process.argv.includes('--write')) writeFileSync(path, text)
     else if (readFileSync(path, 'utf8') !== text) throw Error('Stale life fixture: ' + name)
   }
-  console.log('Verified/generated ten synthetic life fixtures')
+  console.log(`Verified/generated ${Object.keys(LIFE_FIXTURES).length} synthetic life fixtures`)
 }

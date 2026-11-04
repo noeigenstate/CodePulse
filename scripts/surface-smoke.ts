@@ -8,6 +8,7 @@ import {
   frameToRgba,
 } from '../apps/desktop/src/renderer/src/device-preview/renderer.mjs'
 import { StatusHub } from '@codepulse/core'
+import { reduce } from '../packages/core/src/state-machine/index.js'
 import {
   DEFAULT_AMBIENT,
   DEFAULT_DEVICE_DISPLAY,
@@ -15,6 +16,7 @@ import {
   normalizeDeviceDisplay,
   normalizeShellPreferences,
   type DeviceDisplayConfig,
+  type AgentRuntimeState,
   type StatusSnapshot,
 } from '@codepulse/shared'
 import { ProductShell, shellPreferenceStore } from '../apps/desktop/src/main/product-shell.js'
@@ -25,7 +27,7 @@ import { createAmbientRuntime } from '../apps/desktop/src/main/ambient-runtime.j
 import { registerAmbientIpc } from '../apps/desktop/src/main/ambient-ipc.js'
 import { withAmbient } from '../apps/desktop/src/main/ambient-rules.js'
 import { HudSurface } from '../apps/desktop/src/main/hud-surface.js'
-import { hudOrbPositionForStage } from '../apps/desktop/src/main/hud-window.js'
+import { hudOrbPositionForStage, hudStageForStyle } from '../apps/desktop/src/main/hud-window.js'
 import { createDeviceDisplayProjector } from '../apps/desktop/src/main/device-display-projection.js'
 import { AssistantStore } from '../apps/desktop/src/main/assistant-store.js'
 import { AssistantService } from '../apps/desktop/src/main/assistant-service.js'
@@ -168,7 +170,13 @@ async function verifyHudStyles(
   await bridge.loadURL('about:blank')
   const invoke = (win: BrowserWindow, call: string) =>
     win.webContents.executeJavaScript(`window.codepulse.${call}`)
-  const status = (terminalAt: number, state = TurnState.DONE, lastEventAt = terminalAt) => {
+  const status = (
+    terminalAt: number,
+    state = TurnState.DONE,
+    lastEventAt = terminalAt,
+    patch: Partial<AgentRuntimeState> = {},
+  ) => {
+    const waiting = state === TurnState.WAITING_PERMISSION || state === TurnState.WAITING_USER_INPUT
     fixture = {
       overall: 'idle',
       updatedAt: Date.now(),
@@ -179,11 +187,15 @@ async function verifyHudStyles(
           workspacePath: 'F:/fixture/hud-alert',
           state,
           lastEventAt,
-          terminalAt,
+          terminalAt: waiting ? undefined : terminalAt,
+          externalTurnId: waiting ? 'hud-waiting-turn' : undefined,
+          toolName: waiting ? 'Bash' : undefined,
+          activity: waiting ? 'Request command' : undefined,
           unread: true,
           toolCallCount: 0,
           needPermission: false,
           needUserInput: false,
+          ...patch,
         },
       ],
     }
@@ -235,6 +247,94 @@ async function verifyHudStyles(
     await wait(50)
     assert.equal(inactive, beforeHiddenLoad, 'a HUD hidden during load stays hidden')
     assert.equal(hud.isVisible(), false)
+    status(firstTime + 4, TurnState.WAITING_PERMISSION, firstTime + 4, {
+      externalTurnId: 'waiting-test',
+    })
+    await until(() => hud.isVisible(), 'new waiting turn reveals HUD')
+    hud.hide()
+    for (const internal of [
+      { sessionSync: true, activityRefresh: true },
+      { sessionSync: true },
+      undefined,
+    ]) {
+      fixture.agents = [
+        reduce(fixture.agents[0]!, {
+          id: 'waiting-token',
+          source: 'codex',
+          externalSessionId: 'hud-alert-fixture',
+          eventType: 'token_snapshot',
+          timestamp: Date.now(),
+          internal,
+          token: { accuracy: 'exact', contextUsedPercent: 40 },
+        }).next,
+      ]
+      hud.broadcast('codepulse:status', fixture)
+      assert.equal(
+        hud.isVisible(),
+        false,
+        'token updates cannot reopen an unchanged waiting request',
+      )
+    }
+    fixture.agents = [
+      reduce(fixture.agents[0]!, {
+        id: 'repeat-permission',
+        source: 'codex',
+        externalSessionId: 'hud-alert-fixture',
+        eventType: 'permission_request',
+        toolName: 'Bash',
+        message: 'Request command',
+        timestamp: Date.now(),
+      }).next,
+    ]
+    hud.broadcast('codepulse:status', fixture)
+    assert.equal(hud.isVisible(), false, 'a repeated permission request cannot reopen the HUD')
+    status(Date.now(), TurnState.WAITING_PERMISSION, Date.now(), {
+      externalTurnId: 'next-waiting-turn',
+    })
+    assert.equal(hud.isVisible(), true, 'a new waiting turn reveals')
+    hud.hide()
+    status(Date.now(), TurnState.WAITING_PERMISSION, Date.now(), {
+      externalTurnId: 'next-waiting-turn',
+      toolName: 'Read',
+    })
+    assert.equal(hud.isVisible(), true, 'a new waiting tool reveals')
+    hud.hide()
+    const realNow = Date.now
+    const later = realNow() + 61_000
+    try {
+      Date.now = () => later
+      hud.broadcast('codepulse:status', fixture)
+      fixture.agents = [{ ...fixture.agents[0]!, lastEventAt: later }]
+      hud.broadcast('codepulse:status', fixture)
+      assert.equal(
+        hud.isVisible(),
+        false,
+        'a continuing wait stays seen after 60 seconds and a token bump',
+      )
+    } finally {
+      Date.now = realNow
+    }
+    status(realNow() - 70_000, TurnState.WAITING_PERMISSION, realNow() - 70_000, {
+      externalTurnId: 'old-wait',
+    })
+    fixture.agents = [{ ...fixture.agents[0]!, lastEventAt: realNow() }]
+    hud.broadcast('codepulse:status', fixture)
+    assert.equal(
+      hud.isVisible(),
+      false,
+      'a stale request cannot become new through a later token bump',
+    )
+    assert.equal(
+      await invoke(win, "dismissProjectCard('codex','F:/fixture/hud-alert','hud-alert-fixture')"),
+      true,
+    )
+    fixture.agents = [{ ...fixture.agents[0]!, toolName: 'Write', lastEventAt: realNow() }]
+    hud.broadcast('codepulse:status', fixture)
+    assert.equal(
+      hud.isVisible(),
+      false,
+      'a dismissed card cannot reveal even when its alert key changes',
+    )
     product.setHudSettings({ autoReveal: false, hudStyle: 'panel' })
     hud.open()
     assert.equal(focused, 1, 'explicit open focuses')
@@ -331,11 +431,18 @@ async function verifyHudStyles(
     cursor = { x: area.x + 32 + 12, y: area.y + 32 + 15 }
     await invoke(win, "hudDrag('move')")
     assert.deepEqual(hud.debugState().stage, frozen, 'drag anchors stay frozen during movement')
-    assert.equal(win.getBounds().width, start.width)
-    assert.equal(win.getBounds().height, start.height)
+    assert.ok(
+      Math.abs(win.getBounds().width - start.width) <= 1,
+      'move preserves width within native DIP rounding',
+    )
+    assert.ok(
+      Math.abs(win.getBounds().height - start.height) <= 1,
+      'move preserves height within native DIP rounding',
+    )
+    const moved = win.getBounds()
     for (let move = 0; move < 12; move++) await invoke(win, "hudDrag('move')")
-    assert.equal(win.getBounds().width, start.width, 'repeated moves do not grow the native window')
-    assert.equal(win.getBounds().height, start.height, 'repeated moves keep the native height')
+    assert.equal(win.getBounds().width, moved.width, 'repeated moves do not grow the native window')
+    assert.equal(win.getBounds().height, moved.height, 'repeated moves keep the native height')
     const finalOrb = { x: area.x + 32, y: area.y + area.height - 8 - 56 }
     cursor = { x: finalOrb.x + 12, y: finalOrb.y + 15 }
     order.length = 0
@@ -354,6 +461,7 @@ async function verifyHudStyles(
       finalOrb,
       'orb position is persisted',
     )
+    verifyHudDisplayChanges(hud, product, win)
     win.setBounds = setBounds
     win.setMinimumSize = setMinimumSize
     win.setResizable = setResizable
@@ -369,13 +477,45 @@ async function verifyHudStyles(
       'panel never enables click-through',
     )
     assert.equal(await invoke(win, "hudDrag('start')"), false, 'panel is not orb-draggable')
+    const getBounds = win.getBounds.bind(win),
+      isMinimized = win.isMinimized.bind(win),
+      restore = win.restore.bind(win)
+    let minimized = true
+    win.isMinimized = () => minimized
+    win.getBounds = () =>
+      minimized ? { x: -32000, y: -32000, width: 100, height: 100 } : getBounds()
+    win.restore = () => {
+      order.push('restore')
+      minimized = false
+    }
+    win.setBounds = (...args) => {
+      order.push('bounds')
+      setBounds(...args)
+    }
+    order.length = 0
+    try {
+      hud.open()
+      assert.deepEqual(
+        order,
+        ['restore', 'bounds'],
+        'panel restores before reading or applying bounds',
+      )
+      assert.deepEqual(getBounds(), panelBounds)
+    } finally {
+      win.getBounds = getBounds
+      win.isMinimized = isMinimized
+      win.restore = restore
+      win.setBounds = setBounds
+    }
     writeFileSync(
       join(output, 'hud-styles.json'),
       JSON.stringify(
         {
           passed: true,
           styles: 5,
-          alertScenarios: 8,
+          alertScenarios: 18,
+          displayChanges: true,
+          restoreBeforeBounds: true,
           stageHandshake: true,
           dragEndCursor: true,
           dragMoves: 13,
@@ -397,7 +537,116 @@ async function verifyHudStyles(
   }
 }
 
+function verifyHudDisplayChanges(hud: HudSurface, product: ProductShell, win: BrowserWindow) {
+  const methods = {
+    getAllDisplays: screenApi.getAllDisplays,
+    getPrimaryDisplay: screenApi.getPrimaryDisplay,
+    getDisplayMatching: screenApi.getDisplayMatching,
+    getDisplayNearestPoint: screenApi.getDisplayNearestPoint,
+  }
+  const original = screenApi.getDisplayMatching(win.getBounds())
+  const savedPosition = product.snapshot().hudSettings.orbPosition
+  const area = {
+    ...original.workArea,
+    width: original.workArea.width - 120,
+    height: original.workArea.height - 120,
+  }
+  let display = { ...original, workArea: area }
+  screenApi.getAllDisplays = () => [display]
+  screenApi.getPrimaryDisplay = () => display
+  screenApi.getDisplayMatching = () => display
+  screenApi.getDisplayNearestPoint = () => display
+  try {
+    for (const event of ['display-metrics-changed', 'display-removed'] as const) {
+      if (event === 'display-removed') display = { ...display, id: display.id + 1, bounds: area }
+      screenApi.emit(event, {}, original, ['workArea'])
+      const position = event === 'display-removed' ? undefined : savedPosition
+      const expected = hudStageForStyle('orb', display, position)
+      const actual = win.getBounds()
+      for (const field of ['x', 'y', 'width', 'height'] as const)
+        assert.ok(
+          Math.abs(actual[field] - expected.bounds[field]) <= 1,
+          `${event} recomputes ${field}`,
+        )
+      assert.deepEqual(hud.debugState().stage, expected.stage)
+      assert.deepEqual(
+        product.snapshot().hudSettings.orbPosition,
+        savedPosition,
+        'display changes do not overwrite the saved orb position',
+      )
+    }
+  } finally {
+    Object.assign(screenApi, methods)
+    screenApi.emit('display-metrics-changed', {}, original, ['workArea'])
+  }
+}
+
+async function verifyHudStop(hub: StatusHub, hud: HudSurface, product: ProductShell) {
+  const savedSnapshot = hub.snapshotForPresentation
+  const savedSettings = product.snapshot().hudSettings
+  try {
+    product.setHudSettings({ autoReveal: true, hudStyle: 'island' })
+    const fixture: StatusSnapshot = {
+      overall: 'attention',
+      updatedAt: Date.now(),
+      agents: [
+        {
+          agentType: 'codex',
+          externalSessionId: 'quit-fixture',
+          externalTurnId: 'quit-turn',
+          state: TurnState.WAITING_PERMISSION,
+          lastEventAt: Date.now(),
+          toolCallCount: 0,
+          unread: false,
+          needPermission: true,
+          needUserInput: false,
+        },
+      ],
+    }
+    hub.snapshotForPresentation = () => fixture
+    hud.broadcast('codepulse:status', fixture)
+    const win = BrowserWindow.getAllWindows().find((w) => w.getTitle() === 'CodePulse HUD')!
+    assert.ok(win, 'quit test starts with a loading HUD')
+    const loaded = new Promise<void>((resolve) =>
+      win.webContents.once('did-finish-load', () => resolve()),
+    )
+    const metricsListeners = screenApi.listenerCount('display-metrics-changed')
+    const removedListeners = screenApi.listenerCount('display-removed')
+    hud.stop()
+    hud.stop()
+    assert.equal(screenApi.listenerCount('display-metrics-changed'), metricsListeners - 1)
+    assert.equal(screenApi.listenerCount('display-removed'), removedListeners - 1)
+    await loaded
+    await wait(50)
+    assert.equal(hud.isVisible(), false, 'quit prevents a pending load from revealing')
+    win.destroy()
+    fixture.agents[0]!.externalTurnId = 'new-quit-turn'
+    hud.broadcast('codepulse:status', fixture)
+    hud.open()
+    hud.reveal()
+    screenApi.emit('display-removed', {}, screenApi.getPrimaryDisplay())
+    assert.equal(
+      BrowserWindow.getAllWindows().some((w) => w.getTitle() === 'CodePulse HUD'),
+      false,
+      'quit prevents all HUD creation paths',
+    )
+    writeFileSync(
+      join(output, 'hud-stop.json'),
+      JSON.stringify(
+        { passed: true, pendingLoad: true, noRecreation: true, listenersRemoved: true },
+        null,
+        2,
+      ),
+    )
+  } finally {
+    hub.snapshotForPresentation = savedSnapshot
+    product.setHudSettings({ ...savedSettings, orbPosition: savedSettings.orbPosition })
+  }
+}
+
 async function runHudStyleSmoke() {
+  // Keep the harness alive between window lifecycle cases, as the tray host does.
+  app.on('window-all-closed', () => {})
   const host = resolve(process.env.CODEPULSE_SMOKE_ASSETS ?? 'apps/desktop')
   const root = join(output, 'hud-fixture')
   mkdirSync(join(root, 'renderer'), { recursive: true })
@@ -438,6 +687,7 @@ async function runHudStyleSmoke() {
   )
   hud.syncSettings(product.snapshot().hudSettings)
   await verifyHudStyles(hub, hud, product, preload)
+  await verifyHudStop(hub, hud, product)
   assert.deepEqual(errors, [], 'HUD fixture and preload have no console errors')
   writeFileSync(
     join(output, 'result.json'),

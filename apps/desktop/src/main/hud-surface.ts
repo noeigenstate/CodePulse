@@ -44,7 +44,16 @@ export class HudSurface {
   private revealRequest?: { display: HudDisplay; focus: boolean }
   private drag?: { offset: HudOrbPosition; size: { width: number; height: number } }
   private alertsSeeded = false
-  private seenAlerts = new Map<string, number>()
+  private seenAlerts = new Set<string>()
+  private stopped = false
+  private readonly displayChanged = () => {
+    if (this.stopped || !this.window || this.window.isDestroyed() || this.stage.style === 'panel')
+      return
+    this.drag = undefined
+    const display = this.windowDisplay()
+    if (this.revealRequest) this.revealRequest = { ...this.revealRequest, display }
+    this.applyLayout(display, undefined, true)
+  }
 
   constructor(
     private hub: StatusHub,
@@ -65,6 +74,17 @@ export class HudSurface {
     if (!existsSync(this.renderer) || !existsSync(this.preload)) {
       throw new Error('Build the HUD frontend before starting the unified desktop.')
     }
+    screen.on('display-metrics-changed', this.displayChanged)
+    screen.on('display-removed', this.displayChanged)
+  }
+
+  stop(): void {
+    this.stopped = true
+    this.visible = false
+    this.drag = undefined
+    this.revealRequest = undefined
+    screen.removeListener('display-metrics-changed', this.displayChanged)
+    screen.removeListener('display-removed', this.displayChanged)
   }
 
   owns(contents: WebContents): boolean {
@@ -86,6 +106,7 @@ export class HudSurface {
   }
 
   broadcast(channel: string, payload: unknown): void {
+    if (this.stopped) return
     if (channel === 'codepulse:status') this.observeAlerts()
     const targets = [this.window, this.settings].filter((window) => window && !window.isDestroyed())
     // Bootstrap replays historical execution cwd before native metadata has
@@ -128,6 +149,7 @@ export class HudSurface {
       const window = this.window
       if (
         !window ||
+        this.stopped ||
         window.isDestroyed() ||
         this.stage.style !== 'panel' ||
         window.webContents.id !== event.sender.id ||
@@ -197,6 +219,7 @@ export class HudSurface {
   }
 
   syncSettings(settings: HudAppearanceSettings): void {
+    if (this.stopped) return
     const previous = this.latestSettings
     this.latestSettings = settings
     const styleChanged = previous.hudStyle !== settings.hudStyle
@@ -251,6 +274,7 @@ export class HudSurface {
   }
 
   private show(display: HudDisplay, focus: boolean): void {
+    if (this.stopped) return
     this.visible = true
     this.revealRequest = { display, focus }
     if (this.window && !this.window.isDestroyed()) {
@@ -315,10 +339,18 @@ export class HudSurface {
   private present(): void {
     const window = this.window
     const request = this.revealRequest
-    if (!this.visible || !this.loaded || !window || window.isDestroyed() || !request) return
+    if (
+      this.stopped ||
+      !this.visible ||
+      !this.loaded ||
+      !window ||
+      window.isDestroyed() ||
+      !request
+    )
+      return
+    if (request.focus && window.isMinimized()) window.restore()
     this.applyLayout(request.display, this.stage.style === 'panel' ? window.getBounds() : undefined)
     if (request.focus) {
-      if (window.isMinimized()) window.restore()
       window.show()
       window.focus()
     } else {
@@ -375,12 +407,17 @@ export class HudSurface {
   }
 
   private sendStage(): void {
-    if (this.loaded && this.window && !this.window.isDestroyed())
+    if (!this.stopped && this.loaded && this.window && !this.window.isDestroyed())
       this.window.webContents.send('codepulse:hud-stage', { ...this.stage })
   }
 
   private isHudSender(contents: WebContents): boolean {
-    return !!this.window && !this.window.isDestroyed() && this.window.webContents.id === contents.id
+    return (
+      !this.stopped &&
+      !!this.window &&
+      !this.window.isDestroyed() &&
+      this.window.webContents.id === contents.id
+    )
   }
 
   private setInteractive(interactive: boolean): void {
@@ -414,9 +451,8 @@ export class HudSurface {
     const requested = { x: cursor.x - this.drag.offset.x, y: cursor.y - this.drag.offset.y }
     const display = screen.getDisplayNearestPoint(requested)
     const position = clampHudOrbPosition(requested, display)
-    const bounds = window.getBounds()
     if (phase === 'move') {
-      const offset = hudOrbPositionForStage({ ...bounds, x: 0, y: 0 }, this.stage)
+      const offset = hudOrbPositionForStage({ ...this.drag.size, x: 0, y: 0 }, this.stage)
       // Reusing rounded native bounds can accumulate a pixel on every move at fractional DPI.
       window.setBounds(
         { ...this.drag.size, x: position.x - offset.x, y: position.y - offset.y },
@@ -435,20 +471,14 @@ export class HudSurface {
   }
 
   private observeAlerts(): void {
+    if (this.stopped) return
     const now = Date.now()
-    const keys = hudAlertKeys(
-      this.hub.snapshotForPresentation().agents,
-      this.latestSettings.visibleTools,
-      now,
-    )
-    for (const [key, seenAt] of this.seenAlerts)
-      if (now - seenAt > 60_000) this.seenAlerts.delete(key)
-    let added = false
-    for (const key of keys) {
-      if (this.seenAlerts.has(key)) continue
-      this.seenAlerts.set(key, now)
-      added = true
-    }
+    const agents = this.hub
+      .snapshotForPresentation()
+      .agents.filter((agent) => this.projection.shouldRetain(agent, now))
+    const keys = hudAlertKeys(agents, this.latestSettings.visibleTools, now)
+    const added = [...keys].some((key) => !this.seenAlerts.has(key))
+    this.seenAlerts = hudAlertKeys(agents, this.latestSettings.visibleTools, now, false)
     const seeded = this.alertsSeeded
     this.alertsSeeded = true
     if (
@@ -462,6 +492,7 @@ export class HudSurface {
   }
 
   private openSettings(): void {
+    if (this.stopped) return
     if (this.settings && !this.settings.isDestroyed()) {
       this.settings.show()
       this.settings.focus()

@@ -14,6 +14,7 @@ import type {
   DeviceDisplaySnapshot,
   DeviceProvisioningRequest,
   DeviceProvisioningSnapshot,
+  HudAppearanceSettings,
   HudDragPhase,
   HudStageInfo,
   StatusSnapshot,
@@ -92,6 +93,9 @@ const api = {
   /** Reports the project stack's natural height so the transparent HUD can fit it. */
   setHudContentHeight: (height: number): Promise<boolean> =>
     ipcRenderer.invoke('codepulse:set-hud-content-height', height),
+  /** Main owns HUD settings; the settings window persists its changes through this. */
+  setHudSettings: (patch: Partial<HudAppearanceSettings>): Promise<ShellSnapshot> =>
+    ipcRenderer.invoke('codepulse:shell-hud-settings', patch),
   /** Current stage of a compact HUD style. */
   getHudStage: (): Promise<HudStageInfo> => ipcRenderer.invoke('codepulse:hud-stage-get'),
   onHudStage: (cb: (stage: HudStageInfo) => void): Unsubscribe =>

@@ -145,7 +145,7 @@ test('compact stylesheet keeps to the type scale and respects the window rules',
   assert.match(css, /body\[data-surface='hud-compact'\]\s*\{\s*padding: 0/)
   assert.match(css, /\[data-hud-surface='compact'\]::before\s*\{\s*display: none/)
   assert.match(css, /prefers-reduced-motion: reduce/)
-  assert.match(css, /0\.72 \+ 0\.28 \* var\(--hud-opacity/)
+  assert.match(css, /0\.86 \+ 0\.14 \* var\(--hud-opacity/)
   assert.match(css, /--c-action-ink: #c2410c/)
   assert.match(css, /\[data-attention-effect='breathe'\] \.hud-c-urgent/)
   assert.match(css, /\[data-attention-effect='pulse'\] \.hud-c-urgent/)

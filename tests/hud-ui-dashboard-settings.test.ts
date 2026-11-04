@@ -165,6 +165,7 @@ test('dashboard settings retain safe in-memory defaults when storage is unavaila
       theme: 'dark',
       hudOpacity: 92,
       attentionEffect: 'steady',
+      hudStyle: 'panel',
       projectLayout: 'grid',
       showUsageStrip: true,
       resultRetentionMinutes: 30,

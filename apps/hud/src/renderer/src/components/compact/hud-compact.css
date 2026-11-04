@@ -108,7 +108,7 @@ body[data-surface='hud-compact'] {
 .hud-c-surface {
   pointer-events: auto;
   color: var(--c-ink);
-  background: rgb(var(--c-surface-rgb) / calc(0.72 + 0.28 * var(--hud-opacity, 0.37)));
+  background: rgb(var(--c-surface-rgb) / calc(0.86 + 0.14 * var(--hud-opacity, 0.37)));
   box-shadow: var(--c-shadow);
 }
 
@@ -793,12 +793,8 @@ body[data-surface='hud-compact'] {
   animation: hud-c-pulse 2.2s steps(1, end) infinite;
 }
 
+/* Only loops stop: a morph answers a state change and many Windows setups report reduced motion. */
 @media (prefers-reduced-motion: reduce) {
-  .hud-c *,
-  .hud-c *::before,
-  .hud-c *::after {
-    transition: none !important;
-  }
   .hud-c-spin {
     animation: none;
   }

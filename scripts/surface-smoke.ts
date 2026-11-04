@@ -1603,6 +1603,39 @@ app.whenReady().then(async () => {
       'real HUD preview',
     )
     await capture('control-hud')
+    for (const [label, style] of [
+      ['灵动岛', 'island'],
+      ['胶囊流', 'pills'],
+      ['边缘抽屉', 'edge'],
+      ['悬浮球', 'orb'],
+    ] as const) {
+      await button(main, label)
+      assert.equal(product.snapshot().hudSettings.hudStyle, style)
+      await until(
+        () =>
+          main!.webContents.executeJavaScript(
+            `Boolean(document.querySelector('.product-control .hud-compact-preview .hud-c[data-c-style=${style}]'))`,
+          ),
+        `${style} preview`,
+      )
+      for (const [width, height] of [
+        [1120, 780],
+        [720, 480],
+      ] as const) {
+        main.setContentSize(width, height)
+        await capture(`control-hud-${style}-${width}`)
+        assert.equal(
+          await main.webContents.executeJavaScript(
+            `document.querySelector('.hud-preview-stage').scrollWidth>document.querySelector('.hud-preview-stage').clientWidth`,
+          ),
+          false,
+          `${style} preview fits at ${width}`,
+        )
+      }
+      main.setContentSize(1120, 780)
+    }
+    await button(main, '面板')
+    assert.equal(product.snapshot().hudSettings.hudStyle, 'panel')
     // Only the visible preview consumes status updates. Keep the UI responsive while saving is slow.
     await wait(400)
     const inactiveReads = readCount('get-device-display'),

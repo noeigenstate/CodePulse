@@ -21,6 +21,7 @@ import {
   formatTokenPercent,
   type AgentRuntimeState,
   type AgentType,
+  type HudAppearanceSettings,
   type TokenPayload,
   type UpdateDownloadProgress,
   type UpdateInfo,
@@ -102,6 +103,7 @@ export function App(): JSX.Element {
   // Select slices so update progress / mute ticks do not force unrelated work.
   const snapshot = useStore((s) => s.snapshot)
   const muted = useStore((s) => s.muted)
+  const ready = useStore((s) => s.ready)
   const agents = useStore((s) => s.agents)
   const agentCheckId = useStore((s) => s.agentCheckId)
   const updateInfo = useStore((s) => s.updateInfo)
@@ -256,46 +258,67 @@ export function App(): JSX.Element {
     [],
   )
 
+  /**
+   * The settings window edits the shell-owned HUD preferences: main keeps the source of
+   * truth and injects it back, so a local-only change would be reverted by the next push.
+   * The HUD window never sends, and the injected storage event is not a change of its own.
+   */
+  const pushHudPatch = useCallback(
+    (patch: Partial<HudAppearanceSettings>): void => {
+      if (standaloneSettings) void window.codepulse.setHudSettings(patch)
+    },
+    [standaloneSettings],
+  )
+
   const setTheme = useCallback(
     (theme: ThemePreference): void => {
       updateDashboardSettings((current) => ({ ...current, theme }))
+      pushHudPatch({ theme })
     },
-    [updateDashboardSettings],
+    [pushHudPatch, updateDashboardSettings],
   )
 
   const setHudOpacity = useCallback(
     (hudOpacity: number): void => {
       updateDashboardSettings((current) => ({ ...current, hudOpacity }))
+      pushHudPatch({ hudOpacity })
     },
-    [updateDashboardSettings],
+    [pushHudPatch, updateDashboardSettings],
   )
 
   const setAttentionEffect = useCallback(
     (attentionEffect: HudAttentionEffect): void => {
       updateDashboardSettings((current) => ({ ...current, attentionEffect }))
+      pushHudPatch({ attentionEffect })
     },
-    [updateDashboardSettings],
+    [pushHudPatch, updateDashboardSettings],
   )
 
   const setProjectLayout = useCallback(
     (projectLayout: HudProjectLayout): void => {
       updateDashboardSettings((current) => ({ ...current, projectLayout }))
+      pushHudPatch({ projectLayout })
     },
-    [updateDashboardSettings],
+    [pushHudPatch, updateDashboardSettings],
   )
 
   const setShowUsageStrip = useCallback(
     (showUsageStrip: boolean): void => {
       updateDashboardSettings((current) => ({ ...current, showUsageStrip }))
+      pushHudPatch({ showUsageStrip })
     },
-    [updateDashboardSettings],
+    [pushHudPatch, updateDashboardSettings],
   )
 
   const setResultRetentionMinutes = useCallback(
     (resultRetentionMinutes: number): void => {
       updateDashboardSettings((current) => ({ ...current, resultRetentionMinutes }))
+      pushHudPatch({
+        resultRetentionMinutes:
+          resultRetentionMinutes as HudAppearanceSettings['resultRetentionMinutes'],
+      })
     },
-    [updateDashboardSettings],
+    [pushHudPatch, updateDashboardSettings],
   )
 
   const setToolVisibility = useCallback(
@@ -304,8 +327,10 @@ export function App(): JSX.Element {
         ...current,
         visibleTools: { ...current.visibleTools, [tool]: visible },
       }))
+      // Main merges the tools, so only the one that changed is sent.
+      pushHudPatch({ visibleTools: { [tool]: visible } as HudAppearanceSettings['visibleTools'] })
     },
-    [updateDashboardSettings],
+    [pushHudPatch, updateDashboardSettings],
   )
 
   const liveConsole = (
@@ -362,6 +387,7 @@ export function App(): JSX.Element {
         dismissProjectCard(agentType, workspacePath, externalSessionId)
       }
       panels={panels}
+      ready={ready}
       showUsageStrip={dashboardSettings.showUsageStrip}
       style={compactStyle}
       theme={resolvedTheme}

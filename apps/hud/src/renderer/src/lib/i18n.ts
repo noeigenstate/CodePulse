@@ -122,6 +122,7 @@ export interface CompactCopy {
   unread: string
   more: string
   usage: string
+  context: string
   openList: string
   closeList: string
   stackLabel: string
@@ -262,6 +263,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
       unread: '{n} 个待查看',
       more: '另有 {n} 个任务',
       usage: '用量',
+      context: '上下文',
       openList: '展开任务列表',
       closeList: '收起任务列表',
       stackLabel: '任务胶囊',
@@ -442,6 +444,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
       unread: '{n} to review',
       more: '{n} more',
       usage: 'Usage',
+      context: 'Context',
       openList: 'Open task list',
       closeList: 'Close task list',
       stackLabel: 'Task pills',

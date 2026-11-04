@@ -31,6 +31,8 @@ export interface HudCompactProps {
   panels: AgentPanel[]
   /** Read-only preview: no timers that hide things, no window events. */
   preview?: boolean
+  /** False until the first status snapshot arrived; nothing peeks before that. */
+  ready: boolean
   /** Preview only: draw the open list. */
   forceOpen?: boolean
   /** Preview only: show the peek line without waiting for or expiring its timer. */
@@ -44,19 +46,20 @@ const NO_KEYS: ReadonlySet<string> = new Set()
 
 /**
  * Fault and action alerts stay peeked while they last. A notice peeks once for a
- * few seconds, then only its unread mark remains. Notices already present at
- * mount count as seen.
+ * few seconds, then only its unread mark remains. Notices already present when
+ * the first snapshot arrives count as seen, so a restart does not replay them.
  */
 function usePeek(
   tasks: CompactTask[],
   fixed: boolean,
+  ready: boolean,
 ): { peek: CompactTask | undefined; settle: () => void } {
   const spent = useRef<Set<string>>()
-  if (!spent.current) {
+  if (ready && !spent.current) {
     spent.current = new Set(tasks.filter((task) => task.level === 'notice').map(peekKey))
   }
   const [, redraw] = useReducer((count: number) => count + 1, 0)
-  const peek = pickPeek(tasks, fixed ? NO_KEYS : spent.current)
+  const peek = ready && spent.current ? pickPeek(tasks, fixed ? NO_KEYS : spent.current) : undefined
   const timed = !fixed && peek?.level === 'notice' ? peekKey(peek) : undefined
 
   useEffect(() => {
@@ -103,6 +106,7 @@ export function HudCompact({
   onDismiss,
   panels,
   preview = false,
+  ready,
   showUsageStrip,
   style,
   theme,
@@ -112,7 +116,7 @@ export function HudCompact({
   const tasks = useMemo(() => flattenTasks(groups, copy.unknownProject), [groups, copy])
   const usage = useMemo(() => buildProjectUsageSummaries(panels), [panels])
   const summary = useMemo(() => summarize(tasks), [tasks])
-  const { peek, settle } = usePeek(tasks, forcePeek)
+  const { peek, settle } = usePeek(tasks, forcePeek, ready)
   const [userOpen, setUserOpen] = useState(false)
   const [collapseTick, collapse] = useReducer((count: number) => count + 1, 0)
   const hit = useHudHitTest(preview ? undefined : bridge?.setInteractive)

@@ -34,7 +34,7 @@ function TaskPill({
       data-hud-hit=""
       onClick={toggleOnBackground(onToggle)}
       style={style}
-      title={mini ? `${task.title} · ${state}` : undefined}
+      title={`${task.title} · ${state}`}
     >
       <button
         aria-expanded={big}
@@ -45,15 +45,13 @@ function TaskPill({
       />
       <div className="hud-c-pill-one">
         <StateMark level={task.level} />
-        <span className="hud-c-title" title={task.title}>
-          {task.title}
-        </span>
+        <span className="hud-c-title">{task.title}</span>
         <span className="hud-c-state">{state}</span>
       </div>
       <div className="hud-c-pill-more">
         <span className="hud-c-lines">
           <span className="hud-c-meta">{taskSource(task)}</span>
-          <span className="hud-c-meta">{taskMetrics(task, now, locale)}</span>
+          <span className="hud-c-meta">{taskMetrics(task, now, locale, copy.compact.context)}</span>
         </span>
         <TaskActions copy={copy} onAck={onAck} onDismiss={onDismiss} task={task} />
       </div>

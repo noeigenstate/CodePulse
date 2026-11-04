@@ -7,6 +7,7 @@ import {
   type HudToolKey,
   type StatusSnapshot,
 } from '@codepulse/shared'
+import { HudCompact } from './compact/HudCompact.js'
 import { ProjectDeck } from './ProjectDeck.js'
 import { resolveTheme } from '../lib/dashboardSettings.js'
 import { uiCopy, type Locale } from '../lib/i18n.js'
@@ -59,6 +60,43 @@ export function HudPreview({
   const previewStyle = {
     '--hud-opacity': String(settings.hudOpacity / 100),
   } as CSSProperties
+  if (settings.hudStyle !== 'panel') {
+    const compactProps = {
+      allToolsHidden,
+      copy,
+      locale,
+      onAck: ignore,
+      onDismiss: ignore,
+      panels,
+      preview: true,
+      showUsageStrip: settings.showUsageStrip,
+      style: settings.hudStyle,
+      theme: resolvedTheme,
+    }
+    // Compact styles live on a transparent stage: show the everyday state and the open list.
+    return (
+      <fieldset
+        disabled
+        className="hud-compact-preview"
+        aria-label={locale === 'zh' ? 'HUD 实时预览' : 'Live HUD preview'}
+        data-attention-effect={settings.attentionEffect}
+        style={previewStyle}
+      >
+        <figure>
+          <figcaption>{copy.compact.previewIdle}</figcaption>
+          <div className="hud-c-preview-stage" data-c-style={settings.hudStyle} data-part="idle">
+            <HudCompact {...compactProps} forcePeek />
+          </div>
+        </figure>
+        <figure>
+          <figcaption>{copy.compact.previewOpen}</figcaption>
+          <div className="hud-c-preview-stage" data-c-style={settings.hudStyle} data-part="open">
+            <HudCompact {...compactProps} forceOpen />
+          </div>
+        </figure>
+      </fieldset>
+    )
+  }
   return (
     <fieldset
       disabled

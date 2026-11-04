@@ -14,6 +14,8 @@ import type {
   DeviceDisplaySnapshot,
   DeviceProvisioningRequest,
   DeviceProvisioningSnapshot,
+  HudDragPhase,
+  HudStageInfo,
   StatusSnapshot,
   UiLocale,
   UpdateDownloadProgress,
@@ -90,6 +92,16 @@ const api = {
   /** Reports the project stack's natural height so the transparent HUD can fit it. */
   setHudContentHeight: (height: number): Promise<boolean> =>
     ipcRenderer.invoke('codepulse:set-hud-content-height', height),
+  /** Current stage of a compact HUD style. */
+  getHudStage: (): Promise<HudStageInfo> => ipcRenderer.invoke('codepulse:hud-stage-get'),
+  onHudStage: (cb: (stage: HudStageInfo) => void): Unsubscribe =>
+    subscribe('codepulse:hud-stage', cb),
+  /** True while the pointer is over a drawn surface; false lets clicks pass through the stage. */
+  setHudInteractive: (interactive: boolean): Promise<boolean> =>
+    ipcRenderer.invoke('codepulse:set-hud-interactive', interactive),
+  /** Moves the orb with the cursor. Only the orb style honours this. */
+  hudDrag: (phase: HudDragPhase): Promise<boolean> =>
+    ipcRenderer.invoke('codepulse:hud-drag', phase),
   /** Sends the inactive-project retention preference to the main-process hub. */
   setResultRetentionMinutes: (minutes: number): Promise<boolean> =>
     ipcRenderer.invoke('codepulse:set-result-retention', minutes),

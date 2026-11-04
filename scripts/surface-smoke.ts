@@ -335,15 +335,9 @@ async function verifyHudStyles(
       await invoke(win, "dismissProjectCard('codex','F:/fixture/hud-alert','hud-alert-fixture')"),
       true,
     )
-    fixture.agents = [
-      { ...fixture.agents[0]!, externalTurnId: 'after-dismiss', lastEventAt: realNow() },
-    ]
+    fixture.agents = [{ ...fixture.agents[0]!, toolName: 'Write', lastEventAt: realNow() }]
     hud.broadcast('codepulse:status', fixture)
-    assert.equal(
-      hud.isVisible(),
-      false,
-      'a dismissed card cannot reveal even when its alert key changes',
-    )
+    assert.equal(hud.isVisible(), false, 'a dismissed card cannot reveal while its prompt lasts')
     product.setHudSettings({ autoReveal: false, hudStyle: 'panel' })
     hud.open()
     assert.equal(focused, 1, 'explicit open focuses')

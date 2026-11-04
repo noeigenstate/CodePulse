@@ -29,6 +29,8 @@ import {
 } from '@codepulse/shared'
 import { useStore } from './store.js'
 import { Header } from './components/Header.js'
+import { HudCompact } from './components/compact/HudCompact.js'
+import type { CompactStyle, HudCompactBridge } from './components/compact/types.js'
 import { ProjectDeck } from './components/ProjectDeck.js'
 import { SettingsDialog } from './components/SettingsDialog.js'
 import {
@@ -178,6 +180,10 @@ export function App(): JSX.Element {
     codexTrustAcknowledged,
   )
   const resolvedTheme = useScheduledTheme(dashboardSettings.theme)
+  const compactStyle: CompactStyle | undefined =
+    legacyView || standaloneSettings || dashboardSettings.hudStyle === 'panel'
+      ? undefined
+      : dashboardSettings.hudStyle
 
   useEffect(() => {
     void window.codepulse.setLocale(locale)
@@ -186,9 +192,13 @@ export function App(): JSX.Element {
   useLayoutEffect(() => {
     // Write before paint so the resolved palette never flashes its opposite color.
     applyTheme(document.documentElement, resolvedTheme)
-    document.body.dataset.surface = standaloneSettings ? 'settings' : 'hud'
+    document.body.dataset.surface = standaloneSettings
+      ? 'settings'
+      : compactStyle
+        ? 'hud-compact'
+        : 'hud'
     void window.codepulse.setWindowTheme(resolvedTheme)
-  }, [resolvedTheme, standaloneSettings])
+  }, [compactStyle, resolvedTheme, standaloneSettings])
 
   useEffect(() => {
     // Storage may be unavailable; the writer deliberately preserves the in-memory selection.
@@ -332,6 +342,32 @@ export function App(): JSX.Element {
     />
   )
 
+  const compactBridge = useMemo<HudCompactBridge>(
+    () => ({
+      setInteractive: (interactive) => window.codepulse.setHudInteractive(interactive),
+      drag: (phase) => window.codepulse.hudDrag(phase),
+      getStage: () => window.codepulse.getHudStage(),
+      onStage: (callback) => window.codepulse.onHudStage(callback),
+    }),
+    [],
+  )
+  const compactDeck = compactStyle ? (
+    <HudCompact
+      allToolsHidden={allToolsHidden}
+      bridge={compactBridge}
+      copy={copy}
+      locale={locale}
+      onAck={(agentType, workspacePath, session) => ack(agentType, workspacePath, session)}
+      onDismiss={(agentType, workspacePath, externalSessionId) =>
+        dismissProjectCard(agentType, workspacePath, externalSessionId)
+      }
+      panels={panels}
+      showUsageStrip={dashboardSettings.showUsageStrip}
+      style={compactStyle}
+      theme={resolvedTheme}
+    />
+  ) : null
+
   const hudStyle = {
     '--hud-opacity': String(dashboardSettings.hudOpacity / 100),
   } as CSSProperties
@@ -367,6 +403,7 @@ export function App(): JSX.Element {
     <div
       className="app-shell flex h-full flex-col text-ink"
       data-attention-effect={attentionEffect}
+      data-hud-surface={compactStyle ? 'compact' : 'panel'}
       style={hudStyle}
     >
       {legacyView ? (
@@ -383,7 +420,7 @@ export function App(): JSX.Element {
           {liveConsole}
         </>
       ) : (
-        projectDeck
+        (compactDeck ?? projectDeck)
       )}
       {showSetupReminder && (
         <AgentSetupReminderModal
@@ -659,7 +696,10 @@ function UpdateAvailableModal({
   const sizeLabel = formatDownloadSize(progress?.received, progress?.total)
 
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-sm">
+    <div
+      className="hud-modal-overlay absolute inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-sm"
+      data-hud-hit=""
+    >
       <section
         aria-modal="true"
         className="liquid-glass w-full max-w-[28rem] p-5 shadow-card-hover"
@@ -835,7 +875,10 @@ function AgentSetupReminderModal({
     })),
   ]
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-sm">
+    <div
+      className="hud-modal-overlay absolute inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-sm"
+      data-hud-hit=""
+    >
       <section
         aria-modal="true"
         className="liquid-glass flex max-h-[min(calc(100vh-2rem),42rem)] w-full max-w-[30rem] flex-col overflow-hidden shadow-card-hover"

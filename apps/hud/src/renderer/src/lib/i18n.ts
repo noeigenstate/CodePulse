@@ -30,6 +30,7 @@ export interface UiCopy {
   contextWindow: string
   unknownProject: string
   emptyDashboard: EmptyDashboardCopy
+  compact: CompactCopy
   agentSetupReminder: AgentSetupReminderCopy
   codexTrustTutorial: CodexTrustTutorialCopy
   updateAvailable: UpdateAvailableCopy
@@ -113,6 +114,24 @@ export interface DeviceProvisioningCopy {
 }
 
 /** Localized content for an idle dashboard and the intentional all-tools-hidden state. */
+/** Labels for the compact HUD styles (island, pills, edge, orb). `{n}` is replaced by a count. */
+export interface CompactCopy {
+  hud: string
+  idle: string
+  running: string
+  unread: string
+  more: string
+  usage: string
+  openList: string
+  closeList: string
+  stackLabel: string
+  edgeLabel: string
+  orbLabel: string
+  orbCount: string
+  previewIdle: string
+  previewOpen: string
+}
+
 export interface EmptyDashboardCopy {
   title: string
   body: string
@@ -236,6 +255,22 @@ const UI_COPY: Record<Locale, UiCopy> = {
       settingsHiddenTitle: '所有 CLI 工具已隐藏',
       settingsHiddenBody: '打开右上角设置，重新选择要显示的 CLI 工具。',
     },
+    compact: {
+      hud: 'CodePulse HUD',
+      idle: '空闲',
+      running: '{n} 个任务运行中',
+      unread: '{n} 个待查看',
+      more: '另有 {n} 个任务',
+      usage: '用量',
+      openList: '展开任务列表',
+      closeList: '收起任务列表',
+      stackLabel: '任务胶囊',
+      edgeLabel: '边缘抽屉',
+      orbLabel: '悬浮球，拖动可移动，点击展开',
+      orbCount: '{n} 个任务',
+      previewIdle: '平时',
+      previewOpen: '展开',
+    },
     agentSetupReminder: {
       title: '配置与权限检查',
       body: 'CodePulse HUD 每次打开都会检查本机 Claude / Codex / Grok / Kimi 配置。请先处理下面的问题，否则任务状态可能无法同步。',
@@ -307,7 +342,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
       hudAppearance: 'HUD 外观',
       hudOpacity: '背景透明度',
       hudOpacityHint: '只改变面板背景；文字、图标和控件始终保持完整清晰度。',
-      attentionEffect: '橙色提示动效',
+      attentionEffect: '提示动效',
       attentionEffectHint: '橙色只表示需要你介入；系统“减少动态效果”会自动关闭动画。',
       attentionSteady: '静态',
       attentionBreathe: '呼吸',
@@ -400,6 +435,22 @@ const UI_COPY: Record<Locale, UiCopy> = {
       settingsHiddenTitle: 'All CLI tools are hidden',
       settingsHiddenBody: 'Open settings in the upper-right corner to choose tools to display.',
     },
+    compact: {
+      hud: 'CodePulse HUD',
+      idle: 'Idle',
+      running: '{n} running',
+      unread: '{n} to review',
+      more: '{n} more',
+      usage: 'Usage',
+      openList: 'Open task list',
+      closeList: 'Close task list',
+      stackLabel: 'Task pills',
+      edgeLabel: 'Edge drawer',
+      orbLabel: 'Floating orb, drag to move, click to open',
+      orbCount: '{n} tasks',
+      previewIdle: 'Everyday',
+      previewOpen: 'Open',
+    },
     agentSetupReminder: {
       title: 'Setup and permission check',
       body: 'CodePulse HUD checks local Claude / Codex / Grok / Kimi setup every time it opens. Resolve these items first or task status may not sync.',
@@ -471,7 +522,7 @@ const UI_COPY: Record<Locale, UiCopy> = {
       hudAppearance: 'HUD appearance',
       hudOpacity: 'Background opacity',
       hudOpacityHint: 'Only the panel background fades; text, icons, and controls stay crisp.',
-      attentionEffect: 'Orange attention motion',
+      attentionEffect: 'Attention motion',
       attentionEffectHint:
         'Orange is reserved for intervention; reduced-motion preferences always disable animation.',
       attentionSteady: 'Steady',

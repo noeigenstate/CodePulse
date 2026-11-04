@@ -8,6 +8,7 @@ import {
   type DeviceDisplayConfig,
   type DeviceDisplaySnapshot,
   type HudAppearanceSettings,
+  type HudSurfaceStyle,
   type HudToolKey,
   type InkDisplayPlan,
   type InkScreenStatus,
@@ -40,6 +41,14 @@ const HUD_TOOLS: { key: HudToolKey; label: string }[] = [
   { key: 'grok', label: 'Grok' },
   { key: 'kimi', label: 'Kimi' },
   { key: 'antigravity', label: 'Antigravity' },
+]
+
+const HUD_STYLE_OPTIONS: { value: HudSurfaceStyle; zh: string; en: string }[] = [
+  { value: 'panel', zh: '面板', en: 'Panel' },
+  { value: 'island', zh: '灵动岛', en: 'Island' },
+  { value: 'pills', zh: '胶囊流', en: 'Pills' },
+  { value: 'edge', zh: '边缘抽屉', en: 'Edge drawer' },
+  { value: 'orb', zh: '悬浮球', en: 'Orb' },
 ]
 
 const INK_AGENT_NAMES = { codex: 'Codex', claude_code: 'Claude', grok: 'Grok' } as const
@@ -149,23 +158,41 @@ export function HudWorkspace({
           )}
         </section>
         <aside className="product-config hud-inline-config">
-          <h3>{zh ? '项目布局' : 'Project Layout'}</h3>
-          <div className="product-segments">
-            <button
-              type="button"
-              aria-pressed={settings.projectLayout === 'list'}
-              onClick={() => update({ projectLayout: 'list' })}
-            >
-              {zh ? '单列排序' : 'List'}
-            </button>
-            <button
-              type="button"
-              aria-pressed={settings.projectLayout === 'grid'}
-              onClick={() => update({ projectLayout: 'grid' })}
-            >
-              {zh ? '紧凑矩阵' : 'Compact Grid'}
-            </button>
+          <h3>{zh ? 'HUD 样式' : 'HUD Style'}</h3>
+          <div className="product-segments is-grid">
+            {HUD_STYLE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={settings.hudStyle === option.value}
+                onClick={() => update({ hudStyle: option.value })}
+              >
+                {zh ? option.zh : option.en}
+              </button>
+            ))}
           </div>
+
+          {settings.hudStyle === 'panel' && (
+            <>
+              <h3>{zh ? '项目布局' : 'Project Layout'}</h3>
+              <div className="product-segments">
+                <button
+                  type="button"
+                  aria-pressed={settings.projectLayout === 'list'}
+                  onClick={() => update({ projectLayout: 'list' })}
+                >
+                  {zh ? '单列排序' : 'List'}
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={settings.projectLayout === 'grid'}
+                  onClick={() => update({ projectLayout: 'grid' })}
+                >
+                  {zh ? '紧凑矩阵' : 'Compact Grid'}
+                </button>
+              </div>
+            </>
+          )}
 
           <h3>{zh ? '外观主题' : 'Theme'}</h3>
           <div className="product-segments">
@@ -208,7 +235,7 @@ export function HudWorkspace({
             />
           </div>
 
-          <h3>{zh ? '橙色提示动效' : 'Attention Effect'}</h3>
+          <h3>{zh ? '提示动效' : 'Attention Effect'}</h3>
           <div className="product-segments">
             <button
               type="button"
@@ -232,6 +259,15 @@ export function HudWorkspace({
               {zh ? '脉冲' : 'Pulse'}
             </button>
           </div>
+
+          <label className="hud-inline-check">
+            <input
+              type="checkbox"
+              checked={settings.autoReveal}
+              onChange={(e) => update({ autoReveal: e.target.checked })}
+            />
+            <span>{zh ? '有提醒时自动显示 HUD' : 'Show the HUD when an alert arrives'}</span>
+          </label>
 
           <label className="product-cycle-row">
             <span>{zh ? '卡片停留时长' : 'Card Retention'}</span>

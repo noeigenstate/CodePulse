@@ -26,10 +26,33 @@ export type HudThemePreference = 'auto' | 'light' | 'dark'
 export type HudAttentionStyle = 'steady' | 'breathe' | 'pulse'
 export type HudLayoutMode = 'grid' | 'list'
 export type HudToolKey = 'codex' | 'claude_code' | 'grok' | 'kimi' | 'antigravity'
+/** How the floating HUD presents itself. `panel` is the original card deck. */
+export const HUD_SURFACE_STYLES = ['panel', 'island', 'pills', 'edge', 'orb'] as const
+export type HudSurfaceStyle = (typeof HUD_SURFACE_STYLES)[number]
+/** Top-left corner of the orb in screen coordinates (DIP). */
+export interface HudOrbPosition {
+  x: number
+  y: number
+}
+/**
+ * Compact styles run in a fixed transparent stage window. The renderer draws its
+ * surface inside the stage; the anchors say which stage corner the orb sits in.
+ */
+export interface HudStageInfo {
+  style: HudSurfaceStyle
+  anchorH: 'left' | 'right'
+  anchorV: 'top' | 'bottom'
+}
+/** `start` and `move` read the cursor in the main process; `end` persists the position. */
+export type HudDragPhase = 'start' | 'move' | 'end'
 export interface HudAppearanceSettings {
   theme: HudThemePreference
   hudOpacity: number
   attentionEffect: HudAttentionStyle
+  hudStyle: HudSurfaceStyle
+  /** Show a hidden HUD, without taking focus, when a new alert arrives. */
+  autoReveal: boolean
+  orbPosition?: HudOrbPosition
   projectLayout: HudLayoutMode
   showUsageStrip: boolean
   resultRetentionMinutes: 10 | 30 | 60 | 120 | 240
@@ -45,6 +68,8 @@ export const DEFAULT_HUD_SETTINGS: HudAppearanceSettings = {
   theme: 'light',
   hudOpacity: 37,
   attentionEffect: 'steady',
+  hudStyle: 'panel',
+  autoReveal: false,
   projectLayout: 'list',
   showUsageStrip: true,
   resultRetentionMinutes: 30,
@@ -121,6 +146,11 @@ export function normalizeHudSettings(input: unknown): HudAppearanceSettings {
       ? (value.visibleTools as Record<string, unknown>)
       : {}
   const retention = value.resultRetentionMinutes
+  const orb = value.orbPosition as Partial<HudOrbPosition> | null | undefined
+  const orbPosition =
+    orb && Number.isFinite(orb.x) && Number.isFinite(orb.y)
+      ? { x: Math.round(orb.x!), y: Math.round(orb.y!) }
+      : undefined
   return {
     theme: value.theme === 'auto' || value.theme === 'dark' ? value.theme : 'light',
     hudOpacity:
@@ -131,6 +161,11 @@ export function normalizeHudSettings(input: unknown): HudAppearanceSettings {
       value.attentionEffect === 'breathe' || value.attentionEffect === 'pulse'
         ? value.attentionEffect
         : 'steady',
+    hudStyle: HUD_SURFACE_STYLES.includes(value.hudStyle as HudSurfaceStyle)
+      ? (value.hudStyle as HudSurfaceStyle)
+      : DEFAULT_HUD_SETTINGS.hudStyle,
+    autoReveal: value.autoReveal === true,
+    ...(orbPosition ? { orbPosition } : {}),
     projectLayout: value.projectLayout === 'grid' ? 'grid' : 'list',
     showUsageStrip: typeof value.showUsageStrip === 'boolean' ? value.showUsageStrip : true,
     resultRetentionMinutes:

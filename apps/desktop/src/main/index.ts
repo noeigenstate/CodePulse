@@ -745,6 +745,9 @@ async function bootstrap(): Promise<void> {
       if (shutdownStarted) return
       notifyInkDisplayChanged()
     },
+    (orbPosition) => {
+      if (!shutdownStarted) productShell?.setHudSettings({ orbPosition })
+    },
   )
   hudSurface.registerIpc()
   screenWorkbench = new ScreenWorkbenchWindow({
@@ -1483,6 +1486,7 @@ ${err instanceof Error ? err.message : String(err)}`,
     if (shutdownStarted) return
     event.preventDefault()
     shutdownStarted = true
+    hudSurface?.stop()
     void shutdownRuntime().finally(() => app.quit())
   })
 }

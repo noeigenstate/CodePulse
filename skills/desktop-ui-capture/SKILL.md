@@ -48,6 +48,14 @@ description: Use when you need screenshots or measurements of the running CodePu
 - Reproduce dpr 1 locally: copy `scripts/test-surfaces.mjs`, change `spawnSync(electron, [bundle]` to `spawnSync(electron, ['--force-device-scale-factor=1', bundle]`, run the copy, then delete it. Run the normal `pnpm test:surfaces` too.
 - Prefer layouts that react to the preview's real width (e.g. a wrapping flex row with `min-width: min-content` on the preview column) over viewport breakpoints tuned at one scale.
 
+## Compact HUD styles (island, pills, edge, orb)
+
+- Run `pnpm build`, then `node scripts/hud-style-capture.mjs [--force-device-scale-factor=1]`. It uses the production HUD renderer with synthetic tasks, a disposable profile and no backend. Set `CODEPULSE_CAPTURE_OUT` to keep runs apart. Shots are transparent, so composite them on a backdrop before judging.
+- It also checks settled sizes from the DOM, samples the morph in a shown window, and checks click-through with `WindowFromPoint`, which never moves the mouse. A synthetic `mousemove` drives the hit test, so real forwarded mouse moves still need a person.
+- `capturePage` on a hidden window returns its previous frame first. Discard one capture and wait, or the shot shows a morph midway. Waiting for transitions alone does not fix this.
+- Windows with animation effects off reports `prefers-reduced-motion: reduce` to Chromium (`HKCU\Control Panel\Desktop\WindowMetrics\MinAnimate` = 0). Check this before concluding a transition or spinner is broken.
+- Controls in a `<fieldset disabled>` match `.product-frame button:disabled` and fade to 40%. A preview that must stay legible uses `inert`.
+
 ## Rules
 
 - Never kill browsers or Electron by image name: the user's own windows die too. Stop only the PID you started.

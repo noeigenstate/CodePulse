@@ -116,6 +116,7 @@ test('Chinese locale does not expose English dashboard chrome', () => {
     copy.emptyDashboard.settingsHiddenBody,
     copy.emptyDashboard.agentTitle,
     copy.emptyDashboard.agentBody.replace('{agent}', 'Claude Code'),
+    ...Object.values(copy.compact).filter((value) => value !== 'CodePulse HUD'),
     formatContextWindowStatus(
       { accuracy: 'exact', contextUsedPercent: 79.85, contextWindow: 258_400, contextStale: true },
       undefined,
@@ -174,6 +175,7 @@ test('English locale does not expose Chinese dashboard chrome', () => {
     copy.emptyDashboard.settingsHiddenBody,
     copy.emptyDashboard.agentTitle,
     copy.emptyDashboard.agentBody.replace('{agent}', 'Claude Code'),
+    ...Object.values(copy.compact).filter((value) => value !== 'CodePulse HUD'),
     formatContextWindowStatus(
       { accuracy: 'exact', contextUsedPercent: 79.85, contextWindow: 258_400, contextStale: true },
       undefined,
@@ -248,4 +250,22 @@ test('reduced transparency keeps the selected theme surface instead of forcing w
   assert.ok(reducedTransparency)
   assert.match(reducedTransparency, /background: var\(--surface-solid\)/)
   assert.doesNotMatch(reducedTransparency, /background: #ffffff/)
+})
+
+test('compact HUD copy exists in both languages and fills its counts', () => {
+  for (const locale of ['zh', 'en'] as const) {
+    const { compact } = uiCopy(locale)
+    for (const value of Object.values(compact)) assert.ok(value.length > 0)
+    for (const template of [compact.running, compact.unread, compact.more, compact.orbCount]) {
+      assert.match(template, /\{n\}/)
+    }
+  }
+  assert.equal(uiCopy('zh').compact.idle, '空闲')
+  assert.equal(uiCopy('zh').compact.running.replace('{n}', '2'), '2 个任务运行中')
+  assert.equal(uiCopy('zh').compact.unread.replace('{n}', '1'), '1 个待查看')
+})
+
+test('attention effect label no longer promises an orange colour', () => {
+  assert.equal(uiCopy('zh').settings.attentionEffect, '提示动效')
+  assert.doesNotMatch(uiCopy('en').settings.attentionEffect, /orange/i)
 })

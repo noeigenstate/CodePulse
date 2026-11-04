@@ -21,6 +21,7 @@ import {
   formatTokenPercent,
   type AgentRuntimeState,
   type AgentType,
+  type HudAppearanceSettings,
   type TokenPayload,
   type UpdateDownloadProgress,
   type UpdateInfo,
@@ -29,6 +30,8 @@ import {
 } from '@codepulse/shared'
 import { useStore } from './store.js'
 import { Header } from './components/Header.js'
+import { HudCompact } from './components/compact/HudCompact.js'
+import type { CompactStyle, HudCompactBridge } from './components/compact/types.js'
 import { ProjectDeck } from './components/ProjectDeck.js'
 import { SettingsDialog } from './components/SettingsDialog.js'
 import {
@@ -100,6 +103,7 @@ export function App(): JSX.Element {
   // Select slices so update progress / mute ticks do not force unrelated work.
   const snapshot = useStore((s) => s.snapshot)
   const muted = useStore((s) => s.muted)
+  const ready = useStore((s) => s.ready)
   const agents = useStore((s) => s.agents)
   const agentCheckId = useStore((s) => s.agentCheckId)
   const updateInfo = useStore((s) => s.updateInfo)
@@ -178,6 +182,10 @@ export function App(): JSX.Element {
     codexTrustAcknowledged,
   )
   const resolvedTheme = useScheduledTheme(dashboardSettings.theme)
+  const compactStyle: CompactStyle | undefined =
+    legacyView || standaloneSettings || dashboardSettings.hudStyle === 'panel'
+      ? undefined
+      : dashboardSettings.hudStyle
 
   useEffect(() => {
     void window.codepulse.setLocale(locale)
@@ -186,9 +194,13 @@ export function App(): JSX.Element {
   useLayoutEffect(() => {
     // Write before paint so the resolved palette never flashes its opposite color.
     applyTheme(document.documentElement, resolvedTheme)
-    document.body.dataset.surface = standaloneSettings ? 'settings' : 'hud'
+    document.body.dataset.surface = standaloneSettings
+      ? 'settings'
+      : compactStyle
+        ? 'hud-compact'
+        : 'hud'
     void window.codepulse.setWindowTheme(resolvedTheme)
-  }, [resolvedTheme, standaloneSettings])
+  }, [compactStyle, resolvedTheme, standaloneSettings])
 
   useEffect(() => {
     // Storage may be unavailable; the writer deliberately preserves the in-memory selection.
@@ -246,46 +258,70 @@ export function App(): JSX.Element {
     [],
   )
 
+  /**
+   * The settings window edits the shell-owned HUD preferences: main keeps the source of
+   * truth and injects it back, so a local-only change would be reverted by the next push.
+   * The HUD window never sends, and the injected storage event is not a change of its own.
+   */
+  const pushHudPatch = useCallback(
+    (patch: Partial<HudAppearanceSettings>): void => {
+      if (standaloneSettings) void window.codepulse.setHudSettings(patch)
+    },
+    [standaloneSettings],
+  )
+
   const setTheme = useCallback(
     (theme: ThemePreference): void => {
       updateDashboardSettings((current) => ({ ...current, theme }))
+      pushHudPatch({ theme })
     },
-    [updateDashboardSettings],
+    [pushHudPatch, updateDashboardSettings],
   )
 
+  const opacityPush = useRef<number>()
   const setHudOpacity = useCallback(
     (hudOpacity: number): void => {
       updateDashboardSettings((current) => ({ ...current, hudOpacity }))
+      // A slider drag sends many values; an injected older one must not pull the thumb back.
+      window.clearTimeout(opacityPush.current)
+      opacityPush.current = window.setTimeout(() => pushHudPatch({ hudOpacity }), 150)
     },
-    [updateDashboardSettings],
+    [pushHudPatch, updateDashboardSettings],
   )
 
   const setAttentionEffect = useCallback(
     (attentionEffect: HudAttentionEffect): void => {
       updateDashboardSettings((current) => ({ ...current, attentionEffect }))
+      pushHudPatch({ attentionEffect })
     },
-    [updateDashboardSettings],
+    [pushHudPatch, updateDashboardSettings],
   )
 
   const setProjectLayout = useCallback(
     (projectLayout: HudProjectLayout): void => {
       updateDashboardSettings((current) => ({ ...current, projectLayout }))
+      pushHudPatch({ projectLayout })
     },
-    [updateDashboardSettings],
+    [pushHudPatch, updateDashboardSettings],
   )
 
   const setShowUsageStrip = useCallback(
     (showUsageStrip: boolean): void => {
       updateDashboardSettings((current) => ({ ...current, showUsageStrip }))
+      pushHudPatch({ showUsageStrip })
     },
-    [updateDashboardSettings],
+    [pushHudPatch, updateDashboardSettings],
   )
 
   const setResultRetentionMinutes = useCallback(
     (resultRetentionMinutes: number): void => {
       updateDashboardSettings((current) => ({ ...current, resultRetentionMinutes }))
+      pushHudPatch({
+        resultRetentionMinutes:
+          resultRetentionMinutes as HudAppearanceSettings['resultRetentionMinutes'],
+      })
     },
-    [updateDashboardSettings],
+    [pushHudPatch, updateDashboardSettings],
   )
 
   const setToolVisibility = useCallback(
@@ -294,8 +330,10 @@ export function App(): JSX.Element {
         ...current,
         visibleTools: { ...current.visibleTools, [tool]: visible },
       }))
+      // Main merges the tools, so only the one that changed is sent.
+      pushHudPatch({ visibleTools: { [tool]: visible } as HudAppearanceSettings['visibleTools'] })
     },
-    [updateDashboardSettings],
+    [pushHudPatch, updateDashboardSettings],
   )
 
   const liveConsole = (
@@ -332,6 +370,33 @@ export function App(): JSX.Element {
     />
   )
 
+  const compactBridge = useMemo<HudCompactBridge>(
+    () => ({
+      setInteractive: (interactive) => window.codepulse.setHudInteractive(interactive),
+      drag: (phase) => window.codepulse.hudDrag(phase),
+      getStage: () => window.codepulse.getHudStage(),
+      onStage: (callback) => window.codepulse.onHudStage(callback),
+    }),
+    [],
+  )
+  const compactDeck = compactStyle ? (
+    <HudCompact
+      allToolsHidden={allToolsHidden}
+      bridge={compactBridge}
+      copy={copy}
+      locale={locale}
+      onAck={(agentType, workspacePath, session) => ack(agentType, workspacePath, session)}
+      onDismiss={(agentType, workspacePath, externalSessionId) =>
+        dismissProjectCard(agentType, workspacePath, externalSessionId)
+      }
+      panels={panels}
+      ready={ready}
+      showUsageStrip={dashboardSettings.showUsageStrip}
+      style={compactStyle}
+      theme={resolvedTheme}
+    />
+  ) : null
+
   const hudStyle = {
     '--hud-opacity': String(dashboardSettings.hudOpacity / 100),
   } as CSSProperties
@@ -367,6 +432,7 @@ export function App(): JSX.Element {
     <div
       className="app-shell flex h-full flex-col text-ink"
       data-attention-effect={attentionEffect}
+      data-hud-surface={compactStyle ? 'compact' : 'panel'}
       style={hudStyle}
     >
       {legacyView ? (
@@ -383,7 +449,7 @@ export function App(): JSX.Element {
           {liveConsole}
         </>
       ) : (
-        projectDeck
+        (compactDeck ?? projectDeck)
       )}
       {showSetupReminder && (
         <AgentSetupReminderModal
@@ -659,7 +725,10 @@ function UpdateAvailableModal({
   const sizeLabel = formatDownloadSize(progress?.received, progress?.total)
 
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-sm">
+    <div
+      className="hud-modal-overlay absolute inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-sm"
+      data-hud-hit=""
+    >
       <section
         aria-modal="true"
         className="liquid-glass w-full max-w-[28rem] p-5 shadow-card-hover"
@@ -835,7 +904,10 @@ function AgentSetupReminderModal({
     })),
   ]
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-sm">
+    <div
+      className="hud-modal-overlay absolute inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-sm"
+      data-hud-hit=""
+    >
       <section
         aria-modal="true"
         className="liquid-glass flex max-h-[min(calc(100vh-2rem),42rem)] w-full max-w-[30rem] flex-col overflow-hidden shadow-card-hover"

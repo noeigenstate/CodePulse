@@ -1,4 +1,14 @@
-import { TurnState, type OverallState, type StatusSnapshot } from '@codepulse/shared'
+import {
+  TurnState,
+  type AgentRuntimeState,
+  type HudAppearanceSettings,
+  type HudOrbPosition,
+  type HudStageInfo,
+  type HudSurfaceStyle,
+  type HudToolKey,
+  type OverallState,
+  type StatusSnapshot,
+} from '@codepulse/shared'
 import { normalizeWindowTheme, type WindowTheme } from './window-chrome.js'
 
 /** Electron uses AARRGGBB for BrowserWindow background colors. */
@@ -8,6 +18,15 @@ export const HUD_WINDOW_MARGIN = 24
 /** A narrow right-hand lane keeps the HUD project-first instead of dashboard-like. */
 export const HUD_WINDOW_PREFERRED_SIZE = { width: 470, height: 240 } as const
 export const HUD_WINDOW_MIN_SIZE = { width: 470, height: 132 } as const
+const HUD_ORB_SIZE = 56
+const HUD_ORB_INSET = 24
+const HUD_ORB_MARGIN = 8
+const HUD_STAGE_SIZES = {
+  island: { width: 508, height: 460 },
+  pills: { width: 388, height: 720 },
+  edge: { width: 460, height: 640 },
+  orb: { width: 448, height: 504 },
+} as const
 export const HUD_WINDOW_SHELL_OPTIONS = {
   transparent: true,
   frame: false,
@@ -39,6 +58,82 @@ export interface HudWindowSurface {
 export interface HudRevealTarget {
   isDestroyed(): boolean
   showInactive(): void
+}
+
+export function defaultHudOrbPosition(display: HudDisplay): HudOrbPosition {
+  const area = normalizedRectangle(display.workArea)
+  return clampHudOrbPosition(
+    { x: area.x + area.width - 48 - HUD_ORB_SIZE, y: area.y + 64 },
+    display,
+  )
+}
+
+/** Keeps the visible orb inside the work area; transparent stage pixels may extend beyond it. */
+export function clampHudOrbPosition(position: HudOrbPosition, display: HudDisplay): HudOrbPosition {
+  const area = normalizedRectangle(display.workArea)
+  const marginX = Math.min(HUD_ORB_MARGIN, Math.max(0, Math.floor((area.width - HUD_ORB_SIZE) / 2)))
+  const marginY = Math.min(
+    HUD_ORB_MARGIN,
+    Math.max(0, Math.floor((area.height - HUD_ORB_SIZE) / 2)),
+  )
+  return {
+    x: clamp(
+      Math.round(position.x),
+      area.x + marginX,
+      Math.max(area.x + marginX, area.x + area.width - marginX - HUD_ORB_SIZE),
+    ),
+    y: clamp(
+      Math.round(position.y),
+      area.y + marginY,
+      Math.max(area.y + marginY, area.y + area.height - marginY - HUD_ORB_SIZE),
+    ),
+  }
+}
+
+export function hudOrbPositionForStage(bounds: HudRectangle, stage: HudStageInfo): HudOrbPosition {
+  return {
+    x:
+      bounds.x +
+      (stage.anchorH === 'right' ? bounds.width - HUD_ORB_INSET - HUD_ORB_SIZE : HUD_ORB_INSET),
+    y:
+      bounds.y +
+      (stage.anchorV === 'bottom' ? bounds.height - HUD_ORB_INSET - HUD_ORB_SIZE : HUD_ORB_INSET),
+  }
+}
+
+/** Fixed native stages leave all surface morphing to the renderer. Coordinates are DIP. */
+export function hudStageForStyle(
+  style: HudSurfaceStyle,
+  display: HudDisplay,
+  orbPosition?: HudOrbPosition,
+): { bounds: HudRectangle; stage: HudStageInfo } {
+  const stage: HudStageInfo = { style, anchorH: 'right', anchorV: 'top' }
+  if (style === 'panel') return { bounds: hudWindowBoundsForDisplay(display), stage }
+  const area = normalizedRectangle(display.workArea)
+  const width = Math.min(HUD_STAGE_SIZES[style].width, area.width)
+  const height = Math.min(HUD_STAGE_SIZES[style].height, area.height)
+  if (style !== 'orb') {
+    return {
+      bounds: {
+        x:
+          area.x + (style === 'island' ? Math.floor((area.width - width) / 2) : area.width - width),
+        y: area.y,
+        width,
+        height,
+      },
+      stage,
+    }
+  }
+  const position =
+    orbPosition && Number.isFinite(orbPosition.x) && Number.isFinite(orbPosition.y)
+      ? clampHudOrbPosition(orbPosition, display)
+      : defaultHudOrbPosition(display)
+  stage.anchorH = position.x + HUD_ORB_SIZE / 2 >= area.x + area.width / 2 ? 'right' : 'left'
+  const below = area.y + area.height - position.y
+  const above = position.y - area.y
+  stage.anchorV = below >= 480 || below >= above ? 'top' : 'bottom'
+  const offset = hudOrbPositionForStage({ x: 0, y: 0, width, height }, stage)
+  return { bounds: { x: position.x - offset.x, y: position.y - offset.y, width, height }, stage }
 }
 
 /**
@@ -200,6 +295,40 @@ export function deriveHudOverall(snapshot: StatusSnapshot): OverallState {
     return 'running'
   }
   return 'idle'
+}
+
+/** Include stale keys when tracking an alert's continued presence. */
+export function hudAlertKeys(
+  agents: readonly AgentRuntimeState[],
+  visibleTools: HudAppearanceSettings['visibleTools'],
+  now: number,
+  freshOnly = true,
+): Set<string> {
+  const keys = new Set<string>()
+  for (const agent of agents) {
+    const timestamp = agent.terminalAt ?? agent.lastEventAt
+    if (
+      agent.taskHidden ||
+      !visibleTools[agent.agentType as HudToolKey] ||
+      (freshOnly && (!Number.isFinite(timestamp) || timestamp > now || now - timestamp > 60_000)) ||
+      !shouldRevealHud(deriveHudOverall({ agents: [agent], overall: 'idle', updatedAt: now }))
+    )
+      continue
+    keys.add(
+      JSON.stringify([
+        agent.agentType,
+        agent.externalSessionId ?? agent.workspacePath ?? '',
+        agent.state,
+        ...(agent.state === TurnState.WAITING_PERMISSION ||
+        agent.state === TurnState.WAITING_USER_INPUT
+          ? // One prompt can arrive as two hooks with different tool and text. The next
+            // request in a turn leaves this state first, so it still fires again.
+            [agent.externalTurnId ?? '']
+          : [timestamp]),
+      ]),
+    )
+  }
+  return keys
 }
 
 function compareRightMost(left: HudDisplay, right: HudDisplay): number {

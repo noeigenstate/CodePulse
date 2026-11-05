@@ -1,4 +1,4 @@
-import type { AgentType } from '@codepulse/shared'
+import { HUD_SURFACE_STYLES, type AgentType, type HudSurfaceStyle } from '@codepulse/shared'
 
 /**
  * Lists CLI panels supported by the dashboard preference schema.
@@ -46,6 +46,8 @@ export interface DashboardSettings {
   /** Background alpha only; text and controls always remain fully opaque. */
   hudOpacity: number
   attentionEffect: HudAttentionEffect
+  /** Floating surface style; `panel` is the original card deck. */
+  hudStyle: HudSurfaceStyle
   projectLayout: HudProjectLayout
   showUsageStrip: boolean
   /** Minutes an inactive or acknowledged project card stays on the HUD. */
@@ -77,6 +79,7 @@ export const DEFAULT_DASHBOARD_SETTINGS: DashboardSettings = {
   theme: 'light',
   hudOpacity: 37,
   attentionEffect: 'steady',
+  hudStyle: 'panel',
   projectLayout: 'list',
   showUsageStrip: true,
   resultRetentionMinutes: DEFAULT_RESULT_RETENTION_MINUTES,
@@ -126,6 +129,9 @@ export function readDashboardSettings(storage: StorageLike | undefined): Dashboa
       attentionEffect: isHudAttentionEffect(parsed.attentionEffect)
         ? parsed.attentionEffect
         : DEFAULT_DASHBOARD_SETTINGS.attentionEffect,
+      hudStyle: isHudSurfaceStyle(parsed.hudStyle)
+        ? parsed.hudStyle
+        : DEFAULT_DASHBOARD_SETTINGS.hudStyle,
       projectLayout:
         schemaVersion >= 2 && isHudProjectLayout(parsed.projectLayout)
           ? parsed.projectLayout
@@ -221,6 +227,7 @@ function cloneSettings(settings: DashboardSettings): DashboardSettings {
     theme: settings.theme,
     hudOpacity: settings.hudOpacity,
     attentionEffect: settings.attentionEffect,
+    hudStyle: settings.hudStyle,
     projectLayout: settings.projectLayout,
     showUsageStrip: settings.showUsageStrip,
     resultRetentionMinutes: settings.resultRetentionMinutes,
@@ -240,6 +247,10 @@ function isThemePreference(value: unknown): value is ThemePreference {
 
 function isHudAttentionEffect(value: unknown): value is HudAttentionEffect {
   return value === 'steady' || value === 'breathe' || value === 'pulse'
+}
+
+function isHudSurfaceStyle(value: unknown): value is HudSurfaceStyle {
+  return (HUD_SURFACE_STYLES as readonly unknown[]).includes(value)
 }
 
 function isHudProjectLayout(value: unknown): value is HudProjectLayout {

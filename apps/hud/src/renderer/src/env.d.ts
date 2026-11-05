@@ -14,6 +14,9 @@ import type {
   DeviceDisplaySnapshot,
   DeviceProvisioningRequest,
   DeviceProvisioningSnapshot,
+  HudAppearanceSettings,
+  HudDragPhase,
+  HudStageInfo,
   StatusSnapshot,
   UiLocale,
   UpdateDownloadProgress,
@@ -65,6 +68,14 @@ export interface CodePulseApi {
   /** Synchronizes native title-bar colors with the resolved renderer theme. */
   setWindowTheme: (theme: WindowTheme) => Promise<WindowTheme>
   setHudContentHeight: (height: number) => Promise<boolean>
+  /** Stage of a compact HUD style, pushed again on `onHudStage` when anchors change. */
+  getHudStage: () => Promise<HudStageInfo>
+  onHudStage: (cb: (stage: HudStageInfo) => void) => Unsubscribe
+  /** True while the pointer is over a drawn surface; false lets clicks pass through the stage. */
+  setHudInteractive: (interactive: boolean) => Promise<boolean>
+  hudDrag: (phase: HudDragPhase) => Promise<boolean>
+  /** Settings window only: persists a patch through the product shell, which owns the HUD preferences. */
+  setHudSettings: (patch: Partial<HudAppearanceSettings>) => Promise<ShellSnapshot>
   /** Pushes the inactive-project retention preference to the main-process hub. */
   setResultRetentionMinutes: (minutes: number) => Promise<boolean>
   openSettingsWindow: () => Promise<boolean>

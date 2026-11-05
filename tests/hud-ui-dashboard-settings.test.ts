@@ -27,6 +27,7 @@ test('dashboard settings default to the light HUD with calm attention and every 
   assert.equal(settings.theme, 'light')
   assert.equal(settings.hudOpacity, 37)
   assert.equal(settings.attentionEffect, 'steady')
+  assert.equal(settings.hudStyle, 'panel')
   assert.equal(settings.projectLayout, 'list')
   assert.equal(settings.showUsageStrip, true)
   assert.equal(settings.resultRetentionMinutes, 30)
@@ -116,6 +117,7 @@ test('dashboard settings persist changes and apply the selected root theme', () 
     theme: 'dark' as const,
     hudOpacity: 76,
     attentionEffect: 'breathe' as const,
+    hudStyle: 'island' as const,
     projectLayout: 'list' as const,
     showUsageStrip: false,
     resultRetentionMinutes: 120,
@@ -135,6 +137,7 @@ test('dashboard settings persist automatic theme selection', () => {
     theme: 'auto' as const,
     hudOpacity: 100,
     attentionEffect: 'pulse' as const,
+    hudStyle: 'orb' as const,
     projectLayout: 'grid' as const,
     showUsageStrip: true,
     resultRetentionMinutes: 240,
@@ -162,6 +165,7 @@ test('dashboard settings retain safe in-memory defaults when storage is unavaila
       theme: 'dark',
       hudOpacity: 92,
       attentionEffect: 'steady',
+      hudStyle: 'panel',
       projectLayout: 'grid',
       showUsageStrip: true,
       resultRetentionMinutes: 30,
@@ -222,4 +226,20 @@ test('HUD narrows the shared model without affecting OpenCode in the standard cl
   const { isHudTool } = await import('../apps/hud/src/renderer/src/lib/dashboardSettings.js')
   assert.equal(isHudTool('codex'), true)
   assert.equal(isHudTool('opencode'), false)
+})
+
+test('HUD style defaults to the panel and rejects unknown values', () => {
+  const storage = new MemoryStorage()
+  storage.setItem('codepulse:dashboard-settings', JSON.stringify({ visibleTools: {} }))
+  assert.equal(readDashboardSettings(storage).hudStyle, 'panel')
+
+  for (const hudStyle of ['panel', 'island', 'pills', 'edge', 'orb']) {
+    storage.setItem('codepulse:dashboard-settings', JSON.stringify({ hudStyle, visibleTools: {} }))
+    assert.equal(readDashboardSettings(storage).hudStyle, hudStyle)
+  }
+
+  storage.setItem('codepulse:dashboard-settings', JSON.stringify({ hudStyle: 'ribbon' }))
+  assert.equal(readDashboardSettings(storage).hudStyle, 'panel')
+  storage.setItem('codepulse:dashboard-settings', JSON.stringify({ hudStyle: 3 }))
+  assert.equal(readDashboardSettings(storage).hudStyle, 'panel')
 })

@@ -23,6 +23,8 @@
 .product-config > .product-button { width:100%; margin-top:16px; }
 .product-segments { display:flex; align-items:stretch; gap:4px; padding:4px; border:1px solid var(--line); border-radius:6px; background:var(--surface-muted); }
 .product-segments button,.product-sample-buttons button { min-height:36px; padding:4px 12px; border:1px solid transparent; border-radius:6px; font-size:13px; font-weight:500; color:var(--ink-700); background:transparent; transition:background-color var(--motion); }
+.product-segments.is-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); }
+.product-segments.is-grid button { min-width:0; }
 .product-segments button { flex:1; }
 .product-segments button:hover,.product-sample-buttons button:hover { background:var(--surface-selected); }
 .product-segments [aria-pressed='true'],.product-sample-buttons [aria-pressed='true'] { background:var(--surface-selected); border-color:var(--line); color:var(--ink); box-shadow:inset 0 -2px var(--ink-muted); }
@@ -34,6 +36,7 @@
 .hud-setting-label strong { font-weight:600; font-variant-numeric:tabular-nums; }
 .hud-opacity-slider { display:block; width:100%; min-height:32px; accent-color:var(--ink); }
 .hud-inline-check { display:flex; align-items:center; gap:8px; min-height:32px; font-size:13px; cursor:pointer; }
+.product-segments + .hud-inline-check { margin-top:12px; }
 .hud-inline-check input { width:16px; height:16px; flex:none; accent-color:var(--ink); }
 .hud-tools-grid { display:flex; flex-wrap:wrap; gap:4px 16px; }
 .product-feature-link { min-height:32px; padding:4px 0; border:0; background:transparent; text-align:left; font-size:13px; color:var(--ink-700); text-decoration:underline; text-underline-offset:4px; }

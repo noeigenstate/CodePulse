@@ -1,0 +1,868 @@
+/*
+ * Compact HUD styles (island, pills, edge, orb). Shared by the HUD window and the
+ * desktop preview; nothing else should restyle these classes.
+ * Type: 12/13/14/16 at weight 400/600. Radii: pill, 16, 10, 8.
+ * Spacing: 2, 4, 8, 12, 16, 20, 24, 32, 40, 48, 64.
+ */
+
+/* ---- Window shell: compact styles draw their own surfaces on a transparent stage ---- */
+body[data-surface='hud-compact'] {
+  padding: 0;
+}
+
+.app-shell[data-hud-surface='compact'],
+#root > .app-shell[data-hud-surface='compact'] {
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.app-shell[data-hud-surface='compact']::before {
+  display: none;
+}
+
+/* Modals stay clickable (data-hud-hit) but must not tint the transparent stage. */
+.app-shell[data-hud-surface='compact'] .hud-modal-overlay {
+  background: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* ---- Tokens ---- */
+.hud-c {
+  --c-t: 320ms cubic-bezier(0.32, 0.72, 0, 1);
+  --c-list-w: min(400px, calc(100cqw - 48px));
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  container-type: size;
+  color: var(--c-ink);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+/* Marks keep the design colours; the *-ink tokens are the text variants (>= 4.5:1 on the surface). */
+.hud-c[data-c-theme='light'] {
+  --c-surface-rgb: 255 255 255;
+  --c-cutout: #fff;
+  --c-ink: #24272d;
+  --c-muted: #4f5661;
+  --c-line: #ecedf0;
+  --c-hover: #f3f5f7;
+  --c-fault: #d92d20;
+  --c-action: #e8590c;
+  --c-notice: #12805c;
+  --c-active: #2563eb;
+  --c-fault-ink: #c42b1f;
+  --c-action-ink: #c2410c;
+  --c-notice-ink: #0f7352;
+  --c-active-ink: #1f56d8;
+  --c-shadow: 0 8px 24px rgb(16 24 40 / 0.16);
+}
+
+.hud-c[data-c-theme='dark'] {
+  --c-surface-rgb: 11 12 14;
+  --c-cutout: #0b0c0e;
+  --c-ink: #f3f4f6;
+  --c-muted: #a7adb7;
+  --c-line: #26292e;
+  --c-hover: #1d2025;
+  --c-fault: #ff6b5e;
+  --c-action: #ff8b3d;
+  --c-notice: #3ecf9b;
+  --c-active: #6ea0ff;
+  --c-fault-ink: #ff6b5e;
+  --c-action-ink: #ff8b3d;
+  --c-notice-ink: #3ecf9b;
+  --c-active-ink: #6ea0ff;
+  --c-shadow: 0 8px 24px rgb(0 0 0 / 0.5);
+}
+
+.hud-c .is-fault {
+  --c-level: var(--c-fault);
+  --c-level-ink: var(--c-fault-ink);
+}
+.hud-c .is-action {
+  --c-level: var(--c-action);
+  --c-level-ink: var(--c-action-ink);
+}
+.hud-c .is-notice {
+  --c-level: var(--c-notice);
+  --c-level-ink: var(--c-notice-ink);
+}
+.hud-c .is-active {
+  --c-level: var(--c-active);
+  --c-level-ink: var(--c-active-ink);
+}
+.hud-c .is-quiet {
+  --c-level: var(--c-muted);
+  --c-level-ink: var(--c-muted);
+}
+
+/* The surface fades with the HUD opacity setting but never below 86%, so text stays legible. */
+.hud-c-surface {
+  pointer-events: auto;
+  color: var(--c-ink);
+  background: rgb(var(--c-surface-rgb) / calc(0.86 + 0.14 * var(--hud-opacity, 0.37)));
+  box-shadow: var(--c-shadow);
+}
+
+.hud-c :focus-visible {
+  outline: 2px solid var(--c-active);
+  outline-offset: 2px;
+}
+
+.hud-c-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- Marks ---- */
+.hud-c-mark {
+  display: block;
+  flex: none;
+  justify-self: center;
+  width: 16px;
+  height: 16px;
+  color: var(--c-level);
+}
+
+.hud-c-spin {
+  transform-origin: 50% 50%;
+  animation: hud-c-spin 1.4s linear infinite;
+}
+
+@keyframes hud-c-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---- Text and actions ---- */
+.hud-c-text {
+  display: block;
+  min-width: 0;
+}
+
+.hud-c-title,
+.hud-c-meta,
+.hud-c-strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.hud-c-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.hud-c-meta {
+  font-size: 12px;
+  color: var(--c-muted);
+}
+
+.hud-c-meta.is-wrap {
+  white-space: normal;
+}
+
+.hud-c-strong {
+  font-weight: 600;
+}
+
+.hud-c-state {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--c-level-ink);
+}
+
+.hud-c-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: auto;
+}
+
+.hud-c-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--c-muted);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.hud-c-act:hover {
+  background: var(--c-line);
+  color: var(--c-ink);
+}
+
+.hud-c-act.is-read {
+  border: 1px solid var(--c-line);
+  color: var(--c-ink);
+}
+
+.hud-c-x {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+/* A transparent button under the panes: keyboard and click target for the whole surface. */
+.hud-c-fill {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  cursor: pointer;
+}
+
+.hud-c-fill:focus-visible {
+  outline-offset: -2px;
+}
+
+/* ---- Open list, shared by island, drawer and orb popup ---- */
+.hud-c-scroll {
+  position: absolute;
+  inset: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.hud-c-list {
+  width: var(--c-list-w);
+  padding: 8px;
+}
+
+.hud-c-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hud-c-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  column-gap: 12px;
+  align-items: center;
+  min-height: 56px;
+  padding: 8px 12px;
+  border-radius: 10px;
+}
+
+.hud-c-row:hover {
+  background: var(--c-hover);
+}
+
+.hud-c-side {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hud-c-side-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  white-space: nowrap;
+}
+
+.hud-c-side-text .hud-c-meta {
+  overflow: visible;
+}
+
+.hud-c-empty {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  column-gap: 12px;
+  align-items: center;
+  min-height: 56px;
+  padding: 8px 12px;
+}
+
+.hud-c-usage {
+  display: flex;
+  gap: 12px;
+  padding: 8px 12px 4px;
+  overflow: hidden;
+  border-top: 1px solid var(--c-line);
+  color: var(--c-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.hud-c-usage b {
+  font-weight: 600;
+  color: var(--c-ink);
+}
+
+.hud-c-controls {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 4px 0;
+}
+
+/* SurfaceControls was drawn for the 10px panel header; compact surfaces need 12px and 32px targets. */
+.hud-c .surface-controls.is-compact {
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+
+.hud-c .surface-controls.is-compact button {
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--c-line);
+  border-radius: 8px;
+  background: none;
+  color: var(--c-ink);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.hud-c .surface-controls.is-compact button:hover {
+  border-color: var(--c-line);
+  background: var(--c-hover);
+}
+
+.hud-c .surface-error {
+  max-width: none;
+  font-size: 12px;
+}
+
+/* ---- Island ---- */
+.hud-c-island {
+  --c-island-w: min(460px, calc(100cqw - 24px));
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  max-width: calc(100cqw - 24px);
+  max-height: calc(100cqh - 24px);
+  overflow: hidden;
+  transform: translateX(-50%);
+  transition:
+    width var(--c-t),
+    height var(--c-t),
+    border-radius var(--c-t);
+}
+
+.hud-c-island .hud-c-list {
+  width: var(--c-island-w);
+}
+
+.hud-c-pane {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--c-t),
+    visibility 0s linear 320ms;
+}
+
+.hud-c-pane.is-on {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transition:
+    opacity var(--c-t),
+    visibility 0s;
+}
+
+.hud-c-collapsed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 16px;
+  white-space: nowrap;
+}
+
+.hud-c-peek {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  column-gap: 12px;
+  align-items: center;
+  height: 100%;
+  padding: 0 12px 0 20px;
+}
+
+/* ---- Pills ---- */
+.hud-c-stack {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  width: 100%;
+  max-height: 100%;
+  padding: 12px 12px 24px;
+  overflow-y: auto;
+  pointer-events: none;
+  scrollbar-width: none;
+}
+
+.hud-c-stack::-webkit-scrollbar {
+  display: none;
+}
+
+.hud-c-pill {
+  position: relative;
+  flex: none;
+  width: 220px;
+  max-width: calc(100cqw - 24px);
+  height: 40px;
+  overflow: hidden;
+  border-radius: 20px;
+  transition:
+    width var(--c-t),
+    height var(--c-t),
+    border-radius var(--c-t);
+}
+
+.hud-c-pill.is-big {
+  width: 340px;
+  height: 92px;
+  border-radius: 16px;
+}
+
+.hud-c-pill.is-mini {
+  width: 128px;
+}
+
+.hud-c-pill-one {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.hud-c-pill-one .hud-c-title {
+  flex: 1;
+  font-size: 13px;
+}
+
+.hud-c-pill.is-mini .hud-c-state {
+  display: none;
+}
+
+.hud-c-pill-more {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 8px;
+  align-items: center;
+  padding: 0 12px 8px 40px;
+  visibility: hidden;
+  opacity: 0;
+  transition:
+    opacity var(--c-t),
+    visibility 0s linear 320ms;
+}
+
+.hud-c-pill.is-big .hud-c-pill-more {
+  visibility: visible;
+  opacity: 1;
+  transition:
+    opacity var(--c-t),
+    visibility 0s;
+}
+
+.hud-c-lines {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.hud-c-usage-pill,
+.hud-c-controls-pill {
+  display: flex;
+  flex: none;
+  align-items: center;
+  max-width: calc(100cqw - 24px);
+}
+
+.hud-c-usage-pill {
+  height: 32px;
+  padding: 0 12px;
+  overflow: hidden;
+  border-radius: 16px;
+}
+
+.hud-c-usage-pill .hud-c-usage {
+  padding: 0;
+  border: 0;
+}
+
+.hud-c-controls-pill {
+  height: 40px;
+  padding: 0 4px;
+  border-radius: 20px;
+}
+
+/* ---- Edge ---- */
+.hud-c-edge {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.hud-c-tab {
+  position: absolute;
+  top: 96px;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 36px;
+  max-height: calc(100cqh - 120px);
+  padding: 12px 8px;
+  overflow-y: auto;
+  border: 0;
+  border-radius: 16px 0 0 16px;
+  cursor: pointer;
+  scrollbar-width: none;
+}
+
+.hud-c-tab::-webkit-scrollbar {
+  display: none;
+}
+
+.hud-c-tab-item {
+  display: block;
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.hud-c-bubble {
+  position: absolute;
+  top: 104px;
+  right: 36px;
+  width: 0;
+  height: 56px;
+  overflow: hidden;
+  border-radius: 16px 0 0 16px;
+  visibility: hidden;
+  white-space: nowrap;
+  transition:
+    width var(--c-t),
+    visibility 0s linear 320ms;
+}
+
+.hud-c-bubble.is-on {
+  visibility: visible;
+  width: min(280px, calc(100cqw - 48px));
+  cursor: pointer;
+  transition:
+    width var(--c-t),
+    visibility 0s;
+}
+
+.hud-c-bubble-in,
+.hud-c-say-in {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  column-gap: 12px;
+  align-items: center;
+  width: min(280px, calc(100cqw - 48px));
+  height: 56px;
+  padding: 0 16px;
+}
+
+.hud-c-drawer {
+  position: absolute;
+  top: 96px;
+  right: 36px;
+  width: 0;
+  max-height: min(420px, calc(100cqh - 120px));
+  overflow: hidden;
+  border-radius: 16px 0 0 16px;
+  visibility: hidden;
+  transition:
+    width var(--c-t),
+    height var(--c-t),
+    visibility 0s linear 320ms;
+}
+
+.hud-c-drawer.is-on {
+  visibility: visible;
+  width: var(--c-list-w);
+  transition:
+    width var(--c-t),
+    height var(--c-t),
+    visibility 0s;
+}
+
+/* ---- Orb ---- */
+.hud-c-orb {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.hud-c-ball {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: grab;
+  touch-action: none;
+}
+
+.hud-c-ball:active {
+  cursor: grabbing;
+}
+
+.hud-c-ring {
+  position: absolute;
+  inset: 0;
+}
+
+.hud-c-arc.is-fault {
+  stroke: var(--c-fault);
+}
+.hud-c-arc.is-action {
+  stroke: var(--c-action);
+}
+.hud-c-arc.is-notice {
+  stroke: var(--c-notice);
+}
+.hud-c-arc.is-active {
+  stroke: var(--c-active);
+}
+.hud-c-arc.is-quiet {
+  stroke: var(--c-muted);
+}
+
+.hud-c-count {
+  position: relative;
+}
+
+/* The top task's mark, so state does not rest on ring colour alone. Inside the 56px ball. */
+.hud-c-badge {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgb(var(--c-surface-rgb));
+  box-shadow: 0 0 0 1px var(--c-line);
+  pointer-events: none;
+}
+
+.hud-c-say,
+.hud-c-pop {
+  position: absolute;
+  width: 0;
+  overflow: hidden;
+  visibility: hidden;
+  transition:
+    width var(--c-t),
+    height var(--c-t),
+    visibility 0s linear 320ms;
+}
+
+.hud-c-say.is-on,
+.hud-c-pop.is-on {
+  visibility: visible;
+  transition:
+    width var(--c-t),
+    height var(--c-t),
+    visibility 0s;
+}
+
+.hud-c-say {
+  height: 56px;
+  border-radius: 28px;
+  white-space: nowrap;
+}
+
+.hud-c-say.is-on {
+  width: min(280px, calc(100cqw - 112px));
+  cursor: pointer;
+}
+
+.hud-c-say-in {
+  padding: 0 20px;
+}
+
+.hud-c-pop {
+  height: 0;
+  max-height: min(var(--c-pop-max, 392px), calc(100cqh - 112px));
+  border-radius: 16px;
+}
+
+.hud-c-pop.is-on {
+  width: var(--c-list-w);
+}
+
+/* The orb sits 24px from its anchor corner; bubble and list open toward the stage centre. */
+.hud-c-orb[data-anchor-h='right'] .hud-c-ball,
+.hud-c-orb[data-anchor-h='right'] .hud-c-pop {
+  right: 24px;
+}
+.hud-c-orb[data-anchor-h='left'] .hud-c-ball,
+.hud-c-orb[data-anchor-h='left'] .hud-c-pop {
+  left: 24px;
+}
+.hud-c-orb[data-anchor-h='right'] .hud-c-say {
+  right: 88px;
+}
+.hud-c-orb[data-anchor-h='left'] .hud-c-say {
+  left: 88px;
+}
+.hud-c-orb[data-anchor-v='top'] .hud-c-ball,
+.hud-c-orb[data-anchor-v='top'] .hud-c-say {
+  top: 24px;
+}
+.hud-c-orb[data-anchor-v='bottom'] .hud-c-ball,
+.hud-c-orb[data-anchor-v='bottom'] .hud-c-say {
+  bottom: 24px;
+}
+.hud-c-orb[data-anchor-v='top'] .hud-c-pop {
+  top: 88px;
+}
+.hud-c-orb[data-anchor-v='bottom'] .hud-c-pop {
+  bottom: 88px;
+}
+
+/* ---- Attention loop: follows the existing "attention effect" setting; steady has none ---- */
+@keyframes hud-c-breathe {
+  0%,
+  100% {
+    box-shadow:
+      var(--c-shadow),
+      0 0 0 0 color-mix(in srgb, var(--pc) 45%, transparent);
+  }
+  50% {
+    box-shadow:
+      var(--c-shadow),
+      0 0 0 8px color-mix(in srgb, var(--pc) 0%, transparent);
+  }
+}
+
+@keyframes hud-c-pulse {
+  0%,
+  100% {
+    box-shadow:
+      var(--c-shadow),
+      0 0 0 4px color-mix(in srgb, var(--pc) 60%, transparent);
+  }
+  50% {
+    box-shadow: var(--c-shadow);
+  }
+}
+
+[data-attention-effect='breathe'] .hud-c-urgent {
+  animation: hud-c-breathe 2.8s ease-in-out infinite;
+}
+
+[data-attention-effect='pulse'] .hud-c-urgent {
+  animation: hud-c-pulse 2.2s steps(1, end) infinite;
+}
+
+/* Only loops stop: a morph answers a state change and many Windows setups report reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .hud-c-spin {
+    animation: none;
+  }
+  [data-attention-effect] .hud-c-urgent {
+    animation: none;
+  }
+}
+
+/* ---- Desktop preview: a labelled, transparent stage stand-in ---- */
+.hud-compact-preview {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.hud-compact-preview figure {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+}
+
+.hud-compact-preview figcaption {
+  color: var(--ink-muted, #62646a);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.hud-c-preview-stage {
+  position: relative;
+  min-width: 0;
+  height: 160px;
+  overflow: hidden;
+  border: 1px solid var(--line, rgb(128 128 128 / 0.3));
+  border-radius: 10px;
+  background: var(--surface-muted, rgb(128 128 128 / 0.12));
+}
+
+.hud-c-preview-stage[data-c-style='pills'] {
+  height: 360px;
+}
+.hud-c-preview-stage[data-c-style='edge'] {
+  height: 240px;
+}
+.hud-c-preview-stage[data-c-style='orb'] {
+  height: 136px;
+}
+.hud-c-preview-stage[data-part='open'] {
+  height: 460px;
+}
+.hud-c-preview-stage[data-c-style='pills'][data-part='open'] {
+  height: 560px;
+}

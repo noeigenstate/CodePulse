@@ -5,6 +5,8 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
   DEFAULT_HUD_SETTINGS,
+  HUD_SURFACE_STYLES,
+  normalizeHudSettings,
   DEFAULT_INK_PLAN,
   normalizeInkPlan,
   normalizeShellPreferences,
@@ -336,4 +338,20 @@ test('HUD visibility is a live state, independent of the saved launch form', () 
   assert.equal(f.shell.snapshot().form, 'standard')
   assert.equal(f.saved.length, 0)
   assert.ok(!f.calls.includes('hide-standard'))
+})
+
+test('HUD style settings keep the panel by default and reject unknown values', () => {
+  assert.equal(normalizeHudSettings({}).hudStyle, 'panel')
+  assert.equal(normalizeHudSettings({}).autoReveal, false)
+  assert.equal('orbPosition' in normalizeHudSettings({}), false)
+  for (const hudStyle of HUD_SURFACE_STYLES) {
+    assert.equal(normalizeHudSettings({ hudStyle }).hudStyle, hudStyle)
+  }
+  assert.equal(normalizeHudSettings({ hudStyle: 'blimp' }).hudStyle, 'panel')
+  assert.equal(normalizeHudSettings({ autoReveal: 'yes' }).autoReveal, false)
+  assert.deepEqual(normalizeHudSettings({ orbPosition: { x: 10.4, y: -20.6 } }).orbPosition, {
+    x: 10,
+    y: -21,
+  })
+  assert.equal('orbPosition' in normalizeHudSettings({ orbPosition: { x: NaN, y: 1 } }), false)
 })

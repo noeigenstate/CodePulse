@@ -1,3 +1,9 @@
+> **Temporary branch / 动态红色减闪实验：`codex/epd-red-flicker-lab`**
+>
+> 跨电脑继续测试请先读 [Board1 减闪交接与构建说明](firmware/doc/RED-REFRESH-HANDOFF.md)。
+> `.46` 显色通过但闪烁未通过；`.47` 已构建、尚未做实机验证。本分支不合并 main、不自动刷机。
+> This is a source checkpoint for manual Board1 red-refresh experiments, not a firmware release.
+
 <div align="center">
 
 <img src="./apps/desktop/src/renderer/src/assets/codepulse-icon.svg" alt="CodePulse logo" width="120" />

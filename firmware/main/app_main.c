@@ -23,6 +23,27 @@
 #include "driver/usb_serial_jtag_vfs.h"
 #include "epd_canvas.h"
 #include "epd_ssd1683.h"
+#ifdef CODEPULSE_EPD_RED_MASK_PROBE
+#include "red_mask_probe.h"
+#endif
+#ifdef CODEPULSE_EPD_RED_BADGE_PROBE
+#include "red_badge_probe.h"
+#endif
+#ifdef CODEPULSE_EPD_RED_LUT5_PROBE
+#include "red_lut5_probe.h"
+#endif
+#ifdef CODEPULSE_EPD_PANEL_READBACK
+#include "panel_readback.h"
+#endif
+#ifdef CODEPULSE_EPD_RED_LUT_PROBE
+#include "red_lut_probe.h"
+#endif
+#ifdef CODEPULSE_EPD_RED_REGION_PROBE
+#include "red_probe.h"
+#endif
+#ifdef CODEPULSE_EPD_RESOLUTION_PROBE
+#include "resolution_probe.h"
+#endif
 #ifdef CODEPULSE_EPD_TEXT_TIMING_PROBE
 #include "timing_probe.h"
 #endif
@@ -406,6 +427,7 @@ static codepulse_ui_model_t make_dashboard_model(
       .battery_valid = battery_valid,
       .battery_percent = battery->percent,
       .wifi_connected = server_reachable,
+      .work_status_stale = !server_reachable,
       .agents =
           {
               {
@@ -654,10 +676,48 @@ void app_main(void) {
            "battery_rework=GPIO42_to_GPIO8 adc=ADC1_CH7 divider=200k/100k");
   log_hardware_report();
 
+#ifdef CODEPULSE_EPD_PANEL_READBACK
+  /* Owns the uninitialized panel bus exclusively; no normal-app fallthrough. */
+  codepulse_panel_readback_run(APP_NOTIFY_BUTTON_SHORT, APP_NOTIFY_BUTTON_LONG);
+  shutdown_safely();
+  idle_safely_forever();
+#endif
+
   epd_canvas_t canvas = {
       .black = s_black_plane,
       .red = s_red_plane,
   };
+#ifdef CODEPULSE_EPD_RED_MASK_PROBE
+  if (!codepulse_red_mask_run(&canvas, APP_NOTIFY_BUTTON_SHORT, APP_NOTIFY_BUTTON_LONG)) {
+    shutdown_safely();
+  }
+#endif
+#ifdef CODEPULSE_EPD_RED_BADGE_PROBE
+  if (!codepulse_red_badge_run(&canvas, APP_NOTIFY_BUTTON_SHORT, APP_NOTIFY_BUTTON_LONG)) {
+    shutdown_safely();
+  }
+#endif
+#ifdef CODEPULSE_EPD_RED_LUT5_PROBE
+  if (!codepulse_red_lut5_run(&canvas, APP_NOTIFY_BUTTON_SHORT, APP_NOTIFY_BUTTON_LONG)) {
+    shutdown_safely();
+  }
+#endif
+#ifdef CODEPULSE_EPD_RED_LUT_PROBE
+  if (!codepulse_red_lut_run(&canvas, APP_NOTIFY_BUTTON_SHORT, APP_NOTIFY_BUTTON_LONG)) {
+    shutdown_safely();
+  }
+#endif
+#ifdef CODEPULSE_EPD_RED_REGION_PROBE
+  if (!codepulse_red_probe_run(&canvas, APP_NOTIFY_BUTTON_SHORT, APP_NOTIFY_BUTTON_LONG)) {
+    shutdown_safely();
+  }
+#endif
+#ifdef CODEPULSE_EPD_RESOLUTION_PROBE
+  if (!codepulse_resolution_probe_run(&canvas, APP_NOTIFY_BUTTON_SHORT,
+                                     APP_NOTIFY_BUTTON_LONG)) {
+    shutdown_safely();
+  }
+#endif
   aht20_sample_t sample = {0};
   battery_sample_t battery = {0};
   codepulse_device_config_t device_config = {0};

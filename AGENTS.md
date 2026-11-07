@@ -12,3 +12,15 @@ Read docs/DEVELOPMENT-OWNERSHIP.md, docs/WORKSPACE.md and docs/UNIFIED-PRODUCT.m
 
 - Read docs/REPOSITORY.md for the monorepo introduced 2026-11-01. The old separate-firmware direct-main push rule is retired; all components use the root product main. No submodules, old GitLab pushes, automatic releases or automatic flashes.
 - For firmware/rendering changes run node scripts/check-firmware-preview.mjs and the relevant firmware checks. Keep original font/component notices. Hardware sources and their license are uploaded separately by the hardware contributor.
+
+## Temporary red-refresh lab branch (2026-11-07)
+
+The user explicitly authorized `codex/epd-red-flicker-lab` as a separate remote
+checkpoint for continuing Board1 experiments on another computer. On this branch,
+read `firmware/doc/RED-REFRESH-HANDOFF.md` first and keep authorized experiment
+pushes on this branch. Do not automatically switch to codex/unified-product,
+integrate main, create a release or flash hardware. Main protection is unchanged.
+Preserve the original worktree's dirty files; do not import unrelated desktop work.
+Every flash still requires a fresh physical power-hold confirmation. Red must
+actually change; static-red/BW-only updates are not acceptance of this task.
+The .46 color result passed once but flicker failed; .47 has not been optically tested.

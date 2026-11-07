@@ -167,7 +167,8 @@ display_sync_reason_t display_sync_evaluate(display_sync_policy_t *policy,
       return DISPLAY_SYNC_QUOTA;
     }
   }
-  if (model->wifi_connected != policy->displayed.wifi_connected &&
+  if ((model->wifi_connected != policy->displayed.wifi_connected ||
+       model->work_status_stale != policy->displayed.work_status_stale) &&
       elapsed(now_ms, policy->connectivity_since_ms,
               CODEPULSE_CONNECTIVITY_SETTLE_MS)) {
     return DISPLAY_SYNC_CONNECTIVITY;
@@ -289,8 +290,10 @@ void display_sync_project(const display_sync_policy_t *p, int64_t now,
       out->weekly_resets[i] = p->displayed.weekly_resets[i];
     }
   }
-  if (!elapsed(now, p->connectivity_since_ms, CODEPULSE_CONNECTIVITY_SETTLE_MS))
+  if (!elapsed(now, p->connectivity_since_ms, CODEPULSE_CONNECTIVITY_SETTLE_MS)) {
     out->wifi_connected = p->displayed.wifi_connected;
+    out->work_status_stale = p->displayed.work_status_stale;
+  }
   const bool secondary_due =
       elapsed(now, p->last_secondary_ms, CODEPULSE_SECONDARY_REFRESH_MIN_MS) &&
       elapsed(now, p->last_work_ms, CODEPULSE_SECONDARY_QUIET_MS) &&

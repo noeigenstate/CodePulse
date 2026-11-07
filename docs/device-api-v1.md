@@ -240,6 +240,17 @@ timeout | usage_limited | cancelled
 统一为 Unix epoch **秒**，而两个 `updatedAt` 为 Unix epoch **毫秒**。
 每个 Agent 最多返回 8 个额度桶。
 
+### Transport freshness (firmware 0.0.33-status)
+
+The protocol and canonical task states are unchanged. If the desktop is unreachable,
+the device retains task identities/titles and, after the existing three-second
+connection debounce, draws local offline labels instead of presenting cached work
+states as live. Reconnection restores labels even when the task revision has not
+changed. The local `work_status_stale` flag is not a new wire field and does not
+acknowledge, finish, hide or expire tasks on the host. Offline polling alone does
+not schedule repeated panel refreshes. Unknown preview telemetry is distinct from
+an explicitly disconnected device.
+
 ## 4. 条件请求与水墨屏刷新
 
 ### 0.0.18：即时状态读取（2026-10-23）

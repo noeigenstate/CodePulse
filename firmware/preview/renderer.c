@@ -26,7 +26,9 @@ int preview_render(unsigned length, int sensors, float temperature,
     .temperature_c = temperature, .humidity_rh = humidity,
     .battery_valid = battery >= 0 && battery <= 100,
     .battery_percent = (uint8_t)(battery >= 0 && battery <= 100 ? battery : 0),
-    .wifi_connected = wifi != 0,
+    /* 0 means unknown preview telemetry; -1 explicitly simulates stale data. */
+    .wifi_connected = wifi > 0,
+    .work_status_stale = wifi < 0,
   };
   codepulse_remote_apply(&remote, &model);
   epd_canvas_t canvas = { black, red };

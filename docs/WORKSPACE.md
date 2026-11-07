@@ -241,3 +241,11 @@ area; a valid dragged position there is retained. The Control state follows
 native window visibility/minimization, not just a window creation request.
 
 See [shared work presentation handoff](WORK-PRESENTATION-HANDOFF.md) and [Antigravity integration](ANTIGRAVITY.md) for the current post-baseline changes and remaining device validation.
+
+## Temporary Board1 red-refresh lab
+
+`codex/epd-red-flicker-lab` is a user-authorized source checkpoint for continued
+manual testing on another computer. See [the handoff](../firmware/doc/RED-REFRESH-HANDOFF.md)
+for isolated build profiles, app-only upgrade checks, passive capture and optical
+results. No desktop host is needed while the diagnostic page runs. Do not treat
+the temporary branch as a release or automatically merge it into main.

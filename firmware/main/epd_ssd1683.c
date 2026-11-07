@@ -287,3 +287,24 @@ esp_err_t epd_ssd1683_deep_sleep(void) {
 #endif
 
 #include "driver_quiet.inc"
+
+#ifdef CODEPULSE_EPD_RED_LUT_PROBE
+#include "../experiments/epd-red-lut-probe/driver_red_lut.inc"
+#endif
+#ifdef CODEPULSE_EPD_RED_MASK_PROBE
+#ifdef CODEPULSE_EPD_RED_MASK_BLACK
+#include "../experiments/epd-red-mask-probe/driver_red_black.inc"
+#else
+#include "../experiments/epd-red-mask-probe/driver_red_mask.inc"
+#endif
+#endif
+#ifdef CODEPULSE_EPD_RED_BADGE_PROBE
+#include "../experiments/epd-red-badge-probe/driver_red_badge.inc"
+#endif
+#ifdef CODEPULSE_EPD_RED_LUT5_PROBE
+#include "../experiments/epd-red-lut5-probe/driver_red_lut5.inc"
+#endif
+
+#ifdef CODEPULSE_EPD_RED_REGION_PROBE
+#include "../experiments/epd-red-region-probe/driver_red_probe.inc"
+#endif

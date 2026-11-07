@@ -1,5 +1,5 @@
 {
-  "firmwareVersion": "0.0.32-cards",
+  "firmwareVersion": "0.0.33-status",
   "width": 400,
   "height": 300,
   "sourceHashFormat": "sha256-text-lf",
@@ -39,7 +39,7 @@
     "main/codepulse_life.h": "b3d1b9077bf425bbea877a1e2efd96dd80527adbf1e5e76811b69b3c0a2f760b",
     "main/codepulse_protocol.c": "3b55924dc240cf6bbe7a890cf0ae933e8a25d20d8820c529f374a9d05f6318a4",
     "main/codepulse_protocol.h": "64a42f1c5d8bd306925e6f420430952024202a69846f78c92da32457c988b7f4",
-    "main/codepulse_ui.h": "de553a431aea66d8fe18bd5c175fe02bec8a82a65482724d1da91be898d8f81d",
+    "main/codepulse_ui.h": "1d8eeef9faa0f1aa102bef01715b5f5ae145d65ecf0c8f140fe1ad1447841687",
     "main/device_config.h": "ddfaebb04eb86cab47184535a9b54ffb1813c4646cc6c250545e954b7aa7647a",
     "main/device_identity.h": "00b0b458894a48080326b4f9d8b529f2fd35de0e883e34b9e491f5193d062251",
     "main/display_font_data.h": "5b17b18264e96eb87a1983668ef81a362fcc190453244c69d2c49e3027d1f378",
@@ -51,9 +51,9 @@
     "main/epd_quiet.h": "afb6afad3ee3d39846afdc59fc649ccf79dd2b9ab7ec4970b36651b04ef27228",
     "main/epd_ssd1683.h": "b612f719bf9e5a1e495d026c10c9e963b0965f28b6654526f161ae8b651f3f8f",
     "main/life_assets.generated.h": "4c5551197324b51b9809a8b3ab55e0c92541878b1e7677f1c9d660e1017e6b5f",
-    "main/life_dashboard.c": "5f6b70dc2b12d0fb4c31c7dc08a9b287f49e3aae44657b0315350d0bae11df4d",
+    "main/life_dashboard.c": "e9764ebe757f9d8b9f76e58bc316c7329b0adce28f474c1cb8c68c8279bd65dc",
     "main/life_dashboard.h": "f07b25635567ba7e840a53def31991a37afc95fd15eb381fe80174e0f0e901cf",
-    "main/quiet_dashboard.c": "ac4e21b60a93abcba8616381f95fb8447e044513c566ea4dfa6a5ceadbf08cac",
+    "main/quiet_dashboard.c": "e1471c9863b25ea7919ffd465195186cc6974c95730d871849d1ff98adeeb378",
     "main/quiet_dashboard.h": "f8c2e279b91177edc9e5bdf3db30e7125f29fdacf8984c479fd0279fe205c448",
     "main/quiet_lut.h": "5d64b674b61d3bddfa37a9db1e71be793ef10a9251056c6fa74148ef1b57435f",
     "main/quiet_profile.h": "70eca7dd70c80b4406f817f6be6f4040092ebe4f8183161a6714f96cbae9fa48",
@@ -65,7 +65,7 @@
     "preview/include/driver/gpio.h": "b86d51679b20d8ac751d20620a7c2e0f1c5b1b5be6079ac61d54492a8140cc20",
     "preview/include/esp_err.h": "5fbf457052380bcb74d27614af81f72963aa8514f5fbcb37a7540474f29005ec",
     "preview/life-icons.json": "7ff2dd50cfe72ef5325749fb379fc1019fe7772af3bd7dfb725a061e83ae79c7",
-    "preview/renderer.c": "bddba8944ff1cecc63670ff67dd93f09d4f9d274313b1b5611468e9d250d7e0c",
+    "preview/renderer.c": "69e8d5ee11bfc127ea4b47bdab2774056e68ea041e62b8e75ad46254c88c774e",
     "scripts/build-preview.py": "92160a3e2ceccb22bee9f037abd65e058d6fd8e1f3c1a4e798f62a102b87b27b",
     "scripts/font-spacing.py": "a32e1e19ab9605e08bd175ca8d7c2ca0dea48ef67e14217f0e7f4b55cd447b95",
     "scripts/generate-calendar-font-charset.mjs": "cffe42f8880cac9ed16f7cd60a8f129c6dd21667bf6a0f5a10f6849b6b88e0c9",
@@ -81,5 +81,5 @@
     "tests/vendor/miniz/miniz_tinfl.c": "9b7edc1fab708166e10f5e90a618a91c95a91496c4692e38160fdae810c1149a",
     "tests/vendor/miniz/miniz_tinfl.h": "040aad2d9ca23c487652c150277d950be12e72c5453ae1f7c6713ed2efd16b4e"
   },
-  "wasmSha256": "f2bbaad243fdd3bdd62f6c6f45781bbe5abf5daf76e459a6ca5d736515d55325"
+  "wasmSha256": "a75918188910945acf0513119c3d484765f65263cb75ba7a77decfcf3e88409d"
 }

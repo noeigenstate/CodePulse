@@ -50,6 +50,21 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Life protocol compilation failed.' }
     & (Join-Path $buildRoot 'test-life.exe') (Join-Path $firmwareRoot 'preview/fixtures')
     if ($LASTEXITCODE -ne 0) { throw 'Life protocol regression failed.' }
+    foreach ($ndebug in @(0, 1)) {
+        $defines = @()
+        if ($ndebug) { $defines = @('/DNDEBUG') }
+        $offlineExe = 'test-offline-' + $ndebug + '.exe'
+        & cl.exe /nologo /std:c11 /utf-8 /W4 /WX /D_CRT_SECURE_NO_WARNINGS @defines `
+            ('/I' + (Join-Path $firmwareRoot 'experiments/epd-quiet-probe/tests')) `
+            ('/I' + (Join-Path $firmwareRoot 'main')) ('/I' + (Join-Path $firmwareRoot 'tests/vendor/miniz')) `
+            (Join-Path $firmwareRoot 'tests/quiet/test_offline.c') (Join-Path $firmwareRoot 'main/quiet_dashboard.c') `
+            (Join-Path $firmwareRoot 'main/life_dashboard.c') (Join-Path $firmwareRoot 'main/display_text.c') `
+            (Join-Path $firmwareRoot 'main/epd_canvas.c') (Join-Path $firmwareRoot 'main/display_sync_policy.c') `
+            (Join-Path $firmwareRoot 'tests/vendor/miniz/miniz_tinfl.c') ('/Fe:' + $offlineExe)
+        if ($LASTEXITCODE -ne 0) { throw 'Offline status compilation failed.' }
+        & (Join-Path $buildRoot $offlineExe)
+        if ($LASTEXITCODE -ne 0) { throw 'Offline status regression failed.' }
+    }
 } finally {
     Pop-Location
 }

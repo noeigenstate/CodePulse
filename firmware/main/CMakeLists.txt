@@ -68,6 +68,87 @@ if(CODEPULSE_AUDIO_ENABLED)
     endforeach()
 endif()
 
+if(CODEPULSE_EPD_RED_MASK_PROBE)
+    target_sources(${COMPONENT_LIB} PRIVATE
+        "../experiments/epd-red-mask-probe/red_mask_probe.c"
+        "../experiments/epd-red-mask-probe/red_mask_pattern.c"
+        "../experiments/epd-red-mask-probe/red_mask_plan.c")
+    target_include_directories(${COMPONENT_LIB} PRIVATE "../experiments/epd-red-mask-probe")
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE CODEPULSE_EPD_RED_MASK_PROBE=1)
+    if(CODEPULSE_EPD_RED_MASK_BLACK)
+        target_compile_definitions(${COMPONENT_LIB} PRIVATE CODEPULSE_EPD_RED_MASK_BLACK=1)
+        if(CODEPULSE_EPD_RED_MASK_COLOR)
+            target_compile_definitions(${COMPONENT_LIB} PRIVATE CODEPULSE_EPD_RED_MASK_COLOR=1)
+            if(CODEPULSE_EPD_RED_MASK_PULSE)
+                target_compile_definitions(${COMPONENT_LIB} PRIVATE CODEPULSE_EPD_RED_MASK_PULSE=1)
+                if(CODEPULSE_EPD_RED_MASK_ACTIVATE)
+                    target_compile_definitions(${COMPONENT_LIB} PRIVATE CODEPULSE_EPD_RED_MASK_ACTIVATE=1)
+                    if(CODEPULSE_EPD_RED_MASK_FAST)
+                        target_compile_definitions(${COMPONENT_LIB} PRIVATE CODEPULSE_EPD_RED_MASK_FAST=1)
+                    endif()
+                endif()
+            endif()
+        endif()
+    endif()
+endif()
+
+if(CODEPULSE_EPD_RED_BADGE_PROBE)
+    target_sources(${COMPONENT_LIB} PRIVATE
+        "../experiments/epd-red-badge-probe/red_badge_probe.c"
+        "../experiments/epd-red-badge-probe/red_badge_pattern.c")
+    target_include_directories(${COMPONENT_LIB} PRIVATE "../experiments/epd-red-badge-probe")
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE CODEPULSE_EPD_RED_BADGE_PROBE=1)
+    if(CODEPULSE_EPD_RED_BADGE_HOLD)
+        target_compile_definitions(${COMPONENT_LIB} PRIVATE CODEPULSE_EPD_RED_BADGE_HOLD=1)
+    endif()
+endif()
+
+if(CODEPULSE_EPD_RED_LUT5_PROBE)
+    target_sources(${COMPONENT_LIB} PRIVATE
+        "../experiments/epd-red-lut5-probe/red_lut5_probe.c"
+        "../experiments/epd-red-lut5-probe/red_lut5_pattern.c")
+    target_include_directories(${COMPONENT_LIB} PRIVATE "../experiments/epd-red-lut5-probe")
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE CODEPULSE_EPD_RED_LUT5_PROBE=1)
+endif()
+
+if(CODEPULSE_EPD_PANEL_READBACK)
+    target_sources(${COMPONENT_LIB} PRIVATE
+        "../experiments/epd-panel-readback/panel_readback.c"
+        "../experiments/epd-panel-readback/panel_readback_probe.c")
+    target_include_directories(${COMPONENT_LIB} PRIVATE "../experiments/epd-panel-readback")
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE CODEPULSE_EPD_PANEL_READBACK=1)
+endif()
+
+if(CODEPULSE_EPD_RED_LUT_PROBE)
+    target_sources(${COMPONENT_LIB} PRIVATE
+        "../experiments/epd-red-lut-probe/red_lut_probe.c"
+        "../experiments/epd-red-lut-probe/red_lut_pattern.c")
+    target_include_directories(${COMPONENT_LIB} PRIVATE "../experiments/epd-red-lut-probe")
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE CODEPULSE_EPD_RED_LUT_PROBE=1)
+endif()
+
+if(CODEPULSE_EPD_RED_REGION_PROBE)
+    target_sources(${COMPONENT_LIB} PRIVATE
+        "../experiments/epd-red-region-probe/red_probe.c"
+        "../experiments/epd-red-region-probe/red_pattern.c")
+    target_include_directories(${COMPONENT_LIB} PRIVATE "../experiments/epd-red-region-probe")
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE CODEPULSE_EPD_RED_REGION_PROBE=1)
+    if(CODEPULSE_EPD_RED_RETAINED)
+        target_compile_definitions(${COMPONENT_LIB} PRIVATE CODEPULSE_EPD_RED_RETAINED=1)
+    endif()
+    if(CODEPULSE_EPD_RED_BW_ONLY)
+        target_compile_definitions(${COMPONENT_LIB} PRIVATE CODEPULSE_EPD_RED_BW_ONLY=1)
+    endif()
+endif()
+
+if(CODEPULSE_EPD_RESOLUTION_PROBE)
+    target_sources(${COMPONENT_LIB} PRIVATE
+        "../experiments/epd-resolution-probe/resolution_probe.c"
+        "../experiments/epd-resolution-probe/resolution_pattern.c")
+    target_include_directories(${COMPONENT_LIB} PRIVATE "../experiments/epd-resolution-probe")
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE CODEPULSE_EPD_RESOLUTION_PROBE=1)
+endif()
+
 if(CODEPULSE_EPD_TEXT_TIMING_PROBE)
     target_sources(${COMPONENT_LIB} PRIVATE "../experiments/epd-text-timing-probe/timing_probe.c")
     target_include_directories(${COMPONENT_LIB} PRIVATE "../experiments/epd-text-timing-probe")

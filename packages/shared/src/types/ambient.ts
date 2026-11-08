@@ -213,8 +213,10 @@ export interface AmbientCard {
     | 'calendar'
     | 'life'
     | 'search'
+    | 'plugin'
   /** 元宝搜索 cards only: which feature produced it ('life' kind: weather/gold/stock; 'search' kind: tools/holiday/news). */
   topic?: YuanbaoTopic
+  plugin?: { id: string }
   source: string
   text: string
   url: string

@@ -1,6 +1,7 @@
 import { ProductFrame, useProductNavigation } from './components/ProductFrame.js'
 import { ProductControl } from './components/ProductControl.js'
 import { ScreenWorkbench } from './components/ScreenWorkbench.js'
+import { PluginStore } from './components/PluginStore.js'
 import { AmbientPanel } from './components/AmbientPanel.js'
 import { AssistantPanel } from './components/AssistantPanel.js'
 /**
@@ -362,6 +363,7 @@ export function App(): JSX.Element {
             />
           </section>
         )}
+        {product.view === 'plugins' && !product.focusMode && <PluginStore />}
         {product.visited.has('assistant') && (
           <section
             className="product-scroll"

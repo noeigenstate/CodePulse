@@ -11,6 +11,7 @@
 | `packages`     | 任务语义、协议类型、采集、存储与本地服务       | 原有类型/回归检查                |
 | `firmware`     | ESP-IDF 固件、驱动、物理渲染、字体、刷新和工具 | host/quiet/audio/fonts、目标构建 |
 | `hardware`     | 硬件贡献者按板型/修订上传的源设计和导出物      | 板级审查、许可及实机验证         |
+| `server`       | 插件平台服务与商店网页，见 PLUGIN-PLATFORM     | server typecheck/test/build      |
 | `docs`         | 产品、协议、跨端说明                           | 与实现和版本一致、链接有效       |
 
 ## 日常协作

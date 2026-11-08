@@ -6,6 +6,7 @@ import { selectDeskContent } from './assistant-presentation.js'
 import { ProductShell, shellPreferenceStore } from './product-shell.js'
 import { registerProductIpc } from './product-ipc.js'
 import { ScreenWorkbenchWindow } from './screen-workbench-window.js'
+import { registerPluginIpc, guardPluginNavigation } from './plugin-ipc.js'
 import { registerAmbientIpc } from './ambient-ipc.js'
 import { inkAllowsAmbient, inkFeatureAt } from './ambient-plan.js'
 import { InkStatusRuntime, computeInkStatus } from './ink-status.js'
@@ -264,6 +265,10 @@ function createWindow(): void {
     },
   })
 
+  guardPluginNavigation(mainWindow.webContents, ambientRuntime?.plugins?.baseUrl, (url) =>
+    shell.openExternal(url),
+  )
+
   mainWindow.on('ready-to-show', () => {
     if (standardVisible) mainWindow?.show()
   })
@@ -519,6 +524,13 @@ function registerIpc(): void {
         display: deviceDisplaySnapshot().config,
       }).shell,
   )
+  registerPluginIpc(ipcMain, {
+    trusted: (event) =>
+      event.sender === mainWindow?.webContents && event.senderFrame === event.sender.mainFrame,
+    theme: () => windowTheme,
+    open: (theme) => ambientRuntime!.openPlugins(theme),
+    refresh: () => ambientRuntime?.plugins?.refresh(true) ?? Promise.resolve(),
+  })
   ipcMain.handle('codepulse:hud-preview', () => hudSurface?.snapshot() ?? null)
   registerAmbientIpc(
     ipcMain,

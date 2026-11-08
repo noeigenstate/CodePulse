@@ -139,6 +139,10 @@ const api = {
     ipcRenderer.invoke('codepulse:ambient-note', text),
   removeAmbient: (id: string): Promise<AmbientSnapshot> =>
     ipcRenderer.invoke('codepulse:ambient-remove', id),
+  openPlugins: (): Promise<{ url: string } | { error: string }> =>
+    ipcRenderer.invoke('plugins:open'),
+  onPluginsLoadError: (cb: () => void): (() => void) => subscribe('plugins:load-error', cb),
+  pluginsChanged: (): Promise<void> => ipcRenderer.invoke('plugins:changed'),
   getAmbient: (): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:ambient-get'),
   setAmbient: (config: AmbientConfig): Promise<AmbientSnapshot> =>
     ipcRenderer.invoke('codepulse:ambient-set', config),

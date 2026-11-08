@@ -24,6 +24,7 @@ export type AmbientCategory =
   | 'tools'
   | 'holiday'
   | 'headlines'
+  | 'plugin'
 
 /** The error to show inside a category, or ''. Only enabled online sources can have one. */
 export function categoryProblem(
@@ -44,6 +45,7 @@ export function cardCategory(
   card: Pick<AmbientCard, 'kind' | 'topic'>,
 ): AmbientCategory | undefined {
   switch (card.kind) {
+    case 'plugin':
     case 'concept':
     case 'prompt':
     case 'pet':

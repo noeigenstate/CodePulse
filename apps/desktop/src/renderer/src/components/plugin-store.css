@@ -1,0 +1,19 @@
+.plugin-store {
+  position: relative;
+  background: var(--surface-solid);
+}
+.plugin-store iframe {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  border: 0;
+  background: var(--surface-solid);
+}
+.plugin-store-state {
+  padding: 24px;
+}
+.plugin-store h1 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}

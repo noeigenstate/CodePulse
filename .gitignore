@@ -48,3 +48,8 @@ requirements.md
 /firmware/managed_components/
 /firmware/build-*/
 /firmware/tmp/
+
+# plugin platform local data
+server/.data/
+
+server/.env

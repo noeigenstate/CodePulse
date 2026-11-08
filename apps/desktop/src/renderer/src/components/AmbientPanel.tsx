@@ -162,6 +162,7 @@ const CATEGORIES: { id: Category; label: string }[] = [
   { id: 'news', label: '科技热议' },
   { id: 'social', label: 'X 与 meme' },
   { id: 'local', label: '我的图片与便签' },
+  { id: 'plugin', label: '插件' },
   { id: 'life', label: '生活卡' },
   { id: 'tools', label: '工具更新' },
   { id: 'holiday', label: '假日公告' },
@@ -607,7 +608,10 @@ export function AmbientPanel({
     setBusy(true)
     setRefreshNote('')
     try {
-      const state = await window.codepulse.refreshAmbient()
+      if (category === 'plugin') await window.codepulse.pluginsChanged()
+      const state = await (category === 'plugin'
+        ? window.codepulse.getAmbient()
+        : window.codepulse.refreshAmbient())
       setSnapshot(state)
       show(
         refreshSummary(

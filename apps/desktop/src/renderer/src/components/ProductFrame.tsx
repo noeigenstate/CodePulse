@@ -20,6 +20,7 @@ export const TARGET_NAMES = {
 export const PRODUCT_NAV: { id: ProductView; label: string; english: string; icon: string }[] = [
   { id: 'control', label: '控制', english: 'Control', icon: 'control' },
   { id: 'ambient', label: '桌边内容', english: 'Desk content', icon: 'ambient' },
+  { id: 'plugins', label: '插件', english: 'Plugins', icon: 'plugins' },
   { id: 'assistant', label: '待办与助手', english: 'Tasks & assistant', icon: 'tasks' },
   { id: 'usage', label: '用量统计', english: 'Usage', icon: 'usage' },
 ]
@@ -54,6 +55,14 @@ export function ProductIcon({ name }: { name: string }): JSX.Element {
       <>
         <circle cx="12" cy="12" r="2" />
         <path d="M6 6a8 8 0 0 0 0 12M18 6a8 8 0 0 1 0 12M3 3a12 12 0 0 0 0 18M21 3a12 12 0 0 1 0 18" />
+      </>
+    ),
+    plugins: (
+      <>
+        <rect x="3" y="3" width="7" height="7" rx="1" />
+        <rect x="14" y="3" width="7" height="7" rx="1" />
+        <rect x="3" y="14" width="7" height="7" rx="1" />
+        <path d="M14 17h7M17.5 14v7" />
       </>
     ),
     usage: <path d="M4 3v17h17M8 16v-5M13 16V7M18 16V4" />,

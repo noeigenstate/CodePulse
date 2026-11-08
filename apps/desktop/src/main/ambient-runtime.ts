@@ -3,10 +3,13 @@ import { join } from 'node:path'
 import { nativeImage, safeStorage, net } from 'electron'
 import type { AmbientConfig, YuanbaoKeyInput } from '@codepulse/shared'
 import { YuanbaoClient, yuanbaoResponseJson } from './ambient-yuanbao.js'
+import { PluginSource, PluginCredentialStore, type PluginOpenResult } from './plugin-platform.js'
 import { YuanbaoKeyStore } from './ambient-yuanbao-keys.js'
 import { AmbientService, type AmbientDependencies } from './ambient-service.js'
 import { allowedMemeImage, fetchBytes } from './ambient-sources.js'
 import { checkMemeImage, packMemeBitmap, packPicture } from './ambient-image.js'
+
+declare const __CODEPULSE_PLATFORM_URL__: string
 
 export function createAmbientRuntime(
   directory: string,
@@ -51,9 +54,32 @@ export function createAmbientRuntime(
     read: () => read(keysPath),
     write: (value) => write(keysPath, value),
   })
+  const pluginKeysPath = join(directory, 'plugin-client.json')
+  let plugins: PluginSource | undefined
+  try {
+    const baseUrl = __CODEPULSE_PLATFORM_URL__
+    plugins = new PluginSource({
+      baseUrl,
+      credentials: new PluginCredentialStore(baseUrl, {
+        available: () =>
+          safeStorage.isEncryptionAvailable() &&
+          (process.platform !== 'linux' ||
+            safeStorage.getSelectedStorageBackend?.() !== 'basic_text'),
+        encrypt: (value) => safeStorage.encryptString(value),
+        decrypt: (value) => safeStorage.decryptString(value),
+        read: () => read(pluginKeysPath),
+        write: (value) => write(pluginKeysPath, value),
+      }),
+      fetch: net.fetch.bind(net) as typeof fetch,
+      changed: deps.changed,
+    })
+  } catch {
+    // Invalid platform configuration must not prevent other desktop features from starting.
+  }
   const yuanbaoPath = join(directory, 'yuanbao-cache.json')
   const service = new AmbientService({
     ...deps,
+    plugins,
     config: saved.config,
     history: saved.history as import('./ambient-service.js').AmbientHistory | undefined,
     key: (p) => keys[p] ?? '',
@@ -114,6 +140,10 @@ export function createAmbientRuntime(
   })
   return {
     service,
+    plugins,
+    openPlugins(theme: 'light' | 'dark'): Promise<PluginOpenResult> {
+      return plugins?.open(theme) ?? Promise.resolve({ error: '插件平台地址无效' })
+    },
     setYuanbaoKey(input: YuanbaoKeyInput) {
       yuanbaoKeys.set(input)
       service.yuanbao.credentialsChanged()

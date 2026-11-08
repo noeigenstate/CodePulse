@@ -101,6 +101,9 @@ export interface CodePulseApi {
   importAmbientImage: (bytes: Uint8Array, name: string) => Promise<AmbientCard>
   addAmbientNote: (text: string) => Promise<AmbientCard>
   removeAmbient: (id: string) => Promise<AmbientSnapshot>
+  openPlugins: () => Promise<{ url: string } | { error: string }>
+  onPluginsLoadError: (cb: () => void) => Unsubscribe
+  pluginsChanged: () => Promise<void>
   getAmbient: () => Promise<AmbientSnapshot>
   setAmbient: (config: AmbientConfig) => Promise<AmbientSnapshot>
   setAmbientKey: (provider: AmbientConfig['provider'], key: string) => Promise<AmbientSnapshot>

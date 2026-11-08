@@ -16,6 +16,7 @@ import { builtinCards, restorePersonalCards, personalCard } from './ambient-libr
 import { petCards } from './ambient-pet.js'
 import { collectMemes, collectX, collectNews, type JsonRequest } from './ambient-sources.js'
 import { YuanbaoSource, type YuanbaoCache } from './ambient-yuanbao-service.js'
+import type { PluginSource } from './plugin-platform.js'
 import type { YuanbaoClient, YuanbaoCredentials } from './ambient-yuanbao.js'
 
 export interface AmbientHistory {
@@ -27,6 +28,7 @@ export interface AmbientHistory {
   lastKind?: AmbientCard['kind']
 }
 export interface AmbientDependencies {
+  plugins?: Pick<PluginSource, 'cards' | 'start' | 'stop'>
   config?: unknown
   history?: AmbientHistory
   status: () => StatusSnapshot
@@ -149,6 +151,7 @@ export class AmbientService {
   start() {
     this.stopped = false
     this.yuanbao.start()
+    this.deps.plugins?.start()
     this.timer ??= setInterval(() => this.tick(), 15000)
     this.timer.unref?.()
     this.tick()
@@ -156,6 +159,7 @@ export class AmbientService {
   stop() {
     this.stopped = true
     this.yuanbao.stop()
+    this.deps.plugins?.stop()
     this.generation++
     if (this.timer) clearInterval(this.timer)
     this.timer = undefined
@@ -288,6 +292,10 @@ export class AmbientService {
     }
   }
   current(status = this.deps.status()): (AmbientCard & { manual?: true }) | undefined {
+    if (this.active?.kind === 'plugin') {
+      this.active = this.deps.plugins?.cards().find((card) => card.id === this.active?.id)
+      if (!this.active) this.manual = false
+    }
     return this.active &&
       this.activeUntil > this.now() &&
       this.active.expiresAt > this.now() &&
@@ -308,6 +316,7 @@ export class AmbientService {
       ...this.personal,
       ...this.cards,
       ...this.yuanbao.cards(),
+      ...(this.deps.plugins?.cards() ?? []),
       ...this.calendarCards(),
       ...petCards(this.deps.status(), this.now()),
       ...builtinCards(this.now()),

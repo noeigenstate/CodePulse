@@ -4,6 +4,7 @@ export const PRODUCT_VIEWS = [
   'work',
   'usage',
   'ambient',
+  'plugins',
   'assistant',
   'settings',
   'overview',
@@ -110,7 +111,7 @@ export function productTargets(view: ProductView): readonly PresentationTarget[]
   if (view === 'assistant') return ['desktop', 'ink']
   if (view === 'usage') return ['desktop']
   if (view === 'ambient') return ['ink']
-  if (view === 'settings') return []
+  if (view === 'settings' || view === 'plugins') return []
   return PRESENTATION_TARGETS
 }
 export function targetForProductView(

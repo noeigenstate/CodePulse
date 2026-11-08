@@ -51,6 +51,7 @@ export * from './device-preview-scale.js'
 export * from './types/product-shell.js'
 export * from './types/ink-status.js'
 export * from './types/assistant.js'
+export * from './types/plugin.js'
 
 export * from './presentation/displayAgents.js'
 export * from './presentation/hudState.js'

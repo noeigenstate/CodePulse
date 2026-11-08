@@ -104,7 +104,13 @@ size_t red_mask_make_lut(unsigned slot, const red_mask_plan_t *plan, uint8_t out
 unsigned red_black_pass_count(const red_mask_plan_t *plan) {
   if(!red_mask_frames(plan)) return 0;
 #ifdef CODEPULSE_EPD_RED_MASK_COLOR
-  if(plan->operation==RED_MASK_PAINT) return 2u;
+  if(plan->operation==RED_MASK_PAINT) {
+#ifdef CODEPULSE_EPD_RED_MASK_SPLIT
+    return 3u;
+#else
+    return 2u;
+#endif
+  }
 #endif
   return plan->operation==RED_MASK_ERASE && plan->black_pixels ? 2u:1u;
 }
@@ -113,7 +119,11 @@ unsigned red_black_pass_frames(const red_mask_plan_t *plan,unsigned pass) {
   if(plan->operation==RED_MASK_PAINT) {
 #ifdef CODEPULSE_EPD_RED_MASK_COLOR
 #ifdef CODEPULSE_EPD_RED_MASK_ACTIVATE
+#ifdef CODEPULSE_EPD_RED_MASK_SPLIT
+    return pass==0?122u:(pass==1?610u:RED_MASK_BW_FRAMES+1u);
+#else
     return pass==0?RED_MASK_RED_ACTIVATE_FRAMES:RED_MASK_BW_FRAMES+1u;
+#endif
 #elif defined(CODEPULSE_EPD_RED_MASK_PULSE)
     return pass==0?RED_MASK_BW_FRAMES+1u:RED_MASK_RED_PULSE_FRAMES;
 #else
@@ -127,7 +137,9 @@ unsigned red_black_pass_frames(const red_mask_plan_t *plan,unsigned pass) {
 }
 unsigned red_black_pass_hz(const red_mask_plan_t *plan,unsigned pass) {
   if(pass>=red_black_pass_count(plan)) return 0;
-#ifdef CODEPULSE_EPD_RED_MASK_FAST
+#if defined(CODEPULSE_EPD_RED_MASK_SPLIT)
+  if(plan->operation==RED_MASK_PAINT && pass==1) return 200u;
+#elif defined(CODEPULSE_EPD_RED_MASK_FAST)
   if(plan->operation==RED_MASK_PAINT && pass==0) return 200u;
 #endif
   return 100u;
@@ -161,12 +173,53 @@ size_t red_black_make_lut(unsigned table,const red_mask_plan_t *plan,
 #ifdef CODEPULSE_EPD_RED_MASK_COLOR
     memset(out,0,44);
 #ifdef CODEPULSE_EPD_RED_MASK_ACTIVATE
-    if(pass==0) {
+    if(pass<RED_MASK_RED_PASS_COUNT) {
       /* Complete phase order of .39; only groups 1/2/3 repeat counts reduce
        * to one. Red-only pixels get the entire sequence, NOT just its tail.
        * Numeric data attribution is the same as the retained .45 tail below.
        * Remaining selectors retain level 00 with synchronized durations. */
-#ifdef CODEPULSE_EPD_RED_MASK_FAST
+#if defined(CODEPULSE_EPD_RED_MASK_SPLIT)
+      /* Preserve .46's 100Hz prefix and .47's 200Hz tail separately.
+       * The extra display-refresh boundary/upload interval is a physical
+       * change; equal nominal sequences do not establish equivalence. */
+      static const uint8_t prefix[4][6]={
+        {0xa0,26,26,0,0,1}, {0x00,10,10,0,0,1},
+        {0x84,14,1,14,1,1}, {0x90,10,10,0,0,1}
+      };
+      static const uint8_t tail[4][6]={
+        {0xb0,1,4,0,0,40}, {0xb0,1,4,0,0,20},
+        {0xb0,1,5,0,0,40}, {0xc0,70,0,0,0,1}
+      };
+      for(unsigned group=0;group<4;++group) {
+        const uint8_t *data=pass==0?prefix[group]:tail[group];
+        out[group*6]=table==2?data[0]:0;
+        memcpy(out+group*6+1,data+1,5);
+      }
+#else
+#if defined(CODEPULSE_EPD_RED_MASK_TAIL100)
+      /* .48 keeps .46's clock and prefix, redistributing the tail into
+       * 10/40ms and 10/50ms pairs: 500ms VDL + 2200ms VDHR, then 350ms
+       * VDHR. The explicit NEUTRAL variant below changes that VDL budget.
+       * Equal totals do not establish equivalent pigment response. */
+      static const uint8_t conditioned[7][6]={
+        {0xa0,26,26,0,0,1}, {0x00,10,10,0,0,1},
+        {0x84,14,1,14,1,1}, {0x90,10,10,0,0,1},
+#if defined(CODEPULSE_EPD_RED_MASK_STAGGER)
+        /* Same .48 per-pixel drive budgets. Group B's reverse is shifted
+         * within the synchronized four-phase grid; never reverse A and B
+         * together in the tail. Prefix/final hold remain simultaneous. */
+        {0xbf,1,1,1,2,30}, {0xbf,1,2,1,2,20},
+#elif defined(CODEPULSE_EPD_RED_MASK_NEUTRAL)
+        /* Keep .48's red pulses and timing, replacing only the 500ms tail
+         * VDL budget with level 00 pauses. Charge balance/red purity are
+         * unqualified; supplies and VCOM registers remain unchanged. */
+        {0x30,1,4,0,0,30}, {0x30,1,5,0,0,20},
+#else
+        {0xb0,1,4,0,0,30}, {0xb0,1,5,0,0,20},
+#endif
+        {0xc0,35,0,0,0,1}
+      };
+#elif defined(CODEPULSE_EPD_RED_MASK_FAST)
       /* UC8176 R30=39 selects 200Hz (M=7,N=1); .46 was 3A/100Hz.
        * The prefix is IDENTICAL in nominal milliseconds: two 26-frame
        * white dwells + 20 neutral frames merge into one group at 2x counts.
@@ -187,9 +240,15 @@ size_t red_black_make_lut(unsigned table,const red_mask_plan_t *plan,
       };
 #endif
       for(unsigned group=0;group<7;++group) {
+#ifdef CODEPULSE_EPD_RED_MASK_STAGGER
+        out[group*6]=(table==2 || table==4)?conditioned[group][0]:0;
+        if(table==4 && (group==4 || group==5)) out[group*6]=0xfb;
+#else
         out[group*6]=table==2?conditioned[group][0]:0;
+#endif
         memcpy(out+group*6+1,conditioned[group]+1,5);
       }
+#endif
     } else {
       /* Clean all 352 white glyph pixels AFTER red has been driven. Black
        * baseline strokes that turn white must not remain under ERROR text. */
@@ -244,8 +303,8 @@ size_t red_black_make_lut(unsigned table,const red_mask_plan_t *plan,
 void red_activation_encode(unsigned pass,bool in_window,
     uint8_t b,uint8_t r,uint8_t ob,uint8_t or_,uint8_t *mb,uint8_t *mr) {
   *mb=*mr=0xff;
-  if(!in_window || pass>1u) return;
-  if(pass==0) {
+  if(!in_window || pass>RED_MASK_RED_PASS_COUNT) return;
+  if(pass<RED_MASK_RED_PASS_COUNT) {
     const uint8_t changed=(uint8_t)((b^ob)|(r^or_));
     *mr=(uint8_t)~(changed & (uint8_t)~r);
   } else {
@@ -254,4 +313,17 @@ void red_activation_encode(unsigned pass,bool in_window,
     *mb=(uint8_t)~(b&r);
   }
 }
+#ifdef CODEPULSE_EPD_RED_MASK_STAGGER
+void red_stagger_encode(unsigned pass,bool in_window,bool odd_row,
+    uint8_t b,uint8_t r,uint8_t ob,uint8_t or_,uint8_t *mb,uint8_t *mr) {
+  if(pass!=0 || !in_window) {
+    red_activation_encode(pass,in_window,b,r,ob,or_,mb,mr);
+    return;
+  }
+  const uint8_t target=(uint8_t)(((b^ob)|(r^or_)) & (uint8_t)~r);
+  const uint8_t group_a=odd_row?0x55:0xaa;
+  *mb=(uint8_t)~(target & (uint8_t)~group_a); /* Group B selects R24. */
+  *mr=(uint8_t)~(target & group_a);          /* Group A selects R22. */
+}
+#endif
 #endif

@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "date": "2026-11-08",
+  "repository": "https://github.com/noeigenstate/CodePulse.git",
+  "branch": "codex/epd-red-flicker-lab",
+  "publishedBase": "3489a30d1076273845f7c6a2f09a3bb781316b7c",
+  "profiles": [
+    "Fast47",
+    "Tail48",
+    "Split49",
+    "Neutral50",
+    "Stagger51"
+  ],
+  "lastConfirmedDevice": {
+    "version": "0.0.51-red-stagger",
+    "lastTest": "单次 DRAW_RED，frame=2 held",
+    "lastRefreshReceivedUtc": "2026-11-08T06:19:36.767198+00:00",
+    "lastRefreshReceivedLocal": "2026-11-08T14:19:36.767198+08:00",
+    "screenFeedback": "用户反馈与前轮无区别、未改善；具体比例/棋盘纹/文字/周边未逐项独立补确认",
+    "finalTargetExpected": "红底白字 ERROR，但未验收通过",
+    "stateRecheckedForHandoff": false,
+    "observerStopped": true
+  },
+  "otp": {
+    "rawDataIncluded": false,
+    "additionalCaptureRequired": false,
+    "status": "用户确认主开发机已找回并验证原始4096字节OTP；本次未在家中复制或重新校验该数据",
+    "verificationSource": "用户本次交接指令；不是本机重新验证"
+  },
+  "actionsDuringHandoff": {
+    "deviceSerialOpened": false,
+    "deviceReset": false,
+    "displayRefresh": false,
+    "newCandidateBuilt": false
+  },
+  "retainedLocally": "Original packages, manifests, flash receipts, long captures, videos and build outputs remain unchanged in ignored local directories"
+}

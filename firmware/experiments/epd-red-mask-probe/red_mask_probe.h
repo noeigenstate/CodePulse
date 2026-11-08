@@ -13,17 +13,35 @@
 #ifdef CODEPULSE_EPD_RED_MASK_ACTIVATE
 /* All seven .39 red phases, with conditioning repeats 1/1/1. This is not
  * the optically accepted .39 sequence; the reduced conditioning is a trial. */
-#ifdef CODEPULSE_EPD_RED_MASK_FAST
+#if defined(CODEPULSE_EPD_RED_MASK_SPLIT)
+#define RED_MASK_RED_ACTIVATE_FRAMES 732u /* 122 at 100Hz + 610 at 200Hz */
+#define RED_MASK_RED_PASS_COUNT 2u
+#elif defined(CODEPULSE_EPD_RED_MASK_FAST)
 #define RED_MASK_RED_ACTIVATE_FRAMES 854u /* at 200Hz, still nominally 4270ms */
 #else
 #define RED_MASK_RED_ACTIVATE_FRAMES 427u
 #endif
+#ifndef RED_MASK_RED_PASS_COUNT
+#define RED_MASK_RED_PASS_COUNT 1u
+#endif
 #define RED_MASK_PAINT_GATE_MS 7500u
+#ifdef CODEPULSE_EPD_RED_MASK_SPLIT
+#define RED_MASK_PAINT_PASS_GATE_MS(pass) ((pass)==0?2200u:((pass)==1?4100u:3500u))
+#define RED_MASK_SPLIT_RED_GATE_MS 5200u
+#define RED_MASK_PAINT_PHASE(pass) ((pass)==0?"CONDITION100":((pass)==1?"FAST_RED_TAIL":"WHITE_GLYPHS"))
+#else
 #define RED_MASK_PAINT_PASS_GATE_MS(pass) ((pass)==0?5200u:3500u)
-#ifdef CODEPULSE_EPD_RED_MASK_FAST
+#if defined(CODEPULSE_EPD_RED_MASK_STAGGER)
+#define RED_MASK_PAINT_PHASE(pass) ((pass)==0?"STAGGER_RED_TAIL":"WHITE_GLYPHS")
+#elif defined(CODEPULSE_EPD_RED_MASK_NEUTRAL)
+#define RED_MASK_PAINT_PHASE(pass) ((pass)==0?"NEUTRAL_RED_TAIL":"WHITE_GLYPHS")
+#elif defined(CODEPULSE_EPD_RED_MASK_TAIL100)
+#define RED_MASK_PAINT_PHASE(pass) ((pass)==0?"TAIL100_RED":"WHITE_GLYPHS")
+#elif defined(CODEPULSE_EPD_RED_MASK_FAST)
 #define RED_MASK_PAINT_PHASE(pass) ((pass)==0?"FAST_RED_TAIL":"WHITE_GLYPHS")
 #else
 #define RED_MASK_PAINT_PHASE(pass) ((pass)==0?"CONDITION_AND_RED":"WHITE_GLYPHS")
+#endif
 #endif
 #elif defined(CODEPULSE_EPD_RED_MASK_PULSE)
 /* Exact .39 red tail: (4+16)*5 + (3+14)*10 + 35, then one neutral frame.
@@ -93,4 +111,9 @@ size_t red_black_make_lut(unsigned table, const red_mask_plan_t *plan,
 void red_activation_encode(unsigned pass, bool in_window,
     uint8_t black,uint8_t red,uint8_t old_black,uint8_t old_red,
     uint8_t *mask_black,uint8_t *mask_red);
+#ifdef CODEPULSE_EPD_RED_MASK_STAGGER
+void red_stagger_encode(unsigned pass, bool in_window, bool odd_row,
+    uint8_t black,uint8_t red,uint8_t old_black,uint8_t old_red,
+    uint8_t *mask_black,uint8_t *mask_red);
+#endif
 #endif

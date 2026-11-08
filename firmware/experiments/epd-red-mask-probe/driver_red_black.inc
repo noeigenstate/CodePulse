@@ -39,10 +39,14 @@ esp_err_t epd_red_mask_refresh(const epd_canvas_t *c,
   for(unsigned pass=0;result==ESP_OK && pass<passes;++pass) {
     phase=esp_timer_get_time();
     result=epd_command(0x92);
-#ifdef CODEPULSE_EPD_RED_MASK_FAST
+#if defined(CODEPULSE_EPD_RED_MASK_FAST) || defined(CODEPULSE_EPD_RED_MASK_SPLIT)
     if(result==ESP_OK && plan.operation==RED_MASK_PAINT) {
-      const uint8_t phase_pll=red_black_pass_hz(&plan,pass)==200u?0x39:0x3a;
-      result=epd_command_data(0x30,&phase_pll,1);
+      const unsigned hz=red_black_pass_hz(&plan,pass);
+      const unsigned previous_hz=pass?red_black_pass_hz(&plan,pass-1u):100u;
+      if(hz!=previous_hz) {
+        const uint8_t phase_pll=hz==200u?0x39:0x3a;
+        result=epd_command_data(0x30,&phase_pll,1);
+      }
     }
 #endif
     uint8_t block[256];
@@ -56,8 +60,13 @@ esp_err_t epd_red_mask_refresh(const epd_canvas_t *c,
           if(plan.operation==RED_MASK_PAINT) {
             const size_t index=offset+i,row=index/50u,column=index%50u;
             const bool inside=row>=y && row<y+height && column>=x/8u && column<(x+width)/8u;
+#ifdef CODEPULSE_EPD_RED_MASK_STAGGER
+            red_stagger_encode(pass,inside,(row&1u)!=0,c->black[index],c->red[index],
+                old_black[index],old_red[index],&mb,&mr);
+#else
             red_activation_encode(pass,inside,c->black[index],c->red[index],
                 old_black[index],old_red[index],&mb,&mr);
+#endif
           } else
 #endif
           red_black_encode(&plan,pass,c->black[offset+i],c->red[offset+i],
@@ -93,6 +102,11 @@ esp_err_t epd_red_mask_refresh(const epd_canvas_t *c,
      * bound. A second planned phase is not a retry or recovery exposure. */
     if(result==ESP_OK && driven_ms >= (plan.operation==RED_MASK_PAINT?RED_MASK_PAINT_PASS_GATE_MS(pass):3500u))
       result=ESP_ERR_INVALID_RESPONSE;
+#ifdef CODEPULSE_EPD_RED_MASK_SPLIT
+    if(result==ESP_OK && plan.operation==RED_MASK_PAINT && pass<2u &&
+        m->refresh_ms>=RED_MASK_SPLIT_RED_GATE_MS)
+      result=ESP_ERR_INVALID_RESPONSE;
+#endif
     if(entered && gpio_get_level(PIN_EPD_BUSY)!=0) {
       const esp_err_t exit_error=epd_command(0x92);
       if(result==ESP_OK) result=exit_error;

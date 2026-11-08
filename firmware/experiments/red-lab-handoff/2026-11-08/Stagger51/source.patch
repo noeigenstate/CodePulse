@@ -1,0 +1,1187 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 8fe4c07..2620a6f 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -23,4 +23,13 @@ integrate main, create a release or flash hardware. Main protection is unchanged
+ Preserve the original worktree's dirty files; do not import unrelated desktop work.
+ Every flash still requires a fresh physical power-hold confirmation. Red must
+ actually change; static-red/BW-only updates are not acceptance of this task.
+-The .46 color result passed once but flicker failed; .47 has not been optically tested.
++The .46 color result passed once but flicker failed. The .47 hardware trial failed:
++READY black fragments remained and target red did not appear; outside controls
++stayed normal. Tail48 restored final colors/text/outside stability, but transient
++erasing shadows and clustered red flicker remained unacceptable.
++Split49 then produced a central gray background/shadow; outside controls stayed
++normal. Neutral50 reduced flicker but left a predominantly black background,
++so red formation failed. Pause 200Hz red trials. The next local candidate is
++default-off Stagger51 / 0.0.51-red-stagger; read
++firmware/doc/RED-STAGGER-LAB-2026-11-08.md first. Its second red selector is
++not optically qualified. No automatic flash.
+diff --git a/README.md b/README.md
+index f293dfc..8f460e9 100644
+--- a/README.md
++++ b/README.md
+@@ -1,7 +1,7 @@
+ > **Temporary branch / 动态红色减闪实验：`codex/epd-red-flicker-lab`**
+ >
+ > 跨电脑继续测试请先读 [Board1 减闪交接与构建说明](firmware/doc/RED-REFRESH-HANDOFF.md)。
+-> `.46` 显色通过但闪烁未通过；`.47` 已构建、尚未做实机验证。本分支不合并 main、不自动刷机。
++> `.48` 颜色正常但闪烁严重；`.49` 灰底失败；`.50` 减闪但黑色占优，显红失败。下一候选为默认关闭的 [`.51` 像素错峰实验](firmware/doc/RED-STAGGER-LAB-2026-11-08.md)，尚无实机结论。本分支不合并 main、不自动刷机。
+ > This is a source checkpoint for manual Board1 red-refresh experiments, not a firmware release.
+ 
+ <div align="center">
+diff --git a/firmware/CMakeLists.txt b/firmware/CMakeLists.txt
+index 37395b9..ec1fe17 100644
+--- a/firmware/CMakeLists.txt
++++ b/firmware/CMakeLists.txt
+@@ -121,7 +121,31 @@ option(CODEPULSE_EPD_RED_MASK_FAST "Diagnostic: subdivide the accepted red tail
+ if(CODEPULSE_EPD_RED_MASK_FAST AND NOT CODEPULSE_EPD_RED_MASK_ACTIVATE)
+     message(FATAL_ERROR "Fast-tail diagnostic requires RED_MASK_ACTIVATE")
+ endif()
+-if(CODEPULSE_EPD_RED_MASK_FAST)
++option(CODEPULSE_EPD_RED_MASK_TAIL100 "Diagnostic: retain 100Hz conditioning and subdivide only the red tail" OFF)
++if(CODEPULSE_EPD_RED_MASK_TAIL100 AND (NOT CODEPULSE_EPD_RED_MASK_ACTIVATE OR CODEPULSE_EPD_RED_MASK_FAST))
++    message(FATAL_ERROR "100Hz-tail diagnostic requires RED_MASK_ACTIVATE and excludes RED_MASK_FAST")
++endif()
++option(CODEPULSE_EPD_RED_MASK_SPLIT "Diagnostic: 100Hz conditioning followed by a separate 200Hz red tail" OFF)
++if(CODEPULSE_EPD_RED_MASK_SPLIT AND (NOT CODEPULSE_EPD_RED_MASK_ACTIVATE OR CODEPULSE_EPD_RED_MASK_FAST OR CODEPULSE_EPD_RED_MASK_TAIL100))
++    message(FATAL_ERROR "Split red diagnostic requires RED_MASK_ACTIVATE and excludes FAST/TAIL100")
++endif()
++option(CODEPULSE_EPD_RED_MASK_NEUTRAL "Diagnostic: replace Tail48 reverse pulses with neutral pauses at 100Hz" OFF)
++if(CODEPULSE_EPD_RED_MASK_NEUTRAL AND (NOT CODEPULSE_EPD_RED_MASK_TAIL100 OR CODEPULSE_EPD_RED_MASK_FAST OR CODEPULSE_EPD_RED_MASK_SPLIT))
++    message(FATAL_ERROR "Neutral-tail diagnostic requires RED_MASK_TAIL100 and excludes FAST/SPLIT")
++endif()
++option(CODEPULSE_EPD_RED_MASK_STAGGER "Diagnostic: stagger two red pixel groups while retaining Tail48 drive budgets" OFF)
++if(CODEPULSE_EPD_RED_MASK_STAGGER AND (NOT CODEPULSE_EPD_RED_MASK_TAIL100 OR CODEPULSE_EPD_RED_MASK_FAST OR CODEPULSE_EPD_RED_MASK_SPLIT OR CODEPULSE_EPD_RED_MASK_NEUTRAL))
++    message(FATAL_ERROR "Stagger diagnostic requires RED_MASK_TAIL100 and excludes FAST/SPLIT/NEUTRAL")
++endif()
++if(CODEPULSE_EPD_RED_MASK_STAGGER)
++    set(PROJECT_VER "0.0.51-red-stagger")
++elseif(CODEPULSE_EPD_RED_MASK_NEUTRAL)
++    set(PROJECT_VER "0.0.50-red-neutral")
++elseif(CODEPULSE_EPD_RED_MASK_SPLIT)
++    set(PROJECT_VER "0.0.49-red-split")
++elseif(CODEPULSE_EPD_RED_MASK_TAIL100)
++    set(PROJECT_VER "0.0.48-red-tail100")
++elseif(CODEPULSE_EPD_RED_MASK_FAST)
+     set(PROJECT_VER "0.0.47-red-fast")
+ elseif(CODEPULSE_EPD_RED_MASK_ACTIVATE)
+     set(PROJECT_VER "0.0.46-red-activate")
+diff --git a/firmware/README.md b/firmware/README.md
+index 993025c..13a9fe3 100644
+--- a/firmware/README.md
++++ b/firmware/README.md
+@@ -1,5 +1,6 @@
+ > **减闪临时分支**：开始前读 [跨电脑交接](doc/RED-REFRESH-HANDOFF.md)。
+-> 使用 `scripts/build-red-lab.ps1` 明确选择 Fast47 / Color46 / Erase43 / Production33。
++> `.50` 闪烁改善但黑色占优，显红失败；下一候选为 `.51-red-stagger`，见[实验记录](doc/RED-STAGGER-LAB-2026-11-08.md)。
++> 使用 `scripts/build-red-lab.ps1` 明确选择 Stagger51 / Neutral50 / Split49 / Tail48 / Fast47 / Color46 / Erase43 / Production33。
+ > 本分支保留默认关闭的实验入口；构建、实机刷写和光学验收互不等价。
+ 
+ # CodePulse firmware / 墨水屏固件
+diff --git a/firmware/doc/RED-FAST-LAB-2026-11-06.md b/firmware/doc/RED-FAST-LAB-2026-11-06.md
+index 7e5fa04..4cdca1a 100644
+--- a/firmware/doc/RED-FAST-LAB-2026-11-06.md
++++ b/firmware/doc/RED-FAST-LAB-2026-11-06.md
+@@ -58,3 +58,14 @@ ESP-IDF6.0.1 / ESP32-S3 目标构建通过，最多两个并行编译任务。
+ 分区余量 136064 字节。
+ SHA-256：4713c4ae53823bfd0e3a2d6f26050a3eb778a1fbf8d4bef343c5a64397e1eb45。
+ 分区表不变，.33 已验证恢复镜像已核对；此时设备仍为 .46，没有 .47 刷写或光学结论。
++
++## 2026-11-08 实测：显红失败
++
++迁移后按本次持续按键确认，仅写入 `.47` 应用并校验，实读运行身份与正常基准确认。
++首刷 16241ms，225150ms 后人工短按一次；pass=1/2 显红 4356ms、pass=2/2 白字清理
++1855ms，refresh=6211ms、total=6766ms，均 ESP_OK。此次实际计时不改写 .46 的缺失值。
++
++用户看到旧 READY 黑字未擦净、留下文字碎片；目标红底未出现，未见阴影或闪烁。
++左右、上下固定红黑对照保持正常。综合 **显红失败**；白字清晰度未独立确认，
++无闪烁不能算合格减闪。观察已结束，保持失败现场，没有自动重试或补刷。
++下一候选见 [100Hz 尾段实验](RED-TAIL100-LAB-2026-11-08.md)。
+diff --git a/firmware/doc/RED-REFRESH-HANDOFF.md b/firmware/doc/RED-REFRESH-HANDOFF.md
+index ebfac2f..f0b565f 100644
+--- a/firmware/doc/RED-REFRESH-HANDOFF.md
++++ b/firmware/doc/RED-REFRESH-HANDOFF.md
+@@ -1,6 +1,6 @@
+ # Board1 动态红色减闪：跨电脑继续开发
+ 
+-更新：2026-11-07。临时远端分支 **`codex/epd-red-flicker-lab`**，产品仓库
++更新：2026-11-08。临时远端分支 **`codex/epd-red-flicker-lab`**，产品仓库
+ <https://github.com/noeigenstate/CodePulse>。这是实验检查点，未申请合并 main。
+ 
+ ## 当前目标与准确进度
+@@ -14,9 +14,15 @@
+ | `.43-red-black` / Erase43 | 退红后写黑字一次通过：清楚、周边正常、闪烁可接受；显红步骤呈黑，失败 | 保留有效退红路径，按需对照，不重复默认全套 |
+ | `.44` / `.45` | 显红呈黑或混色、白字偏弱，失败 | 保留源码追溯，不作为默认测试 |
+ | `.46-red-activate` / Color46 | 红色、白字、周边稳定一次通过；**闪烁严重，不可接受** | 已通过的色彩对照，仍不是合格产品波形 |
+-| `.47-red-fast` / Fast47 | 主机测试、目标编译及镜像检查通过；**尚未刷入，尚无光学结果** | 周末首先测此候选的减闪效果 |
+-
+-最后一次实机身份确认是 `.46`，不能据文档猜测新一轮连接的设备版本。
++| `.47-red-fast` / Fast47 | 11 月 8 日实测：旧 READY 黑字残留、目标红底未出现；周边正常、未见闪烁；**显红失败** | 保留失败源码、镜像和实际计时，不默认重跑 |
++| `.48-red-tail100` / Tail48 | 最终擦字、红底、白字、周边一次通过；擦字时短暂阴影、显红聚闪，**闪烁仍较严重，综合失败** | 保留有效颜色与实际计时，见 [100Hz 尾段记录](RED-TAIL100-LAB-2026-11-08.md) |
++| `.49-red-split` / Split49 | 中心出现灰底及残留阴影、过渡卡顿感，周边正常、白字可见；**显红失败** | 保留三段实际计时，暂停 200Hz 显红路线，见 [记录](RED-SPLIT-LAB-2026-11-08.md) |
++| `.50-red-neutral` / Neutral50 | 闪烁明显改善，但目标约九成黑、一成红，白字、周边正常，**显红失败** | 保留减反向的失败边界，见 [中性尾段记录](RED-NEUTRAL-LAB-2026-11-08.md) |
++| `.51-red-stagger` / Stagger51 | 主机检查及旧版回归通过；目标包待构建、未刷入 | 保留 .48 的每像素驱动预算，交错两组尾段反向时刻，见 [像素错峰记录](RED-STAGGER-LAB-2026-11-08.md)；第二个红通道未光学验证 |
++
++2026-11-08 `.47` 显红失败、`.48` 最终颜色通过但闪烁失败后，
++`.49` 单次显红失败后，已实读确认 `.50` 并完成一次显红；黑色占优、颜色失败，保持现场；
++不能据文档猜测新一轮连接的设备版本。
+ `.46` 动态测试的串口观察已在用户操作前超时，实际耗时缺失；不能将名义 6060ms
+ 当作测量值。新观察入口默认持续 2 小时，手动按键前确认它仍在运行。
+ 公开结论见各 [RED-* 实验记录](RED-FAST-LAB-2026-11-06.md)；原始设备身份、OTP、
+@@ -25,7 +31,7 @@
+ 基线来自根提交 `ca3efd7a8aa4516ebd0bd00a36ac7a0ca74d486f`，包含此前已提交的
+ 桌面功能。检查点另外收录 `.33` 离线状态修复及对应双端生产预览，保证固件源码基础一致。
+ 没有带入正在开发的电脑状态第四布局、市场服务或 Antigravity 桌面改动。
+-生产默认不开任何红色实验开关，双端生产预览仍为 `.33`；`.47` 是独立手动测试页。
++生产默认不开任何红色实验开关，双端生产预览仍为 `.33`；各红色候选是独立手动测试页。
+ 
+ ## 驱动与硬件边界
+ 
+@@ -38,9 +44,20 @@
+   前 1220ms 的名义电平顺序及所有电平累计时间保留；再恢复 100Hz / 3A 清理白字 179 帧。
+   原 170–200ms 的慢周期改为 25–30ms，合计名义驱动仍 6060ms。
+   相同累计驱动不是物理等价证明，芯片支持 200Hz 也不是此批玻璃通过验证。
++- `.48` 从 .46 出发，始终 100Hz / R30=3A，原前四组逐帧保留；仅尾段改为
++  10/40ms×30 与 10/50ms×20，末 350ms 显红保持和白字清理不变。
++  仍须同时验收颜色、旧字擦除、白字、周边与闪烁，不能预判通过。
++- `.49` 将 .46/.48 的前四组放在 100Hz，.47 快速尾段单独使用 200Hz，最后恢复
++  100Hz 清理白字。前两段累计 5200ms 门限保留，任一失败不进入后段。
++  新增段间上传停顿，名义电平顺序一致不证明实际物理等价，过渡阴影仍待解决。
++- `.50` 回到 .48 的两阶段 100Hz，尾段两组 B0 改为 30，只把原 500ms 反向
++  驱动换成中性停顿，正向显红与其他时序不变。净驱动已改变，不宣称电荷平衡。
++- `.51` 保留 .48 每像素的名义电平预算，目标红按棋盘分为 R22/R24 两组，
++  两组尾段反向时刻错开，其余窗口外走 R23 HOLD；五表时序同步。R24 显红尚未
++  在本屏验证，主机电平计数不能证明物理输出相同，需单独观察棋盘纹/色差。
+ - 电压、VCOM_DC、OTP、GPIO、配网和 NVS 不改。五表完整加载；分阶段超时、BUSY
+   异常或失败后停止，不自动重试。外部未变区域仍作同排、上下的红黑对照。
+-- `.47` 尚未证明温度适应性、长期循环、电荷平衡或产品寿命；软件测试不模拟这些。
++- 各候选尚未证明温度适应性、长期循环、电荷平衡或产品寿命；软件测试不模拟这些。
+ 
+ 关键文件：
+ 
+@@ -51,7 +68,7 @@
+ | `firmware/experiments/epd-red-mask-probe/driver_red_black.inc` | 两阶段加载、帧率恢复、BUSY 和失败停止 |
+ | `red_mask_probe.c` / `red_mask_pattern.c`（同目录） | 人工状态机、冷却间隔、400×300 对照画面 |
+ | 同目录 `tests/` / `test.ps1` | 真实驱动调用的事务、像素和故障路径主机测试 |
+-| `firmware/scripts/build-red-lab.ps1` | 跨电脑构建四种配置，不刷机、不启动客户端 |
++| `firmware/scripts/build-red-lab.ps1` | 跨电脑构建八种配置，不刷机、不启动客户端 |
+ | `firmware/scripts/red-lab-artifact.py` | 源码、配置、版本、分区、镜像哈希检查及独立本地包 |
+ | `firmware/scripts/observe-red-lab.py` | 只读日志观察，不发命令、不复位，不保存普通 Wi-Fi/CP1 日志 |
+ 
+@@ -89,11 +106,15 @@ git log -1 --oneline
+ 
+ ```powershell
+ node scripts/check-firmware-preview.mjs
++.\firmware\experiments\epd-red-mask-probe\test.ps1 -NeutralStage -Output .tmpshots/red-neutral-host
++.\firmware\experiments\epd-red-mask-probe\test.ps1 -StaggerStage -Output .tmpshots/red-stagger-host
++.\firmware\experiments\epd-red-mask-probe\test.ps1 -SplitStage -Output .tmpshots/red-split-host
++.\firmware\experiments\epd-red-mask-probe\test.ps1 -Tail100Stage -Output .tmpshots/red-tail100-host
+ .\firmware\experiments\epd-red-mask-probe\test.ps1 -FastStage -Output .tmpshots/red-fast-host
+ .\firmware\experiments\epd-red-mask-probe\test.ps1 -ActivateStage -Output .tmpshots/red-color-host
+ .\firmware\experiments\epd-red-mask-probe\test.ps1 -BlackStage -Output .tmpshots/red-erase-host
+ python -m unittest discover -s firmware/tests/red-lab -p "test_*.py"
+-.\firmware\scripts\build-red-lab.ps1 -Profile Fast47
++.\firmware\scripts\build-red-lab.ps1 -Profile Stagger51
+ ```
+ 
+ Windows 输出目录完整路径需不超过 80 个字符；入口在 SDK 启动前检查，避免深目录在
+@@ -102,18 +123,18 @@ Windows 输出目录完整路径需不超过 80 个字符；入口在 SDK 启动
+ 
+ 默认最多 2 个编译任务。该入口先显式关闭其他探测和音频开关，再开启所选链条；
+ `-PlanOnly` 只显示配置，不初始化 SDK 或接触硬件。生成配置写在 build 目录，
+-不改已提交的 `firmware/sdkconfig`。选择 `Color46` / `Erase43` / `Production33` 可分别构建对照或正常应用。
++不改已提交的 `firmware/sdkconfig`。选择 `Neutral50` / `Split49` / `Tail48` / `Fast47` / `Color46` / `Erase43` / `Production33` 可分别构建对照或正常应用。
+ 每种配置的缓存和本地包互不混用。已有 `package/manifest.json` 的目录不覆盖；
+ 修改波形后用新的 `-BuildDirectory build-red-lab-fast47-b`，并记录新版本/源码差异。
+ 增加新候选运行版本时，同时更新 CMake、构建脚本和产物工具中的版本映射，保留必要对照；
+ 不要只覆盖旧包或在日志里把不同波形当成同一已验收版本。
+ 
+-包位于 `firmware/build-red-lab-fast47/package/`，包括应用、待对照分区和 manifest。
++包位于 `firmware/build-red-lab-stagger51/package/`，包括应用、待对照分区和 manifest。
+ manifest 标注根提交、源码/配置哈希、运行版本、分区、应用大小和 SHA256，光学验收仍为 false。
+ 不同电脑、路径、编译时间的镜像哈希可能不同；只将同一包的 manifest 与其镜像核对。
+ 原机器 `.47` 镜像哈希见 [实验记录](RED-FAST-LAB-2026-11-06.md)，是历史定位值，不是跨电脑构建承诺。
+ 
+-已知主机检查：Fast47 每模式 1121 个故障点，Color46 为 1117，Erase43 为 893，
++已知主机检查：Split49 每模式 1258，Stagger51 / Neutral50 / Tail48 / Color46 为 1117，Fast47 为 1121，Erase43 为 893 个故障点，
+ 均已通过 Debug/NDEBUG；两套生产预览的 75 项源哈希已通过。
+ 完整 quiet 套件仍有旧基线失败 `test_dashboard.c:180`、`test_pacing.c:74`，
+ 不把整套 quiet 测试宣称通过，也不修改预期去掩盖它们。
+@@ -128,8 +149,8 @@ manifest 标注根提交、源码/配置哈希、运行版本、分区、应用
+ 
+ ```powershell
+ . .\firmware\scripts\idf-env.ps1
+-$b = Join-Path $FirmwareRoot 'build-red-lab-fast47'
+-& $IdfPython .\firmware\scripts\red-lab-artifact.py check --build $b --profile Fast47
++$b = Join-Path $FirmwareRoot 'build-red-lab-stagger51'
++& $IdfPython .\firmware\scripts\red-lab-artifact.py check --build $b --profile Stagger51
+ if ($LASTEXITCODE -ne 0) { throw 'Package check failed; stop.' }
+ .\firmware\scripts\probe.ps1 -List
+ $port = Read-Host 'Board1 native USB COM port'
+@@ -164,7 +185,7 @@ Invoke-RedLabEsp -EspArguments @('write-flash', '--flash-mode', 'dio', '--flash-
+ 再按约 3 秒正常开机，灯亮后松开。记录实读版本、分区与写入结果在忽略目录；
+ 未获取写入校验、开机身份或光学结论时分别标为未确认。
+ 
+-## 周末第一步：只测 .47 的显红
++## 下一候选手动步骤：包核对与新确认后才测 .51 显红
+ 
+ 在正常开机前启动被动日志观察，端口断开后它会等同一 COM 号重连：
+ 
+@@ -176,17 +197,17 @@ Invoke-RedLabEsp -EspArguments @('write-flash', '--flash-mode', 'dio', '--flash-
+ 它是被动日志，未捕获到版本或某次测试就不能推断设备身份/时序；需要时用正常启动日志
+ 或只读 CP1 探测核对身份，避免两个程序争用端口。
+ 
+-1. `.47` 首刷应显示 **RED FAST LAB**：中间白底黑字 READY，左右及上下固定红黑文字。
++1. `.51` 首刷应显示 **RED STAGGER LAB**：中间白底黑字 READY，左右及上下固定红黑文字。
+    先确认启动日志版本与基准清楚完整。
+-2. 从首次刷新完成起至少等 180 秒，再**短按一次**。等待显红与白字清理两阶段都结束。
++2. 从首次刷新完成起至少等 180 秒，再**短按一次**。等待像素错峰显红与白字清理两阶段都结束。
+    目标是红底白字 ERROR，周边保持不变。判断颜色、白字和闪烁，不能只问“是否更新”。
+    首次完成时间未捕获时，从确认首屏稳定后保守等满 180 秒，不猜测历史时间。
+ 3. 记录：实际 `pass=1/2`、`pass=2/2`、`refresh` / `total` / `result`，以及
+-   红色是否均匀、字是否清楚、残影、周围是否变化、闪烁能否接受。缺失项写未捕获。
++   红色是否均匀、有无棋盘纹/两组色差、字是否清楚、残影、周围是否变化、闪烁能否接受。缺失项写未捕获。
+ 4. 不连续按键、不自动重试。颜色正确但闪烁仍不可接受就记录为失败，继续改具体波形。
+    冷却后下一次短按会返回正常联网应用并进行恢复首刷；需要永久退出实验则构建 Production33 后另行升级。
+ 
+-`.47` 只验证红色出现；退红继续保留 `.43` 的已通过路径。进入下一版前说明
++`.51` 只验证红色出现；退红继续保留 `.43` 的已通过路径。进入下一版前说明
+ 本次失败的是哪个指标、改哪个阶段、预期影响及验收，不重新让用户跑完所有失败历史。
+ 诊断期间无需桌面客户端或局域网服务；恢复正常应用后，换办公室可能需要重新配网/绑定新宿主，
+ 用正常客户端入口处理，不把旧机器凭据放进 Git。
+diff --git a/firmware/experiments/epd-red-mask-probe/driver_red_black.inc b/firmware/experiments/epd-red-mask-probe/driver_red_black.inc
+index 12176c6..2c4024f 100644
+--- a/firmware/experiments/epd-red-mask-probe/driver_red_black.inc
++++ b/firmware/experiments/epd-red-mask-probe/driver_red_black.inc
+@@ -39,10 +39,14 @@ esp_err_t epd_red_mask_refresh(const epd_canvas_t *c,
+   for(unsigned pass=0;result==ESP_OK && pass<passes;++pass) {
+     phase=esp_timer_get_time();
+     result=epd_command(0x92);
+-#ifdef CODEPULSE_EPD_RED_MASK_FAST
++#if defined(CODEPULSE_EPD_RED_MASK_FAST) || defined(CODEPULSE_EPD_RED_MASK_SPLIT)
+     if(result==ESP_OK && plan.operation==RED_MASK_PAINT) {
+-      const uint8_t phase_pll=red_black_pass_hz(&plan,pass)==200u?0x39:0x3a;
+-      result=epd_command_data(0x30,&phase_pll,1);
++      const unsigned hz=red_black_pass_hz(&plan,pass);
++      const unsigned previous_hz=pass?red_black_pass_hz(&plan,pass-1u):100u;
++      if(hz!=previous_hz) {
++        const uint8_t phase_pll=hz==200u?0x39:0x3a;
++        result=epd_command_data(0x30,&phase_pll,1);
++      }
+     }
+ #endif
+     uint8_t block[256];
+@@ -56,8 +60,13 @@ esp_err_t epd_red_mask_refresh(const epd_canvas_t *c,
+           if(plan.operation==RED_MASK_PAINT) {
+             const size_t index=offset+i,row=index/50u,column=index%50u;
+             const bool inside=row>=y && row<y+height && column>=x/8u && column<(x+width)/8u;
++#ifdef CODEPULSE_EPD_RED_MASK_STAGGER
++            red_stagger_encode(pass,inside,(row&1u)!=0,c->black[index],c->red[index],
++                old_black[index],old_red[index],&mb,&mr);
++#else
+             red_activation_encode(pass,inside,c->black[index],c->red[index],
+                 old_black[index],old_red[index],&mb,&mr);
++#endif
+           } else
+ #endif
+           red_black_encode(&plan,pass,c->black[offset+i],c->red[offset+i],
+@@ -93,6 +102,11 @@ esp_err_t epd_red_mask_refresh(const epd_canvas_t *c,
+      * bound. A second planned phase is not a retry or recovery exposure. */
+     if(result==ESP_OK && driven_ms >= (plan.operation==RED_MASK_PAINT?RED_MASK_PAINT_PASS_GATE_MS(pass):3500u))
+       result=ESP_ERR_INVALID_RESPONSE;
++#ifdef CODEPULSE_EPD_RED_MASK_SPLIT
++    if(result==ESP_OK && plan.operation==RED_MASK_PAINT && pass<2u &&
++        m->refresh_ms>=RED_MASK_SPLIT_RED_GATE_MS)
++      result=ESP_ERR_INVALID_RESPONSE;
++#endif
+     if(entered && gpio_get_level(PIN_EPD_BUSY)!=0) {
+       const esp_err_t exit_error=epd_command(0x92);
+       if(result==ESP_OK) result=exit_error;
+diff --git a/firmware/experiments/epd-red-mask-probe/red_mask_pattern.c b/firmware/experiments/epd-red-mask-probe/red_mask_pattern.c
+index 3ea2bfe..e998062 100644
+--- a/firmware/experiments/epd-red-mask-probe/red_mask_pattern.c
++++ b/firmware/experiments/epd-red-mask-probe/red_mask_pattern.c
+@@ -3,7 +3,15 @@
+ bool red_mask_draw(epd_canvas_t *c, unsigned frame) {
+   if (!c || !c->black || !c->red || frame > RED_MASK_LAST_FRAME) return false;
+   epd_canvas_clear(c, EPD_COLOR_WHITE);
+-#if defined(CODEPULSE_EPD_RED_MASK_FAST)
++#if defined(CODEPULSE_EPD_RED_MASK_STAGGER)
++  epd_canvas_draw_text(c, 12, 12, "RED STAGGER LAB", 3, EPD_COLOR_BLACK);
++#elif defined(CODEPULSE_EPD_RED_MASK_NEUTRAL)
++  epd_canvas_draw_text(c, 12, 12, "RED NEUTRAL LAB", 3, EPD_COLOR_BLACK);
++#elif defined(CODEPULSE_EPD_RED_MASK_SPLIT)
++  epd_canvas_draw_text(c, 12, 12, "RED SPLIT LAB", 3, EPD_COLOR_BLACK);
++#elif defined(CODEPULSE_EPD_RED_MASK_TAIL100)
++  epd_canvas_draw_text(c, 12, 12, "RED TAIL100 LAB", 3, EPD_COLOR_BLACK);
++#elif defined(CODEPULSE_EPD_RED_MASK_FAST)
+   epd_canvas_draw_text(c, 12, 12, "RED FAST LAB", 3, EPD_COLOR_BLACK);
+ #elif defined(CODEPULSE_EPD_RED_MASK_ACTIVATE)
+   epd_canvas_draw_text(c, 12, 12, "RED PHASE LAB", 3, EPD_COLOR_BLACK);
+@@ -23,7 +31,15 @@ bool red_mask_draw(epd_canvas_t *c, unsigned frame) {
+ #else
+   epd_canvas_draw_text(c, 12, 84, "1 RED ERASES / 2 RED RETURNS", 1, EPD_COLOR_BLACK);
+ #endif
+-#if defined(CODEPULSE_EPD_RED_MASK_FAST)
++#if defined(CODEPULSE_EPD_RED_MASK_STAGGER)
++  epd_canvas_draw_text(c, 12, 102, "100HZ STAGGERED PIXELS - WHITE LAST", 1, EPD_COLOR_BLACK);
++#elif defined(CODEPULSE_EPD_RED_MASK_NEUTRAL)
++  epd_canvas_draw_text(c, 12, 102, "100HZ RED PULSES - NO TAIL REVERSAL", 1, EPD_COLOR_BLACK);
++#elif defined(CODEPULSE_EPD_RED_MASK_SPLIT)
++  epd_canvas_draw_text(c, 12, 102, "100HZ PREFIX / 200HZ TAIL / WHITE LAST", 1, EPD_COLOR_BLACK);
++#elif defined(CODEPULSE_EPD_RED_MASK_TAIL100)
++  epd_canvas_draw_text(c, 12, 102, "100HZ PREFIX - 50/60MS RED TAIL", 1, EPD_COLOR_BLACK);
++#elif defined(CODEPULSE_EPD_RED_MASK_FAST)
+   epd_canvas_draw_text(c, 12, 102, "SHORT RED PULSES - WHITE GLYPHS LAST", 1, EPD_COLOR_BLACK);
+ #elif defined(CODEPULSE_EPD_RED_MASK_ACTIVATE)
+   epd_canvas_draw_text(c, 12, 102, "RED PHASES FIRST - WHITE GLYPHS LAST", 1, EPD_COLOR_BLACK);
+diff --git a/firmware/experiments/epd-red-mask-probe/red_mask_plan.c b/firmware/experiments/epd-red-mask-probe/red_mask_plan.c
+index 801fe12..c7813e5 100644
+--- a/firmware/experiments/epd-red-mask-probe/red_mask_plan.c
++++ b/firmware/experiments/epd-red-mask-probe/red_mask_plan.c
+@@ -104,7 +104,13 @@ size_t red_mask_make_lut(unsigned slot, const red_mask_plan_t *plan, uint8_t out
+ unsigned red_black_pass_count(const red_mask_plan_t *plan) {
+   if(!red_mask_frames(plan)) return 0;
+ #ifdef CODEPULSE_EPD_RED_MASK_COLOR
+-  if(plan->operation==RED_MASK_PAINT) return 2u;
++  if(plan->operation==RED_MASK_PAINT) {
++#ifdef CODEPULSE_EPD_RED_MASK_SPLIT
++    return 3u;
++#else
++    return 2u;
++#endif
++  }
+ #endif
+   return plan->operation==RED_MASK_ERASE && plan->black_pixels ? 2u:1u;
+ }
+@@ -113,7 +119,11 @@ unsigned red_black_pass_frames(const red_mask_plan_t *plan,unsigned pass) {
+   if(plan->operation==RED_MASK_PAINT) {
+ #ifdef CODEPULSE_EPD_RED_MASK_COLOR
+ #ifdef CODEPULSE_EPD_RED_MASK_ACTIVATE
++#ifdef CODEPULSE_EPD_RED_MASK_SPLIT
++    return pass==0?122u:(pass==1?610u:RED_MASK_BW_FRAMES+1u);
++#else
+     return pass==0?RED_MASK_RED_ACTIVATE_FRAMES:RED_MASK_BW_FRAMES+1u;
++#endif
+ #elif defined(CODEPULSE_EPD_RED_MASK_PULSE)
+     return pass==0?RED_MASK_BW_FRAMES+1u:RED_MASK_RED_PULSE_FRAMES;
+ #else
+@@ -127,7 +137,9 @@ unsigned red_black_pass_frames(const red_mask_plan_t *plan,unsigned pass) {
+ }
+ unsigned red_black_pass_hz(const red_mask_plan_t *plan,unsigned pass) {
+   if(pass>=red_black_pass_count(plan)) return 0;
+-#ifdef CODEPULSE_EPD_RED_MASK_FAST
++#if defined(CODEPULSE_EPD_RED_MASK_SPLIT)
++  if(plan->operation==RED_MASK_PAINT && pass==1) return 200u;
++#elif defined(CODEPULSE_EPD_RED_MASK_FAST)
+   if(plan->operation==RED_MASK_PAINT && pass==0) return 200u;
+ #endif
+   return 100u;
+@@ -161,12 +173,53 @@ size_t red_black_make_lut(unsigned table,const red_mask_plan_t *plan,
+ #ifdef CODEPULSE_EPD_RED_MASK_COLOR
+     memset(out,0,44);
+ #ifdef CODEPULSE_EPD_RED_MASK_ACTIVATE
+-    if(pass==0) {
++    if(pass<RED_MASK_RED_PASS_COUNT) {
+       /* Complete phase order of .39; only groups 1/2/3 repeat counts reduce
+        * to one. Red-only pixels get the entire sequence, NOT just its tail.
+        * Numeric data attribution is the same as the retained .45 tail below.
+        * Remaining selectors retain level 00 with synchronized durations. */
+-#ifdef CODEPULSE_EPD_RED_MASK_FAST
++#if defined(CODEPULSE_EPD_RED_MASK_SPLIT)
++      /* Preserve .46's 100Hz prefix and .47's 200Hz tail separately.
++       * The extra display-refresh boundary/upload interval is a physical
++       * change; equal nominal sequences do not establish equivalence. */
++      static const uint8_t prefix[4][6]={
++        {0xa0,26,26,0,0,1}, {0x00,10,10,0,0,1},
++        {0x84,14,1,14,1,1}, {0x90,10,10,0,0,1}
++      };
++      static const uint8_t tail[4][6]={
++        {0xb0,1,4,0,0,40}, {0xb0,1,4,0,0,20},
++        {0xb0,1,5,0,0,40}, {0xc0,70,0,0,0,1}
++      };
++      for(unsigned group=0;group<4;++group) {
++        const uint8_t *data=pass==0?prefix[group]:tail[group];
++        out[group*6]=table==2?data[0]:0;
++        memcpy(out+group*6+1,data+1,5);
++      }
++#else
++#if defined(CODEPULSE_EPD_RED_MASK_TAIL100)
++      /* .48 keeps .46's clock and prefix, redistributing the tail into
++       * 10/40ms and 10/50ms pairs: 500ms VDL + 2200ms VDHR, then 350ms
++       * VDHR. The explicit NEUTRAL variant below changes that VDL budget.
++       * Equal totals do not establish equivalent pigment response. */
++      static const uint8_t conditioned[7][6]={
++        {0xa0,26,26,0,0,1}, {0x00,10,10,0,0,1},
++        {0x84,14,1,14,1,1}, {0x90,10,10,0,0,1},
++#if defined(CODEPULSE_EPD_RED_MASK_STAGGER)
++        /* Same .48 per-pixel drive budgets. Group B's reverse is shifted
++         * within the synchronized four-phase grid; never reverse A and B
++         * together in the tail. Prefix/final hold remain simultaneous. */
++        {0xbf,1,1,1,2,30}, {0xbf,1,2,1,2,20},
++#elif defined(CODEPULSE_EPD_RED_MASK_NEUTRAL)
++        /* Keep .48's red pulses and timing, replacing only the 500ms tail
++         * VDL budget with level 00 pauses. Charge balance/red purity are
++         * unqualified; supplies and VCOM registers remain unchanged. */
++        {0x30,1,4,0,0,30}, {0x30,1,5,0,0,20},
++#else
++        {0xb0,1,4,0,0,30}, {0xb0,1,5,0,0,20},
++#endif
++        {0xc0,35,0,0,0,1}
++      };
++#elif defined(CODEPULSE_EPD_RED_MASK_FAST)
+       /* UC8176 R30=39 selects 200Hz (M=7,N=1); .46 was 3A/100Hz.
+        * The prefix is IDENTICAL in nominal milliseconds: two 26-frame
+        * white dwells + 20 neutral frames merge into one group at 2x counts.
+@@ -187,9 +240,15 @@ size_t red_black_make_lut(unsigned table,const red_mask_plan_t *plan,
+       };
+ #endif
+       for(unsigned group=0;group<7;++group) {
++#ifdef CODEPULSE_EPD_RED_MASK_STAGGER
++        out[group*6]=(table==2 || table==4)?conditioned[group][0]:0;
++        if(table==4 && (group==4 || group==5)) out[group*6]=0xfb;
++#else
+         out[group*6]=table==2?conditioned[group][0]:0;
++#endif
+         memcpy(out+group*6+1,conditioned[group]+1,5);
+       }
++#endif
+     } else {
+       /* Clean all 352 white glyph pixels AFTER red has been driven. Black
+        * baseline strokes that turn white must not remain under ERROR text. */
+@@ -244,8 +303,8 @@ size_t red_black_make_lut(unsigned table,const red_mask_plan_t *plan,
+ void red_activation_encode(unsigned pass,bool in_window,
+     uint8_t b,uint8_t r,uint8_t ob,uint8_t or_,uint8_t *mb,uint8_t *mr) {
+   *mb=*mr=0xff;
+-  if(!in_window || pass>1u) return;
+-  if(pass==0) {
++  if(!in_window || pass>RED_MASK_RED_PASS_COUNT) return;
++  if(pass<RED_MASK_RED_PASS_COUNT) {
+     const uint8_t changed=(uint8_t)((b^ob)|(r^or_));
+     *mr=(uint8_t)~(changed & (uint8_t)~r);
+   } else {
+@@ -254,4 +313,17 @@ void red_activation_encode(unsigned pass,bool in_window,
+     *mb=(uint8_t)~(b&r);
+   }
+ }
++#ifdef CODEPULSE_EPD_RED_MASK_STAGGER
++void red_stagger_encode(unsigned pass,bool in_window,bool odd_row,
++    uint8_t b,uint8_t r,uint8_t ob,uint8_t or_,uint8_t *mb,uint8_t *mr) {
++  if(pass!=0 || !in_window) {
++    red_activation_encode(pass,in_window,b,r,ob,or_,mb,mr);
++    return;
++  }
++  const uint8_t target=(uint8_t)(((b^ob)|(r^or_)) & (uint8_t)~r);
++  const uint8_t group_a=odd_row?0x55:0xaa;
++  *mb=(uint8_t)~(target & (uint8_t)~group_a); /* Group B selects R24. */
++  *mr=(uint8_t)~(target & group_a);          /* Group A selects R22. */
++}
++#endif
+ #endif
+diff --git a/firmware/experiments/epd-red-mask-probe/red_mask_probe.h b/firmware/experiments/epd-red-mask-probe/red_mask_probe.h
+index 6a3913a..4aa0e2b 100644
+--- a/firmware/experiments/epd-red-mask-probe/red_mask_probe.h
++++ b/firmware/experiments/epd-red-mask-probe/red_mask_probe.h
+@@ -13,18 +13,36 @@
+ #ifdef CODEPULSE_EPD_RED_MASK_ACTIVATE
+ /* All seven .39 red phases, with conditioning repeats 1/1/1. This is not
+  * the optically accepted .39 sequence; the reduced conditioning is a trial. */
+-#ifdef CODEPULSE_EPD_RED_MASK_FAST
++#if defined(CODEPULSE_EPD_RED_MASK_SPLIT)
++#define RED_MASK_RED_ACTIVATE_FRAMES 732u /* 122 at 100Hz + 610 at 200Hz */
++#define RED_MASK_RED_PASS_COUNT 2u
++#elif defined(CODEPULSE_EPD_RED_MASK_FAST)
+ #define RED_MASK_RED_ACTIVATE_FRAMES 854u /* at 200Hz, still nominally 4270ms */
+ #else
+ #define RED_MASK_RED_ACTIVATE_FRAMES 427u
+ #endif
++#ifndef RED_MASK_RED_PASS_COUNT
++#define RED_MASK_RED_PASS_COUNT 1u
++#endif
+ #define RED_MASK_PAINT_GATE_MS 7500u
++#ifdef CODEPULSE_EPD_RED_MASK_SPLIT
++#define RED_MASK_PAINT_PASS_GATE_MS(pass) ((pass)==0?2200u:((pass)==1?4100u:3500u))
++#define RED_MASK_SPLIT_RED_GATE_MS 5200u
++#define RED_MASK_PAINT_PHASE(pass) ((pass)==0?"CONDITION100":((pass)==1?"FAST_RED_TAIL":"WHITE_GLYPHS"))
++#else
+ #define RED_MASK_PAINT_PASS_GATE_MS(pass) ((pass)==0?5200u:3500u)
+-#ifdef CODEPULSE_EPD_RED_MASK_FAST
++#if defined(CODEPULSE_EPD_RED_MASK_STAGGER)
++#define RED_MASK_PAINT_PHASE(pass) ((pass)==0?"STAGGER_RED_TAIL":"WHITE_GLYPHS")
++#elif defined(CODEPULSE_EPD_RED_MASK_NEUTRAL)
++#define RED_MASK_PAINT_PHASE(pass) ((pass)==0?"NEUTRAL_RED_TAIL":"WHITE_GLYPHS")
++#elif defined(CODEPULSE_EPD_RED_MASK_TAIL100)
++#define RED_MASK_PAINT_PHASE(pass) ((pass)==0?"TAIL100_RED":"WHITE_GLYPHS")
++#elif defined(CODEPULSE_EPD_RED_MASK_FAST)
+ #define RED_MASK_PAINT_PHASE(pass) ((pass)==0?"FAST_RED_TAIL":"WHITE_GLYPHS")
+ #else
+ #define RED_MASK_PAINT_PHASE(pass) ((pass)==0?"CONDITION_AND_RED":"WHITE_GLYPHS")
+ #endif
++#endif
+ #elif defined(CODEPULSE_EPD_RED_MASK_PULSE)
+ /* Exact .39 red tail: (4+16)*5 + (3+14)*10 + 35, then one neutral frame.
+  * Preserve pulse order/repetition; total drive time is not interchangeable. */
+@@ -93,4 +111,9 @@ size_t red_black_make_lut(unsigned table, const red_mask_plan_t *plan,
+ void red_activation_encode(unsigned pass, bool in_window,
+     uint8_t black,uint8_t red,uint8_t old_black,uint8_t old_red,
+     uint8_t *mask_black,uint8_t *mask_red);
++#ifdef CODEPULSE_EPD_RED_MASK_STAGGER
++void red_stagger_encode(unsigned pass, bool in_window, bool odd_row,
++    uint8_t black,uint8_t red,uint8_t old_black,uint8_t old_red,
++    uint8_t *mask_black,uint8_t *mask_red);
++#endif
+ #endif
+diff --git a/firmware/experiments/epd-red-mask-probe/test.ps1 b/firmware/experiments/epd-red-mask-probe/test.ps1
+index f7f5e09..5da05c2 100644
+--- a/firmware/experiments/epd-red-mask-probe/test.ps1
++++ b/firmware/experiments/epd-red-mask-probe/test.ps1
+@@ -1,5 +1,8 @@
+-param([string]$Output,[switch]$BlackStage,[switch]$ColorStage,[switch]$PulseStage,[switch]$ActivateStage,[switch]$FastStage)
++param([string]$Output,[switch]$BlackStage,[switch]$ColorStage,[switch]$PulseStage,[switch]$ActivateStage,[switch]$FastStage,[switch]$Tail100Stage,[switch]$SplitStage,[switch]$NeutralStage,[switch]$StaggerStage)
+ $ErrorActionPreference = 'Stop'
++if (($Tail100Stage -or $NeutralStage -or $StaggerStage) -and $FastStage) { throw 'Tail100 variants and Fast are separate candidates.' }
++if ($SplitStage -and ($FastStage -or $Tail100Stage -or $NeutralStage -or $StaggerStage)) { throw 'Split excludes Fast and Tail100 variants.' }
++if ($StaggerStage -and $NeutralStage) { throw 'Stagger and Neutral are separate candidates.' }
+ $experiment = $PSScriptRoot
+ $firmware = (Resolve-Path -LiteralPath (Join-Path $experiment '../..')).Path
+ if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
+@@ -13,7 +16,7 @@ if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
+         if ($entry -match '^([^=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process') }
+     }
+ }
+-$useBlackDriver = $BlackStage -or $ColorStage -or $PulseStage -or $ActivateStage -or $FastStage
++$useBlackDriver = $BlackStage -or $ColorStage -or $PulseStage -or $ActivateStage -or $FastStage -or $Tail100Stage -or $SplitStage -or $NeutralStage -or $StaggerStage
+ $driverTest = if($useBlackDriver) { 'test_black_driver.c' } else { 'test_driver.c' }
+ $out = if ($Output) { [IO.Path]::GetFullPath($Output) } else { Join-Path $firmware 'build-red-mask-host' }
+ $common = @('/nologo','/std:c11','/utf-8','/W4','/WX','/D_CRT_SECURE_NO_WARNINGS',
+@@ -25,10 +28,14 @@ foreach($mode in @('debug','ndebug')) {
+     try {
+         [string[]]$defines = if($mode -eq 'ndebug') { @('/DNDEBUG') } else { @() }
+         if($useBlackDriver) { $defines += '/DCODEPULSE_EPD_RED_MASK_BLACK=1' }
+-        if($ColorStage -or $PulseStage -or $ActivateStage -or $FastStage) { $defines += '/DCODEPULSE_EPD_RED_MASK_COLOR=1' }
+-        if($PulseStage -or $ActivateStage -or $FastStage) { $defines += '/DCODEPULSE_EPD_RED_MASK_PULSE=1' }
+-        if($ActivateStage -or $FastStage) { $defines += '/DCODEPULSE_EPD_RED_MASK_ACTIVATE=1' }
++        if($ColorStage -or $PulseStage -or $ActivateStage -or $FastStage -or $Tail100Stage -or $SplitStage -or $NeutralStage -or $StaggerStage) { $defines += '/DCODEPULSE_EPD_RED_MASK_COLOR=1' }
++        if($PulseStage -or $ActivateStage -or $FastStage -or $Tail100Stage -or $SplitStage -or $NeutralStage -or $StaggerStage) { $defines += '/DCODEPULSE_EPD_RED_MASK_PULSE=1' }
++        if($ActivateStage -or $FastStage -or $Tail100Stage -or $SplitStage -or $NeutralStage -or $StaggerStage) { $defines += '/DCODEPULSE_EPD_RED_MASK_ACTIVATE=1' }
+         if($FastStage) { $defines += '/DCODEPULSE_EPD_RED_MASK_FAST=1' }
++        if($Tail100Stage -or $NeutralStage -or $StaggerStage) { $defines += '/DCODEPULSE_EPD_RED_MASK_TAIL100=1' }
++        if($SplitStage) { $defines += '/DCODEPULSE_EPD_RED_MASK_SPLIT=1' }
++        if($NeutralStage) { $defines += '/DCODEPULSE_EPD_RED_MASK_NEUTRAL=1' }
++        if($StaggerStage) { $defines += '/DCODEPULSE_EPD_RED_MASK_STAGGER=1' }
+         & cl.exe @common @defines ('/I'+$firmware+'/tests/panel/include') ($experiment+'/tests/'+$driverTest) ($experiment+'/red_mask_pattern.c') ($experiment+'/red_mask_plan.c') ($firmware+'/main/epd_canvas.c') /Fe:test-driver.exe *> driver-build.log
+         if($LASTEXITCODE -ne 0) { Get-Content driver-build.log; throw 'Red mask driver test compile failed' }
+         & .\test-driver.exe
+diff --git a/firmware/experiments/epd-red-mask-probe/tests/test_black_driver.c b/firmware/experiments/epd-red-mask-probe/tests/test_black_driver.c
+index c8028ff..79d9b89 100644
+--- a/firmware/experiments/epd-red-mask-probe/tests/test_black_driver.c
++++ b/firmware/experiments/epd-red-mask-probe/tests/test_black_driver.c
+@@ -10,21 +10,35 @@
+ 
+ static int64_t now_us, busy_until;
+ static unsigned spi_calls, fail_at, resets, clean_drives, lut_drives, power_offs;
++static unsigned failure_lut_drives;
+ static unsigned power_ons, tables, pll_writes, cdi_writes, pass_index;
+ static bool slow_clear;
++#ifdef CODEPULSE_EPD_RED_MASK_SPLIT
++static bool slow_white,slow_red_combined;
++#endif
+ #ifdef CODEPULSE_EPD_RED_MASK_COLOR
+ static bool slow_color;
+ #endif
+ #ifdef CODEPULSE_EPD_RED_MASK_COLOR
++#ifdef CODEPULSE_EPD_RED_MASK_SPLIT
++#define TEST_PAINT_PASSES 3u
++#else
+ #define TEST_PAINT_PASSES 2u
++#endif
+ #ifdef CODEPULSE_EPD_RED_MASK_ACTIVATE
+-#ifdef CODEPULSE_EPD_RED_MASK_FAST
++#if defined(CODEPULSE_EPD_RED_MASK_SPLIT)
++#define TEST_PAINT_PASS_FRAMES(pass) ((pass)==0?122u:((pass)==1?610u:179u))
++#elif defined(CODEPULSE_EPD_RED_MASK_FAST)
+ #define TEST_PAINT_PASS_FRAMES(pass) ((pass)==0?854u:179u)
+ #else
+ #define TEST_PAINT_PASS_FRAMES(pass) ((pass)==0?427u:179u)
+ #endif
+ #define TEST_PAINT_MIN_MS 6060u
++#ifdef CODEPULSE_EPD_RED_MASK_SPLIT
++#define TEST_PAINT_MAX_MS 6300u
++#else
+ #define TEST_PAINT_MAX_MS 6220u
++#endif
+ #elif defined(CODEPULSE_EPD_RED_MASK_PULSE)
+ #define TEST_PAINT_PASS_FRAMES(pass) ((pass)==0?179u:306u)
+ #define TEST_PAINT_MIN_MS 4850u
+@@ -104,7 +118,11 @@ static void check_candidate_drive(void) {
+   const unsigned pass=pass_index++;
+   CHECK(pass<required);
+   unsigned frame_us=10000;
+-#ifdef CODEPULSE_EPD_RED_MASK_FAST
++#if defined(CODEPULSE_EPD_RED_MASK_SPLIT)
++  const bool fast=paint && pass==1;
++  CHECK(pll==(fast?0x39:0x3a));
++  if(fast) frame_us=5000;
++#elif defined(CODEPULSE_EPD_RED_MASK_FAST)
+   const bool fast=paint && pass==0;
+   CHECK(pll==(fast?0x39:0x3a));
+   if(fast) frame_us=5000;
+@@ -134,20 +152,55 @@ static void check_candidate_drive(void) {
+       memset(expected,0,sizeof(expected));
+       if(pass==0) {
+         /* Independent complete reference; reduced repeats are explicit. */
+-#ifdef CODEPULSE_EPD_RED_MASK_FAST
++#if defined(CODEPULSE_EPD_RED_MASK_SPLIT)
++        const uint8_t red_levels[]={0xa0,0x00,0x84,0x90,0,0,0};
++        const uint8_t times[7][5]={{26,26,0,0,1},{10,10,0,0,1},
++          {14,1,14,1,1},{10,10,0,0,1},{0},{0},{0}};
++#elif defined(CODEPULSE_EPD_RED_MASK_FAST)
+         const uint8_t red_levels[]={0xa0,0x84,0x90,0xb0,0xb0,0xb0,0xc0};
+         const uint8_t times[7][5]={{52,52,40,0,1},{28,2,28,2,1},
+           {20,20,0,0,1},{1,4,0,0,40},{1,4,0,0,20},{1,5,0,0,40},{70,0,0,0,1}};
++#elif defined(CODEPULSE_EPD_RED_MASK_STAGGER)
++        const uint8_t red_levels[]={0xa0,0x00,0x84,0x90,0xbf,0xbf,0xc0};
++        const uint8_t times[7][5]={{26,26,0,0,1},{10,10,0,0,1},
++          {14,1,14,1,1},{10,10,0,0,1},{1,1,1,2,30},{1,2,1,2,20},{35,0,0,0,1}};
++#elif defined(CODEPULSE_EPD_RED_MASK_TAIL100)
++        const uint8_t red_levels[]={0xa0,0x00,0x84,0x90,
++#ifdef CODEPULSE_EPD_RED_MASK_NEUTRAL
++          0x30,0x30,
++#else
++          0xb0,0xb0,
++#endif
++          0xc0};
++        const uint8_t times[7][5]={{26,26,0,0,1},{10,10,0,0,1},
++          {14,1,14,1,1},{10,10,0,0,1},{1,4,0,0,30},{1,5,0,0,20},{35,0,0,0,1}};
+ #else
+         const uint8_t red_levels[]={0xa0,0x00,0x84,0x90,0xb0,0xb0,0xc0};
+         const uint8_t times[7][5]={{26,26,0,0,1},{10,10,0,0,1},
+           {14,1,14,1,1},{10,10,0,0,1},{4,16,0,0,5},{3,14,0,0,10},{35,0,0,0,1}};
+ #endif
+         for(unsigned g=0;g<7;++g) {
++#ifdef CODEPULSE_EPD_RED_MASK_STAGGER
++          expected[g*6]=(table==2 || table==4)?red_levels[g]:0;
++          if(table==4 && (g==4 || g==5)) expected[g*6]=0xfb;
++#else
+           expected[g*6]=table==2?red_levels[g]:0;
++#endif
++          memcpy(expected+g*6+1,times[g],5);
++        }
++      }
++#ifdef CODEPULSE_EPD_RED_MASK_SPLIT
++      else if(pass==1) {
++        const uint8_t levels[]={0xb0,0xb0,0xb0,0xc0};
++        const uint8_t times[4][5]={{1,4,0,0,40},{1,4,0,0,20},
++          {1,5,0,0,40},{70,0,0,0,1}};
++        for(unsigned g=0;g<4;++g) {
++          expected[g*6]=table==2?levels[g]:0;
+           memcpy(expected+g*6+1,times[g],5);
+         }
+-      } else {
++      }
++#endif
++      else {
+         if(table==4) expected[0]=0x80;
+         expected[1]=178;expected[3]=1;expected[5]=1;
+       }
+@@ -169,6 +222,12 @@ static void check_candidate_drive(void) {
+     CHECK(frames(luts[table])==drive_frames);
+   }
+   unsigned changed=0,held=0,active=0,black_targets=0,red_targets=0;
++#ifdef CODEPULSE_EPD_RED_MASK_STAGGER
++  unsigned red_a=0,red_b=0;
++#endif
++#ifdef CODEPULSE_EPD_RED_MASK_ACTIVATE
++  const unsigned white_pass=TEST_PAINT_PASSES-1u;
++#endif
+   for(unsigned bit=0;bit<120000;++bit) {
+     const unsigned i=bit/8,mask=0x80u>>(bit%8);
+     const unsigned before=!(previous_red[i]&mask)?2u:(!(previous_black[i]&mask)?1u:0u);
+@@ -186,8 +245,14 @@ static void check_candidate_drive(void) {
+     }
+ #ifdef CODEPULSE_EPD_RED_MASK_ACTIVATE
+     if(paint) {
+-      local_white_redraw=pass==1 && inside && after==0;
+-      wanted=pass==0 && changes && after==2?0x22:(local_white_redraw?0x24:0x23);
++      local_white_redraw=pass==white_pass && inside && after==0;
++      wanted=pass<white_pass && changes && after==2?0x22:(local_white_redraw?0x24:0x23);
++#ifdef CODEPULSE_EPD_RED_MASK_STAGGER
++      if(pass<white_pass && changes && after==2 && inside) {
++        wanted=((bit/400u+bit%400u)&1u)?0x24:0x22;
++        red_a+=wanted==0x22;red_b+=wanted==0x24;
++      }
++#endif
+     }
+ #endif
+     if(!paint && changes && (pass==0 || after==1)) wanted=0x24;
+@@ -207,8 +272,11 @@ static void check_candidate_drive(void) {
+   if(!paint && pass==0) CHECK(active==changed);
+   if(!paint && pass==1) CHECK(active==black_targets && active==328);
+ #ifdef CODEPULSE_EPD_RED_MASK_ACTIVATE
+-  if(paint && pass==0) CHECK(active==red_targets && active==1888);
+-  if(paint && pass==1) CHECK(active==352 && red_targets==1888);
++  if(paint && pass<white_pass) CHECK(active==red_targets && active==1888);
++  if(paint && pass==white_pass) CHECK(active==352 && red_targets==1888);
++#ifdef CODEPULSE_EPD_RED_MASK_STAGGER
++  if(paint && pass==0) CHECK(red_a && red_b && red_a+red_b==1888);
++#endif
+ #elif defined(CODEPULSE_EPD_RED_MASK_COLOR)
+   if(paint && pass==0) CHECK(active==changed);
+   if(paint && pass==1) CHECK(active==red_targets && active==1888);
+@@ -218,17 +286,23 @@ static void check_candidate_drive(void) {
+   ++lut_drives;
+   if(stuck_refresh) busy_until=now_us+60000000;
+   else if(no_busy_refresh) busy_until=now_us;
+-  else if(slow_clear && pass==0 && (!paint || TEST_PAINT_PASSES==2u))
++  else if(slow_clear && pass==0 && (!paint || TEST_PAINT_PASSES>=2u))
+     busy_until=now_us+(int64_t)(paint?RED_MASK_PAINT_PASS_GATE_MS(pass):3500u)*1000;
+ #ifdef CODEPULSE_EPD_RED_MASK_COLOR
+   else if(slow_color && paint && pass==1)
+     busy_until=now_us+(int64_t)RED_MASK_PAINT_PASS_GATE_MS(pass)*1000;
++#endif
++#ifdef CODEPULSE_EPD_RED_MASK_SPLIT
++  else if(slow_white && paint && pass==2)
++    busy_until=now_us+(int64_t)RED_MASK_PAINT_PASS_GATE_MS(pass)*1000;
++  else if(slow_red_combined && paint && pass<2)
++    busy_until=now_us+(int64_t)drive_frames*frame_us+600000;
+ #endif
+   else busy_until=now_us+(int64_t)drive_frames*frame_us;
+ }
+ esp_err_t spi_device_polling_transmit(spi_device_handle_t dev,spi_transaction_t *tx) {
+   CHECK(dev && tx->length%8==0); ++spi_calls; now_us+=100;
+-  if(spi_calls==fail_at) return ESP_FAIL;
++  if(spi_calls==fail_at) {failure_lut_drives=lut_drives;return ESP_FAIL;}
+   const uint8_t *data=tx->tx_buffer;
+   const size_t length=tx->length/8;
+   CHECK(length<=1024);
+@@ -264,7 +338,7 @@ esp_err_t spi_device_polling_transmit(spi_device_handle_t dev,spi_transaction_t
+   if(cmd==0x00) { CHECK(length==1); psr=data[0]; }
+   else if(cmd==0x30) {
+     CHECK(length==1 && now_us>=busy_until);
+-#ifdef CODEPULSE_EPD_RED_MASK_FAST
++#if defined(CODEPULSE_EPD_RED_MASK_FAST) || defined(CODEPULSE_EPD_RED_MASK_SPLIT)
+     CHECK(data[0]==0x3a || data[0]==0x39);
+ #else
+     CHECK(data[0]==0x3a);
+@@ -291,10 +365,14 @@ esp_err_t spi_device_polling_transmit(spi_device_handle_t dev,spi_transaction_t
+ 
+ static void cold(void) {
+   now_us=busy_until=0; spi_calls=fail_at=resets=clean_drives=lut_drives=power_offs=0;
++  failure_lut_drives=0;
+   power_ons=tables=pll_writes=cdi_writes=0; dc=0; partial=false;
+   stuck_refresh=no_busy_refresh=stuck_power=stuck_off=slow_clear=false;pass_index=0;
+ #ifdef CODEPULSE_EPD_RED_MASK_COLOR
+   slow_color=false;
++#endif
++#ifdef CODEPULSE_EPD_RED_MASK_SPLIT
++  slow_white=slow_red_combined=false;
+ #endif
+   s_spi=NULL; s_epd_baseline_valid=false;
+   CHECK(red_mask_draw(&canvas,0)); CHECK(epd_ssd1683_init()==ESP_OK);
+@@ -343,7 +421,121 @@ static void transitions(void) {
+     memcpy(previous_black,black,15000); memcpy(previous_red,red,15000);
+   }
+ }
++#ifdef CODEPULSE_EPD_RED_MASK_SPLIT
++static unsigned expand_5ms(const uint8_t *lut,unsigned hz,uint8_t *out,unsigned capacity) {
++  CHECK(hz==100 || hz==200);
++  unsigned count=0;
++  for(unsigned group=0;group<7;++group)
++    for(unsigned repeat=0;repeat<lut[group*6+5];++repeat)
++      for(unsigned phase=0;phase<4;++phase)
++        for(unsigned tick=0;tick<lut[group*6+1+phase]*(200u/hz);++tick) {
++          CHECK(count<capacity);
++          out[count++]=(uint8_t)((lut[group*6]>>(6u-2u*phase))&3u);
++        }
++  return count;
++}
++static void check_split_reference(void) {
++  const uint8_t fast47[42]={
++      0xa0,52,52,40,0,1, 0x84,28,2,28,2,1, 0x90,20,20,0,0,1,
++      0xb0,1,4,0,0,40, 0xb0,1,4,0,0,20, 0xb0,1,5,0,0,40, 0xc0,70,0,0,0,1};
++  const red_mask_plan_t paint={.operation=RED_MASK_PAINT};
++  uint8_t prefix[44],tail[44],reference[854],candidate[854];
++  CHECK(red_black_pass_count(&paint)==3);
++  CHECK(red_black_make_lut(2,&paint,0,prefix)==42 && red_black_make_lut(2,&paint,1,tail)==42);
++  CHECK(expand_5ms(prefix,100,candidate,854)==244);
++  CHECK(expand_5ms(tail,200,candidate+244,610)==610);
++  CHECK(expand_5ms(fast47,200,reference,854)==854);
++  CHECK(!memcmp(reference,candidate,854)); /* Nominal codes only, no pigment model. */
++  CHECK(red_mask_frames(&paint)==911 && red_mask_nominal_ms(&paint)==6060);
++  CHECK(red_black_pass_hz(&paint,0)==100 && red_black_pass_hz(&paint,1)==200);
++  CHECK(red_black_pass_hz(&paint,2)==100 && red_black_pass_hz(&paint,3)==0);
++}
++#endif
++#ifdef CODEPULSE_EPD_RED_MASK_TAIL100
++static unsigned expand_levels(const uint8_t *lut,uint8_t expanded[427]) {
++  unsigned count=0;
++  for(unsigned group=0;group<7;++group)
++    for(unsigned repeat=0;repeat<lut[group*6+5];++repeat)
++      for(unsigned phase=0;phase<4;++phase)
++        for(unsigned frame=0;frame<lut[group*6+1+phase];++frame) {
++          CHECK(count<427);
++          expanded[count++]=(uint8_t)((lut[group*6]>>(6u-2u*phase))&3u);
++        }
++  return count;
++}
++static void check_tail100_reference(void) {
++  /* Frozen .46 reference, independent of the new LUT. Compare the actual
++   * nominal level sequence and budgets; this does not model pigments. */
++  const uint8_t color46[42]={
++      0xa0,26,26,0,0,1, 0x00,10,10,0,0,1,
++      0x84,14,1,14,1,1, 0x90,10,10,0,0,1,
++      0xb0,4,16,0,0,5, 0xb0,3,14,0,0,10, 0xc0,35,0,0,0,1};
++  const red_mask_plan_t paint={.operation=RED_MASK_PAINT};
++  uint8_t lut[44],reference[427],candidate[427];
++  CHECK(red_black_make_lut(2,&paint,0,lut)==42);
++  CHECK(expand_levels(color46,reference)==427 && expand_levels(lut,candidate)==427);
++  CHECK(!memcmp(reference,candidate,122));
++  CHECK(!memcmp(reference+392,candidate+392,35));
++  unsigned reference_total[4]={0},candidate_total[4]={0};
++  for(unsigned frame=0;frame<427;++frame) {
++    ++reference_total[reference[frame]];++candidate_total[candidate[frame]];
++  }
++#ifdef CODEPULSE_EPD_RED_MASK_NEUTRAL
++  CHECK(reference_total[2]==candidate_total[2]+50);
++  CHECK(candidate_total[0]==reference_total[0]+50);
++  CHECK(candidate_total[1]==reference_total[1] && candidate_total[3]==reference_total[3]);
++  const unsigned first_level=0;
++#else
++  CHECK(!memcmp(reference_total,candidate_total,sizeof(reference_total)));
++  const unsigned first_level=2;
++#endif
++  unsigned pauses_or_reverse=0,red_drive=0,run=0,last=4;
++  for(unsigned frame=122;frame<392;++frame) {
++    const unsigned level=candidate[frame];
++    CHECK(level==first_level || level==3);
++    pauses_or_reverse+=level==first_level;red_drive+=level==3;
++    run=level==last?run+1u:1u;last=level;
++    CHECK(run<=(level==first_level?1u:5u));
++  }
++  CHECK(pauses_or_reverse==50 && red_drive==220);
++  CHECK(red_mask_frames(&paint)==606 && red_mask_nominal_ms(&paint)==6060);
++  CHECK(red_black_pass_hz(&paint,0)==100 && red_black_pass_hz(&paint,1)==100);
++  CHECK(red_black_pass_hz(&paint,2)==0);
++}
++#ifdef CODEPULSE_EPD_RED_MASK_STAGGER
++static void check_stagger_reference(void) {
++  const uint8_t tail48[42]={
++      0xa0,26,26,0,0,1, 0x00,10,10,0,0,1,
++      0x84,14,1,14,1,1, 0x90,10,10,0,0,1,
++      0xb0,1,4,0,0,30, 0xb0,1,5,0,0,20, 0xc0,35,0,0,0,1};
++  const red_mask_plan_t paint={.operation=RED_MASK_PAINT};
++  uint8_t lut_a[44],lut_b[44],reference[427],a[427],b[427];
++  CHECK(red_black_make_lut(2,&paint,0,lut_a)==42 && red_black_make_lut(4,&paint,0,lut_b)==42);
++  CHECK(expand_levels(tail48,reference)==427 && expand_levels(lut_a,a)==427 && expand_levels(lut_b,b)==427);
++  CHECK(!memcmp(reference,a,427));
++  CHECK(!memcmp(reference,b,122) && !memcmp(reference+392,b+392,35));
++  unsigned totals_a[4]={0},totals_b[4]={0},reverse_a=0,reverse_b=0;
++  for(unsigned frame=0;frame<427;++frame) {++totals_a[a[frame]];++totals_b[b[frame]];}
++  CHECK(!memcmp(totals_a,totals_b,sizeof(totals_a)));
++  for(unsigned frame=122;frame<392;++frame) {
++    CHECK((a[frame]==2 || a[frame]==3) && (b[frame]==2 || b[frame]==3));
++    CHECK(a[frame]!=2 || b[frame]!=2);
++    reverse_a+=a[frame]==2;reverse_b+=b[frame]==2;
++  }
++  CHECK(reverse_a==50 && reverse_b==50); /* Full .48 reverse dose, no overlap. */
++}
++#endif
++#endif
+ int main(void) {
++#ifdef CODEPULSE_EPD_RED_MASK_SPLIT
++  check_split_reference();
++#endif
++#ifdef CODEPULSE_EPD_RED_MASK_TAIL100
++  check_tail100_reference();
++#endif
++#ifdef CODEPULSE_EPD_RED_MASK_STAGGER
++  check_stagger_reference();
++#endif
+   epd_quiet_metrics_t m;
+   red_mask_plan_t invalid_plan={.operation=RED_MASK_ERASE};
+   CHECK(red_mask_frames(&invalid_plan)==179 && red_mask_nominal_ms(&invalid_plan)==1790);
+@@ -386,15 +578,31 @@ int main(void) {
+ #ifdef CODEPULSE_EPD_RED_MASK_ACTIVATE
+   /* Local white cleanup deliberately includes unchanged glyph holes. All
+    * nine input pairs, outside bytes and invalid passes must obey the scope. */
++  const unsigned glyph_pass=TEST_PAINT_PASSES-1u;
+   for(unsigned from=0;from<3;++from) for(unsigned to=0;to<3;++to)
+-    for(unsigned pass=0;pass<=2;++pass) for(unsigned inside=0;inside<2;++inside) {
++    for(unsigned pass=0;pass<=TEST_PAINT_PASSES;++pass) for(unsigned inside=0;inside<2;++inside) {
+       uint8_t mb,mr;red_activation_encode(pass,inside!=0,bs[to],rs[to],bs[from],rs[from],&mb,&mr);
+       const uint8_t selected=selected_table(0xf7,mr!=0,mb!=0);
+       uint8_t wanted=0x23;
+-      if(inside && pass==0 && from!=to && to==2) wanted=0x22;
+-      if(inside && pass==1 && to==0) wanted=0x24;
++      if(inside && pass<glyph_pass && from!=to && to==2) wanted=0x22;
++      if(inside && pass==glyph_pass && to==0) wanted=0x24;
+       CHECK(selected==wanted);
+     }
++#ifdef CODEPULSE_EPD_RED_MASK_STAGGER
++  for(unsigned from=0;from<3;++from) for(unsigned to=0;to<3;++to)
++    for(unsigned pass=0;pass<=2;++pass) for(unsigned inside=0;inside<2;++inside)
++      for(unsigned row=0;row<2;++row) {
++        uint8_t mb,mr;
++        red_stagger_encode(pass,inside!=0,row!=0,bs[to],rs[to],bs[from],rs[from],&mb,&mr);
++        for(unsigned bit=0;bit<8;++bit) {
++          const unsigned mask=0x80u>>bit;
++          uint8_t wanted=0x23;
++          if(inside && pass==0 && from!=to && to==2) wanted=((bit+row)&1u)?0x24:0x22;
++          if(inside && pass==1 && to==0) wanted=0x24;
++          CHECK(selected_table(0xf7,(mr&mask)!=0,(mb&mask)!=0)==wanted);
++        }
++      }
++#endif
+ #endif
+   /* Reject a third driven target color without issuing any SPI transaction. */
+   cold();baseline();unsigned before_spi=spi_calls;bool injected=false;
+@@ -419,8 +627,11 @@ int main(void) {
+     CHECK(update(&m)==ESP_OK && s_epd_baseline_valid);
+     CHECK(m.refresh_ms>=TEST_PAINT_MIN_MS && m.refresh_ms<TEST_PAINT_MAX_MS && lut_drives==2u+TEST_PAINT_PASSES && power_offs==3 && resets==1);
+     CHECK(pll==0x3a); /* The accepted white/erase clock is restored. */
+-#ifdef CODEPULSE_EPD_RED_MASK_FAST
++#if defined(CODEPULSE_EPD_RED_MASK_FAST) || defined(CODEPULSE_EPD_RED_MASK_SPLIT)
+     CHECK(pll_writes==3); /* Initial 100Hz, red 200Hz, white 100Hz. */
++#endif
++#ifdef CODEPULSE_EPD_RED_MASK_TAIL100
++    CHECK(pll_writes==1); /* Keep .46's single 100Hz setting throughout. */
+ #endif
+     CHECK(!memcmp(ram[0],black,15000) && !memcmp(ram[1],red,15000));
+   }
+@@ -442,8 +653,7 @@ int main(void) {
+         CHECK(red_mask_draw(&canvas,2));
+       }
+       fail_at=spi_calls+failure;
+-      const unsigned prior_drives=lut_drives;
+-      CHECK(update(&m)!=ESP_OK && !s_epd_baseline_valid && lut_drives<=prior_drives+2 && resets==1);
++      CHECK(update(&m)!=ESP_OK && !s_epd_baseline_valid && lut_drives==failure_lut_drives && resets==1);
+       before=spi_calls; CHECK(update(&m)==ESP_ERR_INVALID_STATE && spi_calls==before);
+     }
+   }
+@@ -461,6 +671,18 @@ int main(void) {
+   CHECK(red_mask_draw(&canvas,2));slow_color=true;
+   CHECK(update(&m)==ESP_ERR_INVALID_RESPONSE && !s_epd_baseline_valid && lut_drives==4);
+   CHECK(pass_index==2 && power_offs==3); /* No extra pulse or accepted RAM baseline. */
++#ifdef CODEPULSE_EPD_RED_MASK_SPLIT
++  cold(); baseline(); CHECK(update(&m)==ESP_OK);
++  memcpy(previous_black,black,15000);memcpy(previous_red,red,15000);
++  CHECK(red_mask_draw(&canvas,2));slow_white=true;
++  CHECK(update(&m)==ESP_ERR_INVALID_RESPONSE && !s_epd_baseline_valid && lut_drives==5);
++  CHECK(pass_index==3 && power_offs==3);
++  cold(); baseline(); CHECK(update(&m)==ESP_OK);
++  memcpy(previous_black,black,15000);memcpy(previous_red,red,15000);
++  CHECK(red_mask_draw(&canvas,2));slow_red_combined=true;
++  CHECK(update(&m)==ESP_ERR_INVALID_RESPONSE && !s_epd_baseline_valid && lut_drives==4);
++  CHECK(pass_index==2 && power_offs==3); /* Combined red bound stops before white. */
++#endif
+ #endif
+   cold(); baseline(); stuck_refresh=true; CHECK(update(&m)==ESP_ERR_TIMEOUT && !s_epd_baseline_valid && power_offs==1);
+   cold(); baseline(); no_busy_refresh=true; CHECK(update(&m)==ESP_ERR_INVALID_RESPONSE && !s_epd_baseline_valid);
+@@ -506,6 +728,6 @@ int main(void) {
+   cold(); baseline(); before=spi_calls;
+   red[140*50+20]=black[140*50+20]=0;
+   CHECK(update(&m)==ESP_ERR_INVALID_ARG && spi_calls==before);
+-  printf("PASS: whole-driver SPI, explicit BWR/DDX/PLL, 5 LUTs including 0x21 after wake, 120000 pixel color routing, 80x28 actual-red removal/reappearance, same-row and outside RAM guards, 9 color-pair masks, scoped white-glyph redraw only in ACTIVATE, clear-before-black, black uses R24 only, per-pass timing stop, canonical frames after two passes, canonical RAM restoration, retained state; %u transaction faults; BUSY/reset/sleep/shutdown; no optics simulated\n",fault_points);
++  printf("PASS: whole-driver SPI, explicit BWR/DDX/PLL, 5 LUTs including 0x21 after wake, 120000 pixel color routing, 80x28 actual-red removal/reappearance, same-row and outside RAM guards, 9 color-pair masks, scoped white-glyph redraw only in ACTIVATE, clear-before-black, black uses R24 only, per-pass timing stop, canonical frames after planned passes, canonical RAM restoration, retained state; %u transaction faults; BUSY/reset/sleep/shutdown; no optics simulated\n",fault_points);
+   return 0;
+ }
+diff --git a/firmware/main/CMakeLists.txt b/firmware/main/CMakeLists.txt
+index 619ad3f..a87a8b7 100644
+--- a/firmware/main/CMakeLists.txt
++++ b/firmware/main/CMakeLists.txt
+@@ -86,6 +86,18 @@ if(CODEPULSE_EPD_RED_MASK_PROBE)
+                     if(CODEPULSE_EPD_RED_MASK_FAST)
+                         target_compile_definitions(${COMPONENT_LIB} PRIVATE CODEPULSE_EPD_RED_MASK_FAST=1)
+                     endif()
++                    if(CODEPULSE_EPD_RED_MASK_TAIL100)
++                        target_compile_definitions(${COMPONENT_LIB} PRIVATE CODEPULSE_EPD_RED_MASK_TAIL100=1)
++                    endif()
++                    if(CODEPULSE_EPD_RED_MASK_SPLIT)
++                        target_compile_definitions(${COMPONENT_LIB} PRIVATE CODEPULSE_EPD_RED_MASK_SPLIT=1)
++                    endif()
++                    if(CODEPULSE_EPD_RED_MASK_NEUTRAL)
++                        target_compile_definitions(${COMPONENT_LIB} PRIVATE CODEPULSE_EPD_RED_MASK_NEUTRAL=1)
++                    endif()
++                    if(CODEPULSE_EPD_RED_MASK_STAGGER)
++                        target_compile_definitions(${COMPONENT_LIB} PRIVATE CODEPULSE_EPD_RED_MASK_STAGGER=1)
++                    endif()
+                 endif()
+             endif()
+         endif()
+diff --git a/firmware/scripts/build-red-lab.ps1 b/firmware/scripts/build-red-lab.ps1
+index bd83604..c08226f 100644
+--- a/firmware/scripts/build-red-lab.ps1
++++ b/firmware/scripts/build-red-lab.ps1
+@@ -1,14 +1,14 @@
+ param(
+-    [ValidateSet('Fast47', 'Color46', 'Erase43', 'Production33')][string]$Profile = 'Fast47',
++    [ValidateSet('Stagger51', 'Neutral50', 'Split49', 'Tail48', 'Fast47', 'Color46', 'Erase43', 'Production33')][string]$Profile = 'Stagger51',
+     [string]$BuildDirectory,
+     [ValidateRange(1, 2)][int]$Jobs = 2,
+     [switch]$PlanOnly
+ )
+ $ErrorActionPreference = 'Stop'
+ $firmware = Split-Path -Parent $PSScriptRoot
+-$versions = @{ Fast47 = '0.0.47-red-fast'; Color46 = '0.0.46-red-activate';
++$versions = @{ Stagger51 = '0.0.51-red-stagger'; Neutral50 = '0.0.50-red-neutral'; Split49 = '0.0.49-red-split'; Tail48 = '0.0.48-red-tail100'; Fast47 = '0.0.47-red-fast'; Color46 = '0.0.46-red-activate';
+     Erase43 = '0.0.43-red-black'; Production33 = '0.0.33-status-region-pair150' }
+-$levels = @{ Production33 = 0; Erase43 = 2; Color46 = 5; Fast47 = 6 }
++$levels = @{ Production33 = 0; Erase43 = 2; Color46 = 5; Fast47 = 6; Tail48 = 5; Split49 = 5; Neutral50 = 5; Stagger51 = 5 }
+ $chain = @('CODEPULSE_EPD_RED_MASK_PROBE', 'CODEPULSE_EPD_RED_MASK_BLACK',
+     'CODEPULSE_EPD_RED_MASK_COLOR', 'CODEPULSE_EPD_RED_MASK_PULSE',
+     'CODEPULSE_EPD_RED_MASK_ACTIVATE', 'CODEPULSE_EPD_RED_MASK_FAST')
+@@ -21,6 +21,14 @@ foreach ($name in $chain) {
+     if (-not $options.Contains($name)) { throw "Missing explicit experiment option: $name" }
+ }
+ for ($i = 0; $i -lt $levels[$Profile]; $i++) { $options[$chain[$i]] = 'ON' }
++if (-not $options.Contains('CODEPULSE_EPD_RED_MASK_TAIL100')) { throw 'Missing 100Hz-tail option.' }
++if ($Profile -in @('Tail48', 'Neutral50', 'Stagger51')) { $options['CODEPULSE_EPD_RED_MASK_TAIL100'] = 'ON' }
++if (-not $options.Contains('CODEPULSE_EPD_RED_MASK_SPLIT')) { throw 'Missing split-stage option.' }
++if ($Profile -eq 'Split49') { $options['CODEPULSE_EPD_RED_MASK_SPLIT'] = 'ON' }
++if (-not $options.Contains('CODEPULSE_EPD_RED_MASK_NEUTRAL')) { throw 'Missing neutral-tail option.' }
++if ($Profile -eq 'Neutral50') { $options['CODEPULSE_EPD_RED_MASK_NEUTRAL'] = 'ON' }
++if (-not $options.Contains('CODEPULSE_EPD_RED_MASK_STAGGER')) { throw 'Missing stagger option.' }
++if ($Profile -eq 'Stagger51') { $options['CODEPULSE_EPD_RED_MASK_STAGGER'] = 'ON' }
+ $options['CODEPULSE_QUIET_PAIR150_TRIAL'] = 'ON'
+ $options['CODEPULSE_QUIET_RECT_TRIAL'] = 'ON'
+ if ($PlanOnly) {
+diff --git a/firmware/scripts/red-lab-artifact.py b/firmware/scripts/red-lab-artifact.py
+index 9daa59c..6554c60 100644
+--- a/firmware/scripts/red-lab-artifact.py
++++ b/firmware/scripts/red-lab-artifact.py
+@@ -10,12 +10,12 @@ import subprocess
+ 
+ FIRMWARE = Path(__file__).resolve().parents[1]
+ ROOT = FIRMWARE.parent
+-VERSIONS = {"Fast47": "0.0.47-red-fast", "Color46": "0.0.46-red-activate",
++VERSIONS = {"Stagger51": "0.0.51-red-stagger", "Neutral50": "0.0.50-red-neutral", "Split49": "0.0.49-red-split", "Tail48": "0.0.48-red-tail100", "Fast47": "0.0.47-red-fast", "Color46": "0.0.46-red-activate",
+             "Erase43": "0.0.43-red-black", "Production33": "0.0.33-status-region-pair150"}
+ CHAIN = ["CODEPULSE_EPD_RED_MASK_PROBE", "CODEPULSE_EPD_RED_MASK_BLACK",
+          "CODEPULSE_EPD_RED_MASK_COLOR", "CODEPULSE_EPD_RED_MASK_PULSE",
+          "CODEPULSE_EPD_RED_MASK_ACTIVATE", "CODEPULSE_EPD_RED_MASK_FAST"]
+-LEVELS = {"Production33": 0, "Erase43": 2, "Color46": 5, "Fast47": 6}
++LEVELS = {"Production33": 0, "Erase43": 2, "Color46": 5, "Fast47": 6, "Tail48": 5, "Split49": 5, "Neutral50": 5, "Stagger51": 5}
+ PARTITION_SHA = "5295e8c42d6fb5f95e4e8a185932c6191d27cfc5078322475347e40e71af815a"
+ 
+ 
+@@ -62,6 +62,14 @@ def configured(build, profile):
+     cmake = (FIRMWARE / "CMakeLists.txt").read_text(encoding="utf-8")
+     reset = re.findall(r"option\((CODEPULSE_(?:EPD_[A-Z0-9_]+|AUDIO_[A-Z0-9_]+))\s", cmake)
+     enabled = set(CHAIN[:LEVELS[profile]])
++    if profile in {"Tail48", "Neutral50", "Stagger51"}:
++        enabled.add("CODEPULSE_EPD_RED_MASK_TAIL100")
++    if profile == "Split49":
++        enabled.add("CODEPULSE_EPD_RED_MASK_SPLIT")
++    if profile == "Neutral50":
++        enabled.add("CODEPULSE_EPD_RED_MASK_NEUTRAL")
++    if profile == "Stagger51":
++        enabled.add("CODEPULSE_EPD_RED_MASK_STAGGER")
+     for option in reset:
+         value = "ON" if option in enabled else "OFF"
+         require(f"{option}:BOOL={value}\n" in cache, f"Unexpected option: {option}")
+diff --git a/firmware/tests/red-lab/test_red_lab_tools.py b/firmware/tests/red-lab/test_red_lab_tools.py
+index 5e0ec8b..a13edac 100644
+--- a/firmware/tests/red-lab/test_red_lab_tools.py
++++ b/firmware/tests/red-lab/test_red_lab_tools.py
+@@ -3,6 +3,7 @@ from pathlib import Path
+ import hashlib
+ import importlib.util
+ import json
++import re
+ import struct
+ import tempfile
+ import unittest
+@@ -23,6 +24,92 @@ observer = load('red_observer', 'observe-red-lab.py')
+ 
+ 
+ class ImageTests(unittest.TestCase):
++    def test_stagger51_requires_tail100_and_rejects_other_candidates(self):
++        cmake = (lab.FIRMWARE / 'CMakeLists.txt').read_text(encoding='utf-8')
++        options = re.findall(r'option\((CODEPULSE_(?:EPD_[A-Z0-9_]+|AUDIO_[A-Z0-9_]+))\s', cmake)
++        with tempfile.TemporaryDirectory() as directory:
++            build = Path(directory)
++            (build / 'project_description.json').write_text(json.dumps({
++                'target': 'esp32s3', 'project_version': '0.0.51-red-stagger'}), encoding='utf-8')
++            enabled = set(lab.CHAIN[:5]) | {'CODEPULSE_EPD_RED_MASK_TAIL100', 'CODEPULSE_EPD_RED_MASK_STAGGER'}
++            def configure(selected):
++                cache = ''.join(f'{name}:BOOL={"ON" if name in selected else "OFF"}\n' for name in options)
++                cache += 'CODEPULSE_QUIET_RECT_TRIAL:BOOL=ON\nCODEPULSE_QUIET_PAIR150_TRIAL:BOOL=ON\n'
++                (build / 'CMakeCache.txt').write_text(cache, encoding='utf-8')
++            configure(enabled)
++            lab.configured(build, 'Stagger51')
++            for invalid in (enabled - {'CODEPULSE_EPD_RED_MASK_TAIL100'},
++                            enabled - {'CODEPULSE_EPD_RED_MASK_STAGGER'},
++                            enabled | {'CODEPULSE_EPD_RED_MASK_FAST'},
++                            enabled | {'CODEPULSE_EPD_RED_MASK_SPLIT'},
++                            enabled | {'CODEPULSE_EPD_RED_MASK_NEUTRAL'}):
++                configure(invalid)
++                with self.assertRaises(ValueError):
++                    lab.configured(build, 'Stagger51')
++
++    def test_neutral50_requires_tail100_and_rejects_other_candidates(self):
++        cmake = (lab.FIRMWARE / 'CMakeLists.txt').read_text(encoding='utf-8')
++        options = re.findall(r'option\((CODEPULSE_(?:EPD_[A-Z0-9_]+|AUDIO_[A-Z0-9_]+))\s', cmake)
++        with tempfile.TemporaryDirectory() as directory:
++            build = Path(directory)
++            (build / 'project_description.json').write_text(json.dumps({
++                'target': 'esp32s3', 'project_version': '0.0.50-red-neutral'}), encoding='utf-8')
++            enabled = set(lab.CHAIN[:5]) | {'CODEPULSE_EPD_RED_MASK_TAIL100', 'CODEPULSE_EPD_RED_MASK_NEUTRAL'}
++            def configure(selected):
++                cache = ''.join(f'{name}:BOOL={"ON" if name in selected else "OFF"}\n' for name in options)
++                cache += 'CODEPULSE_QUIET_RECT_TRIAL:BOOL=ON\nCODEPULSE_QUIET_PAIR150_TRIAL:BOOL=ON\n'
++                (build / 'CMakeCache.txt').write_text(cache, encoding='utf-8')
++            configure(enabled)
++            lab.configured(build, 'Neutral50')
++            for invalid in (enabled - {'CODEPULSE_EPD_RED_MASK_TAIL100'},
++                            enabled - {'CODEPULSE_EPD_RED_MASK_NEUTRAL'},
++                            enabled | {'CODEPULSE_EPD_RED_MASK_FAST'},
++                            enabled | {'CODEPULSE_EPD_RED_MASK_SPLIT'}):
++                configure(invalid)
++                with self.assertRaises(ValueError):
++                    lab.configured(build, 'Neutral50')
++
++    def test_split49_configuration_rejects_other_candidates(self):
++        cmake = (lab.FIRMWARE / 'CMakeLists.txt').read_text(encoding='utf-8')
++        options = re.findall(r'option\((CODEPULSE_(?:EPD_[A-Z0-9_]+|AUDIO_[A-Z0-9_]+))\s', cmake)
++        with tempfile.TemporaryDirectory() as directory:
++            build = Path(directory)
++            (build / 'project_description.json').write_text(json.dumps({
++                'target': 'esp32s3', 'project_version': '0.0.49-red-split'}), encoding='utf-8')
++            enabled = set(lab.CHAIN[:5]) | {'CODEPULSE_EPD_RED_MASK_SPLIT'}
++            def configure(selected):
++                cache = ''.join(f'{name}:BOOL={"ON" if name in selected else "OFF"}\n' for name in options)
++                cache += 'CODEPULSE_QUIET_RECT_TRIAL:BOOL=ON\nCODEPULSE_QUIET_PAIR150_TRIAL:BOOL=ON\n'
++                (build / 'CMakeCache.txt').write_text(cache, encoding='utf-8')
++            configure(enabled)
++            lab.configured(build, 'Split49')
++            for invalid in (enabled | {'CODEPULSE_EPD_RED_MASK_FAST'},
++                            enabled | {'CODEPULSE_EPD_RED_MASK_TAIL100'},
++                            enabled - {'CODEPULSE_EPD_RED_MASK_SPLIT'}):
++                configure(invalid)
++                with self.assertRaises(ValueError):
++                    lab.configured(build, 'Split49')
++
++    def test_tail48_configuration_rejects_fast_or_missing_tail_flag(self):
++        cmake = (lab.FIRMWARE / 'CMakeLists.txt').read_text(encoding='utf-8')
++        options = re.findall(r'option\((CODEPULSE_(?:EPD_[A-Z0-9_]+|AUDIO_[A-Z0-9_]+))\s', cmake)
++        with tempfile.TemporaryDirectory() as directory:
++            build = Path(directory)
++            (build / 'project_description.json').write_text(json.dumps({
++                'target': 'esp32s3', 'project_version': '0.0.48-red-tail100'}), encoding='utf-8')
++            enabled = set(lab.CHAIN[:5]) | {'CODEPULSE_EPD_RED_MASK_TAIL100'}
++            def configure(selected):
++                cache = ''.join(f'{name}:BOOL={"ON" if name in selected else "OFF"}\n' for name in options)
++                cache += 'CODEPULSE_QUIET_RECT_TRIAL:BOOL=ON\nCODEPULSE_QUIET_PAIR150_TRIAL:BOOL=ON\n'
++                (build / 'CMakeCache.txt').write_text(cache, encoding='utf-8')
++            configure(enabled)
++            lab.configured(build, 'Tail48')
++            for invalid in (enabled | {'CODEPULSE_EPD_RED_MASK_FAST'},
++                            enabled - {'CODEPULSE_EPD_RED_MASK_TAIL100'}):
++                configure(invalid)
++                with self.assertRaises(ValueError):
++                    lab.configured(build, 'Tail48')
++
+     def test_actual_checkout_source_snapshot(self):
+         files = lab.sources()
+         self.assertIn('firmware/scripts/build-red-lab.ps1', files)

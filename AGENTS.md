@@ -23,4 +23,17 @@ integrate main, create a release or flash hardware. Main protection is unchanged
 Preserve the original worktree's dirty files; do not import unrelated desktop work.
 Every flash still requires a fresh physical power-hold confirmation. Red must
 actually change; static-red/BW-only updates are not acceptance of this task.
-The .46 color result passed once but flicker failed; .47 has not been optically tested.
+The .46 color result passed once but flicker failed. The .47 hardware trial failed:
+READY black fragments remained and target red did not appear; outside controls
+stayed normal. Tail48 restored final colors/text/outside stability, but transient
+erasing shadows and clustered red flicker remained unacceptable.
+Split49 then produced a central gray background/shadow; outside controls stayed
+normal. Neutral50 reduced flicker but left a predominantly black background,
+so red formation failed. Stagger51 then received user feedback of no visible
+improvement. Hardware trials and passive capture are stopped. The user has now
+authorized the exact-source handoff commit and push to this temporary branch.
+This does not authorize another candidate build, serial access, flash, main merge
+or release. Read firmware/doc/RED-REFRESH-HANDOFF.md, the 2026-11-08 source archive,
+and the Stagger51 record. Preserve the
+qualified limits of the evidence: the second red selector is not optically
+qualified, and no specific physical root cause has been proven. No automatic flash.

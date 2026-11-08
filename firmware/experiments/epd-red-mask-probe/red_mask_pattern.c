@@ -3,7 +3,15 @@
 bool red_mask_draw(epd_canvas_t *c, unsigned frame) {
   if (!c || !c->black || !c->red || frame > RED_MASK_LAST_FRAME) return false;
   epd_canvas_clear(c, EPD_COLOR_WHITE);
-#if defined(CODEPULSE_EPD_RED_MASK_FAST)
+#if defined(CODEPULSE_EPD_RED_MASK_STAGGER)
+  epd_canvas_draw_text(c, 12, 12, "RED STAGGER LAB", 3, EPD_COLOR_BLACK);
+#elif defined(CODEPULSE_EPD_RED_MASK_NEUTRAL)
+  epd_canvas_draw_text(c, 12, 12, "RED NEUTRAL LAB", 3, EPD_COLOR_BLACK);
+#elif defined(CODEPULSE_EPD_RED_MASK_SPLIT)
+  epd_canvas_draw_text(c, 12, 12, "RED SPLIT LAB", 3, EPD_COLOR_BLACK);
+#elif defined(CODEPULSE_EPD_RED_MASK_TAIL100)
+  epd_canvas_draw_text(c, 12, 12, "RED TAIL100 LAB", 3, EPD_COLOR_BLACK);
+#elif defined(CODEPULSE_EPD_RED_MASK_FAST)
   epd_canvas_draw_text(c, 12, 12, "RED FAST LAB", 3, EPD_COLOR_BLACK);
 #elif defined(CODEPULSE_EPD_RED_MASK_ACTIVATE)
   epd_canvas_draw_text(c, 12, 12, "RED PHASE LAB", 3, EPD_COLOR_BLACK);
@@ -23,7 +31,15 @@ bool red_mask_draw(epd_canvas_t *c, unsigned frame) {
 #else
   epd_canvas_draw_text(c, 12, 84, "1 RED ERASES / 2 RED RETURNS", 1, EPD_COLOR_BLACK);
 #endif
-#if defined(CODEPULSE_EPD_RED_MASK_FAST)
+#if defined(CODEPULSE_EPD_RED_MASK_STAGGER)
+  epd_canvas_draw_text(c, 12, 102, "100HZ STAGGERED PIXELS - WHITE LAST", 1, EPD_COLOR_BLACK);
+#elif defined(CODEPULSE_EPD_RED_MASK_NEUTRAL)
+  epd_canvas_draw_text(c, 12, 102, "100HZ RED PULSES - NO TAIL REVERSAL", 1, EPD_COLOR_BLACK);
+#elif defined(CODEPULSE_EPD_RED_MASK_SPLIT)
+  epd_canvas_draw_text(c, 12, 102, "100HZ PREFIX / 200HZ TAIL / WHITE LAST", 1, EPD_COLOR_BLACK);
+#elif defined(CODEPULSE_EPD_RED_MASK_TAIL100)
+  epd_canvas_draw_text(c, 12, 102, "100HZ PREFIX - 50/60MS RED TAIL", 1, EPD_COLOR_BLACK);
+#elif defined(CODEPULSE_EPD_RED_MASK_FAST)
   epd_canvas_draw_text(c, 12, 102, "SHORT RED PULSES - WHITE GLYPHS LAST", 1, EPD_COLOR_BLACK);
 #elif defined(CODEPULSE_EPD_RED_MASK_ACTIVATE)
   epd_canvas_draw_text(c, 12, 102, "RED PHASES FIRST - WHITE GLYPHS LAST", 1, EPD_COLOR_BLACK);

@@ -1,6 +1,9 @@
 > **减闪临时分支**：开始前读 [跨电脑交接](doc/RED-REFRESH-HANDOFF.md)。
-> 使用 `scripts/build-red-lab.ps1` 明确选择 Fast47 / Color46 / Erase43 / Production33。
+> `.50` 减闪但黑色占优；`.51` 用户反馈无改善，见[实验记录](doc/RED-STAGGER-LAB-2026-11-08.md)。当前停止硬件试验，只复核已有证据，不继续构建下一候选。
+> 使用 `scripts/build-red-lab.ps1` 明确选择 Stagger51 / Neutral50 / Split49 / Tail48 / Fast47 / Color46 / Erase43 / Production33。
 > 本分支保留默认关闭的实验入口；构建、实机刷写和光学验收互不等价。
+
+家中本轮交接入口：[精确源码与复放](experiments/red-lab-handoff/2026-11-08/README.md)、[逐版实测](doc/RED-REFRESH-RESULTS-2026-11-08.md)、[审计与条件方案](doc/RED-REFRESH-AUDIT-2026-11-08.md)。后续方案尚未进入构建或实机阶段；主开发机已有已验证OTP，本次不补采或上传。
 
 # CodePulse firmware / 墨水屏固件
 

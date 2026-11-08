@@ -1,14 +1,14 @@
 param(
-    [ValidateSet('Fast47', 'Color46', 'Erase43', 'Production33')][string]$Profile = 'Fast47',
+    [ValidateSet('Stagger51', 'Neutral50', 'Split49', 'Tail48', 'Fast47', 'Color46', 'Erase43', 'Production33')][string]$Profile = 'Stagger51',
     [string]$BuildDirectory,
     [ValidateRange(1, 2)][int]$Jobs = 2,
     [switch]$PlanOnly
 )
 $ErrorActionPreference = 'Stop'
 $firmware = Split-Path -Parent $PSScriptRoot
-$versions = @{ Fast47 = '0.0.47-red-fast'; Color46 = '0.0.46-red-activate';
+$versions = @{ Stagger51 = '0.0.51-red-stagger'; Neutral50 = '0.0.50-red-neutral'; Split49 = '0.0.49-red-split'; Tail48 = '0.0.48-red-tail100'; Fast47 = '0.0.47-red-fast'; Color46 = '0.0.46-red-activate';
     Erase43 = '0.0.43-red-black'; Production33 = '0.0.33-status-region-pair150' }
-$levels = @{ Production33 = 0; Erase43 = 2; Color46 = 5; Fast47 = 6 }
+$levels = @{ Production33 = 0; Erase43 = 2; Color46 = 5; Fast47 = 6; Tail48 = 5; Split49 = 5; Neutral50 = 5; Stagger51 = 5 }
 $chain = @('CODEPULSE_EPD_RED_MASK_PROBE', 'CODEPULSE_EPD_RED_MASK_BLACK',
     'CODEPULSE_EPD_RED_MASK_COLOR', 'CODEPULSE_EPD_RED_MASK_PULSE',
     'CODEPULSE_EPD_RED_MASK_ACTIVATE', 'CODEPULSE_EPD_RED_MASK_FAST')
@@ -21,6 +21,14 @@ foreach ($name in $chain) {
     if (-not $options.Contains($name)) { throw "Missing explicit experiment option: $name" }
 }
 for ($i = 0; $i -lt $levels[$Profile]; $i++) { $options[$chain[$i]] = 'ON' }
+if (-not $options.Contains('CODEPULSE_EPD_RED_MASK_TAIL100')) { throw 'Missing 100Hz-tail option.' }
+if ($Profile -in @('Tail48', 'Neutral50', 'Stagger51')) { $options['CODEPULSE_EPD_RED_MASK_TAIL100'] = 'ON' }
+if (-not $options.Contains('CODEPULSE_EPD_RED_MASK_SPLIT')) { throw 'Missing split-stage option.' }
+if ($Profile -eq 'Split49') { $options['CODEPULSE_EPD_RED_MASK_SPLIT'] = 'ON' }
+if (-not $options.Contains('CODEPULSE_EPD_RED_MASK_NEUTRAL')) { throw 'Missing neutral-tail option.' }
+if ($Profile -eq 'Neutral50') { $options['CODEPULSE_EPD_RED_MASK_NEUTRAL'] = 'ON' }
+if (-not $options.Contains('CODEPULSE_EPD_RED_MASK_STAGGER')) { throw 'Missing stagger option.' }
+if ($Profile -eq 'Stagger51') { $options['CODEPULSE_EPD_RED_MASK_STAGGER'] = 'ON' }
 $options['CODEPULSE_QUIET_PAIR150_TRIAL'] = 'ON'
 $options['CODEPULSE_QUIET_RECT_TRIAL'] = 'ON'
 if ($PlanOnly) {

@@ -26,3 +26,7 @@ firmware/fonts/licenses/* -text -whitespace
 *.mp4 binary
 *.zip binary
 *.step -text
+
+# Historical lab text patches must retain their exact bytes, including context whitespace.
+firmware/experiments/red-lab-handoff/2026-11-08/*/source.patch -text -whitespace
+firmware/experiments/red-lab-handoff/2026-11-08/*/original-build-manifest.json -text -whitespace

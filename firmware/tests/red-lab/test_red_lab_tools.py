@@ -3,6 +3,7 @@ from pathlib import Path
 import hashlib
 import importlib.util
 import json
+import re
 import struct
 import tempfile
 import unittest
@@ -23,6 +24,92 @@ observer = load('red_observer', 'observe-red-lab.py')
 
 
 class ImageTests(unittest.TestCase):
+    def test_stagger51_requires_tail100_and_rejects_other_candidates(self):
+        cmake = (lab.FIRMWARE / 'CMakeLists.txt').read_text(encoding='utf-8')
+        options = re.findall(r'option\((CODEPULSE_(?:EPD_[A-Z0-9_]+|AUDIO_[A-Z0-9_]+))\s', cmake)
+        with tempfile.TemporaryDirectory() as directory:
+            build = Path(directory)
+            (build / 'project_description.json').write_text(json.dumps({
+                'target': 'esp32s3', 'project_version': '0.0.51-red-stagger'}), encoding='utf-8')
+            enabled = set(lab.CHAIN[:5]) | {'CODEPULSE_EPD_RED_MASK_TAIL100', 'CODEPULSE_EPD_RED_MASK_STAGGER'}
+            def configure(selected):
+                cache = ''.join(f'{name}:BOOL={"ON" if name in selected else "OFF"}\n' for name in options)
+                cache += 'CODEPULSE_QUIET_RECT_TRIAL:BOOL=ON\nCODEPULSE_QUIET_PAIR150_TRIAL:BOOL=ON\n'
+                (build / 'CMakeCache.txt').write_text(cache, encoding='utf-8')
+            configure(enabled)
+            lab.configured(build, 'Stagger51')
+            for invalid in (enabled - {'CODEPULSE_EPD_RED_MASK_TAIL100'},
+                            enabled - {'CODEPULSE_EPD_RED_MASK_STAGGER'},
+                            enabled | {'CODEPULSE_EPD_RED_MASK_FAST'},
+                            enabled | {'CODEPULSE_EPD_RED_MASK_SPLIT'},
+                            enabled | {'CODEPULSE_EPD_RED_MASK_NEUTRAL'}):
+                configure(invalid)
+                with self.assertRaises(ValueError):
+                    lab.configured(build, 'Stagger51')
+
+    def test_neutral50_requires_tail100_and_rejects_other_candidates(self):
+        cmake = (lab.FIRMWARE / 'CMakeLists.txt').read_text(encoding='utf-8')
+        options = re.findall(r'option\((CODEPULSE_(?:EPD_[A-Z0-9_]+|AUDIO_[A-Z0-9_]+))\s', cmake)
+        with tempfile.TemporaryDirectory() as directory:
+            build = Path(directory)
+            (build / 'project_description.json').write_text(json.dumps({
+                'target': 'esp32s3', 'project_version': '0.0.50-red-neutral'}), encoding='utf-8')
+            enabled = set(lab.CHAIN[:5]) | {'CODEPULSE_EPD_RED_MASK_TAIL100', 'CODEPULSE_EPD_RED_MASK_NEUTRAL'}
+            def configure(selected):
+                cache = ''.join(f'{name}:BOOL={"ON" if name in selected else "OFF"}\n' for name in options)
+                cache += 'CODEPULSE_QUIET_RECT_TRIAL:BOOL=ON\nCODEPULSE_QUIET_PAIR150_TRIAL:BOOL=ON\n'
+                (build / 'CMakeCache.txt').write_text(cache, encoding='utf-8')
+            configure(enabled)
+            lab.configured(build, 'Neutral50')
+            for invalid in (enabled - {'CODEPULSE_EPD_RED_MASK_TAIL100'},
+                            enabled - {'CODEPULSE_EPD_RED_MASK_NEUTRAL'},
+                            enabled | {'CODEPULSE_EPD_RED_MASK_FAST'},
+                            enabled | {'CODEPULSE_EPD_RED_MASK_SPLIT'}):
+                configure(invalid)
+                with self.assertRaises(ValueError):
+                    lab.configured(build, 'Neutral50')
+
+    def test_split49_configuration_rejects_other_candidates(self):
+        cmake = (lab.FIRMWARE / 'CMakeLists.txt').read_text(encoding='utf-8')
+        options = re.findall(r'option\((CODEPULSE_(?:EPD_[A-Z0-9_]+|AUDIO_[A-Z0-9_]+))\s', cmake)
+        with tempfile.TemporaryDirectory() as directory:
+            build = Path(directory)
+            (build / 'project_description.json').write_text(json.dumps({
+                'target': 'esp32s3', 'project_version': '0.0.49-red-split'}), encoding='utf-8')
+            enabled = set(lab.CHAIN[:5]) | {'CODEPULSE_EPD_RED_MASK_SPLIT'}
+            def configure(selected):
+                cache = ''.join(f'{name}:BOOL={"ON" if name in selected else "OFF"}\n' for name in options)
+                cache += 'CODEPULSE_QUIET_RECT_TRIAL:BOOL=ON\nCODEPULSE_QUIET_PAIR150_TRIAL:BOOL=ON\n'
+                (build / 'CMakeCache.txt').write_text(cache, encoding='utf-8')
+            configure(enabled)
+            lab.configured(build, 'Split49')
+            for invalid in (enabled | {'CODEPULSE_EPD_RED_MASK_FAST'},
+                            enabled | {'CODEPULSE_EPD_RED_MASK_TAIL100'},
+                            enabled - {'CODEPULSE_EPD_RED_MASK_SPLIT'}):
+                configure(invalid)
+                with self.assertRaises(ValueError):
+                    lab.configured(build, 'Split49')
+
+    def test_tail48_configuration_rejects_fast_or_missing_tail_flag(self):
+        cmake = (lab.FIRMWARE / 'CMakeLists.txt').read_text(encoding='utf-8')
+        options = re.findall(r'option\((CODEPULSE_(?:EPD_[A-Z0-9_]+|AUDIO_[A-Z0-9_]+))\s', cmake)
+        with tempfile.TemporaryDirectory() as directory:
+            build = Path(directory)
+            (build / 'project_description.json').write_text(json.dumps({
+                'target': 'esp32s3', 'project_version': '0.0.48-red-tail100'}), encoding='utf-8')
+            enabled = set(lab.CHAIN[:5]) | {'CODEPULSE_EPD_RED_MASK_TAIL100'}
+            def configure(selected):
+                cache = ''.join(f'{name}:BOOL={"ON" if name in selected else "OFF"}\n' for name in options)
+                cache += 'CODEPULSE_QUIET_RECT_TRIAL:BOOL=ON\nCODEPULSE_QUIET_PAIR150_TRIAL:BOOL=ON\n'
+                (build / 'CMakeCache.txt').write_text(cache, encoding='utf-8')
+            configure(enabled)
+            lab.configured(build, 'Tail48')
+            for invalid in (enabled | {'CODEPULSE_EPD_RED_MASK_FAST'},
+                            enabled - {'CODEPULSE_EPD_RED_MASK_TAIL100'}):
+                configure(invalid)
+                with self.assertRaises(ValueError):
+                    lab.configured(build, 'Tail48')
+
     def test_actual_checkout_source_snapshot(self):
         files = lab.sources()
         self.assertIn('firmware/scripts/build-red-lab.ps1', files)

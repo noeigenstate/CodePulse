@@ -10,12 +10,12 @@ import subprocess
 
 FIRMWARE = Path(__file__).resolve().parents[1]
 ROOT = FIRMWARE.parent
-VERSIONS = {"Fast47": "0.0.47-red-fast", "Color46": "0.0.46-red-activate",
+VERSIONS = {"Stagger51": "0.0.51-red-stagger", "Neutral50": "0.0.50-red-neutral", "Split49": "0.0.49-red-split", "Tail48": "0.0.48-red-tail100", "Fast47": "0.0.47-red-fast", "Color46": "0.0.46-red-activate",
             "Erase43": "0.0.43-red-black", "Production33": "0.0.33-status-region-pair150"}
 CHAIN = ["CODEPULSE_EPD_RED_MASK_PROBE", "CODEPULSE_EPD_RED_MASK_BLACK",
          "CODEPULSE_EPD_RED_MASK_COLOR", "CODEPULSE_EPD_RED_MASK_PULSE",
          "CODEPULSE_EPD_RED_MASK_ACTIVATE", "CODEPULSE_EPD_RED_MASK_FAST"]
-LEVELS = {"Production33": 0, "Erase43": 2, "Color46": 5, "Fast47": 6}
+LEVELS = {"Production33": 0, "Erase43": 2, "Color46": 5, "Fast47": 6, "Tail48": 5, "Split49": 5, "Neutral50": 5, "Stagger51": 5}
 PARTITION_SHA = "5295e8c42d6fb5f95e4e8a185932c6191d27cfc5078322475347e40e71af815a"
 
 
@@ -62,6 +62,14 @@ def configured(build, profile):
     cmake = (FIRMWARE / "CMakeLists.txt").read_text(encoding="utf-8")
     reset = re.findall(r"option\((CODEPULSE_(?:EPD_[A-Z0-9_]+|AUDIO_[A-Z0-9_]+))\s", cmake)
     enabled = set(CHAIN[:LEVELS[profile]])
+    if profile in {"Tail48", "Neutral50", "Stagger51"}:
+        enabled.add("CODEPULSE_EPD_RED_MASK_TAIL100")
+    if profile == "Split49":
+        enabled.add("CODEPULSE_EPD_RED_MASK_SPLIT")
+    if profile == "Neutral50":
+        enabled.add("CODEPULSE_EPD_RED_MASK_NEUTRAL")
+    if profile == "Stagger51":
+        enabled.add("CODEPULSE_EPD_RED_MASK_STAGGER")
     for option in reset:
         value = "ON" if option in enabled else "OFF"
         require(f"{option}:BOOL={value}\n" in cache, f"Unexpected option: {option}")

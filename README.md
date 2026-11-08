@@ -1,8 +1,10 @@
 > **Temporary branch / 动态红色减闪实验：`codex/epd-red-flicker-lab`**
 >
 > 跨电脑继续测试请先读 [Board1 减闪交接与构建说明](firmware/doc/RED-REFRESH-HANDOFF.md)。
-> `.46` 显色通过但闪烁未通过；`.47` 已构建、尚未做实机验证。本分支不合并 main、不自动刷机。
+> `.48` 颜色正常但闪烁严重；`.49` 灰底失败；`.50` 减闪但黑色占优；[`.51` 像素错峰实验](firmware/doc/RED-STAGGER-LAB-2026-11-08.md) 用户反馈无改善。已停止硬件试验，按用户要求复盘证据与方法，不继续逐版试参。本分支不合并 main、不自动刷机。
 > This is a source checkpoint for manual Board1 red-refresh experiments, not a firmware release.
+
+> 家中实机轮次已结束。[精确源码归档与复放](firmware/experiments/red-lab-handoff/2026-11-08/README.md)、[逐版结果](firmware/doc/RED-REFRESH-RESULTS-2026-11-08.md)和[审计记录](firmware/doc/RED-REFRESH-AUDIT-2026-11-08.md)供主开发机接续。用户已确认主开发机找回并验证原始OTP，本次不补采、不上传它，当前不操作设备。
 
 <div align="center">
 

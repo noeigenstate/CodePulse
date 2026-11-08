@@ -22,6 +22,16 @@ const hnSettings: PluginSetting[] = [
   { key: 'weekdays', label: '只在工作日显示', type: 'boolean', default: false },
 ]
 
+const svgLogo = (color: string, glyph: string) =>
+  `data:image/svg+xml,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="${color}"/><text x="32" y="43" font-size="30" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="#fff">${glyph}</text></svg>`,
+  )}`
+const logos: Record<string, string> = {
+  'codepulse.hn-digest': svgLogo('#d9622b', 'Y'),
+  'codepulse.poem': svgLogo('#4d627d', '诗'),
+  'wordaday.word': svgLogo('#438f73', 'W'),
+}
+
 const listing = (
   id: string,
   name: string,
@@ -41,6 +51,7 @@ const listing = (
   developer,
   installs,
   settings,
+  logoUrl: logos[id] ?? null,
   updatedAt: minutes(3000),
 })
 
@@ -194,6 +205,7 @@ const devPlugins: DevPlugin[] = [
     name: '每日一词',
     summary: '每天一个英文单词',
     liveVersion: '1.2.0',
+    logoUrl: logos['wordaday.word'],
     versions: [
       {
         id: 'v1',
@@ -218,6 +230,7 @@ const devPlugins: DevPlugin[] = [
     name: '城市空气',
     summary: '城市空气质量',
     liveVersion: null,
+    logoUrl: null,
     versions: [
       {
         id: 'v3',
@@ -235,6 +248,7 @@ let reviews: Review[] = [
     versionId: 'v2',
     pluginId: 'wordaday.word',
     pluginName: '每日一词',
+    logoUrl: logos['wordaday.word'],
     version: '1.3.0',
     kind: 'pack',
     developer: developer.email,
@@ -276,8 +290,19 @@ export const mockApi: Api = {
   devMe: () => ok(developer),
   devPlugins: () => ok(devPlugins),
   createPlugin: (body) => {
-    devPlugins.push({ ...body, liveVersion: null, versions: [] })
+    devPlugins.push({ ...body, liveVersion: null, logoUrl: null, versions: [] })
     return ok({ plugin: body, webhookSecret: 'whsec_4f9c1e7a2b6d83f05a91' })
+  },
+  uploadLogo: (id, { type, data }) => {
+    const logoUrl = `data:${type};base64,${data}`
+    const plugin = devPlugins.find((p) => p.id === id)
+    if (plugin) plugin.logoUrl = logoUrl
+    return ok({ logoUrl })
+  },
+  deleteLogo: (id) => {
+    const plugin = devPlugins.find((p) => p.id === id)
+    if (plugin) plugin.logoUrl = null
+    return ok({ ok: true as const })
   },
   submitVersion: (id, draft) => {
     const version = {

@@ -184,7 +184,7 @@ export function DeviceDisplayPanel({
                 aria-pressed={draft.mode === mode}
                 onClick={() => change({ mode })}
               >
-                {mode === 'hud' ? '工作状态' : '用量看板'}
+                {mode === 'hud' ? '工作状态' : '开销看板'}
               </button>
             ))}
           </div>

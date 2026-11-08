@@ -528,8 +528,17 @@ function registerIpc(): void {
     trusted: (event) =>
       event.sender === mainWindow?.webContents && event.senderFrame === event.sender.mainFrame,
     theme: () => windowTheme,
-    open: (theme) => ambientRuntime!.openPlugins(theme),
+    open: (theme, options) => ambientRuntime!.openPlugins(theme, options),
     refresh: () => ambientRuntime?.plugins?.refresh(true) ?? Promise.resolve(),
+    list: () =>
+      ambientRuntime?.plugins?.list() ??
+      Promise.resolve({ state: 'offline', platformOrigin: '', plugins: [] }),
+    setEnabled: (id, enabled) =>
+      ambientRuntime?.plugins?.setEnabled(id, enabled) ??
+      Promise.resolve({ error: '插件平台地址无效' }),
+    uninstall: (id) =>
+      ambientRuntime?.plugins?.uninstall(id) ?? Promise.resolve({ error: '插件平台地址无效' }),
+    logos: ambientRuntime!.pluginLogos,
   })
   ipcMain.handle('codepulse:hud-preview', () => hudSurface?.snapshot() ?? null)
   registerAmbientIpc(
@@ -798,6 +807,7 @@ async function bootstrap(): Promise<void> {
   )
   hudSurface.syncSettings(productShell.snapshot().hudSettings)
   ambientRuntime = createAmbientRuntime(app.getPath('userData'), {
+    pluginsChanged: () => broadcast('plugins:changed', undefined),
     status: () => hudSurface?.snapshot() ?? hub.snapshot(),
     automaticAllowed: () => inkAllowsAmbient(productShell!.snapshot().inkPlan, Date.now()),
     plan: () => productShell!.snapshot().inkPlan,

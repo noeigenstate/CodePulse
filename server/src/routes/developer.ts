@@ -4,6 +4,7 @@ import { OFFICIAL_PLUGIN_PREFIX, type PluginManifest } from '@codepulse/shared'
 import { checkPassword, hashPassword, randomToken, tokenHash } from '../auth.js'
 import type { Context } from '../context.js'
 import type { Developer, Version } from '../db.js'
+import { logoUrl, validateLogo } from '../logo.js'
 import { generationError } from '../generate/index.js'
 import { checkedEndpoint, deadline } from '../generate/webhook.js'
 import {
@@ -23,6 +24,7 @@ interface OwnedPlugin {
   summary: string
   webhook_secret: string
   liveVersion: string | null
+  logo_hash: string | null
 }
 
 function ownPlugin(context: Context, developerId: string, id: string): OwnedPlugin {
@@ -138,14 +140,15 @@ export function developerRoutes(app: FastifyInstance, context: Context): void {
     const developer = auth.developer(request)
     const plugins = db
       .prepare(
-        `SELECT p.id, p.name, p.summary, v.version AS liveVersion
+        `SELECT p.id, p.name, p.summary, v.version AS liveVersion, l.hash AS logo_hash
       FROM plugins p LEFT JOIN versions v ON v.id = p.live_version_id
-      WHERE p.developer_id = ? ORDER BY p.created_at, p.id`,
+      LEFT JOIN logos l ON l.plugin_id = p.id WHERE p.developer_id = ? ORDER BY p.created_at, p.id`,
       )
       .all(developer.id) as OwnedPlugin[]
     return {
-      plugins: plugins.map((plugin) => ({
+      plugins: plugins.map(({ logo_hash, ...plugin }) => ({
         ...plugin,
+        logoUrl: logoUrl(plugin.id, logo_hash),
         versions: (
           db
             .prepare(
@@ -162,6 +165,27 @@ export function developerRoutes(app: FastifyInstance, context: Context): void {
         })),
       })),
     }
+  })
+
+  app.route<{ Params: { id: string } }>({
+    method: ['PUT', 'DELETE'],
+    url: '/api/v1/dev/plugins/:id/logo',
+    handler: async (request) => {
+      const developer = auth.developer(request)
+      ownPlugin(context, developer.id, request.params.id)
+      rate.check(`dev-logo:${developer.id}`, 20, 3600000)
+      if (request.method === 'DELETE') {
+        db.prepare('DELETE FROM logos WHERE plugin_id = ?').run(request.params.id)
+        return { logoUrl: null }
+      }
+      const logo = validateLogo(request.body)
+      db.prepare(
+        `INSERT INTO logos (plugin_id, type, bytes, hash, updated_at) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(plugin_id) DO UPDATE SET type=excluded.type, bytes=excluded.bytes,
+        hash=excluded.hash, updated_at=excluded.updated_at`,
+      ).run(request.params.id, logo.type, logo.bytes, logo.hash, now())
+      return { logoUrl: logoUrl(request.params.id, logo.hash) }
+    },
   })
 
   app.post('/api/v1/dev/plugins', async (request) => {

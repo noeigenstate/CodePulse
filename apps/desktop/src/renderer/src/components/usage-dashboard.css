@@ -181,8 +181,8 @@
   background: var(--tok-output);
 }
 .usage-mix-legend {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 4px 12px;
   margin: 8px 0 0;
   padding: 0;
@@ -190,7 +190,8 @@
 }
 .usage-mix-legend li {
   display: flex;
-  min-width: 0;
+  flex: 1 0 auto;
+  white-space: nowrap;
   align-items: center;
   gap: 4px;
 }

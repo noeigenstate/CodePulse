@@ -2,15 +2,16 @@ import type { FastifyInstance } from 'fastify'
 import type { PluginListing, PluginManifest } from '@codepulse/shared'
 import { liveVersion } from '../db.js'
 import type { Context } from '../context.js'
+import { logoUrl, type PluginLogo } from '../logo.js'
 import { HttpError, invalid } from '../validation.js'
 
-function catalog(context: Context): PluginListing[] {
+export function catalog(context: Context): PluginListing[] {
   const rows = context.db
     .prepare(
-      `SELECT p.id, v.manifest_json, d.name AS developer, v.reviewed_at,
+      `SELECT p.id, v.manifest_json, d.name AS developer, v.reviewed_at, l.hash AS logo_hash,
     (SELECT COUNT(*) FROM installs i WHERE i.plugin_id = p.id) AS installs
     FROM plugins p JOIN versions v ON v.id = p.live_version_id
-    JOIN developers d ON d.id = p.developer_id WHERE v.state = 'approved' ORDER BY p.created_at, p.id`,
+    JOIN developers d ON d.id = p.developer_id LEFT JOIN logos l ON l.plugin_id = p.id WHERE v.state = 'approved' ORDER BY p.created_at, p.id`,
     )
     .all() as {
     id: string
@@ -18,6 +19,7 @@ function catalog(context: Context): PluginListing[] {
     developer: string
     reviewed_at: number
     installs: number
+    logo_hash: string | null
   }[]
   return rows.map((row) => {
     const m = JSON.parse(row.manifest_json) as PluginManifest
@@ -32,11 +34,24 @@ function catalog(context: Context): PluginListing[] {
       installs: row.installs,
       settings: m.settings,
       updatedAt: row.reviewed_at,
+      logoUrl: logoUrl(row.id, row.logo_hash),
     }
   })
 }
 
 export function catalogRoutes(app: FastifyInstance, context: Context): void {
+  app.get<{ Params: { id: string } }>('/api/v1/plugins/:id/logo', async (request, reply) => {
+    const logo = context.db
+      .prepare('SELECT * FROM logos WHERE plugin_id = ?')
+      .get(request.params.id) as PluginLogo | undefined
+    if (!logo) throw new HttpError(404, '图标不存在')
+    return reply
+      .type(logo.type)
+      .header('Cache-Control', 'public, max-age=86400')
+      .header('Content-Security-Policy', "default-src 'none'")
+      .send(logo.bytes)
+  })
+
   app.get<{ Querystring: { q?: string; kind?: string } }>('/api/v1/plugins', async (request) => {
     const { q = '', kind = '' } = request.query
     if (

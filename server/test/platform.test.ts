@@ -120,7 +120,7 @@ test('数据库只保存令牌哈希，开发者会话7天过期', async () => {
         ),
       /登录已失效/,
     )
-    assert.equal(db.pragma('user_version', { simple: true }), 2)
+    assert.equal(db.pragma('user_version', { simple: true }), 3)
   } finally {
     db.close()
   }

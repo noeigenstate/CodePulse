@@ -94,7 +94,7 @@ function Header({
   return (
     <>
       <div className="detail-head">
-        <Icon name={plugin.name} />
+        <Icon name={plugin.name} logoUrl={plugin.logoUrl} />
         <div>
           <h1>{plugin.name}</h1>
           <p className="meta">

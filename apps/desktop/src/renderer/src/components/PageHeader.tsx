@@ -10,7 +10,7 @@ export function PageHeader({
   actions,
   children,
 }: {
-  title: string
+  title?: string
   subtitle?: ReactNode
   actions?: ReactNode
   /** Optional extra line under the subtitle (e.g. a link back to the playlist). */
@@ -19,7 +19,7 @@ export function PageHeader({
   return (
     <header className="page-header">
       <div className="page-header-text">
-        <h1>{title}</h1>
+        {title && <h1>{title}</h1>}
         {subtitle && <p>{subtitle}</p>}
         {children}
       </div>

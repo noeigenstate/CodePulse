@@ -5,7 +5,11 @@ import type { IpcMain, IpcMainInvokeEvent, WebContents } from 'electron'
 import { normalizeAmbient, normalizeShellPreferences, type StatusSnapshot } from '@codepulse/shared'
 import { StatusHub, toDeviceStatusV1 } from '@codepulse/core'
 import { PluginCredentialStore, PluginSource } from '../apps/desktop/src/main/plugin-platform.js'
-import { registerPluginIpc, guardPluginNavigation } from '../apps/desktop/src/main/plugin-ipc.js'
+import {
+  registerPluginIpc,
+  guardPluginNavigation,
+  coalescePluginChanges,
+} from '../apps/desktop/src/main/plugin-ipc.js'
 import { pluginPlatformUrl } from '../apps/desktop/src/plugin-platform-config.js'
 import { pluginPlatformCsp } from '../apps/desktop/plugin-platform-csp.js'
 import { AmbientService } from '../apps/desktop/src/main/ambient-service.js'
@@ -29,7 +33,14 @@ const rawCard = (overrides = {}) => ({
   expiresAt: noon + 3600000,
   ...overrides,
 })
-function fixture(options: { available?: boolean; stored?: boolean; timeoutMs?: number } = {}) {
+function fixture(
+  options: {
+    available?: boolean
+    stored?: boolean
+    timeoutMs?: number
+    changed?: () => void
+  } = {},
+) {
   let now = noon
   let saved: Record<string, unknown> = {}
   let reply: unknown = {
@@ -41,6 +52,7 @@ function fixture(options: { available?: boolean; stored?: boolean; timeoutMs?: n
   }
   let failure = 0
   let offline = false
+  let installs: unknown = []
   const requests: { url: string; init?: RequestInit }[] = []
   const io = {
     available: () => options.available !== false,
@@ -57,7 +69,7 @@ function fixture(options: { available?: boolean; stored?: boolean; timeoutMs?: n
     baseUrl,
     credentials: keys,
     now: () => now,
-    changed: () => {},
+    changed: options.changed ?? (() => {}),
     timeoutMs: options.timeoutMs,
     fetch: (async (url, init) => {
       requests.push({ url: String(url), init })
@@ -65,6 +77,7 @@ function fixture(options: { available?: boolean; stored?: boolean; timeoutMs?: n
       if (String(url).endsWith('/clients')) return json(client)
       if (String(url).endsWith('/store-code'))
         return json({ code: 'one/time?code', expiresAt: now + 60000 })
+      if (String(url).endsWith('/client/installs')) return json({ installs }, failure || 200)
       return json(reply, failure || 200)
     }) as typeof fetch,
   })
@@ -78,6 +91,9 @@ function fixture(options: { available?: boolean; stored?: boolean; timeoutMs?: n
     },
     feed: (value: unknown) => {
       reply = value
+    },
+    installs: (value: unknown) => {
+      installs = value
     },
     fail: (status: number) => {
       failure = status
@@ -476,7 +492,15 @@ test('IPC returns only safe open results, uses shell theme, and rejects an untru
     {
       trusted: (event) => event === trustedEvent,
       theme: () => 'dark',
-      open: (theme) => f.source.open(theme),
+      open: (theme, options) => f.source.open(theme, options),
+      list: () => f.source.list(),
+      setEnabled: (id, enabled) => f.source.setEnabled(id, enabled),
+      uninstall: (id) => f.source.uninstall(id),
+      logos: {
+        list: () => ({}),
+        pick: async () => ({ cancelled: true }),
+        reset: () => ({ ok: true }),
+      },
       refresh: async () => {
         changed++
         await f.source.refresh()
@@ -485,13 +509,53 @@ test('IPC returns only safe open results, uses shell theme, and rejects an untru
   )
   assert.deepEqual(await handlers.get('plugins:open')!({}), { error: '无权限' })
   assert.equal(f.requests.length, 0)
+  for (const channel of [
+    'plugins:set-enabled',
+    'plugins:uninstall',
+    'plugins:pick-logo',
+    'plugins:reset-logo',
+  ])
+    assert.deepEqual(await handlers.get(channel)!({}, 'official.poem', false), { error: '无权限' })
+  assert.deepEqual(await handlers.get('plugins:logos')!({}), {})
+  assert.deepEqual(await handlers.get('plugins:list')!({}), {
+    state: 'offline',
+    platformOrigin: '',
+    plugins: [],
+  })
+  assert.equal(handlers.has('plugins:changed'), false)
+  assert.equal(f.requests.length, 0)
   const result = await handlers.get('plugins:open')!(trustedEvent)
   assert.match(JSON.stringify(result), /theme=dark/)
   assert.equal(JSON.stringify(result).includes(client.token), false)
-  await handlers.get('plugins:changed')!({})
+  await handlers.get('plugins:refresh')!({})
   assert.equal(changed, 0)
-  await handlers.get('plugins:changed')!(trustedEvent)
+  await handlers.get('plugins:refresh')!(trustedEvent)
   assert.equal(changed, 1)
+  const embedded = await handlers.get('plugins:open')!(trustedEvent, {
+    embed: true,
+    route: '#/developer',
+  })
+  assert.match(JSON.stringify(embedded), /embed=desktop#\/developer/)
+  assert.deepEqual(await handlers.get('plugins:list')!(trustedEvent), {
+    state: 'ok',
+    platformOrigin: baseUrl,
+    plugins: [],
+  })
+  assert.deepEqual(
+    await handlers.get('plugins:set-enabled')!(trustedEvent, 'official.poem', false),
+    {
+      ok: true,
+    },
+  )
+  assert.deepEqual(await handlers.get('plugins:uninstall')!(trustedEvent, 'official.poem'), {
+    ok: true,
+  })
+  assert.deepEqual(await handlers.get('plugins:pick-logo')!(trustedEvent, 'local:todo'), {
+    cancelled: true,
+  })
+  assert.deepEqual(await handlers.get('plugins:reset-logo')!(trustedEvent, 'local:todo'), {
+    ok: true,
+  })
 })
 
 test('iframe navigation remains on platform; external links and popups go to the browser', () => {
@@ -581,14 +645,16 @@ test('main-frame navigation and redirects are not blocked or opened externally',
   assert.deepEqual(opened, [])
 })
 
-test('CSP transform adds only the configured frame origin and preserves existing directives', () => {
+test('CSP transform uses the same configured image and frame origin, preserving other directives', () => {
   const html = readFileSync('apps/desktop/src/renderer/index.html', 'utf8')
   for (const url of [baseUrl, 'https://store.example:8443/']) {
     const transform = pluginPlatformCsp(url).transformIndexHtml as (html: string) => string
     const result = transform(html)
     assert.equal(
       result,
-      html.replace('frame-src __PLUGIN_PLATFORM_ORIGIN__', `frame-src ${new URL(url).origin}`),
+      html
+        .replace('frame-src __PLUGIN_PLATFORM_ORIGIN__', `frame-src ${new URL(url).origin}`)
+        .replace("img-src 'self' data:", `img-src 'self' data: ${new URL(url).origin}`),
     )
     assert.match(result, /script-src 'self' 'wasm-unsafe-eval'/)
     assert.match(result, /connect-src 'self' ws:\/\/127\.0\.0\.1:\* http:\/\/127\.0\.0\.1:\*/)
@@ -596,9 +662,327 @@ test('CSP transform adds only the configured frame origin and preserves existing
   }
 })
 
+test('cloud plugin listing is lazy, distinguishes offline, and preserves installed status', async () => {
+  const f = fixture()
+  assert.deepEqual(await f.source.list(), {
+    state: 'unregistered',
+    platformOrigin: baseUrl,
+    plugins: [],
+  })
+  assert.deepEqual(await f.source.setEnabled('official.poem', false), { error: '请先打开插件市场' })
+  assert.deepEqual(await f.source.uninstall('official.poem'), { error: '请先打开插件市场' })
+  assert.equal(f.requests.length, 0)
+  f.keys.set(client)
+  const install = {
+    pluginId: 'official.poem',
+    enabled: false,
+    settings: {},
+    installedAt: noon,
+    status: { generatedAt: null, error: '生成失败' },
+    plugin: null,
+  }
+  f.installs([install])
+  assert.deepEqual(await f.source.list(), {
+    state: 'ok',
+    platformOrigin: baseUrl,
+    plugins: [install],
+  })
+  assert.equal(f.requests.at(-1)?.init?.method, 'GET')
+  assert.deepEqual(f.requests.at(-1)?.init?.headers, { Authorization: `Bearer ${client.token}` })
+  f.installs([{ ...install, pluginId: '../escape' }])
+  assert.deepEqual(await f.source.list(), {
+    state: 'offline',
+    platformOrigin: baseUrl,
+    plugins: [install],
+  })
+  f.offline()
+  assert.deepEqual((await f.source.list()).plugins, [install])
+  assert.equal(f.requests.filter((r) => r.url.endsWith('/clients')).length, 0)
+})
+
+test('concurrent list callers share one request and offline reads retain locally edited installs', async () => {
+  const f = fixture({ stored: true })
+  const install = {
+    pluginId: 'official.poem',
+    enabled: true,
+    settings: {},
+    installedAt: noon,
+    status: { generatedAt: noon, error: '' },
+    plugin: null,
+  }
+  f.installs([install])
+  const lists = await Promise.all(Array.from({ length: 5 }, () => f.source.list()))
+  assert.equal(f.requests.length, 1)
+  lists[0]!.plugins[0]!.enabled = false
+  assert.equal(lists[1]!.plugins[0]!.enabled, true)
+  assert.deepEqual(await f.source.setEnabled('official.poem', false), { ok: true })
+  assert.equal(f.requests.length, 2)
+  f.fail(429)
+  const offline = await f.source.list()
+  assert.equal(offline.state, 'offline')
+  assert.deepEqual(offline.plugins, [{ ...install, enabled: false }])
+  f.fail(0)
+  assert.deepEqual(await f.source.uninstall('official.poem'), { ok: true })
+  f.offline()
+  assert.deepEqual((await f.source.list()).plugins, [])
+})
+
+test('a list started before a toggle cannot overwrite the locally updated cache', async () => {
+  const f = fixture({ stored: true })
+  const install = {
+    pluginId: 'official.poem',
+    enabled: true,
+    settings: {},
+    installedAt: noon,
+    status: { generatedAt: noon, error: '' },
+    plugin: null,
+  }
+  let release!: (response: Response) => void
+  let lists = 0
+  const source = new PluginSource({
+    baseUrl,
+    credentials: f.keys,
+    changed: () => {},
+    fetch: (async (_url, init) => {
+      if (init?.method === 'PUT') return json({ ok: true })
+      if (++lists === 1) return json({ installs: [install] })
+      return new Promise<Response>((resolve) => {
+        release = resolve
+      })
+    }) as typeof fetch,
+  })
+  await source.list()
+  const pending = source.list()
+  await source.setEnabled('official.poem', false)
+  release(json({ installs: [install] }))
+  assert.deepEqual((await pending).plugins, [{ ...install, enabled: false }])
+})
+
+test('polls notify for content, generation errors and connectivity changes, ignoring polling timestamps', async () => {
+  let changes = 0
+  const f = fixture({ stored: true, changed: () => changes++ })
+  await f.source.refresh()
+  assert.equal(changes, 1)
+  await f.source.refresh()
+  assert.equal(changes, 1)
+  const feed = {
+    v: 1,
+    generatedAt: noon + 1000,
+    nextPollAt: noon + 700000,
+    cards: [rawCard()],
+    errors: {},
+  }
+  f.feed(feed)
+  await f.source.refresh()
+  assert.equal(changes, 1)
+  f.feed({ ...feed, errors: { 'official.poem': '生成失败' } })
+  await f.source.refresh()
+  assert.equal(changes, 2)
+  f.feed({ ...feed, cards: [rawCard({ text: '清泉石上流' })] })
+  await f.source.refresh()
+  assert.equal(changes, 3)
+  f.fail(503)
+  await f.source.refresh()
+  assert.equal(changes, 4)
+  await f.source.refresh()
+  assert.equal(changes, 4)
+  f.fail(0)
+  await f.source.refresh()
+  assert.equal(changes, 5)
+})
+
+test('plugin broadcasts merge bursts into at most one event per 300 ms', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  let changes = 0
+  const changed = coalescePluginChanges(() => changes++)
+  changed()
+  changed()
+  t.mock.timers.tick(299)
+  changed()
+  assert.equal(changes, 0)
+  t.mock.timers.tick(1)
+  assert.equal(changes, 1)
+  changed()
+  changed()
+  t.mock.timers.tick(299)
+  assert.equal(changes, 1)
+  t.mock.timers.tick(1)
+  assert.equal(changes, 2)
+})
+
+test('reset-logo returns a safe error instead of rejecting when storage fails', async () => {
+  const handlers = new Map<string, (...args: unknown[]) => unknown>()
+  registerPluginIpc(
+    {
+      handle: (channel, handler) => {
+        handlers.set(channel, handler as (...args: unknown[]) => unknown)
+      },
+    } as Pick<IpcMain, 'handle'>,
+    {
+      trusted: () => true,
+      theme: () => 'light',
+      open: async () => ({ error: 'offline' }),
+      refresh: async () => {},
+      list: async () => ({ state: 'offline', platformOrigin: baseUrl, plugins: [] }),
+      setEnabled: async () => ({ ok: true }),
+      uninstall: async () => ({ ok: true }),
+      logos: {
+        list: () => ({}),
+        pick: async () => ({ cancelled: true }),
+        reset: () => {
+          throw Error('/private/userData/file')
+        },
+      },
+    },
+  )
+  assert.deepEqual(await handlers.get('plugins:reset-logo')!({}, 'local:todo'), {
+    error: '图标未能重置',
+  })
+})
+
+test('listing authorization failure clears credentials without registering again', async () => {
+  const f = fixture({ stored: true })
+  f.fail(401)
+  assert.equal((await f.source.list()).state, 'offline')
+  assert.equal((await f.source.list()).state, 'unregistered')
+  assert.equal(f.requests.length, 1)
+})
+
+test('native toggles and uninstall use client auth without extra pulls, and validate input', async () => {
+  const f = fixture({ stored: true })
+  for (const id of ['../escape', 'local:todo', 'UPPER', '']) {
+    assert.ok('error' in (await f.source.setEnabled(id, true)))
+    assert.ok('error' in (await f.source.uninstall(id)))
+  }
+  assert.ok('error' in (await f.source.setEnabled('official.poem', 'yes' as unknown as boolean)))
+  assert.equal(f.requests.length, 0)
+  assert.deepEqual(await f.source.setEnabled('official.poem', false), { ok: true })
+  const put = f.requests[0]!
+  assert.equal(put.url, baseUrl + '/api/v1/client/installs/official.poem')
+  assert.equal(put.init?.method, 'PUT')
+  assert.deepEqual(JSON.parse(String(put.init?.body)), { enabled: false })
+  assert.deepEqual(put.init?.headers, {
+    Authorization: `Bearer ${client.token}`,
+    'Content-Type': 'application/json',
+  })
+  assert.equal(f.requests.length, 1)
+  assert.deepEqual(await f.source.uninstall('official.poem'), { ok: true })
+  assert.equal(f.requests[1]?.init?.method, 'DELETE')
+  assert.equal(f.requests.length, 2)
+  f.fail(429)
+  assert.ok('error' in (await f.source.setEnabled('official.poem', true)))
+})
+
+test('disable removes cards and notifies without another pull, discarding an older feed', async () => {
+  const f = fixture({ stored: true })
+  let release!: (response: Response) => void
+  let feedCount = 0
+  let changes = 0
+  const feed = { v: 1, generatedAt: noon, nextPollAt: noon + 60000, cards: [rawCard()] }
+  const source = new PluginSource({
+    baseUrl,
+    credentials: f.keys,
+    now: () => noon,
+    changed: () => changes++,
+    fetch: (async (_url, init) => {
+      if (init?.method === 'PUT') return json({ ok: true })
+      feedCount++
+      if (feedCount === 1) return json(feed)
+      if (feedCount === 2)
+        return new Promise<Response>((resolve) => {
+          release = resolve
+        })
+      throw Error('offline')
+    }) as typeof fetch,
+  })
+  await source.refresh()
+  assert.equal(source.cards().length, 1)
+  const pending = source.refresh()
+  assert.deepEqual(await source.setEnabled('official.poem', false), { ok: true })
+  assert.deepEqual(source.cards(), [])
+  assert.equal(changes, 2)
+  release(json(feed))
+  await pending
+  assert.equal(feedCount, 2)
+  assert.deepEqual(source.cards(), [])
+})
+
+test('store routes are restricted before registration and valid embed URLs keep the one-time code', async () => {
+  const f = fixture()
+  for (const route of [
+    '#/installed',
+    '#/plugin/../escape',
+    '#/plugin/official.poem?code=steal',
+    '#/plugin/official.poem/extra',
+    'https://other.example/',
+    '#/developer#other',
+    '#/plugin/UPPER',
+    '',
+  ])
+    assert.deepEqual(await f.source.open('dark', { route }), { error: '插件市场地址无效' })
+  assert.equal(f.requests.length, 0)
+  for (const route of ['#/discover', '#/plugin/official.poem', '#/developer', '#/review']) {
+    const result = await f.source.open('light', { route, embed: true })
+    assert.ok('url' in result)
+    const url = new URL(result.url)
+    assert.equal(url.origin, baseUrl)
+    assert.equal(url.hash, route)
+    assert.equal(url.searchParams.get('embed'), 'desktop')
+    assert.equal(url.searchParams.get('code'), 'one/time?code')
+  }
+})
+
 test('plugins view is additive and saved legacy views still normalize', () => {
   assert.equal(normalizeShellPreferences({ view: 'plugins' }).view, 'plugins')
   assert.equal(normalizeShellPreferences({ view: 'ambient' }).view, 'ambient')
-  assert.equal(normalizeShellPreferences({ view: 'screen' }).view, 'control')
-  assert.equal(normalizeShellPreferences({ view: 'unknown' }).view, 'control')
+  assert.equal(normalizeShellPreferences({ view: 'screen' }).view, 'window')
+  assert.equal(normalizeShellPreferences({ view: 'unknown' }).view, 'window')
+})
+
+test('plugins:open prefers the renderer theme over the window theme', async () => {
+  const handlers = new Map<string, (...args: unknown[]) => unknown>()
+  const opened: string[] = []
+  registerPluginIpc(
+    {
+      handle: (name: string, handler: (...args: unknown[]) => unknown) =>
+        handlers.set(name, handler),
+    } as unknown as Pick<IpcMain, 'handle'>,
+    {
+      trusted: () => true,
+      theme: () => 'dark',
+      open: async (theme) => (opened.push(theme), { url: `${baseUrl}/?theme=${theme}` }),
+      refresh: async () => {},
+      list: async () => ({ state: 'offline', platformOrigin: '', plugins: [] }),
+      setEnabled: async () => ({ ok: true }),
+      uninstall: async () => ({ ok: true }),
+      logos: {
+        list: async () => ({}),
+        pick: async () => ({ cancelled: true }),
+        reset: () => ({ ok: true }),
+      },
+    } as unknown as Parameters<typeof registerPluginIpc>[1],
+  )
+  const open = handlers.get('plugins:open')!
+  await open({}, { theme: 'light' })
+  await open({}, {})
+  await open({}, { theme: 'auto' })
+  assert.deepEqual(opened, ['light', 'dark', 'dark'])
+})
+
+test('only same-origin iframe hash navigation is forwarded for theme reloads', () => {
+  let location!: (event: unknown, url: string, mainFrame: boolean) => void
+  const messages: unknown[][] = []
+  const contents = {
+    setWindowOpenHandler: () => {},
+    on: (event: string, handler: typeof location) => {
+      if (event === 'did-navigate-in-page') location = handler
+    },
+    send: (...args: unknown[]) => messages.push(args),
+  } as unknown as WebContents
+  guardPluginNavigation(contents, baseUrl, async () => {})
+  const detail = `${baseUrl}/?theme=light&embed=desktop#/plugin/example.test`
+  location({}, detail, false)
+  location({}, detail, true)
+  location({}, 'https://other.example/#/plugin/example.test', false)
+  assert.deepEqual(messages, [['plugins:location', detail]])
 })

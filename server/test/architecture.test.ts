@@ -74,10 +74,12 @@ test('注册不能自升管理员；CLI提升已有开发者且不启动服务',
   assert.match(usage.stderr, /用法/)
 })
 
-test('v1数据库迁移到v2，已有开发者默认无管理员权限', (t) => {
+test('v1数据库迁移到v3，已有开发者默认无管理员权限', (t) => {
   const { dbPath } = fixture(t)
   const original = openDatabase(dbPath)
-  original.exec(`ALTER TABLE developers DROP COLUMN admin; PRAGMA user_version = 1;`)
+  original.exec(
+    `DROP TABLE logos; ALTER TABLE developers DROP COLUMN admin; PRAGMA user_version = 1;`,
+  )
   original
     .prepare(
       'INSERT INTO developers (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)',
@@ -86,7 +88,7 @@ test('v1数据库迁移到v2，已有开发者默认无管理员权限', (t) => 
   original.close()
   const migrated = openDatabase(dbPath)
   try {
-    assert.equal(migrated.pragma('user_version', { simple: true }), 2)
+    assert.equal(migrated.pragma('user_version', { simple: true }), 3)
     assert.deepEqual(
       migrated
         .prepare('SELECT name, password_hash, admin FROM developers WHERE id = ?')
@@ -104,7 +106,7 @@ test('v1数据库迁移到v2，已有开发者默认无管理员权限', (t) => 
     migrated.close()
   }
   const reopened = openDatabase(dbPath)
-  assert.equal(reopened.pragma('user_version', { simple: true }), 2)
+  assert.equal(reopened.pragma('user_version', { simple: true }), 3)
   reopened.close()
 })
 

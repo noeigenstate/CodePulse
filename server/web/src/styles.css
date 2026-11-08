@@ -163,7 +163,7 @@ button {
   height: 2px;
   background: var(--ink);
 }
-.tabs .count {
+:is(.tabs, .seg) .count {
   margin-left: 4px;
   color: var(--ink-muted);
   font-weight: var(--fw-regular);
@@ -186,6 +186,11 @@ button {
   align-items: center;
   gap: 8px;
   margin-bottom: 16px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .filters .spacer {
   flex: 1;
@@ -250,6 +255,7 @@ button {
   color: var(--ink-700);
   font-size: var(--fs-sm);
   font-weight: var(--fw-strong);
+  overflow: hidden;
 }
 .card-head .meta {
   overflow: hidden;
@@ -837,4 +843,68 @@ details.field summary::after {
 }
 details.field:not([open]) summary::after {
   content: '▸';
+}
+.icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.panel-sub {
+  margin: 16px 0 4px;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  font-weight: var(--fw-strong);
+}
+.logo-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line-soft);
+}
+.logo-meta {
+  flex: 1;
+  min-width: 0;
+}
+.logo-row .notice {
+  flex-basis: 100%;
+  margin: 0;
+}
+/* Embedded in the desktop, which already has its own tab row: switch pages with a compact
+   segmented control instead of a second row of tabs. The ring is an outline so the control
+   stays exactly 32px high, the same as the chips beside it. */
+.seg {
+  display: inline-flex;
+  flex: none;
+  height: var(--h-compact);
+  overflow: hidden;
+  border-radius: var(--r-control);
+  outline: 1px solid var(--line);
+  outline-offset: -1px;
+  background: var(--surface);
+}
+.seg button {
+  height: 100%;
+  padding: 0 12px;
+  border: 0;
+  background: none;
+  color: var(--ink-700);
+  font-size: var(--fs-sm);
+  transition: background var(--motion);
+}
+.seg button:hover {
+  background: var(--surface-muted);
+}
+.seg button[aria-selected='true'] {
+  background: var(--surface-selected);
+  color: var(--ink);
+  font-weight: var(--fw-medium);
+}
+.filters .seg {
+  margin-right: 8px;
+}
+.toolbar.embedded {
+  border-bottom: 0;
 }

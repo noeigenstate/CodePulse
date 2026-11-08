@@ -3,7 +3,8 @@ import { useId, useState, type FormEvent, type ReactNode } from 'react'
 import { api, type Developer as DeveloperInfo, type DevPlugin, type DevVersion } from '../api'
 import { useAction, useAsync } from '../hooks'
 import { devSession } from '../session'
-import { Button, ErrorLine, State, type StateTone } from '../ui'
+import { LogoRow } from './LogoUpload'
+import { Button, ErrorLine, Icon, State, type StateTone } from '../ui'
 
 const versionState = (v: DevVersion, liveVersion: string | null): [string, StateTone] => {
   switch (v.state) {
@@ -158,6 +159,13 @@ function CreateForm({ onCreated }: { onCreated: (secret: string) => void }) {
   )
 }
 
+const PluginName = ({ plugin }: { plugin: DevPlugin }) => (
+  <div className="who c-who">
+    <Icon name={plugin.name} logoUrl={plugin.logoUrl} />
+    <span>{plugin.name}</span>
+  </div>
+)
+
 function MyPlugins({
   developer,
   plugins,
@@ -199,6 +207,18 @@ function MyPlugins({
           }}
         />
       )}
+      {plugins.length > 0 && (
+        <section aria-label="插件图标">
+          <h3 className="panel-sub">插件图标</h3>
+          <p className="hint">
+            PNG、JPEG 或 WebP，正方形，64–1024 像素，不超过 200 KB。上传后立即生效。
+          </p>
+          {plugins.map((p) => (
+            <LogoRow key={p.id} plugin={p} onChanged={reload} />
+          ))}
+        </section>
+      )}
+      <h3 className="panel-sub">版本</h3>
       <div className="list dev" role="table" aria-label="我的插件">
         <div className="list-head meta" role="row">
           <span className="c-who">插件</span>
@@ -214,7 +234,7 @@ function MyPlugins({
           p.versions.length === 0
             ? [
                 <div key={p.id} className="list-row" role="row">
-                  <span className="c-who">{p.name}</span>
+                  <PluginName plugin={p} />
                   <span className="meta c-time">—</span>
                   <div className="c-state meta">尚未提交版本</div>
                 </div>,
@@ -223,7 +243,7 @@ function MyPlugins({
                 const [label, tone] = versionState(v, p.liveVersion)
                 return (
                   <div key={v.id} className="list-row" role="row">
-                    <span className="c-who">{p.name}</span>
+                    <PluginName plugin={p} />
                     <span className="meta c-time">{v.version}</span>
                     <div className="c-state">
                       <State tone={tone}>{label}</State>

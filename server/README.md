@@ -33,7 +33,7 @@ better-sqlite3 使用独立的 11.x 副本，桌面端使用 12.x。不要用桌
 
 ## 管理员授权
 
-注册不会赋予管理员权限，权限读取数据库中的 `developers.admin`。已有数据库首次打开时会自动迁移到 schema 版本 2，所有已有开发者默认 `admin=0`。服务器维护者核实账号归属后，使用与平台相同的 `CODEPULSE_PLATFORM_DB` 设置运行：
+注册不会赋予管理员权限，权限读取数据库中的 `developers.admin`。已有数据库首次打开时会自动迁移到 schema 版本 3，新增 `logos` 表；从 v1 升级的已有开发者默认 `admin=0`，v2 升级保留现有权限与业务数据。服务器维护者核实账号归属后，使用与平台相同的 `CODEPULSE_PLATFORM_DB` 设置运行：
 
 ```sh
 node server/dist/main.js admin developer@example.com
@@ -45,7 +45,7 @@ node server/dist/main.js admin developer@example.com
 
 ## 认证和开发流程
 
-API 前缀为 `/api/v1`，请求和响应均为 JSON。认证使用 `Authorization: Bearer <token>`，不设置 cookie；数据库只保存 token 的 SHA-256。错误统一为 `{ "error": "中文原因" }`，使用 401、403、404、409、422、429 或 5xx 状态。
+API 前缀为 `/api/v1`，除公开图标读取返回图片原始字节外，请求和响应均为 JSON。认证使用 `Authorization: Bearer <token>`，不设置 cookie；数据库只保存 token 的 SHA-256。错误统一为 `{ "error": "中文原因" }`，使用 401、403、404、409、422、429 或 5xx 状态。
 
 1. `POST /dev/register` 提交 `{email,password,name}`，密码至少 8 位；或通过 `POST /dev/login` 登录。响应包含 `{token,developer:{email,name,admin}}`，开发者会话有效期为 7 天。`GET /dev/me` 查看身份，`POST /dev/logout` 注销当前会话。
 2. `POST /dev/plugins` 提交 `{id,name,summary}`。插件 id 全局唯一，长度 3–40，使用小写字母、数字以及分隔用的点或短横线；`codepulse.` 前缀仅供官方种子使用。响应为 `{plugin,webhookSecret}`，**密钥只在这次响应中提供**，请保存到开发者自己的安全配置中。
@@ -77,6 +77,17 @@ manifest 示例：
 ```json
 { "id": "daily-1", "source": "每日一句", "text": "今天也留一点时间给自己。" }
 ```
+
+## 插件图标
+
+开发者可在版本审核前后上传默认图标，上传立即生效，不需要审核：
+
+- `PUT /dev/plugins/:id/logo` 使用开发者 token，提交 `{type,data}`。`type` 仅支持 `image/png`、`image/jpeg`、`image/webp`，`data` 为标准 base64（不含 data URL 前缀）。解码后最多 200 KB，必须正方形，边长为 64–1024 像素；平台校验真实文件头、容器长度和尺寸，拒绝 SVG、类型不符或截断文件，返回 422 和中文原因。
+- `DELETE /dev/plugins/:id/logo` 删除图标；两项操作只能管理自己的插件，共用每开发者每小时 20 次额度。响应均为 `{logoUrl}`，删除后为 null。
+- `DELETE /admin/plugins/:id/logo` 仅管理员可用，可移除任意开发者的违规图标，返回 `{logoUrl:null}`。
+- `GET /plugins/:id/logo` 公开读取原始图片，没有图标返回 404。成功响应使用对应的 `Content-Type`、`Cache-Control: public, max-age=86400`、`X-Content-Type-Options: nosniff` 和 `Content-Security-Policy: default-src 'none'`。
+
+目录 listing、开发者插件列表、待审核列表及客户端安装列表中的 `plugin` 均包含 `logoUrl`，无图标为 null，否则为 `/api/v1/plugins/<id>/logo?v=<SHA-256 前 12 位>`。更换图片会更新 URL；相同字节保持同一 URL。未审核插件的图标也可公开读取，供开发者和审核页面展示；这不使其版本进入公开目录。用户自己的替换图标由桌面端保存在本机，不上传至平台。
 
 ## Webhook 开发
 
@@ -134,6 +145,16 @@ function verifyWebhook(headers, rawBody, secret) {
 - `GET /plugins?q=&kind=` → `{plugins}`；`GET /plugins/:id` → `{plugin}`；仅显示审核通过的公开版本。
 - `GET /plugins/:id/preview` → `{cards,error}`，无需登录，按默认设置生成并走缓存。
 - `GET /installs` → `{installs}`，包含安装设置及 `{generatedAt,error}` 状态；`PUT /installs/:id` 使用 `{enabled?,settings?}` 安装或修改，`DELETE /installs/:id` 卸载。这三项均使用商店会话。
+- `GET /client/installs` 使用客户端 token → `{installs: ClientInstalledPlugin[]}`。每项包含安装设置、`status: {generatedAt,error}` 和完整的 `plugin` listing；插件撤回后 `plugin` 为 null，状态说明不可用。列表只读已有生成状态，不触发生成。
+- `PUT /client/installs/:id` 使用客户端 token，提交 `{enabled?,settings?}` → `{install: PluginInstall}`，仅修改已有安装，未安装时返回 404“插件未安装”；`DELETE /client/installs/:id` → `{ok:true}`。与商店会话的 `/installs` 共用数据和处理逻辑；所有安装接口的 GET/PUT/DELETE 按客户端共用每分钟 30 次额度，切换凭据不会重置计数。
 - `GET /client/cards` 使用客户端 token → `PluginFeed`，仅包含启用的安装。并行生成、合并相同缓存键的请求；缓存键包含公开版本和归一化设置，过期时间取刷新间隔与卡片最早有效期的较小值。失败会记录错误并短暂退避，保留尚未过期的上次成功卡片，不延长它们的有效期。每次再生成会清除该插件废弃版本和设置的缓存，并清除全表中已过期超过一天的缓存；其他安装仍使用的设置及默认预览缓存会保留。
 
-注册和登录各每 IP 每分钟 10 次，注册客户端 5 次，生成商店码 20 次；卡片拉取每客户端每分钟 12 次。创建插件与提交版本分别每开发者每小时 10 次，试生成每开发者每分钟 6 次，跨插件累计。限流状态只在当前进程内保存。当前版本不提供部署、自动发布或外部插件代码执行能力。
+注册和登录各每 IP 每分钟 10 次，注册客户端 5 次，生成商店码 20 次；卡片拉取每客户端每分钟 12 次。创建插件与提交版本分别每开发者每小时 10 次，试生成每开发者每分钟 6 次，跨插件累计。图标上传和删除共用每开发者每小时 20 次额度；两套安装接口共用每客户端每分钟 30 次额度。限流状态只在当前进程内保存。当前版本不提供部署、自动发布或外部插件代码执行能力。
+
+商店网页的静态资源、SPA 回退和非 API 错误响应设置 `X-Content-Type-Options: nosniff` 及以下 CSP；允许桌面端嵌入，不设置 `frame-ancestors`：
+
+```text
+default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'
+```
+
+其他 API 响应使用 `Cache-Control: no-store`；公开图标成功响应保留自己的公开缓存头。

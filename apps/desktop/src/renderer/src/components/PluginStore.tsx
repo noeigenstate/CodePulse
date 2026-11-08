@@ -1,28 +1,39 @@
 import { useEffect, useRef, useState } from 'react'
+import { pluginStoreThemeUrl } from '../lib/pluginStoreTheme.js'
 import { ProductIcon } from './ProductFrame.js'
 import './plugin-store.css'
 
+const rendererTheme = () =>
+  document.documentElement.dataset.theme === 'dark' ? ('dark' as const) : ('light' as const)
+
 const MISMATCH = '平台地址与构建配置不一致，请使用同一平台地址重新构建。'
 
-export function PluginStore(): JSX.Element {
+export function PluginStore({ route }: { route?: string }): JSX.Element {
   const [attempt, setAttempt] = useState(0)
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [reason, setReason] = useState('')
   const frame = useRef<HTMLIFrameElement>(null)
+  const storeLocation = useRef('')
   useEffect(() => {
     let alive = true
     setUrl('')
+    storeLocation.current = ''
     setError('')
     setReason('')
     setLoading(true)
     void window.codepulse
-      .openPlugins()
+      .openPlugins({ embed: true, route, theme: rendererTheme() })
       .then((result) => {
         if (!alive) return
-        if ('url' in result) setUrl(result.url)
-        else {
+        if ('url' in result) {
+          // The scheduled renderer theme may have changed while the login URL was requested.
+          const initial = new URL(result.url)
+          initial.searchParams.set('theme', rendererTheme())
+          storeLocation.current = initial.href
+          setUrl(initial.href)
+        } else {
           setError(result.error)
           setLoading(false)
         }
@@ -35,7 +46,31 @@ export function PluginStore(): JSX.Element {
     return () => {
       alive = false
     }
-  }, [attempt])
+  }, [attempt, route])
+  useEffect(() => {
+    let theme = rendererTheme()
+    const observer = new MutationObserver(() => {
+      const next = rendererTheme()
+      if (next === theme) return
+      theme = next
+      if (!storeLocation.current) return
+      storeLocation.current = pluginStoreThemeUrl(storeLocation.current, next)
+      setUrl(storeLocation.current)
+    })
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    })
+    return () => observer.disconnect()
+  }, [])
+  useEffect(
+    () =>
+      window.codepulse.onPluginsLocation((next) => {
+        if (storeLocation.current && new URL(next).origin === new URL(storeLocation.current).origin)
+          storeLocation.current = next
+      }),
+    [],
+  )
   useEffect(
     () =>
       window.codepulse.onPluginsLoadError(() => {

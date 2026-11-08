@@ -6,14 +6,6 @@ export const kindName: Record<PluginKind, string> = {
   webhook: 'Webhook',
 }
 
-/** Two capitals ("Hacker News" → HN, "GitHub" → GH), else the last CJK character (每日古诗 → 诗). */
-export function iconText(name: string) {
-  const capitals = name.match(/[A-Z]/g)
-  if (capitals && capitals.length > 1) return capitals.slice(0, 2).join('')
-  const cjk = name.match(/\p{Script=Han}/gu)
-  return cjk ? cjk[cjk.length - 1] : Array.from(name)[0]
-}
-
 export function countText(n: number) {
   return n < 1000 ? String(n) : `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`
 }

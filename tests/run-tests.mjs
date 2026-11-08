@@ -31,6 +31,9 @@ if (tsTestFiles.length > 0) {
     platform: 'node',
     format: 'esm',
     sourcemap: 'inline',
+    jsx: 'automatic',
+    // Bundled CommonJS packages (e.g. react-dom/server) require Node built-ins at runtime.
+    banner: { js: "import { createRequire as __codepulseCreateRequire } from 'node:module'; const require = __codepulseCreateRequire(import.meta.url);" },
     outdir,
     entryNames: '[name]',
     external: [

@@ -1,12 +1,13 @@
 import type { PluginKind } from '@codepulse/shared'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { countText, kindName } from '../format'
 import type { Store } from '../store'
 import { Icon, State } from '../ui'
 
 const kinds: (PluginKind | 'all')[] = ['all', 'builtin', 'pack', 'webhook']
 
-export function Discover({ store }: { store: Store }) {
+/** `lead` is the page switcher, which the embedded page puts on the filter row. */
+export function Discover({ store, lead }: { store: Store; lead?: ReactNode }) {
   const [kind, setKind] = useState<PluginKind | 'all'>('all')
   const [query, setQuery] = useState('')
   const q = query.trim().toLowerCase()
@@ -19,18 +20,21 @@ export function Discover({ store }: { store: Store }) {
 
   return (
     <section>
-      <div className="filters" role="group" aria-label="按类型筛选">
-        {kinds.map((k) => (
-          <button
-            key={k}
-            type="button"
-            className="chip"
-            aria-pressed={kind === k}
-            onClick={() => setKind(k)}
-          >
-            {k === 'all' ? '全部' : kindName[k]}
-          </button>
-        ))}
+      <div className="filters">
+        {lead}
+        <div className="chips" role="group" aria-label="按类型筛选">
+          {kinds.map((k) => (
+            <button
+              key={k}
+              type="button"
+              className="chip"
+              aria-pressed={kind === k}
+              onClick={() => setKind(k)}
+            >
+              {k === 'all' ? '全部' : kindName[k]}
+            </button>
+          ))}
+        </div>
         <span className="spacer" />
         <input
           className="search"
@@ -48,7 +52,7 @@ export function Discover({ store }: { store: Store }) {
           {shown.map((p) => (
             <a key={p.id} className="card" href={`#/plugin/${encodeURIComponent(p.id)}`}>
               <div className="card-head">
-                <Icon name={p.name} />
+                <Icon name={p.name} logoUrl={p.logoUrl} />
                 <div>
                   <h3>{p.name}</h3>
                   <div className="meta">{p.developer}</div>

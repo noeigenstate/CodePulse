@@ -411,8 +411,8 @@ export function DeviceScreenPreview({
   const description = status.ambient
     ? `桌边内容，${status.ambient.source}：${status.ambient.text}`
     : status.display?.mode === 'usage'
-      ? `用量看板，${status.display.agents.length} 个账号`
-      : `HUD 工作，${status.threads?.length ?? 0} 个线程。${(status.threads ?? []).map((t) => t.title).join('；')}`
+      ? `开销看板，${status.display.agents.length} 个账号`
+      : `工作状态，${status.threads?.length ?? 0} 个线程。${(status.threads ?? []).map((t) => t.title).join('；')}`
   const toolbar = (
     <div className="device-preview-toolbar">
       <span>

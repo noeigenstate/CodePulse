@@ -1,3 +1,4 @@
+import type { PluginListing } from '@codepulse/shared'
 import { relativeTime } from '../format'
 import { useAction } from '../hooks'
 import type { InstallRow } from '../api'
@@ -7,24 +8,24 @@ import { Button, ErrorLine, Icon, State, Switch } from '../ui'
 
 function Row({
   install,
-  name,
-  version,
+  plugin,
   store,
 }: {
   install: InstallRow
-  name: string
-  version?: string
+  /** Undefined when the plugin was withdrawn from the catalog after it was installed. */
+  plugin?: PluginListing
   store: Store
 }) {
   const { busy, error, run } = useAction()
   const { enabled, pluginId, status } = install
+  const name = plugin?.name ?? pluginId
   return (
     <div className="list-row" role="row">
       <div className="who c-who">
-        <Icon name={name} />
+        <Icon name={name} logoUrl={plugin?.logoUrl} />
         <div>
           <div>{name}</div>
-          {version && <div className="meta">{`v${version}`}</div>}
+          {plugin && <div className="meta">{`v${plugin.version}`}</div>}
         </div>
       </div>
       <div className="c-state">
@@ -103,18 +104,14 @@ export function Installed({ store }: { store: Store }) {
             <span className="meta">还没有安装插件。</span>
           </div>
         )}
-        {store.installs.map((install) => {
-          const plugin = store.plugins.find((p) => p.id === install.pluginId)
-          return (
-            <Row
-              key={install.pluginId}
-              install={install}
-              name={plugin?.name ?? install.pluginId}
-              version={plugin?.version}
-              store={store}
-            />
-          )
-        })}
+        {store.installs.map((install) => (
+          <Row
+            key={install.pluginId}
+            install={install}
+            plugin={store.plugins.find((p) => p.id === install.pluginId)}
+            store={store}
+          />
+        ))}
       </div>
     </section>
   )

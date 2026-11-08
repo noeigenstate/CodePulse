@@ -79,7 +79,7 @@ export function ScreenWorkbench({
   const mode = target?.status.ambient
     ? '信息推送'
     : target?.config.mode === 'usage'
-      ? '用量看板'
+      ? '开销看板'
       : '工作状态'
   return (
     <div className={`screen-workbench ${presentation ? 'is-presenting' : ''}`}>

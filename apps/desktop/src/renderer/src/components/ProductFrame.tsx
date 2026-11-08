@@ -1,37 +1,22 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   normalizeShellPreferences,
+  productDestination,
   type DesktopLayout,
   type HudAppearanceSettings,
   type InkDisplayPlan,
   type ProductView,
   type PresentationTarget,
   type ShellSnapshot,
-  type StatusSnapshot,
 } from '@codepulse/shared'
 import { InkStatusPill } from './InkStatusBar.js'
 import './product-shell.css'
 
-export const TARGET_NAMES = {
-  desktop: ['桌面端', 'Desktop'],
-  hud: ['HUD', 'HUD'],
-  ink: ['墨水屏', 'E-paper'],
-} as const
-export const PRODUCT_NAV: { id: ProductView; label: string; english: string; icon: string }[] = [
-  { id: 'control', label: '控制', english: 'Control', icon: 'control' },
-  { id: 'ambient', label: '桌边内容', english: 'Desk content', icon: 'ambient' },
-  { id: 'plugins', label: '插件', english: 'Plugins', icon: 'plugins' },
-  { id: 'assistant', label: '待办与助手', english: 'Tasks & assistant', icon: 'tasks' },
-  { id: 'usage', label: '用量统计', english: 'Usage', icon: 'usage' },
-]
+import { PRODUCT_NAV } from '../lib/productNavigation.js'
+export { PRODUCT_NAV, TARGET_NAMES } from '../lib/productNavigation.js'
+
 export function ProductIcon({ name }: { name: string }): JSX.Element {
   const paths: Record<string, ReactNode> = {
-    control: (
-      <>
-        <path d="M4 6h16M4 12h16M4 18h16" />
-        <path d="M8 3v6M16 9v6M10 15v6" />
-      </>
-    ),
     work: <path d="M2 12h5l3-8 4 16 3-8h5" />,
     desktop: (
       <>
@@ -114,7 +99,7 @@ export function useProductNavigation() {
   }))
   const [ready, setReady] = useState(false)
   const [error, setError] = useState('')
-  const [visited, setVisited] = useState(new Set<ProductView>(['control']))
+  const [visited, setVisited] = useState(new Set<ProductView>(['window']))
   const [pendingTarget, setPendingTarget] = useState<PresentationTarget>()
   const selection = useRef(0)
   const alive = useRef(true)
@@ -190,34 +175,19 @@ export function useProductNavigation() {
   }
 }
 export type ProductNavigation = ReturnType<typeof useProductNavigation>
-export function attentionCount(snapshot: StatusSnapshot): number {
-  return snapshot.agents.filter(
-    (a) =>
-      !a.taskHidden &&
-      (a.needPermission ||
-        a.needUserInput ||
-        ['WAITING_PERMISSION', 'WAITING_USER_INPUT', 'ERROR', 'TIMEOUT', 'USAGE_LIMITED'].includes(
-          a.state,
-        ) ||
-        (a.state === 'DONE' && a.unread)),
-  ).length
-}
 export function ProductFrame({
   product,
   locale,
   onLocale,
-  snapshot,
   children,
 }: {
   product: ProductNavigation
   locale: string
   onLocale?: () => void
-  snapshot: StatusSnapshot
   children: ReactNode
 }): JSX.Element {
   const zh = locale === 'zh',
     { view, focusMode } = product
-  const attention = attentionCount(snapshot)
   const returnButton = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     if (focusMode) returnButton.current?.focus()
@@ -232,24 +202,31 @@ export function ProductFrame({
           CodePulse
         </div>
         <nav aria-label={zh ? '功能导航' : 'Navigation'}>
-          {PRODUCT_NAV.map((item, index) => (
-            <div key={item.id}>
-              {index === 1 && (
-                <span className="product-nav-section">{zh ? '功能' : 'Features'}</span>
-              )}
+          {PRODUCT_NAV.map((item) => (
+            <div
+              key={item.id}
+              className={item.parent ? 'product-nav-child' : undefined}
+              data-parent={item.parent}
+            >
               <button
                 type="button"
                 data-view={item.id}
-                aria-current={view === item.id ? 'page' : undefined}
+                className={item.parent ? 'is-child' : undefined}
+                data-section-active={
+                  (item.id === 'ink' &&
+                    productDestination(view, product.target).page === 'plugins') ||
+                  undefined
+                }
+                aria-label={
+                  item.parent ? (zh ? '墨水屏设备 · 插件' : 'E-paper Device · Plugins') : undefined
+                }
+                aria-current={
+                  productDestination(view, product.target).page === item.id ? 'page' : undefined
+                }
                 onClick={() => void product.navigate(item.id)}
               >
                 <ProductIcon name={item.icon} />
                 <span>{zh ? item.label : item.english}</span>
-                {item.id === 'control' && attention > 0 && (
-                  <small className="product-nav-count">
-                    {zh ? `${attention} 待查看` : `${attention} to review`}
-                  </small>
-                )}
               </button>
             </div>
           ))}
@@ -283,14 +260,7 @@ export function ProductFrame({
               </span>
             </button>
           </div>
-          {!focusMode && (
-            <InkStatusPill
-              locale={zh ? 'zh' : 'en'}
-              onOpen={() =>
-                void product.navigate('control').then(() => product.selectTarget('ink'))
-              }
-            />
-          )}
+          {!focusMode && <InkStatusPill locale={zh ? 'zh' : 'en'} />}
         </div>
       </aside>
       <div className="product-main">

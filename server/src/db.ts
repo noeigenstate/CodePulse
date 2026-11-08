@@ -30,7 +30,7 @@ export function openDatabase(path: string): Database.Database {
   db.pragma('foreign_keys = ON')
   db.pragma('journal_mode = WAL')
   const revision = db.pragma('user_version', { simple: true }) as number
-  if (revision > 2) {
+  if (revision > 3) {
     db.close()
     throw new Error('数据库版本过新')
   }
@@ -81,6 +81,15 @@ export function openDatabase(path: string): Database.Database {
     db.transaction(() => {
       db.exec(`ALTER TABLE developers ADD COLUMN admin INTEGER NOT NULL DEFAULT 0 CHECK(admin IN (0,1));
         PRAGMA user_version = 2;`)
+    })()
+  }
+  if (revision < 3) {
+    db.transaction(() => {
+      db.exec(`CREATE TABLE logos (
+        plugin_id TEXT PRIMARY KEY REFERENCES plugins(id) ON DELETE CASCADE,
+        type TEXT NOT NULL, bytes BLOB NOT NULL, hash TEXT NOT NULL, updated_at INTEGER NOT NULL
+      );
+      PRAGMA user_version = 3;`)
     })()
   }
   return db

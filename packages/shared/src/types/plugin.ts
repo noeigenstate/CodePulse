@@ -62,6 +62,11 @@ export interface PluginListing {
   installs: number
   settings: PluginSetting[]
   updatedAt: number
+  /**
+   * Path of the developer's logo on the platform, e.g. `/api/v1/plugins/<id>/logo?v=<hash>`;
+   * null shows the text glyph. Callers prefix the platform origin.
+   */
+  logoUrl: string | null
 }
 
 export interface PluginInstall {
@@ -70,6 +75,27 @@ export interface PluginInstall {
   settings: PluginSettingValues
   installedAt: number
 }
+
+/** One generation status per install, shared by the store's 已安装 tab and the desktop. */
+export interface PluginInstallStatus {
+  generatedAt: number | null
+  error: string
+}
+
+/** `GET /api/v1/client/installs` (client token): what the desktop lists natively. */
+export interface ClientInstalledPlugin extends PluginInstall {
+  status: PluginInstallStatus
+  /** Null when the plugin was withdrawn from the catalog after it was installed. */
+  plugin: PluginListing | null
+}
+
+/** Developer logo upload: `PUT /api/v1/dev/plugins/:id/logo` with base64 `data`. */
+export const PLUGIN_LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const
+export type PluginLogoType = (typeof PLUGIN_LOGO_TYPES)[number]
+export const PLUGIN_LOGO_MAX_BYTES = 200 * 1024
+/** Logos are square, between these sizes in pixels. */
+export const PLUGIN_LOGO_MIN_PX = 64
+export const PLUGIN_LOGO_MAX_PX = 1024
 
 /**
  * One generated card. The same capacities as the device card; the desktop turns it into an
@@ -205,4 +231,16 @@ export function normalizePluginSettings(
       }
     }),
   )
+}
+
+/**
+ * Text icon for a plugin without a logo, the same on the store page and the desktop:
+ * the first two capitals of a Latin name (Hacker News → HN), otherwise the last Han
+ * character (每日古诗 → 诗, which tells 每日一词 apart), otherwise the first character.
+ */
+export function pluginGlyph(name: string): string {
+  const capitals = name.match(/[A-Z]/g)
+  if (capitals && capitals.length > 1) return capitals.slice(0, 2).join('')
+  const han = name.match(/\p{Script=Han}/gu)
+  return han ? han[han.length - 1]! : (Array.from(name)[0] ?? '')
 }

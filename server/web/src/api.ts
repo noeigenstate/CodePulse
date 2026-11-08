@@ -3,6 +3,7 @@ import type {
   PluginInstall,
   PluginKind,
   PluginListing,
+  PluginLogoType,
   PluginManifest,
   PluginReviewState,
 } from '@codepulse/shared'
@@ -29,12 +30,14 @@ export interface DevPlugin {
   name: string
   summary: string
   liveVersion: string | null
+  logoUrl: string | null
   versions: DevVersion[]
 }
 export interface Review {
   versionId: string
   pluginId: string
   pluginName: string
+  logoUrl: string | null
   version: string
   kind: PluginKind
   developer: string
@@ -107,6 +110,9 @@ const realApi = {
       devSession,
       body,
     ),
+  uploadLogo: (id: string, body: { type: PluginLogoType; data: string }) =>
+    send<{ logoUrl: string }>('PUT', `/dev/plugins/${enc(id)}/logo`, devSession, body),
+  deleteLogo: (id: string) => send<unknown>('DELETE', `/dev/plugins/${enc(id)}/logo`, devSession),
   submitVersion: (id: string, draft: VersionDraft) =>
     send<{ version: { id: string; version: string; state: 'pending' } }>(
       'POST',

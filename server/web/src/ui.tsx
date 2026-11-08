@@ -1,5 +1,5 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
-import { iconText } from './format'
+import { pluginGlyph } from '@codepulse/shared'
+import { useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   primary?: boolean
@@ -46,11 +46,19 @@ export function Switch({
   )
 }
 
-export const Icon = ({ name }: { name: string }) => (
-  <span className="icon" aria-hidden="true">
-    {iconText(name)}
-  </span>
-)
+/** The developer's logo when it loads, else a text glyph made from the name. */
+export function Icon({ name, logoUrl }: { name: string; logoUrl?: string | null }) {
+  const [failed, setFailed] = useState<string | null>(null)
+  return (
+    <span className="icon" aria-hidden="true">
+      {logoUrl && failed !== logoUrl ? (
+        <img alt="" src={logoUrl} onError={() => setFailed(logoUrl)} />
+      ) : (
+        pluginGlyph(name)
+      )}
+    </span>
+  )
+}
 
 export type StateTone = 'ok' | 'wait' | 'bad' | ''
 export const State = ({ tone, children }: { tone: StateTone; children: ReactNode }) => (

@@ -1,5 +1,8 @@
 /** Legacy routes remain accepted for saved preferences and older tray links. */
 export const PRODUCT_VIEWS = [
+  'window',
+  'overlay',
+  'ink',
   'control',
   'work',
   'usage',
@@ -104,20 +107,46 @@ export function isProductView(value: unknown): value is ProductView {
   return PRODUCT_VIEWS.includes(value as ProductView)
 }
 export const PRESENTATION_TARGETS: readonly PresentationTarget[] = ['desktop', 'hud', 'ink']
-export function canonicalProductView(view: ProductView): ProductView {
-  return view === 'overview' || view === 'screen' || view === 'work' ? 'control' : view
+export const SURFACE_VIEWS = ['window', 'overlay', 'ink'] as const
+export type SurfaceView = (typeof SURFACE_VIEWS)[number]
+const SURFACE_TARGETS: Record<SurfaceView, PresentationTarget> = {
+  window: 'desktop',
+  overlay: 'hud',
+  ink: 'ink',
+}
+export function isSurfaceView(view: ProductView): view is SurfaceView {
+  return SURFACE_VIEWS.includes(view as SurfaceView)
+}
+export function canonicalProductView(
+  view: ProductView,
+  target: PresentationTarget = 'desktop',
+): ProductView {
+  if (view === 'control' || view === 'overview' || view === 'screen' || view === 'work')
+    return target === 'hud' ? 'overlay' : target === 'ink' ? 'ink' : 'window'
+  return view
+}
+/** Legacy links retain their selected surface or plugin detail. */
+export function productDestination(
+  view: ProductView,
+  target: PresentationTarget = 'desktop',
+): {
+  page: SurfaceView | 'usage' | 'plugins' | 'settings'
+  pluginId?: 'local:todo'
+} {
+  if (view === 'plugins' || view === 'ambient' || view === 'assistant')
+    return { page: 'plugins', ...(view === 'assistant' ? { pluginId: 'local:todo' as const } : {}) }
+  return { page: canonicalProductView(view, target) as SurfaceView | 'usage' | 'settings' }
 }
 export function productTargets(view: ProductView): readonly PresentationTarget[] {
-  if (view === 'assistant') return ['desktop', 'ink']
-  if (view === 'usage') return ['desktop']
-  if (view === 'ambient') return ['ink']
-  if (view === 'settings' || view === 'plugins') return []
+  if (view === 'ambient' || view === 'assistant' || view === 'plugins') return ['ink']
+  if (view === 'settings' || view === 'usage') return []
   return PRESENTATION_TARGETS
 }
 export function targetForProductView(
   view: ProductView,
   target: PresentationTarget,
 ): PresentationTarget {
+  if (isSurfaceView(view)) return SURFACE_TARGETS[view]
   const allowed = productTargets(view)
   return allowed.length && !allowed.includes(target) ? allowed[0]! : target
 }
@@ -188,19 +217,16 @@ export function normalizeHudSettings(input: unknown): HudAppearanceSettings {
 }
 export function normalizeShellPreferences(input: unknown): ShellPreferences {
   const value = input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
-  const view = isProductView(value.view) ? canonicalProductView(value.view) : 'control'
-  const target =
-    value.view === 'screen'
-      ? 'ink'
-      : PRESENTATION_TARGETS.includes(value.target as PresentationTarget)
-        ? (value.target as PresentationTarget)
-        : 'desktop'
+  const inputView = isProductView(value.view) ? value.view : 'window'
+  const target = PRESENTATION_TARGETS.includes(value.target as PresentationTarget)
+    ? (value.target as PresentationTarget)
+    : 'desktop'
   return {
     version: 1,
     // Legacy startup-form input is accepted, but the client is always the entry point.
     form: 'standard',
-    view,
-    target: targetForProductView(view, target),
+    view: canonicalProductView(inputView, target),
+    target: targetForProductView(inputView, target),
     focusMode: value.focusMode === true,
     desktopLayout:
       value.desktopLayout === 'board' || value.desktopLayout === 'usage'

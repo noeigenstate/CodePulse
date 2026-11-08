@@ -68,7 +68,14 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   })
   app.addHook('onSend', async (request, reply) => {
     reply.header('X-Content-Type-Options', 'nosniff')
-    if (request.url.startsWith('/api/')) reply.header('Cache-Control', 'no-store')
+    if (/^\/api(?:\/|\?|$)/.test(request.url)) {
+      if (!reply.hasHeader('Cache-Control')) reply.header('Cache-Control', 'no-store')
+    } else {
+      reply.header(
+        'Content-Security-Policy',
+        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'",
+      )
+    }
   })
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof HttpError)

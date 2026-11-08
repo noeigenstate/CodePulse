@@ -8,7 +8,7 @@ import { Discover } from './pages/Discover'
 import { Installed } from './pages/Installed'
 import { ReviewPage } from './pages/Review'
 import { devSession, storeSession } from './session'
-import type { Store } from './store'
+import { EMBEDDED, type Store } from './store'
 import { Button, ErrorLine, State } from './ui'
 
 const tabs = [
@@ -45,9 +45,16 @@ export function App() {
   const admin = devToken !== '' && developer.data?.admin === true
   const reviews = useAsync(() => (admin ? api.reviews() : Promise.resolve([])), [admin])
 
-  // The review tab is for admins; anyone else landing on its hash sees the catalog.
+  // Tabs a viewer cannot use (review for non-admins, installed when embedded) fall back to the
+  // catalog, so a stale or hand-typed hash never lands on a hidden page.
+  const visibleTabs = tabs.filter(([id]) =>
+    id === 'review' ? admin : id === 'installed' ? !EMBEDDED : true,
+  )
   const route = useRoute()
-  const current: Route = route.page === 'review' && !admin ? { page: 'discover' } : route
+  const current: Route =
+    route.page === 'plugin' || visibleTabs.some(([id]) => id === route.page)
+      ? route
+      : { page: 'discover' }
 
   const store: Store | undefined = plugins.data &&
     installs.data && {
@@ -66,6 +73,26 @@ export function App() {
     review: admin ? reviews.data?.length : undefined,
   }
 
+  // Embedded, the desktop already shows a tab row above, so pages switch with a segmented control
+  // that sits on the catalog's filter row instead of a second row of tabs.
+  const tabList = (
+    <div className={EMBEDDED ? 'seg' : 'tabs'} role="tablist" aria-label="插件页面">
+      {visibleTabs.map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          role="tab"
+          aria-selected={current.page === id}
+          onClick={() => (location.hash = `#/${id}`)}
+        >
+          {label}
+          {counts[id] !== undefined && <span className="count">{counts[id]}</span>}
+        </button>
+      ))}
+    </div>
+  )
+  const tabsInCatalog = EMBEDDED && current.page === 'discover'
+
   const view = () => {
     if (current.page === 'developer')
       return <Developer developer={devToken ? developer.data : null} notify={notify} />
@@ -80,44 +107,32 @@ export function App() {
       return error && <Unreachable error={error} retry={retry} />
     }
     if (current.page === 'plugin') return <Detail key={current.id} id={current.id} store={store} />
-    return current.page === 'installed' ? <Installed store={store} /> : <Discover store={store} />
+    if (current.page === 'installed') return <Installed store={store} />
+    return <Discover store={store} lead={tabsInCatalog ? tabList : undefined} />
   }
 
   return (
     <main className="store">
       {current.page !== 'plugin' && (
         <>
-          <header className="page-header">
-            <div>
-              <h1>插件</h1>
-              <p>
-                为墨水屏添加桌边内容
-                {plugins.error ? (
-                  <State tone="bad">未连接平台</State>
-                ) : (
-                  plugins.data && <State tone="ok">已连接平台</State>
-                )}
-              </p>
-            </div>
-          </header>
-          <div className="toolbar">
-            <div className="tabs" role="tablist" aria-label="插件页面">
-              {tabs
-                .filter(([id]) => id !== 'review' || admin)
-                .map(([id, label]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    role="tab"
-                    aria-selected={current.page === id}
-                    onClick={() => (location.hash = `#/${id}`)}
-                  >
-                    {label}
-                    {counts[id] !== undefined && <span className="count">{counts[id]}</span>}
-                  </button>
-                ))}
-            </div>
-          </div>
+          {!EMBEDDED && (
+            <header className="page-header">
+              <div>
+                <h1>插件</h1>
+                <p>
+                  为墨水屏添加桌边内容
+                  {plugins.error ? (
+                    <State tone="bad">未连接平台</State>
+                  ) : (
+                    plugins.data && <State tone="ok">已连接平台</State>
+                  )}
+                </p>
+              </div>
+            </header>
+          )}
+          {!tabsInCatalog && (
+            <div className={EMBEDDED ? 'toolbar embedded' : 'toolbar'}>{tabList}</div>
+          )}
         </>
       )}
       {view()}

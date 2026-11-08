@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { api, type Review } from '../api'
 import { dateTime, kindName } from '../format'
 import { useAction } from '../hooks'
-import { Button, ErrorLine } from '../ui'
+import { Button, ErrorLine, Icon } from '../ui'
 
 function Row({ review, done }: { review: Review; done: (message: string) => void }) {
   const [rejecting, setRejecting] = useState(false)
@@ -17,9 +17,12 @@ function Row({ review, done }: { review: Review; done: (message: string) => void
 
   return (
     <div className="list-row" role="row">
-      <div className="c-who">
-        <div>{`${review.pluginName} ${review.version}`}</div>
-        <div className="meta">{`${kindName[review.kind]} · ${detail}`}</div>
+      <div className="who c-who">
+        <Icon name={review.pluginName} logoUrl={review.logoUrl} />
+        <div>
+          <div>{`${review.pluginName} ${review.version}`}</div>
+          <div className="meta">{`${kindName[review.kind]} · ${detail}`}</div>
+        </div>
       </div>
       <span className="meta c-state">{review.developer}</span>
       <span className="meta c-time">{dateTime(review.submittedAt)}</span>

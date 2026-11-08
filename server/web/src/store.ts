@@ -1,6 +1,9 @@
 import type { PluginListing } from '@codepulse/shared'
 import type { InstallRow } from './api'
 
+/** The desktop's 插件市场 tab embeds the page: it draws its own title and lists installs natively. */
+export const EMBEDDED = new URLSearchParams(location.search).get('embed') === 'desktop'
+
 export const SIGN_IN_HINT = '在 CodePulse 桌面端打开以安装'
 
 /** Catalog and install state every page works from, loaded once by the shell. */

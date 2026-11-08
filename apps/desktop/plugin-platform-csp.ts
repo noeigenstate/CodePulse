@@ -6,7 +6,12 @@ export function pluginPlatformCsp(value: string): Plugin {
   return {
     name: 'plugin-platform-csp',
     transformIndexHtml(html) {
-      return html.replace('frame-src __PLUGIN_PLATFORM_ORIGIN__', `frame-src ${origin}`)
+      return html
+        .replace('frame-src __PLUGIN_PLATFORM_ORIGIN__', `frame-src ${origin}`)
+        .replace(
+          /img-src ([^;"\n]*)/,
+          (_directive, sources: string) => `img-src ${sources} ${origin}`,
+        )
     },
   }
 }

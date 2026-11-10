@@ -87,7 +87,7 @@
 .ink-playback-select { display:block; width:100%; margin-top:16px; }
 .ink-action-error { margin:12px 0 0; font-size:13px; line-height:20px; color:var(--ink); }
 .ink-action-error button { margin-left:8px; }
-.product-console-live-stage { display:flex; flex-direction:column; min-height:480px; height:clamp(480px,80vh,720px); max-height:none; overflow:hidden; border:1px solid var(--line); border-radius:14px; background:var(--surface-solid); }
+.product-console-live-stage { display:flex; flex-direction:column; min-height:480px; height:clamp(480px,80vh,720px); max-height:none; overflow:hidden; }
 .product-control button:focus-visible,.product-control summary:focus-visible,.product-control input:focus-visible,.product-control select:focus-visible { outline:2px solid var(--ink); outline-offset:4px; }
 /* The session list scrolls inside the stage; the footer strip stays reachable below it. */
 .product-console-live-stage > .flex-1 { min-height:0; }

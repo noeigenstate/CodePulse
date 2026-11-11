@@ -950,7 +950,10 @@ test('plugins:open prefers the renderer theme over the window theme', async () =
     {
       trusted: () => true,
       theme: () => 'dark',
-      open: async (theme) => (opened.push(theme), { url: `${baseUrl}/?theme=${theme}` }),
+      open: async (theme: 'light' | 'dark') => {
+        opened.push(theme)
+        return { url: `${baseUrl}/?theme=${theme}` }
+      },
       refresh: async () => {},
       list: async () => ({ state: 'offline', platformOrigin: '', plugins: [] }),
       setEnabled: async () => ({ ok: true }),

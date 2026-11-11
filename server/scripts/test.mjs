@@ -2,7 +2,7 @@ import { build } from 'esbuild'
 import { spawnSync } from 'node:child_process'
 import { mkdir, readdir } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -31,7 +31,7 @@ await build({
       name: 'server-sqlite',
       setup(ctx) {
         ctx.onResolve({ filter: /^better-sqlite3$/ }, () => ({
-          path: require.resolve('better-sqlite3'),
+          path: pathToFileURL(require.resolve('better-sqlite3')).href,
           external: true,
         }))
       },

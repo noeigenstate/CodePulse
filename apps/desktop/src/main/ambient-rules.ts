@@ -59,6 +59,7 @@ export function qualifies(card: AmbientCard, config: AmbientConfig, now: number)
                 ? y.newsEnabled
                 : false
   }
+  if (card.kind === 'plugin') return true
   if (card.kind === 'concept') return config.conceptsEnabled
   if (card.kind === 'prompt') return config.promptsEnabled
   if (card.kind === 'news') return config.newsEnabled && card.score >= 100
@@ -111,7 +112,10 @@ export function deviceCard(
     !card.imageHex &&
     !card.items &&
     !card.calendar &&
-    (card.kind === 'life' || card.kind === 'search' || card.kind in reading)
+    (card.kind === 'life' ||
+      card.kind === 'search' ||
+      card.kind === 'plugin' ||
+      card.kind in reading)
       ? deviceLife(card.life)
       : undefined
   const expected =
@@ -120,7 +124,7 @@ export function deviceCard(
       : card.topic === 'tools'
         ? 'tool'
         : card.topic
-  const life = candidate?.kind === expected ? candidate : undefined
+  const life = card.kind === 'plugin' || candidate?.kind === expected ? candidate : undefined
   const utf8 = (s: string, bytes: number) => {
     let out = ''
     for (const c of s) {

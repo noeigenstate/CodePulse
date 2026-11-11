@@ -79,11 +79,11 @@ export function WorkVoiceSettingsPanel({
       aria-label={
         zh
           ? ink
-            ? '墨水屏语音提醒'
-            : '桌面端语音提醒'
+            ? '墨水屏设备语音提醒'
+            : '主窗口语音提醒'
           : ink
-            ? 'E-paper voice alerts'
-            : 'Desktop voice alerts'
+            ? 'E-paper device voice alerts'
+            : 'Window voice alerts'
       }
     >
       <details className="work-voice-details">
@@ -118,8 +118,8 @@ export function WorkVoiceSettingsPanel({
                 ? '从墨水屏扬声器播报。配置可先保存，音频固件与硬件就绪后生效。'
                 : 'Play through the e-paper speaker. Preferences can be saved before audio hardware and firmware are ready.'
               : zh
-                ? '从电脑扬声器播报，标准客户端与 HUD 共用一次提醒。'
-                : 'Play through this computer. The standard client and HUD share one alert.'}
+                ? '从电脑扬声器播报，主窗口与悬浮窗 共用一次提醒。'
+                : 'Play through this computer. The window and overlay share one alert.'}
           </p>
           <div className="grid gap-2 text-sm">
             <label className="hud-inline-check">

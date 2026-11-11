@@ -11,6 +11,7 @@ import {
   normalizeInkPlan,
   normalizeShellPreferences,
   productTargets,
+  productDestination,
   type ShellPreferences,
 } from '@codepulse/shared'
 import { ProductShell, shellPreferenceStore } from '../apps/desktop/src/main/product-shell.js'
@@ -103,7 +104,7 @@ test('shell defaults provide control; malformed routes cannot become file or net
   assert.deepEqual(normalizeShellPreferences(null), {
     version: 1,
     form: 'standard',
-    view: 'control',
+    view: 'window',
     target: 'desktop',
     focusMode: false,
     desktopLayout: 'work',
@@ -113,7 +114,7 @@ test('shell defaults provide control; malformed routes cannot become file or net
   assert.deepEqual(normalizeShellPreferences({ form: 'hud', view: 'https://untrusted/' }), {
     version: 1,
     form: 'standard',
-    view: 'control',
+    view: 'window',
     target: 'desktop',
     focusMode: false,
     desktopLayout: 'work',
@@ -143,7 +144,7 @@ test('legacy form actions open windows without changing the client entry point',
   f.calls.length = 0
   f.shell.selectForm('standard')
   assert.deepEqual(f.calls, ['expand', 'standard', 'changed'])
-  assert.equal(f.shell.snapshot().view, 'control')
+  assert.equal(f.shell.snapshot().view, 'ink')
   assert.equal(f.shell.snapshot().hudVisible, true)
 })
 test('startup and reopen reveal Control even for a legacy HUD-only profile or unwritable store', () => {
@@ -158,7 +159,7 @@ test('startup and reopen reveal Control even for a legacy HUD-only profile or un
   f.failSave()
   f.shell.restore()
   assert.deepEqual(f.calls, ['expand', 'standard', 'changed'])
-  assert.equal(f.shell.snapshot().view, 'control')
+  assert.equal(f.shell.snapshot().view, 'ink')
   assert.equal(f.shell.snapshot().focusMode, false)
   assert.equal(f.shell.snapshot().target, 'ink')
   assert.equal(f.shell.snapshot().desktopLayout, 'board')
@@ -184,7 +185,7 @@ test('a failed preference write cannot change visible windows or the saved route
   assert.throws(() => f.shell.selectTarget('ink'))
   assert.throws(() => f.shell.setDesktopLayout('board'))
   assert.deepEqual(f.calls, [])
-  assert.equal(f.shell.snapshot().view, 'control')
+  assert.equal(f.shell.snapshot().view, 'window')
   assert.equal(f.shell.snapshot().focusMode, false)
 })
 test('shell persistence is additive and does not rewrite account, device, content or HUD data', () => {
@@ -198,18 +199,19 @@ test('shell persistence is additive and does not rewrite account, device, conten
         version: 1,
         form: 'hud',
         view: 'screen',
+        target: 'hud',
         focusMode: true,
         desktopLayout: 'board',
       }),
     )
-    assert.equal(store.read().view, 'control')
-    assert.equal(store.read().target, 'ink')
+    assert.equal(store.read().view, 'overlay')
+    assert.equal(store.read().target, 'hud')
     assert.equal(store.read().focusMode, true)
     assert.equal(store.read().desktopLayout, 'board')
     assert.equal(store.read().form, 'standard')
     assert.equal(readFileSync(sentinel, 'utf8'), '{"mode":"usage"}')
     writeFileSync(join(directory, 'product-shell.json'), 'null')
-    assert.equal(store.read().view, 'control')
+    assert.equal(store.read().view, 'window')
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
@@ -270,8 +272,8 @@ test('production product IPC validates routes and passes native window changes w
   handlers.get('codepulse:workbench-configure')!({ sender: { id: 17 } }, { pinned: true })
   assert.equal(sender, 17)
   handlers.get('codepulse:shell-navigate')!({}, 'screen')
-  assert.equal(f.shell.snapshot().view, 'control')
-  assert.equal(f.shell.snapshot().target, 'ink')
+  assert.equal(f.shell.snapshot().view, 'window')
+  assert.equal(f.shell.snapshot().target, 'desktop')
   assert.throws(() => handlers.get('codepulse:shell-target')!({}, 'browser'))
   assert.throws(() => handlers.get('codepulse:shell-focus')!({}, 'true'))
   assert.throws(() => handlers.get('codepulse:shell-desktop-layout')!({}, 'bad'))
@@ -279,13 +281,13 @@ test('production product IPC validates routes and passes native window changes w
 })
 
 test('legacy routes migrate without losing presentation preferences', () => {
-  assert.equal(normalizeShellPreferences({ view: 'overview' }).view, 'control')
-  const ink = normalizeShellPreferences({ form: 'hud', view: 'screen' })
-  assert.equal(ink.view, 'control')
-  assert.equal(ink.target, 'ink')
-  assert.equal(ink.form, 'standard')
+  assert.equal(normalizeShellPreferences({ view: 'overview' }).view, 'window')
+  const saved = normalizeShellPreferences({ form: 'hud', view: 'screen', target: 'hud' })
+  assert.equal(saved.view, 'overlay')
+  assert.equal(saved.target, 'hud')
+  assert.equal(saved.form, 'standard')
   assert.equal(normalizeShellPreferences({ view: 'ambient', target: 'desktop' }).target, 'ink')
-  assert.equal(normalizeShellPreferences({ view: 'usage', target: 'hud' }).target, 'desktop')
+  assert.equal(normalizeShellPreferences({ view: 'usage', target: 'hud' }).target, 'hud')
   assert.equal(
     normalizeShellPreferences({ focusMode: 'true', desktopLayout: 'invalid' }).focusMode,
     false,
@@ -301,8 +303,8 @@ test('configuration target selection never opens a window or changes launch pref
   assert.deepEqual(productTargets('ambient'), ['ink'])
   assert.throws(() => f.shell.selectTarget('desktop'))
   f.shell.navigate('usage')
-  assert.deepEqual(productTargets('usage'), ['desktop'])
-  assert.equal(f.shell.snapshot().target, 'desktop')
+  assert.deepEqual(productTargets('usage'), [])
+  assert.equal(f.shell.snapshot().target, 'ink')
   assert.throws(() => f.shell.selectTarget('hud'))
   f.shell.navigate('settings')
   assert.deepEqual(productTargets('settings'), [])
@@ -317,7 +319,7 @@ test('focus mode is reversible and preserves configured layout, target and HUD v
   assert.deepEqual(f.calls, ['changed', 'focus'])
   assert.equal(f.shell.snapshot().focusMode, true)
   f.shell.setFocusMode(false)
-  assert.equal(f.shell.snapshot().view, 'control')
+  assert.equal(f.shell.snapshot().view, 'ink')
   assert.equal(f.shell.snapshot().target, 'ink')
   assert.equal(f.shell.snapshot().desktopLayout, 'board')
   assert.equal(f.shell.snapshot().hudVisible, true)
@@ -354,4 +356,36 @@ test('HUD style settings keep the panel by default and reject unknown values', (
     y: -21,
   })
   assert.equal('orbPosition' in normalizeHudSettings({ orbPosition: { x: NaN, y: 1 } }), false)
+})
+
+test('legacy assistant can re-enter after the renderer maps its first arrival to plugins', () => {
+  const f = fixture()
+  for (let visit = 0; visit < 2; visit++) {
+    const entry = f.shell.navigate('assistant')
+    assert.equal(productDestination(entry.view).pluginId, 'local:todo')
+    f.shell.navigate('plugins')
+    assert.equal(f.shell.snapshot().view, 'plugins')
+  }
+})
+
+test('surface pages select their target without opening another window, and spending preserves it', () => {
+  const f = fixture()
+  for (const [view, target] of [
+    ['overlay', 'hud'],
+    ['ink', 'ink'],
+    ['window', 'desktop'],
+  ] as const) {
+    f.calls.length = 0
+    const state = f.shell.navigate(view)
+    assert.equal(state.view, view)
+    assert.equal(state.target, target)
+    assert.deepEqual(f.calls, ['changed', 'expand'])
+    assert.equal(f.saved.at(-1)?.target, target)
+    assert.equal(f.shell.navigate('usage').target, target)
+    for (const legacy of ['control', 'work', 'overview', 'screen'] as const)
+      assert.equal(f.shell.navigate(legacy).view, view)
+  }
+  f.shell.selectTarget('hud')
+  assert.equal(f.shell.snapshot().view, 'overlay')
+  assert.equal(f.shell.navigate('plugins').target, 'ink')
 })

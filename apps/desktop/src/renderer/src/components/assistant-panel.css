@@ -94,7 +94,9 @@
   padding: 0 16px;
   cursor: pointer;
   white-space: nowrap;
-  transition: border-color var(--motion), background var(--motion);
+  transition:
+    border-color var(--motion),
+    background var(--motion);
 }
 .desk-assistant button:not(.page-link):hover:not(:disabled) {
   border-color: var(--ink-subtle);
@@ -258,11 +260,6 @@
   padding: 12px;
   font-size: var(--fs-sm);
   line-height: 20px;
-}
-.desk-assistant-temp {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
 }
 .desk-assistant-status:empty {
   height: 0;

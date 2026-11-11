@@ -25,11 +25,6 @@
   .ambient-grid {
     grid-template-columns: minmax(0, 1fr);
   }
-  .ambient-catlist {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 0 12px;
-  }
 }
 .ambient-card {
   min-width: 0;
@@ -71,105 +66,6 @@
 .ambient-panel select:disabled {
   opacity: 0.4;
 }
-
-/* Left: one list of categories, each with its own on/off rule. */
-.ambient-catlist {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.ambient-catlist li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border-bottom: 1px solid var(--line-soft);
-}
-.ambient-catlist li:last-child {
-  border-bottom: 0;
-}
-.ambient-cat-main {
-  flex: 1;
-  min-width: 0;
-  min-height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 0 8px;
-  border-radius: var(--r-control);
-  font-size: var(--fs-md);
-  color: var(--ink-700);
-  text-align: left;
-  transition: background var(--motion), color var(--motion);
-}
-.ambient-cat-main:hover {
-  background: var(--surface-selected);
-}
-.ambient-catlist li.is-current .ambient-cat-main {
-  color: var(--ink);
-  font-weight: var(--fw-strong);
-  box-shadow: inset 3px 0 0 var(--ink);
-}
-.ambient-cat-count {
-  flex: none;
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-regular);
-  color: var(--ink-muted);
-}
-.ambient-switch {
-  position: relative;
-  flex: none;
-  width: 44px;
-  min-height: 44px;
-  border-radius: var(--r-pill);
-}
-.ambient-switch::before {
-  content: '';
-  position: absolute;
-  left: 4px;
-  top: 12px;
-  width: 36px;
-  height: 20px;
-  box-sizing: border-box;
-  border: 1px solid var(--switch-off);
-  border-radius: var(--r-pill);
-  background: var(--surface-muted);
-  transition: background var(--motion), border-color var(--motion);
-}
-.ambient-switch::after {
-  content: '';
-  position: absolute;
-  left: 8px;
-  top: 16px;
-  width: 12px;
-  height: 12px;
-  border-radius: var(--r-pill);
-  background: var(--switch-off);
-  transition: transform var(--motion), background var(--motion);
-}
-.ambient-switch[aria-checked='true']::before {
-  background: var(--ink);
-  border-color: var(--ink);
-}
-.ambient-switch[aria-checked='true']::after {
-  transform: translateX(16px);
-  background: var(--surface-solid);
-}
-.ambient-switch:disabled {
-  opacity: 0.4;
-}
-.ambient-manual-tag {
-  flex: none;
-  min-width: 44px;
-  box-sizing: border-box;
-  padding: 0 8px;
-  border-radius: var(--r-pill);
-  background: var(--surface-muted);
-  color: var(--ink-muted);
-  font-size: var(--fs-xs);
-  line-height: 20px;
-  text-align: center;
-}
 .ambient-pacing {
   margin-top: 12px;
 }
@@ -180,23 +76,6 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 8px 12px;
-}
-/* Items beside the preview while the 1:1 canvas fits (its CSS width depends on the display
-   scale); otherwise the preview wraps above the items. wrap-reverse puts the second line on top,
-   so cross-axis "end" is the top edge. */
-.ambient-inner {
-  display: flex;
-  flex-wrap: wrap-reverse;
-  gap: 20px;
-  align-items: flex-end;
-}
-.ambient-inner > .ambient-items-col {
-  flex: 1 1 280px;
-  min-width: 200px;
-}
-.ambient-inner > .ambient-stage-col {
-  flex: 1000 1 0;
-  min-width: min-content;
 }
 .ambient-items-col {
   display: flex;
@@ -211,18 +90,23 @@
   max-height: 320px;
   overflow-y: auto;
 }
-.ambient-item {
+.ambient-panel .ambient-items button.ambient-item {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
   width: 100%;
   min-height: 36px;
-  padding: 0 12px;
+  padding: 8px 12px;
   border-radius: var(--r-control);
   font-size: var(--fs-sm);
   color: var(--ink-700);
   text-align: left;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  transition: background var(--motion), color var(--motion);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 20px;
+  transition:
+    background var(--motion),
+    color var(--motion);
 }
 .ambient-item:hover {
   background: var(--surface-selected);
@@ -232,21 +116,6 @@
   color: var(--ink);
   font-weight: var(--fw-medium);
   box-shadow: inset 3px 0 0 var(--ink);
-}
-.ambient-stage-col {
-  min-width: 0;
-}
-.ambient-stage {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-width: 0;
-}
-.ambient-temp {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
 }
 .ambient-message {
   min-height: 20px;
@@ -391,7 +260,9 @@
   background: transparent;
   color: inherit;
   cursor: pointer;
-  transition: border-color var(--motion), background var(--motion);
+  transition:
+    border-color var(--motion),
+    background var(--motion);
 }
 .ambient-pet-option:hover {
   background: var(--surface-selected);
@@ -440,22 +311,6 @@
   outline: 2px solid var(--workstation-accent, var(--ink-subtle));
   outline-offset: 2px;
 }
-
-/* 元宝搜索 group label, key form and inline field error. */
-.ambient-group-label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 40px;
-  padding: 0 8px;
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-medium);
-  color: var(--ink-muted);
-}
-.ambient-catlist li.ambient-group-label {
-  border-bottom: 0;
-  margin-top: 8px;
-}
 .ambient-yuanbao {
   margin-top: 12px;
 }
@@ -482,7 +337,40 @@
 }
 
 /* The mode switch and key actions never wrap mid-label or overflow the narrow list column. */
-.ambient-yuanbao .page-segmented button { white-space: nowrap; padding: 0 8px; }
-.ambient-yuanbao .ambient-actions .product-button { white-space: nowrap; padding: 0 12px; }
-.ambient-yuanbao .ambient-yuanbao-keys, .ambient-yuanbao .ambient-fieldset { min-width: 0; }
-.ambient-yuanbao .ambient-message { overflow-wrap: anywhere; }
+.ambient-yuanbao .page-segmented button {
+  white-space: nowrap;
+  padding: 0 8px;
+}
+.ambient-yuanbao .ambient-actions .product-button {
+  white-space: nowrap;
+  padding: 0 12px;
+}
+.ambient-yuanbao .ambient-yuanbao-keys,
+.ambient-yuanbao .ambient-fieldset {
+  min-width: 0;
+}
+.ambient-yuanbao .ambient-message {
+  overflow-wrap: anywhere;
+}
+
+.ambient-items,
+.ambient-items > li,
+.ambient-items-col,
+.plugin-local-detail {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ambient-item-label {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.plugin-local-detail .page-card-head {
+  margin-bottom: 16px;
+}
+.plugin-local-detail .page-card-head h3 {
+  margin: 0;
+  line-height: 24px;
+}

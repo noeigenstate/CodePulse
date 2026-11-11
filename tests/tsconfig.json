@@ -2,6 +2,7 @@
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "baseUrl": "..",
+    "jsx": "react-jsx",
     "paths": {
       "@codepulse/adapters": ["packages/adapters/src/index.ts"],
       "@codepulse/core": ["packages/core/src/index.ts"],

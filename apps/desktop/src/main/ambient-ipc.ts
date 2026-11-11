@@ -12,7 +12,10 @@ import { withAmbient } from './ambient-rules.js'
 /** Same handlers for the unified host and isolated renderer integration tests. */
 export function registerAmbientIpc(
   ipc: Pick<IpcMain, 'handle'>,
-  runtime: ReturnType<typeof createAmbientRuntime>,
+  runtime: Pick<
+    ReturnType<typeof createAmbientRuntime>,
+    'service' | 'setYuanbaoKey' | 'importImage' | 'setKey'
+  >,
   deviceSnapshot: () => DeviceStatusV1,
   openExternal: (url: string) => Promise<unknown>,
   onManualShow?: () => void,

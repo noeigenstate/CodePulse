@@ -2,6 +2,10 @@ import { resolve } from 'node:path'
 import type { Plugin } from 'vite'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
+import { pluginPlatformCsp } from './plugin-platform-csp.js'
+import { pluginPlatformUrl } from './src/plugin-platform-config.js'
+
+const platformUrl = pluginPlatformUrl(process.env.CODEPULSE_PLATFORM_URL)
 
 // Workspace packages are TypeScript source — must be bundled, not externalized.
 // Pure JS deps (fastify, drizzle-orm, …) are also bundled so the installer only
@@ -41,6 +45,7 @@ function stubOptionalWsNatives(): Plugin {
 
 export default defineConfig({
   main: {
+    define: { __CODEPULSE_PLATFORM_URL__: JSON.stringify(platformUrl) },
     resolve: {
       alias: {
         bufferutil: emptyNativeStub,
@@ -82,7 +87,7 @@ export default defineConfig({
       },
       dedupe: ['react', 'react-dom'],
     },
-    plugins: [react()],
+    plugins: [react(), pluginPlatformCsp(platformUrl)],
     build: {
       minify: 'esbuild',
       cssMinify: true,

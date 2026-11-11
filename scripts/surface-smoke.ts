@@ -15,6 +15,7 @@ import {
   TurnState,
   normalizeDeviceDisplay,
   normalizeShellPreferences,
+  targetForProductView,
   type DeviceDisplayConfig,
   type AgentRuntimeState,
   type StatusSnapshot,
@@ -90,6 +91,23 @@ async function click(win: BrowserWindow, selector: string) {
   await win.webContents.executeJavaScript(
     `document.querySelector(${JSON.stringify(selector)}).click()`,
   )
+  await wait()
+}
+async function closePluginDetails(win: BrowserWindow) {
+  await win.webContents.executeJavaScript(
+    `document.querySelector('.plugin-details-layer:not([hidden]) .plugin-details-close button')?.click()`,
+  )
+  await wait()
+}
+async function openInstalledPlugins(win: BrowserWindow, id?: string) {
+  await closePluginDetails(win)
+  await click(win, '[data-view=plugins]')
+  await click(win, '#plugins-installed-tab')
+  if (id) await click(win, `.plugin-row[data-plugin-id="${id}"] .plugin-actions button`)
+}
+async function openCurrentSurface(win: BrowserWindow) {
+  await closePluginDetails(win)
+  await win.webContents.executeJavaScript(`window.codepulse.navigateProduct('control')`)
   await wait()
 }
 async function button(win: BrowserWindow, label: string) {
@@ -782,9 +800,13 @@ app.whenReady().then(async () => {
       {
         handle(channel, listener) {
           ipcMain.handle(channel, async (event, ...args) => {
-            if (channel === 'codepulse:shell-target') {
+            if (channel === 'codepulse:shell-target' || channel === 'codepulse:shell-navigate') {
+              const target =
+                channel === 'codepulse:shell-target'
+                  ? args[0]
+                  : targetForProductView(args[0] as any, product.snapshot().target)
               if (targetDelay) await wait(targetDelay)
-              if (args[0] === failTarget) throw Error('TEST FIXTURE: preference write failed')
+              if (target === failTarget) throw Error('TEST FIXTURE: preference write failed')
             }
             return listener(event, ...args)
           })
@@ -1107,11 +1129,11 @@ app.whenReady().then(async () => {
     )
     assert.ok(
       await main.webContents.executeJavaScript(
-        `document.querySelector('[data-view=control]').textContent.includes('控制')`,
+        `document.querySelector('[data-view=window]').textContent.includes('主窗口')`,
       ),
       'Chinese fixture locale',
     )
-    assert.equal(product.snapshot().view, 'control', 'legacy overview migrates to control')
+    assert.equal(product.snapshot().view, 'window', 'legacy overview follows the selected surface')
     assert.equal(
       await main.webContents.executeJavaScript(
         `Boolean(document.querySelector('.product-topbar'))`,
@@ -1225,7 +1247,7 @@ app.whenReady().then(async () => {
     )
     assert.match(
       await main.webContents.executeJavaScript(
-        `document.querySelector('.product-rail .ink-pill-main')?.textContent??''`,
+        `document.querySelector('.product-rail .ink-pill')?.textContent??''`,
       ),
       /墨水屏/,
       'sidebar pill shows the e-ink state',
@@ -1289,13 +1311,22 @@ app.whenReady().then(async () => {
       ),
       0,
     )
-    await click(main, '.product-rail .ink-pill-main')
-    await until(
-      () => product.snapshot().view === 'control' && product.snapshot().target === 'ink',
-      'the pill opens 控制 › 墨水屏',
+    const beforeStatusClick = product.snapshot()
+    const statusDisplay = await main.webContents.executeJavaScript(`(() => {
+      const pill=document.querySelector('.product-rail .ink-pill');
+      return {role:pill.getAttribute('role'), focusable:pill.hasAttribute('tabindex'),
+        controls:pill.querySelectorAll('button,a,input,[role=button],[tabindex]').length};
+    })()`)
+    assert.deepEqual(statusDisplay, { role: 'status', focusable: false, controls: 0 })
+    await click(main, '.product-rail .ink-pill')
+    assert.equal(product.snapshot().view, beforeStatusClick.view, 'status click never navigates')
+    assert.equal(
+      product.snapshot().target,
+      beforeStatusClick.target,
+      'status click never selects a target',
     )
-    await click(main, '[data-view=control]')
-    await click(main, '#endpoint-ink')
+    await openCurrentSurface(main)
+    await click(main, '[data-view=ink]')
     await until(
       () =>
         main!.webContents.executeJavaScript(
@@ -1305,7 +1336,7 @@ app.whenReady().then(async () => {
     )
     assert.equal(
       await main.webContents.executeJavaScript(
-        `document.querySelectorAll('.product-control .page-header p,.product-tabs-label,.ink-empty-card,.ink-preview-card .device-preview-footnote').length`,
+        `document.querySelectorAll('.product-tabs-label,.ink-empty-card,.ink-preview-card .device-preview-footnote').length`,
       ),
       0,
       'control removes static explanatory chrome',
@@ -1347,7 +1378,7 @@ app.whenReady().then(async () => {
     await selectPlayback('15')
     await button(main, '应用')
     await click(main, 'button[role=switch][aria-label="待办与提醒加入节目单"]')
-    assert.equal(product.snapshot().view, 'control', 'playlist switches never navigate')
+    assert.equal(product.snapshot().view, 'ink', 'playlist switches never navigate')
     assert.deepEqual(
       product.snapshot().inkPlan.items,
       beforePlayback.items,
@@ -1355,13 +1386,13 @@ app.whenReady().then(async () => {
     )
     await click(main, 'button[role=switch][aria-label="待办与提醒加入节目单"]')
     await click(main, '.ink-row-main[aria-label="桌边内容"]')
-    assert.equal(product.snapshot().view, 'ambient')
-    await click(main, '[data-view=control]')
-    await click(main, '#endpoint-ink')
+    assert.equal(product.snapshot().view, 'plugins')
+    await openCurrentSurface(main)
+    await click(main, '[data-view=ink]')
     await click(main, '.ink-row-main[aria-label="待办与提醒"]')
-    assert.equal(product.snapshot().view, 'assistant')
-    await click(main, '[data-view=control]')
-    await click(main, '#endpoint-ink')
+    assert.equal(product.snapshot().view, 'plugins')
+    await openCurrentSurface(main)
+    await click(main, '[data-view=ink]')
     inkConnected = false
     publishInk()
     await wait()
@@ -1435,7 +1466,7 @@ app.whenReady().then(async () => {
     // Disabled reasons are keyboard-reachable explanations (InfoTip) and stay inside a narrow window.
     main.setContentSize(720, 600)
     await wait(350)
-    await click(main, '[data-view=assistant]')
+    await openInstalledPlugins(main, 'local:todo')
     const tip = (await main.webContents.executeJavaScript(
       `(()=>{const b=document.querySelector('.desk-assistant .info-tip');return b?{id:b.getAttribute('aria-describedby'),text:document.getElementById(b.getAttribute('aria-describedby')).textContent,h:b.getBoundingClientRect().height,w:b.getBoundingClientRect().width,tab:b.tabIndex}:null})()`,
     )) as { id: string; text: string; h: number; w: number; tab: number } | null
@@ -1443,8 +1474,9 @@ app.whenReady().then(async () => {
       tip && tip.text === '连接设备后可临时展示' && tip.h >= 32 && tip.w >= 32 && tip.tab >= 0,
       'the disabled reason is a focusable 32px InfoTip: ' + JSON.stringify(tip),
     )
+    // The todo detail sits below the fold at 600px; a pointer can only hover the tip once it is scrolled into view.
     await main.webContents.executeJavaScript(
-      `document.querySelector('.desk-assistant .info-tip').dispatchEvent(new MouseEvent('mouseover',{bubbles:true}))`,
+      `(()=>{const b=document.querySelector('.desk-assistant .info-tip');b.scrollIntoView({block:'center'});b.dispatchEvent(new MouseEvent('mouseover',{bubbles:true}))})()`,
     )
     await wait(120)
     const bubble = (await main.webContents.executeJavaScript(
@@ -1478,10 +1510,17 @@ app.whenReady().then(async () => {
       false,
       'Escape closes the bubble',
     )
+    assert.equal(
+      await main.webContents.executeJavaScript(
+        `document.querySelector('.plugin-details-layer:has(.desk-assistant)')?.hidden`,
+      ),
+      false,
+      'the first Escape closes only the bubble, not the plugin details around it',
+    )
     main.setContentSize(1120, 780)
     await wait(350)
-    await click(main, '[data-view=control]')
-    await click(main, '#endpoint-ink')
+    await openCurrentSurface(main)
+    await click(main, '[data-view=ink]')
     inkConnected = true
     publishInk()
     await wait()
@@ -1835,19 +1874,25 @@ app.whenReady().then(async () => {
     await wait()
     writeFileSync(join(output, 'layout.json'), JSON.stringify(layouts, null, 2))
     await capture('control-ink')
-    await button(main, '用量看板')
+    // The work-screen content choice lives in the collapsed 「画面细项」 section.
+    await main.webContents.executeJavaScript(
+      `document.querySelector('.ink-work-options').open = true`,
+    )
+    await wait()
+    await button(main, '开销看板')
     assert.equal(config.mode, 'hud')
-    await button(main, '专注模式')
+    product.setFocusMode(true)
+    await wait()
     await button(main, '返回控制台')
     assert.equal(product.snapshot().target, 'ink')
     assert.ok(
       await main.webContents.executeJavaScript(
-        `Array.from(document.querySelectorAll('.product-control .ink-config button')).some(b=>b.textContent==='用量看板' && b.getAttribute('aria-pressed')==='true')`,
+        `Array.from(document.querySelectorAll('.product-control .ink-config button')).some(b=>b.textContent==='开销看板' && b.getAttribute('aria-pressed')==='true')`,
       ),
     )
     await button(main, '应用')
     assert.equal(config.mode, 'usage')
-    await click(main, '#endpoint-hud')
+    await click(main, '[data-view=overlay]')
     await until(
       () =>
         main!.webContents.executeJavaScript(
@@ -1902,15 +1947,15 @@ app.whenReady().then(async () => {
     )
     assert.equal(readCount('ambient-get'), ambientReads, 'agent events do not read content')
     targetDelay = 650
-    await main.webContents.executeJavaScript("document.querySelector('#endpoint-ink').click()")
+    await main.webContents.executeJavaScript("document.querySelector('[data-view=ink]').click()")
     await wait(100)
     assert.equal(product.snapshot().target, 'hud', 'fixture save is still pending')
     assert.equal(
       await main.webContents.executeJavaScript(
-        "document.querySelector('#endpoint-ink').getAttribute('aria-selected')",
+        "document.querySelector('[data-view=ink]').getAttribute('aria-current')",
       ),
-      'true',
-      'tab selection paints before persistence completes',
+      null,
+      'surface route waits for persistence',
     )
     await until(() => product.snapshot().target === 'ink', 'delayed target saved')
     await wait(300)
@@ -1938,24 +1983,26 @@ app.whenReady().then(async () => {
       'background frames remain ready without flashing loading states',
     )
     targetDelay = 500
-    await main.webContents.executeJavaScript("document.querySelector('#endpoint-hud').click()")
+    await main.webContents.executeJavaScript(
+      "document.querySelector('[data-view=overlay]').click()",
+    )
     await wait(30)
-    await main.webContents.executeJavaScript("document.querySelector('#endpoint-desktop').click()")
+    await main.webContents.executeJavaScript("document.querySelector('[data-view=window]').click()")
     await wait(30)
-    await main.webContents.executeJavaScript("document.querySelector('#endpoint-ink').click()")
+    await main.webContents.executeJavaScript("document.querySelector('[data-view=ink]').click()")
     await wait(100)
     assert.equal(
       await main.webContents.executeJavaScript(
-        "document.querySelector('#endpoint-ink').getAttribute('aria-selected')",
+        "document.querySelector('[data-view=ink]').getAttribute('aria-current')",
       ),
-      'true',
-      'last quick click wins immediately',
+      'page',
+      'the confirmed surface stays selected until persistence',
     )
     await wait(650)
     assert.equal(product.snapshot().target, 'ink')
     targetDelay = 0
     failTarget = 'hud'
-    await click(main, '#endpoint-hud')
+    await click(main, '[data-view=overlay]')
     await until(
       () =>
         main!.webContents.executeJavaScript(
@@ -1966,13 +2013,13 @@ app.whenReady().then(async () => {
     assert.equal(product.snapshot().target, 'ink')
     assert.equal(
       await main.webContents.executeJavaScript(
-        "document.querySelector('#endpoint-ink').getAttribute('aria-selected')",
+        "document.querySelector('[data-view=ink]').getAttribute('aria-current')",
       ),
-      'true',
+      'page',
       'failed save rolls back selection',
     )
     failTarget = undefined
-    await click(main, '#endpoint-hud')
+    await click(main, '[data-view=overlay]')
     writeFileSync(
       join(output, 'switching.json'),
       JSON.stringify(
@@ -1990,7 +2037,7 @@ app.whenReady().then(async () => {
     )
 
     assert.equal(product.snapshot().hudVisible, false, 'target selection must not open a window')
-    await button(main, '开启 HUD')
+    await button(main, '开启悬浮窗')
     await until(
       () => BrowserWindow.getAllWindows().some((w) => w.getTitle() === 'CodePulse HUD'),
       'HUD window',
@@ -2044,14 +2091,22 @@ app.whenReady().then(async () => {
       JSON.stringify({ restored, focused, area, bounds, visible: hud.isVisible() }, null, 2),
     )
     assert.equal(product.snapshot().form, 'standard', 'opening HUD preserves launch preference')
-    await button(main, '专注模式')
+    product.setFocusMode(true)
+    await wait()
     await button(hudWindow, '标准')
     assert.equal(product.snapshot().focusMode, false)
-    assert.equal(product.snapshot().view, 'control')
+    assert.equal(
+      product.snapshot().view,
+      product.snapshot().target === 'hud'
+        ? 'overlay'
+        : product.snapshot().target === 'ink'
+          ? 'ink'
+          : 'window',
+    )
     assert.equal(visible.get(hudWindow.id), true, 'HUD return opens console without hiding HUD')
     writeFileSync(join(output, 'hud.png'), (await hudWindow.webContents.capturePage()).toPNG())
     // Updates keeps the original bounded service; synthetic content never touches live accounts.
-    await click(main, '[data-view=ambient]')
+    await openInstalledPlugins(main)
     assert.equal(product.snapshot().target, 'ink')
     assert.equal(
       await main.webContents.executeJavaScript(
@@ -2061,7 +2116,7 @@ app.whenReady().then(async () => {
     )
     // 桌边内容: one category list whose rows carry the *Enabled rules; rules save by themselves.
     const TEMP = '临时展示 10 分钟'
-    const category = (id: string) => click(main!, `[data-cat=${id}]`)
+    const category = (id: string) => openInstalledPlugins(main!, `local:${id}`)
     const openSettings = async () => {
       if (
         !(await main!.webContents.executeJavaScript(
@@ -2070,12 +2125,12 @@ app.whenReady().then(async () => {
       )
         await click(main!, '.ambient-settings > summary')
     }
-    // The primary button is aria-disabled until a card is selected and the screen is online.
+    // The primary button is disabled until a card is selected and the screen is online.
     const showTemp = async () => {
       await until(
         () =>
           main!.webContents.executeJavaScript(
-            `document.querySelector('.ambient-temp button')?.getAttribute('aria-disabled')==='false'&&Boolean(document.querySelector('.ambient-item[aria-pressed=true]'))`,
+            `(()=>{const b=document.querySelector('.plugin-ink-preview .plugin-preview-actions .primary');return Boolean(b&&!b.disabled&&document.querySelector('.ambient-item[aria-pressed=true]'))})()`,
           ),
         'temporary display is available',
       )
@@ -2091,7 +2146,7 @@ app.whenReady().then(async () => {
       )
     assert.deepEqual(
       await main.webContents.executeJavaScript(
-        `Array.from(document.querySelectorAll('.ambient-catlist [data-cat]')).map(b=>b.querySelector('span').textContent)`,
+        `Array.from(document.querySelectorAll('.plugin-row[data-plugin-id^="local:"]:not([data-plugin-id="local:todo"]) .plugin-who strong')).map(s=>s.textContent)`,
       ),
       [
         '概念卡',
@@ -2108,35 +2163,21 @@ app.whenReady().then(async () => {
       ],
       'category order',
     )
-    // 元宝搜索 rows: grouped under one label, inert without a saved key, samples tagged 示例, key fields never keep a key.
+    // 元宝搜索 rows: inert without a saved key and say why, samples tagged 示例, key fields never keep a key.
     const setField = (selector: string, value: string) =>
       main!.webContents.executeJavaScript(
         `(()=>{const f=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(f,${JSON.stringify(value)});f.dispatchEvent(new Event('input',{bubbles:true}))})()`,
       )
-    assert.equal(
-      await main.webContents.executeJavaScript(
-        `document.querySelector('.ambient-group-label')?.textContent?.startsWith('元宝搜索')`,
-      ),
-      true,
-      'the four rows sit under one 元宝搜索 label',
-    )
-    assert.equal(
-      await main.webContents.executeJavaScript(
-        `(()=>{const b=document.querySelector('.ambient-group-label .info-tip');return b?document.getElementById(b.getAttribute('aria-describedby')).textContent:''})()`,
-      ),
-      '先在元宝搜索设置里填写密钥',
-      'without a key the reason is a focusable InfoTip',
-    )
     const yuanbaoBefore = JSON.stringify(ambient.snapshot().config)
     for (const id of ['life', 'tools', 'holiday', 'headlines']) {
-      assert.equal(
+      assert.deepEqual(
         await main.webContents.executeJavaScript(
-          `document.querySelector('[data-rule=${id}] .ambient-switch')?.getAttribute('aria-disabled')`,
+          `(()=>{const r=document.querySelector('.plugin-row[data-plugin-id="local:${id}"]');return [r.querySelector('.plugin-state-label').textContent,r.querySelector('.plugin-state p')?.textContent??'',r.querySelector('.plugin-switch').disabled]})()`,
         ),
-        'true',
-        id + ' switch is inert without a key',
+        ['需要设置', '请先填写元宝搜索密钥', true],
+        id + ' switch is inert without a key and the row says why',
       )
-      await click(main, `[data-rule=${id}] .ambient-switch`)
+      await click(main, `.plugin-row[data-plugin-id="local:${id}"] .plugin-switch`)
     }
     await wait(700)
     assert.equal(
@@ -2188,8 +2229,8 @@ app.whenReady().then(async () => {
       ),
       false,
     )
+    // The key settings live in each 元宝搜索 plugin's own details.
     await category('holiday')
-    await category('social')
     await click(main, '.ambient-yuanbao > summary')
     const keyForm = (await main.webContents.executeJavaScript(
       `(()=>{const f=document.querySelector('.ambient-yuanbao-keys');const inputs=Array.from(f.querySelectorAll('input'));return {types:inputs.map(i=>i.type),autocomplete:inputs.map(i=>i.autocomplete),placeholders:inputs.map(i=>i.placeholder),save:f.querySelector('button[type=submit]').disabled,buttons:Array.from(f.querySelectorAll('button')).map(b=>[b.textContent,b.disabled])}})()`,
@@ -2218,7 +2259,7 @@ app.whenReady().then(async () => {
       ],
       'save, clear and test wait for input or a saved key',
     )
-    // The key panel stays inside the narrow list column at 1440 and 720: no clipped labels, no sideways overflow.
+    // The key panel stays inside the plugin details at 1440 and 720: no clipped labels, no sideways overflow.
     for (const [width, height] of [
       [1440, 900],
       [720, 600],
@@ -2226,7 +2267,7 @@ app.whenReady().then(async () => {
       main.setContentSize(width, height)
       await wait(400)
       const fit = (await main.webContents.executeJavaScript(
-        `(()=>{const d=document.querySelector('.ambient-yuanbao'),c=document.querySelector('.ambient-cats');const seg=Array.from(d.querySelectorAll('.page-segmented button')).map(b=>[b.textContent,Math.round(b.getBoundingClientRect().height)]);return {overflow:d.scrollWidth-d.clientWidth,card:c.scrollWidth-c.clientWidth,seg,page:document.documentElement.scrollWidth-innerWidth}})()`,
+        `(()=>{const d=document.querySelector('.ambient-yuanbao'),c=document.querySelector('.plugin-details-layer:not([hidden]) .plugin-details');const seg=Array.from(d.querySelectorAll('.page-segmented button')).map(b=>[b.textContent,Math.round(b.getBoundingClientRect().height)]);return {overflow:d.scrollWidth-d.clientWidth,card:c.scrollWidth-c.clientWidth,seg,page:document.documentElement.scrollWidth-innerWidth}})()`,
       )) as { overflow: number; card: number; seg: [string, number][]; page: number }
       assert.ok(
         fit.overflow <= 1 && fit.card <= 1 && fit.page <= 1 && fit.seg.every(([, h]) => h <= 36),
@@ -2294,7 +2335,7 @@ app.whenReady().then(async () => {
       'no item dropdown',
     )
     // The social row switch is the existing xEnabled / memeEnabled rule pair.
-    await click(main, '[data-rule=social] .ambient-switch')
+    await click(main, '.plugin-row[data-plugin-id="local:social"] .plugin-switch')
     await until(
       () => !ambient.snapshot().config.xEnabled && !ambient.snapshot().config.memeEnabled,
       'row switch saves on its own',
@@ -2307,7 +2348,7 @@ app.whenReady().then(async () => {
       'saved confirmation',
     )
     assert.equal(ambient.current(), undefined, 'saving rules does not select content')
-    await click(main, '[data-rule=social] .ambient-switch')
+    await click(main, '.plugin-row[data-plugin-id="local:social"] .plugin-switch')
     await until(
       () => ambient.snapshot().config.xEnabled && !ambient.snapshot().config.memeEnabled,
       'row switch restores the remembered pair (X only), not both',
@@ -2332,12 +2373,12 @@ app.whenReady().then(async () => {
       () => !ambient.snapshot().config.xEnabled && ambient.snapshot().config.memeEnabled,
       'meme-only state',
     )
-    await click(main, '[data-rule=social] .ambient-switch')
+    await click(main, '.plugin-row[data-plugin-id="local:social"] .plugin-switch')
     await until(
       () => !ambient.snapshot().config.xEnabled && !ambient.snapshot().config.memeEnabled,
       'row off from meme-only',
     )
-    await click(main, '[data-rule=social] .ambient-switch')
+    await click(main, '.plugin-row[data-plugin-id="local:social"] .plugin-switch')
     await until(
       () => !ambient.snapshot().config.xEnabled && ambient.snapshot().config.memeEnabled,
       'row on restores meme only; X stays off',
@@ -2349,18 +2390,12 @@ app.whenReady().then(async () => {
       () => ambient.snapshot().config.xEnabled && !ambient.snapshot().config.memeEnabled,
       'fixture state restored',
     )
-    assert.equal(
+    assert.deepEqual(
       await main.webContents.executeJavaScript(
-        `document.querySelector('[data-rule=local] .ambient-manual-tag')?.textContent`,
+        `(()=>{const r=document.querySelector('.plugin-row[data-plugin-id="local:local"]');return [r.querySelector('.plugin-state-label').textContent,Boolean(r.querySelector('.plugin-switch'))]})()`,
       ),
-      '仅手动',
-      'the manual-only category carries a tag instead of a switch',
-    )
-    assert.equal(
-      await main.webContents.executeJavaScript(
-        `Boolean(document.querySelector('[data-rule=local] .ambient-switch'))`,
-      ),
-      false,
+      ['仅手动', false],
+      'the manual-only plugin carries a 仅手动 state instead of a switch',
     )
     await button(main, '检查新内容')
     await until(
@@ -2391,7 +2426,7 @@ app.whenReady().then(async () => {
     await until(
       () =>
         main!.webContents.executeJavaScript(
-          `document.querySelector('[data-feedback=content]').textContent.includes('已临时展示')`,
+          `document.querySelector('.plugin-ink-preview .ambient-message')?.textContent.includes('已临时展示')`,
         ),
       'temporary display confirmed',
     )
@@ -2404,8 +2439,8 @@ app.whenReady().then(async () => {
     )
     assert.equal(
       await main.webContents.executeJavaScript(`(() => {
-      document.querySelector('.ambient-temp').scrollIntoView({block:'center'});
-      const r=document.querySelector('[data-feedback=content]').getBoundingClientRect();
+      document.querySelector('.plugin-preview-actions').scrollIntoView({block:'center'});
+      const r=document.querySelector('.plugin-ink-preview .ambient-message').getBoundingClientRect();
       return r.top>=0 && r.bottom<=window.innerHeight;
     })()`),
       true,
@@ -2444,7 +2479,7 @@ app.whenReady().then(async () => {
     await until(
       () =>
         main!.webContents.executeJavaScript(
-          `document.querySelector('[data-feedback=content]').textContent.includes('已导入 1 张图片')`,
+          `document.querySelector('.plugin-ink-preview .ambient-message')?.textContent.includes('已导入 1 张图片')`,
         ),
       'import confirmed',
     )
@@ -2584,13 +2619,13 @@ app.whenReady().then(async () => {
     await category('calendar')
     await previewReady()
     const calendarPage = (await main.webContents.executeJavaScript(`(() => ({
-      selected:document.querySelector('.ambient-catlist li.is-current [data-cat]')?.getAttribute('data-cat'),
+      selected:document.querySelector('.plugin-row[data-selected=true]')?.getAttribute('data-plugin-id'),
       info:document.querySelector('.ambient-calendar-info')?.textContent??'',
       infoBox:(()=>{for(let e=document.querySelector('.ambient-panel');e;e=e.parentElement)e.scrollTop=0;const r=document.querySelector('.ambient-calendar-info')?.getBoundingClientRect();return r?{top:r.top,bottom:r.bottom,height:window.innerHeight}:null})(),
       hint:document.querySelector('.ambient-calendar-info')?.getAttribute('title')??'',
       picker:Boolean(document.querySelector('.ambient-pet-picker')),
       settings:Boolean(document.querySelector('.ambient-settings')),
-      toggle:Boolean(document.querySelector('[data-rule=calendar] .ambient-switch'))
+      toggle:Boolean(document.querySelector('.plugin-row[data-plugin-id="local:calendar"] .plugin-switch'))
     }))()`)) as {
       selected: string
       info: string
@@ -2600,7 +2635,7 @@ app.whenReady().then(async () => {
       settings: boolean
       toggle: boolean
     }
-    assert.equal(calendarPage.selected, 'calendar', 'calendar category is selected')
+    assert.equal(calendarPage.selected, 'local:calendar', 'calendar plugin is selected')
     assert.equal(calendarPage.picker, false, 'one card a day needs no picker')
     assert.equal(calendarPage.settings, false, 'calendar has no extra options')
     assert.match(
@@ -2708,7 +2743,7 @@ app.whenReady().then(async () => {
     await wait(500)
     assert.ok(
       await screenWindow.webContents.executeJavaScript(
-        `document.querySelector('.screen-context').textContent.includes('用量看板')`,
+        `document.querySelector('.screen-context').textContent.includes('开销看板')`,
       ),
     )
     writeFileSync(join(output, 'device.json'), JSON.stringify(device().status, null, 2))
@@ -2772,12 +2807,12 @@ app.whenReady().then(async () => {
       ),
       false,
     )
-    await click(main, '[data-view=control]')
-    await click(main, '#endpoint-desktop')
+    await openCurrentSurface(main)
+    await click(main, '[data-view=window]')
     await until(
       () =>
         main!.webContents.executeJavaScript(
-          `Boolean(document.querySelector('section[aria-label="桌面端语音提醒"] input:not(:disabled)'))`,
+          `Boolean(document.querySelector('section[aria-label="主窗口语音提醒"] input:not(:disabled)'))`,
         ),
       'voice preferences loaded',
     )
@@ -2792,9 +2827,9 @@ app.whenReady().then(async () => {
       ),
       false,
     )
-    await click(main, 'section[aria-label="桌面端语音提醒"] summary')
+    await click(main, 'section[aria-label="主窗口语音提醒"] summary')
     await main.webContents.executeJavaScript(
-      `document.querySelector('section[aria-label="桌面端语音提醒"] input').click()`,
+      `document.querySelector('section[aria-label="主窗口语音提醒"] input').click()`,
     )
     await until(
       async () =>
@@ -2809,7 +2844,7 @@ app.whenReady().then(async () => {
       'voice preview through IPC fixture',
     )
     await main.webContents.executeJavaScript(
-      `document.querySelector('section[aria-label="桌面端语音提醒"] input').click()`,
+      `document.querySelector('section[aria-label="主窗口语音提醒"] input').click()`,
     )
     await until(
       async () =>
@@ -2817,7 +2852,7 @@ app.whenReady().then(async () => {
           .settings.enabled,
       'voice can be disabled',
     )
-    await click(main, 'section[aria-label="桌面端语音提醒"] summary')
+    await click(main, 'section[aria-label="主窗口语音提醒"] summary')
     await click(main, '.product-language-toggle')
     await until(
       () => main!.webContents.executeJavaScript(`document.documentElement.lang==='en'`),
@@ -2829,28 +2864,39 @@ app.whenReady().then(async () => {
       'rail switches back to Chinese',
     )
     await click(main, '[data-view=settings]')
-    await click(main, '[data-view=ambient]')
-    assert.equal(product.snapshot().view, 'ambient')
+    await openInstalledPlugins(main)
+    assert.equal(product.snapshot().view, 'plugins')
     await click(main, '[data-view=settings]')
     await click(main, '.theme-swatch-dark')
     await wait(500)
-    await click(main, '[data-view=control]')
+    await openCurrentSurface(main)
     await capture('control-dark')
     main.setSize(720, 600)
     await capture('compact')
-    // At a narrow width the pill collapses to its dot; the full text stays in title and aria-label, and the hit area stays 32px.
-    const narrowPill = (await main.webContents.executeJavaScript(
-      `(()=>{const b=document.querySelector('.product-rail .ink-pill-main'),r=b.getBoundingClientRect();return {text:getComputedStyle(b.querySelector('.ink-pill-text')).display,h:r.height,w:r.width,title:b.title,label:b.getAttribute('aria-label')}})()`,
-    )) as { text: string; h: number; w: number; title: string; label: string }
-    assert.equal(narrowPill.text, 'none', 'collapsed pill hides its text')
+    // A narrow rail keeps a visible state word beside the mark, without an interactive hit area.
+    const narrowPill = (await main.webContents.executeJavaScript(`(() => {
+      const pill=document.querySelector('.product-rail .ink-pill'),text=pill.querySelector('.ink-pill-text');
+      return {display:getComputedStyle(text).display, word:text.innerText.trim(), width:text.getBoundingClientRect().width,
+        mark:pill.querySelector('.ink-pill-dot').getBoundingClientRect().width,
+        label:pill.getAttribute('aria-label'), role:pill.getAttribute('role'),
+        controls:pill.querySelectorAll('button,a,input,[role=button],[tabindex]').length};
+    })()`)) as {
+      display: string
+      word: string
+      width: number
+      mark: number
+      label: string
+      role: string
+      controls: number
+    }
+    assert.notEqual(narrowPill.display, 'none', 'narrow status keeps its word visible')
     assert.ok(
-      narrowPill.h >= 32 && narrowPill.w >= 32,
-      'collapsed pill keeps a 32px hit area: ' + JSON.stringify(narrowPill),
+      narrowPill.word.length > 0 && narrowPill.width >= 24 && narrowPill.mark > 0,
+      JSON.stringify(narrowPill),
     )
-    assert.ok(
-      narrowPill.title.includes('墨水屏') && narrowPill.label.includes('墨水屏'),
-      'collapsed pill keeps its text in title and aria-label',
-    )
+    assert.equal(narrowPill.role, 'status')
+    assert.equal(narrowPill.controls, 0)
+    assert.ok(narrowPill.label.includes('墨水屏'), 'narrow status retains its full accessible name')
     assert.equal(
       await main.webContents.executeJavaScript(
         `document.documentElement.scrollWidth<=window.innerWidth`,
@@ -2866,7 +2912,7 @@ app.whenReady().then(async () => {
     main.setSize(1120, 780)
     await click(main, '[data-view=settings]')
     await click(main, '.theme-swatch-light')
-    await click(main, '[data-view=assistant]')
+    await openInstalledPlugins(main, 'local:todo')
     await until(
       () =>
         main!.webContents.executeJavaScript(`Boolean(document.querySelector('.desk-task-form'))`),
@@ -2904,8 +2950,8 @@ app.whenReady().then(async () => {
       'microphone is opt-in',
     )
     await capture('assistant')
-    await click(main, '[data-view=control]')
-    await click(main, '#endpoint-ink')
+    await openCurrentSurface(main)
+    await click(main, '[data-view=ink]')
     await selectPlayback('15')
     const previousPlan = structuredClone(product.snapshot().inkPlan)
     ambient.dismiss()
@@ -2935,27 +2981,37 @@ app.whenReady().then(async () => {
       '临时展示',
     )
     await capture('control-todos')
-    // The pill's cross ends the temporary display through endInkTemporary and never navigates.
+    // The rail only reports the temporary state; the existing device-page control ends it.
     const endReads = readCount('ink-temporary-end'),
-      viewBeforeCross = product.snapshot().view
+      viewBeforeEnd = product.snapshot().view
     assert.match(
       await main.webContents.executeJavaScript(
-        `document.querySelector('.product-rail .ink-pill-main')?.textContent??''`,
+        `document.querySelector('.product-rail .ink-pill')?.textContent??''`,
       ),
       /临时展示/,
     )
-    await click(main, '.product-rail .ink-pill-end')
+    assert.equal(
+      await main.webContents.executeJavaScript(
+        `document.querySelectorAll('.product-rail .ink-pill button').length`,
+      ),
+      0,
+    )
+    await click(main, '.ink-preview-card [data-ink-temporary-end]')
     await until(
       () => readCount('ink-temporary-end') === endReads + 1,
-      'the cross calls endInkTemporary',
+      'the device-page button calls endInkTemporary',
     )
-    assert.equal(product.snapshot().view, viewBeforeCross, 'the cross does not navigate')
+    assert.equal(
+      product.snapshot().view,
+      viewBeforeEnd,
+      'ending a temporary display never navigates',
+    )
     await until(
       () =>
         main!.webContents.executeJavaScript(
-          `!document.querySelector('.product-rail .ink-pill-end')`,
+          `!document.querySelector('.ink-preview-card [data-ink-temporary-end]')`,
         ),
-      'the cross disappears with the temporary display',
+      'the device-page action disappears when the temporary display ends',
     )
     assistant.showOnInk()
     publishInk()
@@ -3011,15 +3067,22 @@ app.whenReady().then(async () => {
     const attentionState = JSON.stringify(hub.snapshot().agents)
     broadcast('codepulse:status', hub.snapshot())
     ambient.tick()
-    await until(
-      () =>
-        main!.webContents.executeJavaScript(
-          `Boolean(document.querySelector('.product-nav-count'))`,
-        ),
-      'work attention badge',
+    // The sidebar shows no pending-review badge; attention lives on the surface pages.
+    assert.equal(
+      await main!.webContents.executeJavaScript(
+        `Boolean(document.querySelector('.product-nav-count'))`,
+      ),
+      false,
     )
-    await click(main, '[data-view=control]')
-    assert.equal(product.snapshot().view, 'control')
+    await openCurrentSurface(main)
+    assert.equal(
+      product.snapshot().view,
+      product.snapshot().target === 'hud'
+        ? 'overlay'
+        : product.snapshot().target === 'ink'
+          ? 'ink'
+          : 'window',
+    )
     assert.equal(JSON.stringify(hub.snapshot().agents), attentionState)
     // Preview controls sit directly above the frame, right-aligned to its edge, on both pages; captured for review.
     for (const theme of ['light', 'dark'] as const) {
@@ -3034,13 +3097,13 @@ app.whenReady().then(async () => {
         await wait(450)
         for (const page of ['ambient', 'ink'] as const) {
           if (page === 'ambient') {
-            await click(main, '[data-view=ambient]')
+            await openInstalledPlugins(main)
             await category('concept')
             await previewReady()
             await wait(700)
           } else {
-            await click(main, '[data-view=control]')
-            await click(main, '#endpoint-ink')
+            await openCurrentSurface(main)
+            await click(main, '[data-view=ink]')
             await until(
               () =>
                 main!.webContents.executeJavaScript(

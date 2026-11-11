@@ -6,6 +6,7 @@ import type {
   AssistantSettings,
   AssistantSnapshot,
   DeskTaskInput,
+  ClientInstalledPlugin,
 } from '@codepulse/shared'
 import type {
   ProductView,
@@ -139,6 +140,32 @@ const api = {
     ipcRenderer.invoke('codepulse:ambient-note', text),
   removeAmbient: (id: string): Promise<AmbientSnapshot> =>
     ipcRenderer.invoke('codepulse:ambient-remove', id),
+  openPlugins: (options?: {
+    route?: string
+    embed?: boolean
+    theme?: 'light' | 'dark'
+  }): Promise<{ url: string } | { error: string }> => ipcRenderer.invoke('plugins:open', options),
+  listCloudPlugins: (): Promise<{
+    state: 'unregistered' | 'offline' | 'ok'
+    platformOrigin: string
+    plugins: ClientInstalledPlugin[]
+  }> => ipcRenderer.invoke('plugins:list'),
+  setCloudPluginEnabled: (
+    id: string,
+    enabled: boolean,
+  ): Promise<{ ok: true } | { error: string }> =>
+    ipcRenderer.invoke('plugins:set-enabled', id, enabled),
+  uninstallCloudPlugin: (id: string): Promise<{ ok: true } | { error: string }> =>
+    ipcRenderer.invoke('plugins:uninstall', id),
+  pluginLogos: (): Promise<Record<string, string>> => ipcRenderer.invoke('plugins:logos'),
+  pickPluginLogo: (id: string): Promise<{ ok: true } | { error: string } | { cancelled: true }> =>
+    ipcRenderer.invoke('plugins:pick-logo', id),
+  resetPluginLogo: (id: string): Promise<{ ok: true } | { error: string }> =>
+    ipcRenderer.invoke('plugins:reset-logo', id),
+  onPluginsChanged: (cb: () => void): Unsubscribe => subscribe('plugins:changed', cb),
+  onPluginsLocation: (cb: (url: string) => void): Unsubscribe => subscribe('plugins:location', cb),
+  onPluginsLoadError: (cb: () => void): (() => void) => subscribe('plugins:load-error', cb),
+  pluginsChanged: (): Promise<void> => ipcRenderer.invoke('plugins:refresh'),
   getAmbient: (): Promise<AmbientSnapshot> => ipcRenderer.invoke('codepulse:ambient-get'),
   setAmbient: (config: AmbientConfig): Promise<AmbientSnapshot> =>
     ipcRenderer.invoke('codepulse:ambient-set', config),

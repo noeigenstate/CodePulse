@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, renameSync } from 'node:fs'
 import {
   isProductView,
+  isSurfaceView,
   canonicalProductView,
   targetForProductView,
   productTargets,
@@ -54,8 +55,8 @@ export class ProductShell {
   }
   navigate(view: unknown): ShellSnapshot {
     if (!isProductView(view)) throw new Error('Unknown product view')
-    const target = view === 'screen' ? 'ink' : targetForProductView(view, this.preferences.target)
-    this.commit({ view: canonicalProductView(view), target, focusMode: false })
+    const target = targetForProductView(view, this.preferences.target)
+    this.commit({ view: canonicalProductView(view, target), target, focusMode: false })
     this.windows.focusMode?.(false)
     return this.snapshot()
   }
@@ -65,12 +66,21 @@ export class ProductShell {
       !productTargets(this.preferences.view).includes(target as PresentationTarget)
     )
       throw new Error('Unsupported presentation target')
-    if (target !== this.preferences.target) this.commit({ target: target as PresentationTarget })
+    if (target !== this.preferences.target)
+      this.commit({
+        target: target as PresentationTarget,
+        ...(isSurfaceView(this.preferences.view)
+          ? { view: canonicalProductView('control', target as PresentationTarget) }
+          : {}),
+      })
     return this.snapshot()
   }
   setFocusMode(focus: unknown): ShellSnapshot {
     if (typeof focus !== 'boolean') throw new Error('Invalid focus mode')
-    this.commit({ focusMode: focus, ...(!focus ? { view: 'control' as const } : {}) })
+    this.commit({
+      focusMode: focus,
+      ...(!focus ? { view: canonicalProductView('control', this.preferences.target) } : {}),
+    })
     this.windows.focusMode?.(focus)
     return this.snapshot()
   }
@@ -150,9 +160,13 @@ export class ProductShell {
     return this.snapshot()
   }
   restore(): void {
-    // Opening the app must always reveal its control centre, even for legacy HUD-only profiles.
+    // Reopening reveals the standard window while preserving its selected surface.
     // This is navigation, not a configuration write; a full disk must not hide the app.
-    this.preferences = { ...this.preferences, view: 'control', focusMode: false }
+    this.preferences = {
+      ...this.preferences,
+      view: canonicalProductView('control', this.preferences.target),
+      focusMode: false,
+    }
     this.windows.focusMode?.(false)
     this.windows.standard()
     this.refresh()

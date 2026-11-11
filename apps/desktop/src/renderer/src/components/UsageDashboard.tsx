@@ -21,23 +21,15 @@ import './usage-dashboard.css'
 
 interface Props {
   active?: boolean
-  embedded?: boolean
   locale: Locale
   copy: UsageCopy
-  onClose: () => void
 }
 
 /** Fixed order for the token-type bar; colors live in usage-dashboard.css. */
 const TOKEN_KINDS = ['input', 'cacheWrite', 'cacheRead', 'output'] as const
 type TokenKind = (typeof TOKEN_KINDS)[number]
 
-export function UsageDashboard({
-  locale,
-  copy,
-  onClose,
-  active = true,
-  embedded = false,
-}: Props): JSX.Element {
+export function UsageDashboard({ locale, copy, active = true }: Props): JSX.Element {
   const [range, setRange] = useState<StatsRangePreset>('7d')
   const [data, setData] = useState<UsageLedgerSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
@@ -59,28 +51,14 @@ export function UsageDashboard({
     if (active) void load()
   }, [load, active])
 
-  useEffect(() => {
-    if (!active || embedded) return
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose, active, embedded])
-
   const empty = data !== null && data.totals.requests === 0 && data.totals.rounds === 0
 
   return (
     <div className="usage-page">
       <div className="usage-head">
-        {!embedded && (
-          <button type="button" className="product-button is-compact" onClick={onClose}>
-            <BackIcon />
-            <span>{copy.back}</span>
-          </button>
-        )}
         <PageHeader
           title={copy.title}
+          subtitle={copy.subtitle}
           actions={
             <>
               <div className="page-segmented" role="group" aria-label={copy.title}>
@@ -484,7 +462,7 @@ function TokenMix({
         {TOKEN_KINDS.map((kind) => (
           <li key={kind}>
             <i data-kind={kind} />
-            {labels[kind]} <b>{formatTokenCount(values[kind])}</b>
+            <span>{labels[kind]}</span> <b>{formatTokenCount(values[kind])}</b>
           </li>
         ))}
       </ul>
@@ -667,23 +645,6 @@ function niceMax(value: number): number {
     if (value <= step * exp) return step * exp
   }
   return 10 * exp
-}
-
-function BackIcon(): JSX.Element {
-  return (
-    <svg
-      viewBox="0 0 20 20"
-      className="h-4 w-4"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 4.5 6.5 10l5.5 5.5" />
-    </svg>
-  )
 }
 
 function RefreshIcon({ spin }: { spin: boolean }): JSX.Element {

@@ -23,6 +23,7 @@ import type {
   DesktopLayout,
   InkDisplayPlan,
   HudAppearanceSettings,
+  ClientInstalledPlugin,
   AmbientConfig,
   AmbientCard,
   AmbientSnapshot,
@@ -101,6 +102,25 @@ export interface CodePulseApi {
   importAmbientImage: (bytes: Uint8Array, name: string) => Promise<AmbientCard>
   addAmbientNote: (text: string) => Promise<AmbientCard>
   removeAmbient: (id: string) => Promise<AmbientSnapshot>
+  listCloudPlugins: () => Promise<{
+    state: 'unregistered' | 'offline' | 'ok'
+    platformOrigin: string
+    plugins: ClientInstalledPlugin[]
+  }>
+  setCloudPluginEnabled: (id: string, enabled: boolean) => Promise<{ ok: true } | { error: string }>
+  uninstallCloudPlugin: (id: string) => Promise<{ ok: true } | { error: string }>
+  pluginLogos: () => Promise<Record<string, string>>
+  pickPluginLogo: (id: string) => Promise<{ ok: true } | { error: string } | { cancelled: true }>
+  resetPluginLogo: (id: string) => Promise<{ ok: true } | { error: string }>
+  openPlugins: (options?: {
+    route?: string
+    embed?: boolean
+    theme?: 'light' | 'dark'
+  }) => Promise<{ url: string } | { error: string }>
+  onPluginsChanged: (cb: () => void) => Unsubscribe
+  onPluginsLocation: (cb: (url: string) => void) => Unsubscribe
+  onPluginsLoadError: (cb: () => void) => Unsubscribe
+  pluginsChanged: () => Promise<void>
   getAmbient: () => Promise<AmbientSnapshot>
   setAmbient: (config: AmbientConfig) => Promise<AmbientSnapshot>
   setAmbientKey: (provider: AmbientConfig['provider'], key: string) => Promise<AmbientSnapshot>

@@ -97,7 +97,8 @@ export function HudWorkspace({
           setError('')
         }
       } catch {
-        if (alive) setError(locale === 'zh' ? 'HUD 预览暂不可用。' : 'HUD preview unavailable.')
+        if (alive)
+          setError(locale === 'zh' ? '悬浮窗预览暂不可用。' : 'Overlay preview unavailable.')
       } finally {
         busy = false
         if (alive && pending) {
@@ -130,14 +131,20 @@ export function HudWorkspace({
   return (
     <div className="hud-control-workspace">
       <header className="hud-workspace-header">
-        <h2>HUD</h2>
+        <h2>{zh ? '悬浮窗' : 'Overlay'}</h2>
         <button
           type="button"
           className={`product-button hud-toggle-btn${product.shell.hudVisible ? '' : ' primary'}`}
           disabled={!product.shell.hudAvailable}
           onClick={() => void product.setHudVisible(!product.shell.hudVisible)}
         >
-          {product.shell.hudVisible ? (zh ? '收起 HUD' : 'Hide HUD') : zh ? '开启 HUD' : 'Open HUD'}
+          {product.shell.hudVisible
+            ? zh
+              ? '收起悬浮窗'
+              : 'Hide overlay'
+            : zh
+              ? '开启悬浮窗'
+              : 'Open overlay'}
         </button>
       </header>
       <div className="product-config-grid">
@@ -149,16 +156,16 @@ export function HudWorkspace({
               {error ||
                 (product.shell.hudAvailable
                   ? zh
-                    ? '正在读取 HUD…'
-                    : 'Loading HUD…'
+                    ? '正在读取悬浮窗…'
+                    : 'Loading overlay…'
                   : zh
-                    ? '当前安装未提供 HUD。'
-                    : 'HUD is not installed.')}
+                    ? '当前安装未提供悬浮窗。'
+                    : 'Overlay is not installed.')}
             </p>
           )}
         </section>
         <aside className="product-config hud-inline-config">
-          <h3>{zh ? 'HUD 样式' : 'HUD Style'}</h3>
+          <h3>{zh ? '悬浮窗样式' : 'Overlay style'}</h3>
           <div className="product-segments is-grid">
             {HUD_STYLE_OPTIONS.map((option) => (
               <button
@@ -266,7 +273,7 @@ export function HudWorkspace({
               checked={settings.autoReveal}
               onChange={(e) => update({ autoReveal: e.target.checked })}
             />
-            <span>{zh ? '有提醒时自动显示 HUD' : 'Show the HUD when an alert arrives'}</span>
+            <span>{zh ? '有提醒时自动显示悬浮窗' : 'Show the overlay when an alert arrives'}</span>
           </label>
 
           <label className="product-cycle-row">
@@ -696,7 +703,13 @@ function InkControlWorkspace({
               aria-pressed={display.mode === mode}
               onClick={() => changeDisplay({ mode })}
             >
-              {mode === 'hud' ? (zh ? '工作状态' : 'Work status') : zh ? '用量看板' : 'Usage board'}
+              {mode === 'hud'
+                ? zh
+                  ? '工作状态'
+                  : 'Work status'
+                : zh
+                  ? '开销看板'
+                  : 'Spending board'}
             </button>
           ))}
         </div>
@@ -744,7 +757,7 @@ function InkControlWorkspace({
         </label>
         {display.mode === 'usage' && (
           <label className="product-cycle-row">
-            <span>{zh ? '用量指标' : 'Usage metric'}</span>
+            <span>{zh ? '开销指标' : 'Spending metric'}</span>
             <select
               value={display.metric}
               onChange={(event) =>
@@ -976,7 +989,6 @@ export function ProductControl({
   deviceCopy: DeviceProvisioningCopy
   snapshot?: StatusSnapshot
   desktopPreview: ReactNode
-  usagePreview?: ReactNode
   active: boolean
   cliVisibility?: CliVisibility
 }): JSX.Element {
@@ -1007,76 +1019,43 @@ export function ProductControl({
   return (
     <div className="product-scroll product-control">
       <PageHeader
-        title={zh ? '控制' : 'Control'}
-        actions={
-          <button
-            type="button"
-            className="product-button"
-            disabled={!product.ready}
-            onClick={() => void product.setFocus(true)}
-          >
-            <ProductIcon name="focus" />
-            {zh ? '专注模式' : 'Focus mode'}
-          </button>
-        }
-      />
-      <div
-        className="product-surface-tabs"
-        role="tablist"
-        aria-label={zh ? '展示端' : 'Presentation'}
-      >
-        {(['desktop', 'hud', 'ink'] as const).map((value) => (
-          <button
-            type="button"
-            key={value}
-            id={`endpoint-${value}`}
-            role="tab"
-            aria-selected={target === value}
-            aria-controls={`control-panel-${value}`}
-            tabIndex={target === value ? 0 : -1}
-            onClick={() => void product.selectTarget(value)}
-            onKeyDown={(event) => {
-              const values = ['desktop', 'hud', 'ink'] as const
-              let index = values.indexOf(value)
-              if (event.key === 'ArrowRight') index = (index + 1) % 3
-              else if (event.key === 'ArrowLeft') index = (index + 2) % 3
-              else if (event.key === 'Home') index = 0
-              else if (event.key === 'End') index = 2
-              else return
-              event.preventDefault()
-              document.getElementById(`endpoint-${values[index]}`)?.focus()
-              void product.selectTarget(values[index]!)
-            }}
-          >
-            <ProductIcon name={value} />
-            <span>
-              <strong>{TARGET_NAMES[value][zh ? 0 : 1]}</strong>
-              <small>
-                <i
-                  className={`control-connection-dot ${value === 'desktop' || (value === 'hud' ? product.shell.hudVisible : ink?.connection === 'connected') ? 'is-on' : ''}`}
-                />
-                {value === 'desktop'
+        title={TARGET_NAMES[target][zh ? 0 : 1]}
+        subtitle={
+          target === 'desktop'
+            ? zh
+              ? '已打开'
+              : 'Open'
+            : target === 'hud'
+              ? !product.shell.hudAvailable
+                ? zh
+                  ? '当前安装未提供悬浮窗'
+                  : 'Overlay unavailable'
+                : product.shell.hudVisible
                   ? zh
                     ? '已打开'
                     : 'Open'
-                  : value === 'hud'
-                    ? product.shell.hudVisible
-                      ? zh
-                        ? '已打开'
-                        : 'Open'
-                      : zh
-                        ? '已收起'
-                        : 'Hidden'
-                    : inkConnection}
-              </small>
-            </span>
-          </button>
-        ))}
-      </div>
+                  : zh
+                    ? '已收起'
+                    : 'Hidden'
+              : inkConnection
+        }
+        actions={
+          target === 'desktop' && (
+            <button
+              type="button"
+              className="product-button"
+              disabled={!product.ready}
+              onClick={() => void product.setFocus(true)}
+            >
+              <ProductIcon name="focus" />
+              {zh ? '专注模式' : 'Focus mode'}
+            </button>
+          )
+        }
+      />
       <section
         id="control-panel-desktop"
-        role="tabpanel"
-        aria-labelledby="endpoint-desktop"
+        aria-label={TARGET_NAMES.desktop[zh ? 0 : 1]}
         hidden={target !== 'desktop'}
         className="product-control-surface"
       >
@@ -1096,8 +1075,7 @@ export function ProductControl({
       </section>
       <section
         id="control-panel-hud"
-        role="tabpanel"
-        aria-labelledby="endpoint-hud"
+        aria-label={TARGET_NAMES.hud[zh ? 0 : 1]}
         hidden={target !== 'hud'}
         className="product-control-surface"
       >
@@ -1112,8 +1090,7 @@ export function ProductControl({
       </section>
       <section
         id="control-panel-ink"
-        role="tabpanel"
-        aria-labelledby="endpoint-ink"
+        aria-label={TARGET_NAMES.ink[zh ? 0 : 1]}
         hidden={target !== 'ink'}
         className="product-control-surface"
       >

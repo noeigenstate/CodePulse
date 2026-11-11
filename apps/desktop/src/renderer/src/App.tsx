@@ -1,8 +1,7 @@
 import { ProductFrame, useProductNavigation } from './components/ProductFrame.js'
 import { ProductControl } from './components/ProductControl.js'
 import { ScreenWorkbench } from './components/ScreenWorkbench.js'
-import { AmbientPanel } from './components/AmbientPanel.js'
-import { AssistantPanel } from './components/AssistantPanel.js'
+import { PluginManager } from './components/PluginManager.js'
 /**
  * Dashboard 根组件。布局包含头部、agent 卡片网格与通知栏，
  * 并驱动高频时钟，使耗时与相对时间保持实时。
@@ -23,6 +22,8 @@ import {
 } from 'react'
 import {
   formatTokenPercent,
+  productDestination,
+  isSurfaceView,
   type AgentRuntimeState,
   type AgentType,
   type HudToolKey,
@@ -121,6 +122,7 @@ export function App(): JSX.Element {
   )
   /** 本地开发数据统计后台（设计稿大屏） */
   const product = useProductNavigation()
+  const destination = productDestination(product.view, product.target)
   const standaloneScreen = new URLSearchParams(window.location.search).get('surface') === 'screen'
 
   const [dashboardSettings, setDashboardSettings] = useState<DashboardSettings>(() =>
@@ -310,7 +312,7 @@ export function App(): JSX.Element {
   return (
     <div className="app-shell native-workstation flex h-full flex-col text-ink">
       {window.codepulse.platform === 'win32' ? <WindowTitleBar /> : null}
-      <ProductFrame product={product} locale={locale} onLocale={toggleLocale} snapshot={snapshot}>
+      <ProductFrame product={product} locale={locale} onLocale={toggleLocale}>
         {product.focusMode && (
           <section
             className="product-page product-work"
@@ -323,13 +325,13 @@ export function App(): JSX.Element {
         )}
         <section
           className="product-page"
-          hidden={product.focusMode || (product.view !== 'control' && product.view !== 'work')}
+          hidden={product.focusMode || !isSurfaceView(destination.page)}
         >
           <ProductControl
             product={product}
             locale={locale}
             deviceCopy={copy.settings.deviceProvisioning}
-            active={!product.focusMode && (product.view === 'control' || product.view === 'work')}
+            active={!product.focusMode && isSurfaceView(destination.page)}
             snapshot={snapshot}
             desktopPreview={liveConsole}
             cliVisibility={dashboardSettings.visibleTools}
@@ -338,37 +340,24 @@ export function App(): JSX.Element {
         {product.visited.has('usage') && (
           <section
             className="product-page"
-            hidden={product.focusMode || product.view !== 'usage'}
-            aria-label={locale === 'zh' ? '用量统计' : 'Usage history'}
+            hidden={product.focusMode || destination.page !== 'usage'}
           >
             <UsageDashboard
-              embedded
               locale={locale}
               copy={copy.usageBoard}
-              active={!product.focusMode && product.view === 'usage'}
-              onClose={() => void product.navigate('control')}
+              active={!product.focusMode && destination.page === 'usage'}
             />
           </section>
         )}
-        {product.visited.has('ambient') && (
+        {(['plugins', 'ambient', 'assistant'] as const).some((view) =>
+          product.visited.has(view),
+        ) && (
           <section
-            className="product-scroll"
-            hidden={product.focusMode || product.view !== 'ambient'}
+            className="product-page"
+            hidden={product.focusMode || destination.page !== 'plugins'}
           >
-            <AmbientPanel
-              active={!product.focusMode && product.view === 'ambient'}
-              product={product}
-              locale={locale}
-            />
-          </section>
-        )}
-        {product.visited.has('assistant') && (
-          <section
-            className="product-scroll"
-            hidden={product.focusMode || product.view !== 'assistant'}
-          >
-            <AssistantPanel
-              active={!product.focusMode && product.view === 'assistant'}
+            <PluginManager
+              active={!product.focusMode && destination.page === 'plugins'}
               product={product}
               locale={locale}
             />

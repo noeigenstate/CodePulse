@@ -1,17 +1,30 @@
 import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { nativeImage, safeStorage, net } from 'electron'
+import { dialog, nativeImage, safeStorage, net } from 'electron'
 import type { AmbientConfig, YuanbaoKeyInput } from '@codepulse/shared'
 import { YuanbaoClient, yuanbaoResponseJson } from './ambient-yuanbao.js'
+import {
+  PluginSource,
+  PluginCredentialStore,
+  type PluginOpenOptions,
+  type PluginOpenResult,
+} from './plugin-platform.js'
+import { PluginLogoStore } from './plugin-logos.js'
+import { coalescePluginChanges } from './plugin-ipc.js'
 import { YuanbaoKeyStore } from './ambient-yuanbao-keys.js'
 import { AmbientService, type AmbientDependencies } from './ambient-service.js'
 import { allowedMemeImage, fetchBytes } from './ambient-sources.js'
 import { checkMemeImage, packMemeBitmap, packPicture } from './ambient-image.js'
 
+declare const __CODEPULSE_PLATFORM_URL__: string
+
 export function createAmbientRuntime(
   directory: string,
-  deps: Pick<AmbientDependencies, 'status' | 'changed' | 'automaticAllowed' | 'plan'>,
+  deps: Pick<AmbientDependencies, 'status' | 'changed' | 'automaticAllowed' | 'plan'> & {
+    pluginsChanged: () => void
+  },
 ) {
+  const pluginsChanged = coalescePluginChanges(deps.pluginsChanged)
   const path = join(directory, 'ambient-settings.json'),
     keysPath = join(directory, 'ambient-keys.json')
   const read = (file: string) => {
@@ -51,9 +64,46 @@ export function createAmbientRuntime(
     read: () => read(keysPath),
     write: (value) => write(keysPath, value),
   })
+  const pluginKeysPath = join(directory, 'plugin-client.json')
+  let plugins: PluginSource | undefined
+  try {
+    const baseUrl = __CODEPULSE_PLATFORM_URL__
+    plugins = new PluginSource({
+      baseUrl,
+      credentials: new PluginCredentialStore(baseUrl, {
+        available: () =>
+          safeStorage.isEncryptionAvailable() &&
+          (process.platform !== 'linux' ||
+            safeStorage.getSelectedStorageBackend?.() !== 'basic_text'),
+        encrypt: (value) => safeStorage.encryptString(value),
+        decrypt: (value) => safeStorage.decryptString(value),
+        read: () => read(pluginKeysPath),
+        write: (value) => write(pluginKeysPath, value),
+      }),
+      fetch: net.fetch.bind(net) as typeof fetch,
+      changed: () => {
+        deps.changed()
+        pluginsChanged()
+      },
+    })
+  } catch {
+    // Invalid platform configuration must not prevent other desktop features from starting.
+  }
+  const pluginLogos = new PluginLogoStore(directory, {
+    choose: async () => {
+      const result = await dialog.showOpenDialog({
+        title: '选择插件图标',
+        properties: ['openFile'],
+        filters: [{ name: '插件图标', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+      })
+      return result.canceled ? undefined : result.filePaths[0]
+    },
+    changed: pluginsChanged,
+  })
   const yuanbaoPath = join(directory, 'yuanbao-cache.json')
   const service = new AmbientService({
     ...deps,
+    plugins,
     config: saved.config,
     history: saved.history as import('./ambient-service.js').AmbientHistory | undefined,
     key: (p) => keys[p] ?? '',
@@ -114,6 +164,11 @@ export function createAmbientRuntime(
   })
   return {
     service,
+    plugins,
+    pluginLogos,
+    openPlugins(theme: 'light' | 'dark', options?: PluginOpenOptions): Promise<PluginOpenResult> {
+      return plugins?.open(theme, options) ?? Promise.resolve({ error: '插件平台地址无效' })
+    },
     setYuanbaoKey(input: YuanbaoKeyInput) {
       yuanbaoKeys.set(input)
       service.yuanbao.credentialsChanged()

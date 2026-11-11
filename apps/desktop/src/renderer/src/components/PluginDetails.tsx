@@ -17,7 +17,8 @@ export function PluginDetails({
     const previous = document.activeElement as HTMLElement | null
     panel.current?.focus()
     const keydown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      // Escape closes the innermost layer first: an open tip or preview menu handles it before us.
+      if (event.key === 'Escape' && !event.defaultPrevented) {
         event.preventDefault()
         event.stopPropagation()
         onClose()
@@ -44,9 +45,10 @@ export function PluginDetails({
         first?.focus()
       }
     }
-    document.addEventListener('keydown', keydown, true)
+    // Bubble phase on window, so nested handlers (React onKeyDown, document listeners) run first.
+    window.addEventListener('keydown', keydown)
     return () => {
-      document.removeEventListener('keydown', keydown, true)
+      window.removeEventListener('keydown', keydown)
       if (previous?.isConnected) previous.focus()
     }
   }, [open, onClose])

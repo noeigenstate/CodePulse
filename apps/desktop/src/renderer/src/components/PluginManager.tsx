@@ -44,9 +44,9 @@ export function PluginManager({
     if (product.view !== 'assistant' && product.view !== 'ambient') return
     setTab('installed')
     setRulesOpen(false)
-    const detail = productDestination(product.view).pluginId
-    setSelected(detail)
-    if (detail) void product.navigate('plugins')
+    setSelected(productDestination(product.view).pluginId)
+    // Settle on the canonical page so the next legacy entry changes the view and runs this again.
+    void product.navigate('plugins')
   }, [product.view])
   const closeDetails = useCallback(() => {
     setSelected(undefined)

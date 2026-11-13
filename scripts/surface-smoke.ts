@@ -2256,11 +2256,17 @@ app.whenReady().then(async () => {
     )
     await click(main, 'button[role=switch][aria-label="待办与提醒加入节目单"]')
     await click(main, '.ink-row-main[aria-label="桌边内容"]')
-    assert.equal(product.snapshot().view, 'plugins')
+    await until(
+      () => product.snapshot().view === 'plugins',
+      'legacy desk-content entry settles on plugins',
+    )
     await openCurrentSurface(main)
     await click(main, '[data-view=ink]')
     await click(main, '.ink-row-main[aria-label="待办与提醒"]')
-    assert.equal(product.snapshot().view, 'plugins')
+    await until(
+      () => product.snapshot().view === 'plugins',
+      'legacy todo/reminders entry settles on plugins',
+    )
     await openCurrentSurface(main)
     await click(main, '[data-view=ink]')
     inkConnected = false

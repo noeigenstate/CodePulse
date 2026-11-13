@@ -10,7 +10,7 @@
 
 [![open hardware](https://img.shields.io/badge/hardware-open%20source-0b7a68)](#-硬件)
 [![MCU](https://img.shields.io/badge/MCU-ESP32--S3-2f6fec)](#-硬件)
-[![version](https://img.shields.io/badge/desktop-v1.4.11-brightgreen)](https://github.com/noeigenstate/CodePulse/releases/latest)
+[![version](https://img.shields.io/badge/desktop-v1.8.0-brightgreen)](https://github.com/noeigenstate/CodePulse/releases/latest)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#-下载)
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
@@ -75,7 +75,7 @@
 
 1. **打板。** 把 Gerber 压缩包上传到板厂，选择 4 层板。
 2. **刷固件。** 按[固件说明](./firmware/README.md)操作，使用 ESP-IDF 6.0.1。默认构建针对早期的 Board1，音频关闭。
-3. **开启设备 API 运行桌面应用。** v1.4.11 安装包还没有配对界面，需要从源码运行：
+3. **开启设备 API 运行桌面应用。** 局域网设备 API 默认关闭，需要带上 `CODEPULSE_DEVICE_SERVER_ENABLED=1` 启动，例如从源码运行：
 
    ```bash
    pnpm install
@@ -130,7 +130,7 @@
 | macOS Intel         | `CodePulse_*_mac-x64.dmg`                                     |
 | Linux               | `CodePulse_*_x86_64.AppImage` 或 `CodePulse_*_arm64.AppImage` |
 
-> v1.4.11 安装包只包含标准桌面版。想现在就用 HUD、墨水屏工作台和助手，请[从源码构建](#-开发)。
+> 安装包包含完整的桌面应用：HUD、墨水屏工作台、插件和助手。
 
 <details>
 <summary><b>macOS 提示“CodePulse 已损坏，无法打开”</b></summary>

@@ -11,7 +11,7 @@ done, so you stop checking the terminal. The desktop app that feeds it also work
 
 [![open hardware](https://img.shields.io/badge/hardware-open%20source-0b7a68)](#-the-hardware)
 [![MCU](https://img.shields.io/badge/MCU-ESP32--S3-2f6fec)](#-the-hardware)
-[![version](https://img.shields.io/badge/desktop-v1.4.11-brightgreen)](https://github.com/noeigenstate/CodePulse/releases/latest)
+[![version](https://img.shields.io/badge/desktop-v1.8.0-brightgreen)](https://github.com/noeigenstate/CodePulse/releases/latest)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#-download)
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
@@ -78,8 +78,8 @@ done, so you stop checking the terminal. The desktop app that feeds it also work
 1. **Order the board.** Upload the Gerber zip to a PCB fab and choose 4 layers.
 2. **Flash the firmware.** Follow the [firmware guide](./firmware/README.md), which uses ESP-IDF 6.0.1.
    The default build targets the earlier Board1 with audio off.
-3. **Run the desktop app with the device API on.** The pairing screen is not in the v1.4.11 installers
-   yet, so run it from source:
+3. **Run the desktop app with the device API on.** The LAN device API is off by default; start the
+   app with `CODEPULSE_DEVICE_SERVER_ENABLED=1`, for example from source:
 
    ```bash
    pnpm install
@@ -146,8 +146,8 @@ Get the desktop installer for your system from [GitHub Releases](https://github.
 | macOS Intel         | `CodePulse_*_mac-x64.dmg`                                     |
 | Linux               | `CodePulse_*_x86_64.AppImage` or `CodePulse_*_arm64.AppImage` |
 
-> The v1.4.11 installers contain the standard desktop app. To get the HUD, the e-paper
-> workbench and the assistant now, [build from source](#-development).
+> The installers contain the full desktop app: the HUD, the e-paper workbench, plugins and the
+> assistant.
 
 <details>
 <summary><b>macOS says “CodePulse is damaged and can’t be opened”</b></summary>

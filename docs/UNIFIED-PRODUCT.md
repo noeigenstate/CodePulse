@@ -27,8 +27,8 @@ the optional device service. No sibling source checkout is required.
 
 The accepted standard client provides Control, then a Features group (Desk
 content, Tasks & assistant, Usage), with Settings in the rail footer. Control offers connected desktop/HUD/e-paper
-cards with their existing configuration options. Focus mode collapses the console
-to the original work dashboard and has an explicit return control. HUD can coexist with the standard window; the screen
+cards with their existing configuration options. The workbench remains in the
+standard client. HUD can coexist with the standard window; the screen
 workbench remains independent. All three use the same host and saved device
 configuration. Existing native task/session identities, manual/automatic approval
 distinction, retained result read receipts and stable HUD card order are kept.
@@ -92,6 +92,9 @@ integration. Device protocol and production renderer assets are unchanged.
   Manual visual acceptance, live X access and current physical-device validation
   remain pending. This update has not repeated installer/clean-clone validation;
   those results below describe the earlier baseline only.
+
+Update on 2026-11-12: the workbench focus mode was removed. Draft retention is now
+verified by navigating away from the page and returning.
 
 Local check results are under ignored `.tmpshots/native-workstation-migration/`
 and `.tmpshots/surface-smoke/`. Hidden-window captures may be stale and must not
@@ -161,8 +164,8 @@ are unchanged.
 
 ## Information architecture (ia-refactor)
 
-- One e-ink status bar sits at the top of every product page except focus mode.
-  It only renders `InkScreenStatus` (computed in the main process, read through
+- The sidebar device icon reports `InkScreenStatus` through a connection mark,
+  an accessible name and a connection-only live region (read through
   `useInkStatus`); wording lives in `renderer/src/lib/inkStatusText.ts`.
 - What the e-ink screen shows is decided in one place: Control › E-paper ›
   playlist (applied through `applyInk`). Desk content and Tasks only manage their

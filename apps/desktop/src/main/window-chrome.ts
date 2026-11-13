@@ -1,8 +1,10 @@
-/** Concrete palette shared by the native title bar and BrowserWindow background. */
+/** Concrete colors for the BrowserWindow and its native caption buttons. */
 export interface WindowChromePalette {
-  /** BrowserWindow background and title-bar overlay color. */
+  /** BrowserWindow background (`--canvas`), also the HUD and screen workbench window color. */
   backgroundColor: string
-  /** Native minimize, maximize, and close symbol color. */
+  /** Native minimize, maximize, and close button background (`--surface-muted`). */
+  overlayColor: string
+  /** Native minimize, maximize, and close symbol color (`--ink`). */
   symbolColor: string
 }
 
@@ -10,17 +12,22 @@ export interface WindowChromePalette {
 export type WindowTheme = 'light' | 'dark'
 
 /**
- * Native chrome colors. They must equal the `.app-shell.native-workstation` `--canvas` and `--ink`
- * tokens in renderer/src/components/product-shell.css (light and dark), because the Windows caption
- * buttons sit next to the renderer-drawn title bar; tests/window-chrome.test.ts enforces it.
+ * Native chrome colors, each equal to a `.app-shell.native-workstation` token in
+ * renderer/src/components/product-shell.css (light and dark); tests/window-chrome.test.ts enforces it.
+ * - `backgroundColor` is `--canvas`, the window and sidebar color.
+ * - `overlayColor` is `--surface-muted`: on Windows the caption buttons sit over the main area, which
+ *   extends to the top of the window, so they must blend with it.
+ * - `symbolColor` is `--ink`.
  */
 const WINDOW_CHROME_PALETTES: Record<WindowTheme, WindowChromePalette> = {
   light: {
     backgroundColor: '#eceeef',
+    overlayColor: '#f2f3f5',
     symbolColor: '#25282d',
   },
   dark: {
     backgroundColor: '#191b1e',
+    overlayColor: '#202328',
     symbolColor: '#e8eaed',
   },
 }

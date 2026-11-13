@@ -33,7 +33,6 @@ function fixture(input?: unknown) {
     {
       hudAvailable: () => hud,
       hudVisible: () => visible,
-      focusMode: (focused) => calls.push(focused ? 'focus' : 'expand'),
       standard: () => calls.push('standard'),
       hud: () => {
         visible = true
@@ -106,7 +105,6 @@ test('shell defaults provide control; malformed routes cannot become file or net
     form: 'standard',
     view: 'window',
     target: 'desktop',
-    focusMode: false,
     desktopLayout: 'work',
     inkPlan: DEFAULT_INK_PLAN,
     hudSettings: DEFAULT_HUD_SETTINGS,
@@ -116,7 +114,6 @@ test('shell defaults provide control; malformed routes cannot become file or net
     form: 'standard',
     view: 'window',
     target: 'desktop',
-    focusMode: false,
     desktopLayout: 'work',
     inkPlan: DEFAULT_INK_PLAN,
     hudSettings: DEFAULT_HUD_SETTINGS,
@@ -139,11 +136,11 @@ test('legacy form actions open windows without changing the client entry point',
   assert.equal(f.shell.snapshot().form, 'standard')
   f.calls.length = 0
   f.shell.open('standard', 'usage')
-  assert.deepEqual(f.calls, ['changed', 'expand', 'standard', 'changed'])
+  assert.deepEqual(f.calls, ['changed', 'standard', 'changed'])
   assert.equal(f.shell.snapshot().form, 'standard')
   f.calls.length = 0
   f.shell.selectForm('standard')
-  assert.deepEqual(f.calls, ['expand', 'standard', 'changed'])
+  assert.deepEqual(f.calls, ['standard', 'changed'])
   assert.equal(f.shell.snapshot().view, 'ink')
   assert.equal(f.shell.snapshot().hudVisible, true)
 })
@@ -152,22 +149,20 @@ test('startup and reopen reveal Control even for a legacy HUD-only profile or un
     form: 'hud',
     view: 'ambient',
     target: 'ink',
-    focusMode: true,
     desktopLayout: 'board',
     hudSettings: { hudOpacity: 37 },
   })
   f.failSave()
   f.shell.restore()
-  assert.deepEqual(f.calls, ['expand', 'standard', 'changed'])
+  assert.deepEqual(f.calls, ['standard', 'changed'])
   assert.equal(f.shell.snapshot().view, 'ink')
-  assert.equal(f.shell.snapshot().focusMode, false)
   assert.equal(f.shell.snapshot().target, 'ink')
   assert.equal(f.shell.snapshot().desktopLayout, 'board')
   assert.equal(f.shell.snapshot().hudSettings.hudOpacity, 37)
   f.withoutHud()
   f.calls.length = 0
   f.shell.restore()
-  assert.deepEqual(f.calls, ['expand', 'standard', 'changed'])
+  assert.deepEqual(f.calls, ['standard', 'changed'])
   assert.throws(() => f.shell.selectForm('hud'))
   assert.equal(f.saved.length, 0)
 })
@@ -181,12 +176,10 @@ test('a failed preference write cannot change visible windows or the saved route
   const f = fixture()
   f.failSave()
   assert.throws(() => f.shell.navigate('work'))
-  assert.throws(() => f.shell.setFocusMode(true))
   assert.throws(() => f.shell.selectTarget('ink'))
   assert.throws(() => f.shell.setDesktopLayout('board'))
   assert.deepEqual(f.calls, [])
   assert.equal(f.shell.snapshot().view, 'window')
-  assert.equal(f.shell.snapshot().focusMode, false)
 })
 test('shell persistence is additive and does not rewrite account, device, content or HUD data', () => {
   const directory = mkdtempSync(join(tmpdir(), 'codepulse-shell-'))
@@ -200,13 +193,11 @@ test('shell persistence is additive and does not rewrite account, device, conten
         form: 'hud',
         view: 'screen',
         target: 'hud',
-        focusMode: true,
         desktopLayout: 'board',
       }),
     )
     assert.equal(store.read().view, 'overlay')
     assert.equal(store.read().target, 'hud')
-    assert.equal(store.read().focusMode, true)
     assert.equal(store.read().desktopLayout, 'board')
     assert.equal(store.read().form, 'standard')
     assert.equal(readFileSync(sentinel, 'utf8'), '{"mode":"usage"}')
@@ -275,7 +266,6 @@ test('production product IPC validates routes and passes native window changes w
   assert.equal(f.shell.snapshot().view, 'window')
   assert.equal(f.shell.snapshot().target, 'desktop')
   assert.throws(() => handlers.get('codepulse:shell-target')!({}, 'browser'))
-  assert.throws(() => handlers.get('codepulse:shell-focus')!({}, 'true'))
   assert.throws(() => handlers.get('codepulse:shell-desktop-layout')!({}, 'bad'))
   assert.throws(() => handlers.get('codepulse:shell-hud-visible')!({}, 1))
 })
@@ -288,10 +278,26 @@ test('legacy routes migrate without losing presentation preferences', () => {
   assert.equal(saved.form, 'standard')
   assert.equal(normalizeShellPreferences({ view: 'ambient', target: 'desktop' }).target, 'ink')
   assert.equal(normalizeShellPreferences({ view: 'usage', target: 'hud' }).target, 'hud')
-  assert.equal(
-    normalizeShellPreferences({ focusMode: 'true', desktopLayout: 'invalid' }).focusMode,
-    false,
-  )
+  assert.equal(normalizeShellPreferences({ desktopLayout: 'invalid' }).desktopLayout, 'work')
+})
+
+test('legacy removed preference fields are ignored without losing the remaining settings', () => {
+  const saved = {
+    view: 'screen',
+    target: 'ink',
+    desktopLayout: 'board',
+    hudSettings: { hudOpacity: 42 },
+  }
+  const expected = normalizeShellPreferences(saved)
+  for (const focusMode of [true, false, 'true']) {
+    const normalized = normalizeShellPreferences({ ...saved, focusMode })
+    assert.deepEqual(normalized, expected)
+    assert.equal(Object.hasOwn(normalized, 'focusMode'), false)
+    assert.equal(
+      Object.hasOwn(fixture({ ...saved, focusMode }).shell.snapshot(), 'focusMode'),
+      false,
+    )
+  }
 })
 
 test('configuration target selection never opens a window or changes launch preference', () => {
@@ -311,22 +317,20 @@ test('configuration target selection never opens a window or changes launch pref
   assert.throws(() => f.shell.selectTarget('ink'))
 })
 
-test('focus mode is reversible and preserves configured layout, target and HUD visibility', () => {
+test('ordinary navigation preserves configured layout, target and HUD visibility', () => {
   const f = fixture({ view: 'control', target: 'ink', desktopLayout: 'board' })
   f.shell.setHudVisible(true)
   f.calls.length = 0
-  f.shell.setFocusMode(true)
-  assert.deepEqual(f.calls, ['changed', 'focus'])
-  assert.equal(f.shell.snapshot().focusMode, true)
-  f.shell.setFocusMode(false)
+  f.shell.navigate('settings')
+  assert.deepEqual(f.calls, ['changed'])
+  assert.equal(f.shell.snapshot().view, 'settings')
+  f.shell.navigate('control')
   assert.equal(f.shell.snapshot().view, 'ink')
   assert.equal(f.shell.snapshot().target, 'ink')
   assert.equal(f.shell.snapshot().desktopLayout, 'board')
   assert.equal(f.shell.snapshot().hudVisible, true)
   assert.equal(f.shell.snapshot().form, 'standard')
-  f.shell.setFocusMode(true)
   f.shell.open('standard', 'settings')
-  assert.equal(f.shell.snapshot().focusMode, false)
   assert.equal(f.shell.snapshot().view, 'settings')
 })
 
@@ -379,7 +383,7 @@ test('surface pages select their target without opening another window, and spen
     const state = f.shell.navigate(view)
     assert.equal(state.view, view)
     assert.equal(state.target, target)
-    assert.deepEqual(f.calls, ['changed', 'expand'])
+    assert.deepEqual(f.calls, ['changed'])
     assert.equal(f.saved.at(-1)?.target, target)
     assert.equal(f.shell.navigate('usage').target, target)
     for (const legacy of ['control', 'work', 'overview', 'screen'] as const)

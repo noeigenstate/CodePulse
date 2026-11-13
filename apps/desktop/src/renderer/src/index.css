@@ -121,29 +121,9 @@ body {
     border: 1px solid var(--line);
   }
 
-  /* Preserve native Windows controls while matching the renderer's active palette. */
-  .window-titlebar {
-    display: flex;
-    height: env(titlebar-area-height, 2rem);
-    flex: 0 0 env(titlebar-area-height, 2rem);
-    align-items: center;
-    gap: 0.4rem;
-    border-bottom: 1px solid var(--line);
-    background: var(--canvas);
-    color: var(--ink-700);
-    font-size: 12px;
-    font-weight: 500;
-    line-height: 1;
-    padding-left: 0.7rem;
-    user-select: none;
-    -webkit-app-region: drag;
-  }
-
-  /* Integer size with the small-size mark (no CSS clip) keeps the badge edge crisp. */
-  .window-titlebar-logo {
-    width: 18px;
-    height: 18px;
-    flex-shrink: 0;
+  #root > .app-shell:has(> .product-frame.has-window-controls) {
+    border-top: 0;
+    --window-controls-safe-top: env(titlebar-area-height, 32px);
   }
 
   .app-shell::before {

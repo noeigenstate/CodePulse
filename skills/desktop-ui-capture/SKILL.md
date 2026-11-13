@@ -18,6 +18,7 @@ description: Use when you need screenshots or measurements of the running CodePu
 - Find the page in `http://127.0.0.1:9333/json` whose title is `CodePulse`, then connect to its `webSocketDebuggerUrl`.
 - Before capturing, send `Page.enable`, `Page.bringToFront`, `Emulation.setFocusEmulationEnabled {enabled:true}` and `Page.setWebLifecycleState {state:'active'}`. Without them, `Page.captureScreenshot` hangs when another window covers the app.
 - Size the view with `Emulation.setDeviceMetricsOverride`, and clear it afterwards.
+  - The override shrinks the page inside the real, visible window and leaves the rest of it blank, so it looks broken to the user. Use it only on a window you started for the capture; for the user's open dev window, take width and theme matrices from the offscreen surface harness instead (`CODEPULSE_SMOKE_CAPTURE_ALL=1 pnpm test:surfaces`).
   - The main window defaults to 1120×780 and its minimum is 720×480. 390×844 does not apply.
   - Capture 1440×900, 1024×768 and 720×480.
 - Navigate with `button[data-view=<control|ambient|assistant|usage|settings>]`.
@@ -34,13 +35,15 @@ description: Use when you need screenshots or measurements of the running CodePu
 ## Theme colours that live outside CSS
 
 - The Windows caption buttons (minimize/maximize/close) are a native overlay. Their colours come from
-  `apps/desktop/src/main/window-chrome.ts`, not CSS, and must equal the `.app-shell.native-workstation`
-  `--canvas` / `--ink` tokens (light and dark) in `components/product-shell.css`.
+  `apps/desktop/src/main/window-chrome.ts`, not CSS. There is no separate title bar: the content area runs
+  to the window top, so `overlayColor` must equal `--surface-muted`, `symbolColor` `--ink`, and
+  `backgroundColor` `--canvas` (light and dark) in `components/product-shell.css`.
   `tests/window-chrome.test.ts` enforces this. When you change those tokens, change both.
-- CDP screenshots do not include that overlay. Check it with a `PrintWindow` capture and compare pixel values.
-  `PrintWindow` returns false while the session is locked, so retry later.
-- The overlay cannot draw borders. A title-bar separator belongs on the frame below it, otherwise it stops
-  short under the buttons.
+- CDP screenshots do not include that overlay. `PrintWindow` can return a stale frame (old theme, or only the
+  frame and buttons), so do not judge colours from it. Read the computed background under
+  `navigator.windowControlsOverlay.getTitlebarAreaRect()` instead; the overlay colour comes from the palette.
+  `PrintWindow` returns false while the session is locked.
+- The overlay cannot draw borders, and the user asked for no line along the window top: keep the top edge borderless.
 
 ## Display scale (dpr) differences
 

@@ -9,11 +9,18 @@ import {
   type PresentationTarget,
   type ShellSnapshot,
 } from '@codepulse/shared'
-import { InkStatusPill } from './InkStatusBar.js'
+import { InkNavAnnouncer, InkNavStatus } from './InkStatusBar.js'
+import { RailStatus } from './RailStatus.js'
+import { RailTip } from './RailTip.js'
 import './product-shell.css'
 
-import { PRODUCT_NAV } from '../lib/productNavigation.js'
-export { PRODUCT_NAV, TARGET_NAMES } from '../lib/productNavigation.js'
+import { inkNavText } from '../lib/inkStatusText.js'
+import { NAV_GROUPS, PRODUCT_NAV } from '../lib/productNavigation.js'
+import { railShortcutHint } from '../lib/railPreference.js'
+import { useInkStatus } from '../lib/useInkStatus.js'
+import { useNow } from '../lib/useNow.js'
+import type { Locale } from '../lib/i18n.js'
+export { NAV_GROUPS, PRODUCT_NAV, TARGET_NAMES } from '../lib/productNavigation.js'
 
 export function ProductIcon({ name }: { name: string }): JSX.Element {
   const paths: Record<string, ReactNode> = {
@@ -63,15 +70,16 @@ export function ProductIcon({ name }: { name: string }): JSX.Element {
         <path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2" />
       </>
     ),
-    focus: (
-      <>
-        <path d="M8 3v5H3M16 21v-5h5M3 3l5 5M21 21l-5-5" />
-      </>
-    ),
     expand: (
       <>
         <rect x="3" y="4" width="18" height="16" rx="2" />
         <path d="M9 4v16M13 9l3 3-3 3" />
+      </>
+    ),
+    collapse: (
+      <>
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="M9 4v16M16 9l-3 3 3 3" />
       </>
     ),
   }
@@ -159,14 +167,12 @@ export function useProductNavigation() {
     error,
     view: shell.view,
     target: pendingTarget ?? shell.target,
-    focusMode: shell.focusMode,
     navigate: (view: ProductView) => {
       ++selection.current
       setPendingTarget(undefined)
       return run(() => window.codepulse.navigateProduct(view))
     },
     selectTarget,
-    setFocus: (focus: boolean) => run(() => window.codepulse.setFocusMode(focus)),
     setLayout: (layout: DesktopLayout) => run(() => window.codepulse.setDesktopLayout(layout)),
     setInkPlan: (plan: InkDisplayPlan) => run(() => window.codepulse.setInkPlan(plan)),
     setHudSettings: (patch: Partial<HudAppearanceSettings>) =>
@@ -175,114 +181,218 @@ export function useProductNavigation() {
   }
 }
 export type ProductNavigation = ReturnType<typeof useProductNavigation>
+export interface RailToggleProps {
+  collapsed: boolean
+  onToggle: () => void
+  locale: string
+  /** `process.platform` of the host; macOS shows ⌘B. */
+  platform?: string
+}
+
+/** The sidebar's collapse switch, on the first row of the sidebar. */
+export function RailToggle({
+  collapsed,
+  onToggle,
+  locale,
+  platform,
+}: RailToggleProps): JSX.Element {
+  const zh = locale === 'zh'
+  const shortcut = railShortcutHint(platform)
+  const label = zh
+    ? collapsed
+      ? '展开侧边栏'
+      : '收起侧边栏'
+    : collapsed
+      ? 'Expand sidebar'
+      : 'Collapse sidebar'
+  return (
+    <button
+      type="button"
+      className="product-rail-toggle"
+      aria-label={label}
+      aria-expanded={!collapsed}
+      aria-keyshortcuts={shortcut.aria}
+      onClick={(event) => {
+        onToggle()
+        // A mouse click must not leave the keyboard focus ring behind; Enter and Space keep it.
+        if (event.detail > 0) event.currentTarget.blur()
+      }}
+    >
+      <ProductIcon name={collapsed ? 'expand' : 'collapse'} />
+      <RailTip>{`${label} · ${shortcut.text}`}</RailTip>
+    </button>
+  )
+}
+
+/** The sidebar follows connection state independently from the active content page. */
+function ProductRail({
+  product,
+  zh,
+  platform,
+  titleIcon,
+  collapsed,
+  runningTasks,
+  onToggleRail,
+  onLocale,
+}: {
+  product: ProductNavigation
+  zh: boolean
+  platform?: string
+  titleIcon?: string
+  collapsed: boolean
+  runningTasks?: number
+  onToggleRail: () => void
+  onLocale?: () => void
+}): JSX.Element {
+  const lang: Locale = zh ? 'zh' : 'en'
+  const ink = useInkStatus()
+  const now = useNow(15000)
+  const inkText = ink && inkNavText(ink, now, lang)
+  const languageTitle = zh ? 'Switch to English / 切换为英文' : '切换为中文 / Switch to Chinese'
+  return (
+    <>
+      <div className="product-rail-heading">
+        <div className="product-rail-top">
+          {titleIcon && (
+            <>
+              <img className="product-rail-logo" alt="" aria-hidden="true" src={titleIcon} />
+              <span className="product-rail-name">CodePulse</span>
+            </>
+          )}
+          <RailToggle
+            collapsed={collapsed}
+            onToggle={onToggleRail}
+            locale={lang}
+            platform={platform}
+          />
+        </div>
+      </div>
+      <nav aria-label={zh ? '功能导航' : 'Navigation'}>
+        {NAV_GROUPS.map((group) => (
+          <div
+            key={group.id}
+            className="product-nav-group"
+            role="group"
+            aria-labelledby={`product-nav-group-${group.id}`}
+          >
+            <div id={`product-nav-group-${group.id}`} className="product-nav-group-label">
+              {zh ? group.label : group.english}
+            </div>
+            {PRODUCT_NAV.filter((item) => item.group === group.id).map((item) => {
+              const name = zh ? item.label : item.english
+              const status = item.id === 'ink' ? inkText : undefined
+              const tip = status?.name ?? name
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  data-view={item.id}
+                  aria-label={status ? tip : undefined}
+                  aria-current={
+                    productDestination(product.view, product.target).page === item.id
+                      ? 'page'
+                      : undefined
+                  }
+                  onClick={() => void product.navigate(item.id)}
+                >
+                  <span className="product-nav-glyph">
+                    <ProductIcon name={item.icon} />
+                    {status && <InkNavStatus text={status} />}
+                  </span>
+                  <span className="product-nav-label">{name}</span>
+                  <RailTip>{tip}</RailTip>
+                </button>
+              )
+            })}
+          </div>
+        ))}
+      </nav>
+      <InkNavAnnouncer word={inkText?.word} />
+      <div className="product-rail-footer">
+        {runningTasks !== undefined && (
+          <RailStatus tasks={runningTasks} locale={lang} collapsed={collapsed} />
+        )}
+        <div className="product-settings-row">
+          <button
+            type="button"
+            data-view="settings"
+            aria-label={zh ? '设置' : 'Settings'}
+            aria-current={product.view === 'settings' ? 'page' : undefined}
+            onClick={() => void product.navigate('settings')}
+          >
+            <ProductIcon name="settings" />
+            <span className="product-nav-label">{zh ? '设置' : 'Settings'}</span>
+            <RailTip>{zh ? '设置' : 'Settings'}</RailTip>
+          </button>
+          <button
+            type="button"
+            className="product-language-toggle"
+            onClick={onLocale}
+            disabled={!onLocale}
+            aria-label={zh ? 'Switch to English' : '切换为中文'}
+            title={collapsed ? undefined : languageTitle}
+          >
+            <span lang="zh-CN" data-active={zh}>
+              中
+            </span>
+            <span aria-hidden="true">/</span>
+            <span lang="en" data-active={!zh}>
+              EN
+            </span>
+            <RailTip>{languageTitle}</RailTip>
+          </button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+const noop = () => {}
+
 export function ProductFrame({
   product,
   locale,
   onLocale,
+  platform,
+  titleIcon,
+  collapsed = false,
+  runningTasks,
+  onToggleRail = noop,
   children,
 }: {
   product: ProductNavigation
   locale: string
   onLocale?: () => void
+  platform?: string
+  /**
+   * Windows draws no title bar strip: this brand mark moves into the sidebar's first row and the
+   * main area gets a drag band for the system buttons. Elsewhere the native title bar says it.
+   */
+  titleIcon?: string
+  /** The sidebar shows icons only. */
+  collapsed?: boolean
+  /** Agents running right now; the status above Settings is left out without it. */
+  runningTasks?: number
+  onToggleRail?: () => void
   children: ReactNode
 }): JSX.Element {
-  const zh = locale === 'zh',
-    { view, focusMode } = product
-  const returnButton = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    if (focusMode) returnButton.current?.focus()
-  }, [focusMode])
+  const zh = locale === 'zh'
   return (
-    <div className={`product-frame ${focusMode ? 'is-focused' : ''}`}>
-      <aside className="product-rail" hidden={focusMode}>
-        <div className="product-brand">
-          <span className="product-brand-mark">
-            <ProductIcon name="work" />
-          </span>
-          CodePulse
-        </div>
-        <nav aria-label={zh ? '功能导航' : 'Navigation'}>
-          {PRODUCT_NAV.map((item) => (
-            <div
-              key={item.id}
-              className={item.parent ? 'product-nav-child' : undefined}
-              data-parent={item.parent}
-            >
-              <button
-                type="button"
-                data-view={item.id}
-                className={item.parent ? 'is-child' : undefined}
-                data-section-active={
-                  (item.id === 'ink' &&
-                    productDestination(view, product.target).page === 'plugins') ||
-                  undefined
-                }
-                aria-label={
-                  item.parent ? (zh ? '墨水屏设备 · 插件' : 'E-paper Device · Plugins') : undefined
-                }
-                aria-current={
-                  productDestination(view, product.target).page === item.id ? 'page' : undefined
-                }
-                onClick={() => void product.navigate(item.id)}
-              >
-                <ProductIcon name={item.icon} />
-                <span>{zh ? item.label : item.english}</span>
-              </button>
-            </div>
-          ))}
-        </nav>
-        <div className="product-rail-footer">
-          <div className="product-settings-row">
-            <button
-              type="button"
-              data-view="settings"
-              aria-label={zh ? '设置' : 'Settings'}
-              aria-current={view === 'settings' ? 'page' : undefined}
-              onClick={() => void product.navigate('settings')}
-            >
-              <ProductIcon name="settings" />
-              <span>{zh ? '设置' : 'Settings'}</span>
-            </button>
-            <button
-              type="button"
-              className="product-language-toggle"
-              onClick={onLocale}
-              disabled={!onLocale}
-              aria-label={zh ? 'Switch to English' : '切换为中文'}
-              title={zh ? 'Switch to English / 切换为英文' : '切换为中文 / Switch to Chinese'}
-            >
-              <span lang="zh-CN" data-active={zh}>
-                中
-              </span>
-              <span aria-hidden="true">/</span>
-              <span lang="en" data-active={!zh}>
-                EN
-              </span>
-            </button>
-          </div>
-          {!focusMode && <InkStatusPill locale={zh ? 'zh' : 'en'} />}
-        </div>
+    <div className={`product-frame${titleIcon ? ' has-window-controls' : ''}`}>
+      <aside className={`product-rail${collapsed ? ' is-collapsed' : ''}`} data-tip-scope>
+        <ProductRail
+          product={product}
+          zh={zh}
+          platform={platform}
+          titleIcon={titleIcon}
+          collapsed={collapsed}
+          runningTasks={runningTasks}
+          onToggleRail={onToggleRail}
+          onLocale={onLocale}
+        />
       </aside>
       <div className="product-main">
-        {focusMode && (
-          <header className="product-focusbar">
-            <div className="product-brand">
-              <span className="product-brand-mark">
-                <ProductIcon name="work" />
-              </span>
-              CodePulse<small>{zh ? '专注模式' : 'Focus'}</small>
-            </div>
-            <button
-              ref={returnButton}
-              type="button"
-              className="product-button"
-              onClick={() => void product.setFocus(false)}
-            >
-              <ProductIcon name="expand" />
-              {zh ? '返回控制台' : 'Back to console'}
-            </button>
-          </header>
-        )}
+        {titleIcon && <div className="product-dragbar" />}
         {product.error && (
           <p className="product-attention" role="alert">
             {product.error}

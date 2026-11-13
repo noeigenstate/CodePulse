@@ -27,8 +27,6 @@ import {
   Notification,
   powerMonitor,
   shell,
-  screen,
-  type Rectangle,
 } from 'electron'
 import {
   type Agent,
@@ -206,38 +204,8 @@ function hookBinDir(): string {
   return join(app.getAppPath(), '..', '..', 'packages', 'hooks', 'bin')
 }
 
-let consoleBounds: Rectangle | undefined
-let consoleWasMaximized = false
-let desktopIsFocused = false
-function setDesktopFocus(focus: boolean): void {
-  const win = mainWindow
-  if (!win || win.isDestroyed() || desktopIsFocused === focus) return
-  desktopIsFocused = focus
-  if (focus) {
-    consoleBounds = win.getNormalBounds()
-    consoleWasMaximized = win.isMaximized()
-    if (consoleWasMaximized) win.unmaximize()
-    const area = screen.getDisplayMatching(consoleBounds).workArea
-    const width = Math.min(820, area.width),
-      height = Math.min(740, area.height)
-    win.setBounds({
-      width,
-      height,
-      x: Math.max(area.x, Math.min(consoleBounds.x, area.x + area.width - width)),
-      y: Math.max(area.y, Math.min(consoleBounds.y, area.y + area.height - height)),
-    })
-  } else {
-    if (consoleBounds) win.setBounds(consoleBounds)
-    else win.setSize(1120, 780)
-    if (consoleWasMaximized) win.maximize()
-    consoleBounds = undefined
-    consoleWasMaximized = false
-  }
-}
-
 function createWindow(): void {
   const chrome = windowChromePalette(windowTheme)
-  desktopIsFocused = false
   mainWindow = new BrowserWindow({
     width: 1120,
     height: 780,
@@ -252,7 +220,7 @@ function createWindow(): void {
       ? {
           titleBarStyle: 'hidden' as const,
           titleBarOverlay: {
-            color: chrome.backgroundColor,
+            color: chrome.overlayColor,
             symbolColor: chrome.symbolColor,
           },
         }
@@ -277,9 +245,6 @@ function createWindow(): void {
   })
   mainWindow.on('closed', () => {
     mainWindow = null
-    desktopIsFocused = false
-    consoleBounds = undefined
-    consoleWasMaximized = false
   })
   // A crashed or killed renderer leaves a blank window; reload it instead.
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
@@ -290,7 +255,6 @@ function createWindow(): void {
   })
 
   const devUrl = process.env['ELECTRON_RENDERER_URL']
-  if (productShell?.snapshot().focusMode) setDesktopFocus(true)
   if (devUrl) {
     void mainWindow.loadURL(devUrl)
   } else {
@@ -366,7 +330,7 @@ function setWindowTheme(value: unknown, targetWindow: BrowserWindow | null): Win
     targetWindow.setBackgroundColor(chrome.backgroundColor)
     if (process.platform === 'win32') {
       targetWindow.setTitleBarOverlay({
-        color: chrome.backgroundColor,
+        color: chrome.overlayColor,
         symbolColor: chrome.symbolColor,
       })
     }
@@ -784,7 +748,6 @@ async function bootstrap(): Promise<void> {
     {
       hudAvailable: () => Boolean(hudSurface),
       hudVisible: () => hudSurface?.isVisible() ?? false,
-      focusMode: setDesktopFocus,
       standard: showWindow,
       hud: () =>
         hudSurface?.open(

@@ -19,7 +19,7 @@ export function CloudPluginPreview({
   const [attempt, setAttempt] = useState(0)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
-  const ink = useInkStatus()
+  const ink = useInkStatus(active)
   const online = ink?.connection === 'connected'
   useEffect(() => {
     if (!active) return

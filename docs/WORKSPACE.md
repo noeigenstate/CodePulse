@@ -50,7 +50,7 @@ themes, layouts and dismissal remain presentation concerns.
 
 The accepted workstation revision places **控制 / 多媒体玩法** in the main rail,
 with **用量统计 / 设置** at the bottom. Control includes the existing CodePulse
-work panels and live account allowances. Focus mode opens that same work view.
+work panels and live account allowances.
 Usage remains the separate historical token ledger; multimedia retains the
 existing bounded X/meme sources and rules.
 
@@ -75,11 +75,9 @@ Typical 1000×720, 1120×780, 1366×900 and 1600×1000 windows fit the primary c
 without page or preview scrolling. Very narrow windows use a stacked layout;
 expanded details and large inspection canvases may scroll within their own areas.
 
-**进入专注模式** collapses the standard window to the existing work dashboard.
-**返回控制台** is always available; returning restores the console and its
-unsaved drafts. Focus state, target and desktop layout are stored with navigation
-in `userData/product-shell.json`; legacy overview/screen destinations are
-normalized. Other account, hook, read-state, ordering, device and content data
+The workbench stays in the standard client. Navigation preserves unsaved drafts;
+target and desktop layout are stored in `userData/product-shell.json`, and legacy
+overview/screen destinations are normalized. Other account, hook, read-state, ordering, device and content data
 remain at their existing paths without reset or bulk migration.
 
 Selecting the HUD card only selects its preview. **开启 HUD** opens the original
@@ -105,13 +103,16 @@ screen matches the preview. This workstation update changes the desktop shell,
 not the production device renderer, protocol or low-flicker policy.
 
 Validation on 2026-10-27: type checks, 654 regression tests, the full build and
-isolated Electron surface checks passed. The checks cover focus/console return,
+isolated Electron surface checks passed. The checks cover focus return with drafts,
 capability availability, HUD coexistence, preview size, independent workbench,
-draft retention, settings shortcuts, attention routing and canonical state
+settings shortcuts, attention routing and canonical state
 preservation. The workbench canvas matches the production Wasm pixels. Synthetic
 X content is explicitly labeled as a fixture; this does not verify live X access.
 Actual user visual acceptance and physical device validation remain separate.
 See [UNIFIED-PRODUCT.md](UNIFIED-PRODUCT.md) for the earlier packaging baseline.
+
+Update on 2026-11-12: the workbench focus mode was removed. Draft retention is now
+verified by navigating away from the page and returning.
 
 ## Local tasks, reminders and voice (local 0.0.27 candidate)
 
@@ -137,13 +138,14 @@ hardware conflicts, privacy, protocol additions and precise verification limits.
 
 ## Work voice alerts
 
-Control provides independent desktop/e-paper work speech preferences; the HUD
+Settings provides independent desktop/e-paper work speech preferences; the HUD
 shares desktop speaker output. Both default off. The host generates local PCM
 for audio-capable firmware; old boards remain audio-disabled. See
 [work voice and bilingual states](WORK-VOICE-AND-STATES.md) for rules, protocol,
 hook coverage, hardware limits and the remaining English-localization gaps.
 
-The work voice block is collapsed by default and shows its saved On/Off state.
+Both voice-output sections in Settings are collapsed by default and show their saved On/Off state.
+The collapsible bilingual state guide follows the voice settings card.
 Expanding or collapsing never changes speech preferences. The rail offers a
 visible **中 / EN** action beside Settings; it changes the existing saved locale
 without navigating away from the current page.

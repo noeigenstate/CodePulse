@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { DEFAULT_DEVICE_DISPLAY, DEFAULT_HUD_SETTINGS } from '@codepulse/shared'
+import {
+  DEFAULT_DEVICE_DISPLAY,
+  DEFAULT_HUD_SETTINGS,
+  TurnState,
+  type AgentRuntimeState,
+} from '@codepulse/shared'
 import {
   displayAfterMasterOff,
   hudToolsAfterMasterOff,
+  countVisibleRunningTasks,
+  isCliVisible,
 } from '../apps/desktop/src/renderer/src/lib/cliVisibility.js'
 import { DEFAULT_DASHBOARD_SETTINGS } from '../apps/desktop/src/renderer/src/lib/dashboardSettings.js'
 
@@ -14,6 +21,21 @@ const visible = (off: string[]) =>
       on && !off.includes(tool),
     ]),
   ) as typeof DEFAULT_DASHBOARD_SETTINGS.visibleTools
+
+test('the run-status count uses the workbench CLI visibility and running-state rules', () => {
+  const agents = [
+    { agentType: 'codex', state: TurnState.THINKING },
+    { agentType: 'claude_code', state: TurnState.TOOL_RUNNING },
+    { agentType: 'grok', state: TurnState.WAITING_PERMISSION },
+    { agentType: 'kimi', state: TurnState.DONE },
+    { agentType: 'codex', state: TurnState.THINKING, taskHidden: true },
+  ] as AgentRuntimeState[]
+  assert.equal(countVisibleRunningTasks(agents, visible([])), 2)
+  assert.equal(isCliVisible('claude_code', visible(['claude_code'])), false)
+  assert.equal(countVisibleRunningTasks(agents, visible(['claude_code'])), 1)
+  assert.equal(countVisibleRunningTasks(agents, visible(['claude_code', 'codex'])), 0)
+  assert.equal(countVisibleRunningTasks([], visible([])), 0)
+})
 
 test('HUD tools switched off in Settings are cleared and nothing else changes', () => {
   const next = hudToolsAfterMasterOff(

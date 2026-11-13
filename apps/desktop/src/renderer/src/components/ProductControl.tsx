@@ -32,8 +32,6 @@ import {
 } from './product-control-state.js'
 import './product-control.css'
 import './device-display.css'
-import { WorkVoiceSettingsPanel } from './WorkVoiceSettings.js'
-import { WorkStateGuide } from './WorkStateGuide.js'
 
 const HUD_TOOLS: { key: HudToolKey; label: string }[] = [
   { key: 'codex', label: 'Codex' },
@@ -131,7 +129,6 @@ export function HudWorkspace({
   return (
     <div className="hud-control-workspace">
       <header className="hud-workspace-header">
-        <h2>{zh ? '悬浮窗' : 'Overlay'}</h2>
         <button
           type="button"
           className={`product-button hud-toggle-btn${product.shell.hudVisible ? '' : ' primary'}`}
@@ -933,8 +930,6 @@ function InkControlWorkspace({
           ))}
           <option value="fixed">{zh ? '只显示工作画面' : 'Work screen only'}</option>
         </select>
-        <WorkVoiceSettingsPanel locale={locale} target="ink" active={active} />
-        <WorkStateGuide locale={locale} />
         {shownCount > 0 && (
           <footer className="product-config-actions" aria-live="polite">
             <strong>
@@ -994,65 +989,16 @@ export function ProductControl({
 }): JSX.Element {
   const zh = locale === 'zh',
     target = product.target
-  const ink = useInkStatus()
+  const ink = useInkStatus(active)
   const [visited, setVisited] = useState(new Set([target]))
   const desktopContent = useRef(desktopPreview)
   if (active && target === 'desktop') desktopContent.current = desktopPreview
   useEffect(() => {
     setVisited((previous) => (previous.has(target) ? previous : new Set([...previous, target])))
   }, [target])
-  const inkConnection = !ink
-    ? zh
-      ? '读取中…'
-      : 'Loading…'
-    : ink.connection === 'connected'
-      ? zh
-        ? '已连接'
-        : 'Connected'
-      : ink.connection === 'server-off'
-        ? zh
-          ? '服务未开启'
-          : 'Service off'
-        : zh
-          ? '未连接'
-          : 'Disconnected'
   return (
-    <div className="product-scroll product-control">
-      <PageHeader
-        title={TARGET_NAMES[target][zh ? 0 : 1]}
-        subtitle={
-          target === 'desktop'
-            ? zh
-              ? '已打开'
-              : 'Open'
-            : target === 'hud'
-              ? !product.shell.hudAvailable
-                ? zh
-                  ? '当前安装未提供悬浮窗'
-                  : 'Overlay unavailable'
-                : product.shell.hudVisible
-                  ? zh
-                    ? '已打开'
-                    : 'Open'
-                  : zh
-                    ? '已收起'
-                    : 'Hidden'
-              : inkConnection
-        }
-        actions={
-          target === 'desktop' && (
-            <button
-              type="button"
-              className="product-button"
-              disabled={!product.ready}
-              onClick={() => void product.setFocus(true)}
-            >
-              <ProductIcon name="focus" />
-              {zh ? '专注模式' : 'Focus mode'}
-            </button>
-          )
-        }
-      />
+    <div className={`product-scroll product-control${target === 'desktop' ? ' is-desktop' : ''}`}>
+      <PageHeader title={TARGET_NAMES[target][zh ? 0 : 1]} />
       <section
         id="control-panel-desktop"
         aria-label={TARGET_NAMES.desktop[zh ? 0 : 1]}
@@ -1060,17 +1006,7 @@ export function ProductControl({
         className="product-control-surface"
       >
         {(target === 'desktop' || visited.has('desktop')) && (
-          <div className="product-desktop-panel">
-            <div className="product-console-live-stage">{desktopContent.current}</div>
-            <div className="product-desktop-options">
-              <WorkVoiceSettingsPanel
-                locale={locale}
-                target="desktop"
-                active={active && target === 'desktop'}
-              />
-              <WorkStateGuide locale={locale} />
-            </div>
-          </div>
+          <div className="product-console-live-stage">{desktopContent.current}</div>
         )}
       </section>
       <section

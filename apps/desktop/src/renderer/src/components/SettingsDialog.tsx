@@ -2,9 +2,12 @@ import { PageHeader } from './PageHeader.js'
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
 import type { Locale, SettingsCopy } from '../lib/i18n.js'
 import { CLI_TOOL_TYPES, type CliToolType, type ThemePreference } from '../lib/dashboardSettings.js'
+import { WorkVoiceSettingsPanel } from './WorkVoiceSettings.js'
+import { WorkStateGuide } from './WorkStateGuide.js'
 
 interface Props {
   embedded?: boolean
+  active?: boolean
   copy: SettingsCopy
   locale?: Locale
   onLocaleChange?: (locale: Locale) => void
@@ -31,6 +34,7 @@ const FOCUSABLE_SELECTOR =
  */
 export function SettingsDialog({
   embedded = false,
+  active = true,
   copy,
   locale = 'zh',
   onLocaleChange,
@@ -119,12 +123,12 @@ export function SettingsDialog({
 
       const first = focusable[0]!
       const last = focusable[focusable.length - 1]!
-      const active = document.activeElement
+      const focusedElement = document.activeElement
       const wrapTarget = event.shiftKey ? last : first
-      if (event.shiftKey ? active === first : active === last) {
+      if (event.shiftKey ? focusedElement === first : focusedElement === last) {
         event.preventDefault()
         wrapTarget.focus()
-      } else if (!dialog.contains(active)) {
+      } else if (!dialog.contains(focusedElement)) {
         event.preventDefault()
         wrapTarget.focus()
       }
@@ -146,7 +150,7 @@ export function SettingsDialog({
       className={
         embedded
           ? 'product-settings-page'
-          : 'settings-backdrop absolute inset-0 z-[60] flex items-center justify-center px-4'
+          : 'settings-backdrop product-window-overlay absolute inset-0 z-[60] flex items-center justify-center px-4'
       }
       onMouseDown={embedded ? undefined : closeOnBackdrop}
       role="presentation"
@@ -254,6 +258,28 @@ export function SettingsDialog({
               ))}
             </div>
           </section>
+
+          <section
+            className="page-card settings-work-voice-card"
+            aria-label={locale === 'zh' ? '语音提醒' : 'Voice alerts'}
+          >
+            <h2>{locale === 'zh' ? '语音提醒' : 'Voice alerts'}</h2>
+            <div className="settings-work-voice-targets">
+              <WorkVoiceSettingsPanel locale={locale} target="desktop" active={active} />
+              <WorkVoiceSettingsPanel locale={locale} target="ink" active={active} />
+            </div>
+            <p className="product-caption">
+              {locale === 'zh'
+                ? '单独保存，即时生效。两端独立开关；稳定 2 秒、合并提醒、至少间隔 60 秒，不反复催促。'
+                : 'Saved immediately. Outputs are independent: settle for 2 seconds, batch alerts and stay at least 60 seconds apart.'}
+            </p>
+            <p className="product-caption">
+              {locale === 'zh'
+                ? '每次等待过程提醒一次；恢复工作后的新请求可以再提醒。已解决取消，旧任务不补播。'
+                : 'Each waiting episode alerts once. A new request after work resumes can alert again; resolved and historical alerts are skipped.'}
+            </p>
+          </section>
+          <WorkStateGuide locale={locale} />
 
           <section className="page-card">
             <h2>{copy.mimoQuota}</h2>

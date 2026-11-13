@@ -32,8 +32,11 @@ if (tsTestFiles.length > 0) {
     format: 'esm',
     sourcemap: 'inline',
     jsx: 'automatic',
+    loader: { '.b64': 'text' },
     // Bundled CommonJS packages (e.g. react-dom/server) require Node built-ins at runtime.
-    banner: { js: "import { createRequire as __codepulseCreateRequire } from 'node:module'; const require = __codepulseCreateRequire(import.meta.url);" },
+    banner: {
+      js: "import { createRequire as __codepulseCreateRequire } from 'node:module'; const require = __codepulseCreateRequire(import.meta.url);",
+    },
     outdir,
     entryNames: '[name]',
     external: [
@@ -50,6 +53,7 @@ if (tsTestFiles.length > 0) {
       '@codepulse/adapters': './packages/adapters/src/index.ts',
       '@codepulse/local-server': './packages/local-server/src/index.ts',
       '@codepulse/storage': './packages/storage/src/index.ts',
+      '@hud': './apps/hud/src/renderer/src',
     },
   })
 }

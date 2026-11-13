@@ -37,13 +37,13 @@ test('surface navigation and legacy links resolve against the selected target', 
   const { PRODUCT_NAV, TARGET_NAMES } =
     await import('../apps/desktop/src/renderer/src/lib/productNavigation.js')
   assert.deepEqual(
-    PRODUCT_NAV.map(({ id, label, english, parent }) => [id, label, english, parent]),
+    PRODUCT_NAV.map(({ id, label, english, group }) => [id, label, english, group]),
     [
-      ['window', '主窗口', 'Window', undefined],
-      ['overlay', '悬浮窗', 'Overlay', undefined],
-      ['ink', '墨水屏设备', 'E-paper Device', undefined],
-      ['plugins', '插件', 'Plugins', 'ink'],
-      ['usage', '开销', 'Spending', undefined],
+      ['window', '工作台', 'Workbench', 'workspace'],
+      ['overlay', '悬浮窗', 'Overlay', 'workspace'],
+      ['ink', '墨水屏设备', 'E-paper Device', 'devices'],
+      ['plugins', '插件', 'Plugins', 'devices'],
+      ['usage', '用量与费用', 'Usage & cost', 'analytics'],
     ],
   )
   assert.deepEqual(TARGET_NAMES.hud, ['悬浮窗', 'Overlay'])
@@ -379,7 +379,7 @@ test('store theme rewrites preserve route and embed mode without reusing a login
   assert.equal(dark.searchParams.has('code'), false)
 })
 
-test('the plugin rail row is selected while its device parent is only emphasised', async () => {
+test('plugins and the device are peers and only the current page is selected', async () => {
   const { createElement } = await import('react')
   const { renderToStaticMarkup } = await import('react-dom/server')
   const { ProductFrame } =
@@ -388,30 +388,28 @@ test('the plugin rail row is selected while its device parent is only emphasised
     import('../apps/desktop/src/renderer/src/components/ProductFrame.js').ProductNavigation
   const html = renderToStaticMarkup(
     createElement(ProductFrame, {
-      product: { view: 'plugins', target: 'ink', focusMode: false, error: '' } as Navigation,
+      product: { view: 'plugins', target: 'ink', error: '' } as Navigation,
       locale: 'zh',
       children: null,
     }),
   )
-  const parent = html.match(/<button[^>]*data-view="ink"[^>]*>/)![0]
-  const child = html.match(/<button[^>]*data-view="plugins"[^>]*>/)![0]
-  assert.match(parent, /data-section-active="true"/)
-  assert.doesNotMatch(parent, /aria-current/)
-  assert.match(
-    html,
-    /<div class="product-nav-child" data-parent="ink"><button[^>]*data-view="plugins"/,
-  )
+  const device = html.match(/<button[^>]*data-view="ink"[^>]*>/)![0]
+  const plugins = html.match(/<button[^>]*data-view="plugins"[^>]*>/)![0]
+  assert.doesNotMatch(device, /aria-current/)
+  assert.doesNotMatch(html, /data-section-active|product-nav-child|data-parent|is-child/)
   assert.doesNotMatch(html, /待查看|product-nav-count/)
-  assert.match(child, /class="is-child"/)
-  assert.match(child, /aria-current="page"/)
+  assert.match(plugins, /aria-current="page"/)
+  assert.match(html, /<span class="product-nav-label">插件<\/span>/)
+  assert.doesNotMatch(plugins, /aria-label="墨水屏设备/)
   assert.equal((html.match(/data-view="(?:window|overlay|ink|plugins|usage)"/g) ?? []).length, 5)
 })
 
-test('sidebar ink status stays non-interactive for every connection and temporary state', async () => {
+test('device row status is a decorative mark; the full state is in the name and one word is announced', async () => {
   const { createElement } = await import('react')
   const { renderToStaticMarkup } = await import('react-dom/server')
-  const { InkStatusDisplay } =
+  const { InkNavAnnouncer, InkNavStatus } =
     await import('../apps/desktop/src/renderer/src/components/InkStatusBar.js')
+  const { inkNavText } = await import('../apps/desktop/src/renderer/src/lib/inkStatusText.js')
   type InkStatus = import('@codepulse/shared').InkScreenStatus
   const now = 1_800_000_000_000
   const base: InkStatus = {
@@ -425,33 +423,61 @@ test('sidebar ink status stays non-interactive for every connection and temporar
     slotNote: '',
     updatedAt: now,
   }
-  const cases: { status: InkStatus; word: string; mark: string }[] = [
-    { status: base, word: '未连接', mark: 'hollow' },
-    { status: { ...base, connection: 'server-off' }, word: '服务未开启', mark: 'hollow' },
-    { status: { ...base, connection: 'connected' }, word: '仅工作画面', mark: 'filled' },
+  const cases: { status: InkStatus; mark: string; word: string; name: string }[] = [
+    { status: base, mark: 'hollow', word: '未连接', name: '墨水屏设备，未连接' },
+    {
+      status: { ...base, connection: 'server-off' },
+      mark: 'hollow',
+      word: '服务未开启',
+      name: '墨水屏设备，服务未开启 · 启动时设置 CODEPULSE_DEVICE_SERVER_ENABLED=1',
+    },
+    {
+      status: { ...base, connection: 'connected' },
+      mark: 'filled',
+      word: '已连接',
+      name: '墨水屏设备，已连接 · 仅工作画面 · 正在显示：工作画面 · 节目单里只有工作画面',
+    },
     {
       status: {
         ...base,
         connection: 'connected',
         showing: { kind: 'todos', title: '待办' },
         temporary: { kind: 'todos', title: '待办', until: now + 8 * 60_000 },
+        slotNote: '14:30 提醒',
       },
-      word: '剩 8 分钟',
-      mark: 'ring',
+      mark: 'filled',
+      word: '已连接',
+      name: '墨水屏设备，已连接 · 临时展示：待办 · 剩 8 分钟 · 14:30 提醒',
     },
   ]
-  for (const { status, word, mark } of cases) {
-    const html = renderToStaticMarkup(
-      createElement(InkStatusDisplay, { status, now, locale: 'zh' }),
+  for (const { status, mark, word, name } of cases) {
+    const text = inkNavText(status, now, 'zh')
+    assert.deepEqual([text.dot, text.word, text.name], [mark, word, name])
+    // The mark is decoration only: the row's own button carries the name and the click.
+    const html = renderToStaticMarkup(createElement(InkNavStatus, { text }))
+    assert.ok(html.includes(`class="product-nav-status is-${mark}"`), html)
+    assert.ok(html.includes('aria-hidden="true"'))
+    assert.doesNotMatch(html, /<button|<a\b|tabindex|role=|aria-pressed|onclick|ⓘ|✕|打开墨水屏/)
+    // The live region repeats the connection only, never the countdown or the note.
+    assert.equal(
+      renderToStaticMarkup(createElement(InkNavAnnouncer, { word: text.word })),
+      `<span role="status" class="page-sr">${word}</span>`,
     )
-    assert.match(html, /role="status"/)
-    assert.ok(html.includes(word))
-    assert.ok(html.includes(`ink-pill-dot is-${mark}`))
-    assert.doesNotMatch(html, /<button|<a\b|tabindex|aria-pressed|onclick|ⓘ|✕|打开墨水屏/)
-    assert.match(html, /class="ink-pill-text"/)
   }
-  const english = renderToStaticMarkup(
-    createElement(InkStatusDisplay, { status: base, now, locale: 'en' }),
+  const offlineTemporary = inkNavText(
+    { ...cases[3]!.status, connection: 'disconnected' },
+    now,
+    'zh',
   )
-  assert.match(english, /E-paper Device not connected/)
+  assert.equal(offlineTemporary.dot, 'hollow')
+  assert.equal(offlineTemporary.word, '未连接')
+  assert.match(offlineTemporary.name, /^墨水屏设备，未连接 · 临时展示：待办/)
+  assert.equal(
+    renderToStaticMarkup(createElement(InkNavAnnouncer, {})),
+    '<span role="status" class="page-sr"></span>',
+    'present from the start, so later changes are announced',
+  )
+  const english = inkNavText(base, now, 'en')
+  assert.deepEqual([english.word, english.name], ['not connected', 'E-paper Device, not connected'])
+  assert.equal(inkNavText({ ...base, connection: 'connected' }, now, 'en').word, 'connected')
 })

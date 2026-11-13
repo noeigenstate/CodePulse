@@ -1,10 +1,32 @@
-import type { DeviceDisplayConfig, HudToolKey } from '@codepulse/shared'
+import type {
+  AgentRuntimeState,
+  AgentType,
+  DeviceDisplayConfig,
+  HudToolKey,
+} from '@codepulse/shared'
 import type { CliToolType } from './dashboardSettings.js'
+import { isLiveState } from './format.js'
 
 /**
  * Settings › 显示的 CLI is the master switch for every surface. These helpers only ever remove a
  * tool that is switched off; they never turn a tool on in a surface.
  */
+
+/** The workbench's master visibility filter, shared by its panels and running-task count. */
+export function isCliVisible(agentType: AgentType, visible: Record<CliToolType, boolean>): boolean {
+  return visible[agentType as CliToolType] === true
+}
+
+/** Count only running tasks whose CLI and task row are visible on the workbench. */
+export function countVisibleRunningTasks(
+  agents: AgentRuntimeState[],
+  visible: Record<CliToolType, boolean>,
+): number {
+  return agents.filter(
+    (agent) =>
+      !agent.taskHidden && isCliVisible(agent.agentType, visible) && isLiveState(agent.state),
+  ).length
+}
 
 /**
  * Patch for the HUD tool map: only the tools that are on in the HUD and off in Settings, each

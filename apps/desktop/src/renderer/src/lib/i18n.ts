@@ -119,8 +119,6 @@ export interface DeviceProvisioningCopy {
 /** Copy for the Usage dashboard (usage ledger: tokens, API-equivalent cost, rounds). */
 export interface UsageCopy {
   title: string
-  subtitle: string
-  back: string
   rangeToday: string
   range7d: string
   range30d: string
@@ -258,14 +256,14 @@ const HEADER_COPY: Record<Locale, HeaderCopy> = {
     brandTag: '',
     subtitle: '编程助手实时控制台',
     languageToggle: '切换语言',
-    stats: '开销',
+    stats: '用量与费用',
     settings: '设置',
   },
   en: {
     brandTag: '',
     subtitle: 'AI coding-agent live console',
     languageToggle: 'Switch language',
-    stats: 'Spending',
+    stats: 'Usage & cost',
     settings: 'Settings',
   },
 }
@@ -431,16 +429,14 @@ const UI_COPY: Record<Locale, UiCopy> = {
       },
     },
     usageBoard: {
-      title: '开销',
-      subtitle: 'Token、API 等价费用、会话与轮次，按工具、项目和模型汇总',
-      back: '返回控制台',
+      title: '用量与费用',
       rangeToday: '今天',
       range7d: '近 7 天',
       range30d: '近 30 天',
       refresh: '刷新',
       syncedAt: '同步于 {time}',
       loading: '正在读取本机 CLI 日志…',
-      error: '读取开销失败，请稍后重试。',
+      error: '读取用量与费用失败，请稍后重试。',
       kpiCost: '折算费用',
       kpiTokens: 'Token 总量',
       kpiRounds: '对话轮次',
@@ -650,16 +646,14 @@ const UI_COPY: Record<Locale, UiCopy> = {
       },
     },
     usageBoard: {
-      title: 'Spending',
-      subtitle: 'Tokens, API-equivalent cost, sessions and rounds by tool, project and model',
-      back: 'Back to console',
+      title: 'Usage & cost',
       rangeToday: 'Today',
       range7d: '7 days',
       range30d: '30 days',
       refresh: 'Refresh',
       syncedAt: 'Synced {time}',
       loading: 'Reading local CLI logs…',
-      error: 'Could not read spending. Try again shortly.',
+      error: 'Could not read usage and cost. Try again shortly.',
       kpiCost: 'API-equivalent cost',
       kpiTokens: 'Total tokens',
       kpiRounds: 'Rounds',

@@ -90,7 +90,6 @@ export interface ShellPreferences {
   form: DesktopForm
   view: ProductView
   target: PresentationTarget
-  focusMode: boolean
   desktopLayout: DesktopLayout
   inkPlan: InkDisplayPlan
   hudSettings: HudAppearanceSettings
@@ -227,7 +226,6 @@ export function normalizeShellPreferences(input: unknown): ShellPreferences {
     form: 'standard',
     view: canonicalProductView(inputView, target),
     target: targetForProductView(inputView, target),
-    focusMode: value.focusMode === true,
     desktopLayout:
       value.desktopLayout === 'board' || value.desktopLayout === 'usage'
         ? value.desktopLayout

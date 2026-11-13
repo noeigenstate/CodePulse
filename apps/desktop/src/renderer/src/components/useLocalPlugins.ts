@@ -54,7 +54,7 @@ export type NumberField =
 
 export function useLocalPlugins({ active = true }: { active?: boolean }) {
   const { target, error: targetError, retry: retryTarget } = useScreenTarget(active)
-  const ink = useInkStatus()
+  const ink = useInkStatus(active)
   const online = ink?.connection === 'connected'
   const {
     snapshot,

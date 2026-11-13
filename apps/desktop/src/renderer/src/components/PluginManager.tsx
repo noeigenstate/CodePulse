@@ -118,7 +118,7 @@ export function PluginManager({
   return (
     <section className="product-page plugin-manager">
       <div className="plugin-manager-header">
-        <PageHeader title="插件" subtitle="管理已安装的插件，或从市场添加" />
+        <PageHeader title="插件" />
         <div className="product-page-tabs" role="tablist" aria-label="插件页面">
           <button
             type="button"
@@ -193,6 +193,7 @@ export function PluginManager({
           logos={logos}
           selected={selected}
           busy={busy}
+          showSource={false}
           onOpen={openDetails}
           onToggle={toggle}
         />

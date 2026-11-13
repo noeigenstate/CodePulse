@@ -5,10 +5,11 @@ import type {
   InkScreenStatus,
 } from '@codepulse/shared'
 import type { Locale } from './i18n.js'
+import { TARGET_NAMES } from './productNavigation.js'
 
 /**
- * Pure wording for the e-ink status pill at the bottom of the sidebar. The pill renders whatever
- * this returns, so every state (service off / not connected / connected / temporary) is testable
+ * Pure wording for the e-ink status of the sidebar's device row. The row renders whatever this
+ * returns, so every state (service off / not connected / connected / temporary) is testable
  * without React.
  */
 export type InkPillState = 'server-off' | 'disconnected' | 'connected' | 'temporary'
@@ -71,7 +72,8 @@ const SERVER_HINT = 'CODEPULSE_DEVICE_SERVER_ENABLED=1'
 export function inkPillText(status: InkScreenStatus, now: number, locale: Locale): InkPillText {
   const zh = locale === 'zh'
   const prefix = zh ? '墨水屏' : 'E-paper'
-  const note = status.slotNote.trim()
+  // Main-process scheduling notes currently have no English counterpart.
+  const note = zh ? status.slotNote.trim() : ''
   const withNote = (text: string) => (note ? `${text} · ${note}` : text)
   const short = (feature: InkFeatureId) => SHORT_NAMES[feature][zh ? 0 : 1]
   if (status.connection === 'server-off') {
@@ -143,6 +145,43 @@ export function inkPillText(status: InkScreenStatus, now: number, locale: Locale
     title: withNote(`${prefix} ${label} · ${detail}`),
     info: '',
     canEnd: false,
+  }
+}
+
+export interface InkNavText {
+  /** Connection shape; display details belong to the accessible name and tooltip. */
+  dot: 'hollow' | 'filled'
+  state: InkPillState
+  /** The connection in one word, for a live region: no countdown, so it never chatters. */
+  word: string
+  /** Accessible name and tooltip of the device row: the device, then the whole state. */
+  name: string
+}
+
+const NAV_WORDS: Record<InkConnection, [string, string]> = {
+  disconnected: ['未连接', 'not connected'],
+  connected: ['已连接', 'connected'],
+  'server-off': ['服务未开启', 'service off'],
+}
+
+/**
+ * Wording for the sidebar's device row, whose state is a mark. Its words live in the row's name
+ * and tooltip (the pill's title under the device name) and, as one word, in a live region.
+ */
+export function inkNavText(status: InkScreenStatus, now: number, locale: Locale): InkNavText {
+  const side = locale === 'zh' ? 0 : 1
+  const pill = inkPillText(status, now, locale)
+  // The pill's lead-in only names the device; a temporary display's title already says what it is.
+  const detail =
+    pill.state === 'temporary' ? pill.title : pill.title.slice(pill.prefix.length).trim()
+  const word = NAV_WORDS[status.connection][side]
+  const name =
+    pill.state === 'temporary' || status.connection === 'connected' ? `${word} · ${detail}` : detail
+  return {
+    dot: status.connection === 'connected' ? 'filled' : 'hollow',
+    state: pill.state,
+    word,
+    name: `${TARGET_NAMES.ink[side]}${side === 0 ? '，' : ', '}${name}`,
   }
 }
 

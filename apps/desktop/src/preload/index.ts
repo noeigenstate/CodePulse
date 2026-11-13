@@ -93,8 +93,6 @@ const api = {
   getShell: (): Promise<ShellSnapshot> => ipcRenderer.invoke('codepulse:shell-get'),
   setPresentationTarget: (target: PresentationTarget): Promise<ShellSnapshot> =>
     ipcRenderer.invoke('codepulse:shell-target', target),
-  setFocusMode: (focus: boolean): Promise<ShellSnapshot> =>
-    ipcRenderer.invoke('codepulse:shell-focus', focus),
   setDesktopLayout: (layout: DesktopLayout): Promise<ShellSnapshot> =>
     ipcRenderer.invoke('codepulse:shell-desktop-layout', layout),
   setInkPlan: (plan: InkDisplayPlan): Promise<ShellSnapshot> =>

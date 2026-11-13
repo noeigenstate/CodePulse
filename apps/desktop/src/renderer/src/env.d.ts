@@ -73,7 +73,6 @@ export interface CodePulseApi {
   openSettingsWindow: () => Promise<boolean>
   getShell: () => Promise<ShellSnapshot>
   setPresentationTarget: (target: PresentationTarget) => Promise<ShellSnapshot>
-  setFocusMode: (focus: boolean) => Promise<ShellSnapshot>
   setDesktopLayout: (layout: DesktopLayout) => Promise<ShellSnapshot>
   setInkPlan: (plan: InkDisplayPlan) => Promise<ShellSnapshot>
   setHudSettings: (patch: Partial<HudAppearanceSettings>) => Promise<ShellSnapshot>

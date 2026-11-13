@@ -27,24 +27,28 @@
 .hud-setting-label { display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:13px; }
 .hud-setting-label strong { font-weight:600; font-variant-numeric:tabular-nums; }
 .hud-opacity-slider { display:block; width:100%; min-height:32px; accent-color:var(--ink); }
-.hud-inline-check { display:flex; align-items:center; gap:8px; min-height:32px; font-size:13px; cursor:pointer; }
 .product-segments + .hud-inline-check { margin-top:12px; }
-.hud-inline-check input { width:16px; height:16px; flex:none; accent-color:var(--ink); }
 .hud-tools-grid { display:flex; flex-wrap:wrap; gap:4px 16px; }
 .product-feature-link { min-height:32px; padding:4px 0; border:0; background:transparent; text-align:left; font-size:13px; color:var(--ink-700); text-decoration:underline; text-underline-offset:4px; }
 .product-feature-link:hover { color:var(--ink); }
-.ink-control-workspace { display:grid; grid-template-columns:minmax(0,1fr) minmax(260px,.31fr); align-items:start; gap:24px; }
-.ink-preview-column { display:flex; flex-direction:column; gap:16px; min-width:0; }
-.ink-preview-card .device-preview { margin-top:0; }
+/* The connection panel occupies its own grid row, leaving both primary cards equally tall. */
+.ink-control-workspace { display:grid; grid-template-columns:minmax(0,1fr) minmax(260px,.31fr); align-items:stretch; gap:24px; }
+.ink-preview-column { display:contents; }
+.ink-preview-column > .ink-connection-panel { grid-column:1; grid-row:2; }
+.ink-preview-card { display:flex; flex-direction:column; grid-column:1; grid-row:1; }
+.ink-preview-card .device-preview { display:flex; flex-direction:column; flex:1; margin-top:0; }
+.ink-preview-card .device-preview-header { flex:none; }
+.ink-preview-card .device-preview-picture { display:flex; flex-direction:column; flex:1; justify-content:center; }
 .ink-preview-card .device-preview-frame { background:var(--surface-muted); border:1px solid var(--line); border-radius:10px; box-shadow:none; }
-.ink-preview-card .device-preview-scroll { margin-top:0; }
+.ink-preview-card .device-preview-scroll { flex:none; margin-top:0; }
 .ink-preview-options,.ink-work-options { border-top:1px solid var(--line); padding-top:12px; margin-top:16px; }
 .ink-preview-options > summary,.ink-work-options > summary { min-height:32px; cursor:pointer; font-size:13px; font-weight:500; }
 .ink-preview-options-body,.ink-work-options-body { display:flex; flex-direction:column; align-items:stretch; gap:12px; margin-top:8px; }
 .ink-preview-options-body .device-preview-toolbar { font-size:12px; }
 .product-sample-options { display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-size:13px; color:var(--ink-muted); }
 .product-sample-buttons { display:flex; align-items:center; flex-wrap:wrap; gap:4px; }
-.ink-config .product-config-heading { display:block; }
+.ink-config { grid-column:2; grid-row:1; }
+.ink-config .product-config-heading { align-items:center; min-height:36px; }
 .ink-config .product-config-heading p { margin-top:4px; }
 .ink-playlist-row { display:flex; align-items:flex-start; gap:12px; padding:16px 0; border-top:1px solid var(--line); }
 .ink-playlist-row > svg { margin-top:4px; flex:none; }
@@ -66,8 +70,7 @@
 .product-config-actions > strong { flex:1 1 160px; font-size:13px; font-weight:500; color:var(--ink-muted); line-height:20px; }
 .product-config-actions p { flex-basis:100%; margin:0; color:var(--ink); font-size:13px; line-height:20px; }
 .product-config-actions p button { margin-left:12px; }
-.product-desktop-panel { min-width:0; }
-.hud-workspace-header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px; }
+.hud-workspace-header { display:flex; align-items:center; justify-content:flex-end; gap:16px; margin-bottom:16px; }
 .hud-inline-config > h3:first-child { margin-top:0; }
 .ink-work-row { align-items:center; font-size:14px; font-weight:600; padding:12px 0; }
 .ink-work-row > svg { margin-top:0; }
@@ -79,14 +82,19 @@
 .ink-playback-select { display:block; width:100%; margin-top:16px; }
 .ink-action-error { margin:12px 0 0; font-size:13px; line-height:20px; color:var(--ink); }
 .ink-action-error button { margin-left:8px; }
-.product-console-live-stage { display:flex; flex-direction:column; min-height:480px; height:clamp(480px,80vh,720px); max-height:none; overflow:hidden; }
+.product-control.is-desktop { display:flex; flex-direction:column; }
+.product-control.is-desktop #control-panel-desktop { display:flex; flex-direction:column; flex:1; min-height:0; }
+.product-console-live-stage { display:flex; flex-direction:column; flex:1; min-height:480px; overflow:hidden; }
 .product-control button:focus-visible,.product-control summary:focus-visible,.product-control input:focus-visible,.product-control select:focus-visible { outline:2px solid var(--ink); outline-offset:4px; }
-/* The session list scrolls inside the stage; the footer strip stays reachable below it. */
+/* The session list scrolls inside the stage, which fills the workbench content area. */
 .product-console-live-stage > .flex-1 { min-height:0; }
 /* Each agent panel keeps room for its header, quota and one full session card; the list scrolls inside the stage. */
 .product-console-live-stage main > .grid { height:auto; min-height:100%; grid-auto-rows:minmax(420px,1fr); }
 @media (max-width:860px) {
   .ink-control-workspace,.product-config-grid { grid-template-columns:minmax(0,1fr); }
+  .ink-preview-column { display:flex; flex-direction:column; gap:16px; min-width:0; }
+  .ink-preview-card,.ink-config { grid-area:auto; }
+  .ink-preview-card .device-preview,.ink-preview-card .device-preview-picture { flex:none; }
 }
 @media (max-width:600px) {
   .product-control { padding:16px; }
@@ -105,15 +113,3 @@
 .hud-preview button { pointer-events:none; }
 .hud-preview .project-deck-item.is-running { animation:none; }
 
-/* Work voice and the state guide sit under the desktop preview and the ink playlist. */
-.product-desktop-options { display:grid; gap:4px; max-width:560px; margin-top:12px; }
-.product-desktop-options .work-voice-options { margin-top:0; }
-.ink-config .work-voice-options { margin-top:12px; }
-.product-state-guide { border-top:1px solid var(--line); padding-top:6px; font-size:12px; color:var(--ink); }
-.product-state-guide > summary { min-height:34px; display:flex; align-items:center; justify-content:space-between; list-style:none; cursor:pointer; font-weight:600; }
-.product-state-guide > summary::-webkit-details-marker { display:none; }
-.product-state-guide > summary::after { content:'›'; font-size:18px; line-height:1; color:var(--ink-muted); transition:transform .15s; }
-.product-state-guide[open] > summary::after { transform:rotate(90deg); }
-.product-state-guide table { width:100%; border-collapse:collapse; margin:4px 0 8px; }
-.product-state-guide th, .product-state-guide td { text-align:left; padding:3px 6px; border-bottom:1px solid var(--line-soft); font-weight:400; }
-.product-state-guide th { color:var(--ink-muted); }

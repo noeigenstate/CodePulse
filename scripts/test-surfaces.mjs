@@ -20,7 +20,9 @@ await build({
 const env = { ...process.env, CODEPULSE_SMOKE_RUN: String(Date.now()) }
 delete env.ELECTRON_RUN_AS_NODE
 delete env.ELECTRON_RENDERER_URL
-const result = spawnSync(electron, [bundle], { env, stdio: 'inherit', windowsHide: true, timeout: 150_000 })
+// Full captures take longer, so keep the outer timeout beyond the harness deadline.
+const timeout = env.CODEPULSE_SMOKE_CAPTURE_ALL === '1' ? 210_000 : 150_000
+const result = spawnSync(electron, [bundle], { env, stdio: 'inherit', windowsHide: true, timeout })
 if (result.error) throw result.error
 if (result.status !== 0) {
   try { console.error(readFileSync(resolve(output, env.CODEPULSE_SMOKE_RUN, 'failure.txt'), 'utf8')) } catch {}

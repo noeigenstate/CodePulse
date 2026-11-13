@@ -37,7 +37,12 @@ import { useStore } from './store.js'
 import { AgentLogo, CodexLogo } from './components/AgentLogo.js'
 import { SettingsDialog } from './components/SettingsDialog.js'
 import { UsageDashboard } from './components/UsageDashboard.js'
-import { displayAfterMasterOff, hudToolsAfterMasterOff } from './lib/cliVisibility.js'
+import {
+  countVisibleRunningTasks,
+  displayAfterMasterOff,
+  hudToolsAfterMasterOff,
+  isCliVisible,
+} from './lib/cliVisibility.js'
 import {
   acknowledgeCodexTrust,
   buildAgentSetupReminder,
@@ -53,7 +58,7 @@ import {
   type AgentWorkspaceItem,
   type QuotaMeterSource,
 } from './lib/displayAgents.js'
-import { formatDuration, formatRelative, turnStateStyle } from './lib/format.js'
+import { formatDuration, formatRelative, isLiveState, turnStateStyle } from './lib/format.js'
 import { formatModelName } from './lib/modelName.js'
 import { installPointerEffects } from './lib/pointerEffects.js'
 import {
@@ -69,7 +74,9 @@ import {
   reconcileProjectOrder,
   writeProjectOrder,
 } from './lib/projectOrder.js'
+import { useRailCollapsed } from './lib/railPreference.js'
 import { useNow } from './lib/useNow.js'
+import { useTipDismiss } from './lib/useTipDismiss.js'
 import { buildVirtualListLayout, findVirtualListRange } from './lib/virtualList.js'
 import {
   applyTheme,
@@ -124,6 +131,10 @@ export function App(): JSX.Element {
   const product = useProductNavigation()
   const destination = productDestination(product.view, product.target)
   const standaloneScreen = new URLSearchParams(window.location.search).get('surface') === 'screen'
+  // The screen window shares this origin's storage but has no sidebar, so its shortcut stays idle.
+  const { platform } = window.codepulse
+  const rail = useRailCollapsed(!standaloneScreen, platform)
+  useTipDismiss()
 
   const [dashboardSettings, setDashboardSettings] = useState<DashboardSettings>(() =>
     readDashboardSettings(window.localStorage),
@@ -141,7 +152,7 @@ export function App(): JSX.Element {
     // Display preferences only filter and order renderer panels; hook delivery and disk sync keep running.
     () =>
       allPanels
-        .filter((panel) => dashboardSettings.visibleTools[panel.agentType])
+        .filter((panel) => isCliVisible(panel.agentType, dashboardSettings.visibleTools))
         .sort(
           (a, b) =>
             dashboardSettings.panelOrder.indexOf(a.agentType) -
@@ -300,6 +311,8 @@ export function App(): JSX.Element {
     />
   )
 
+  const runningTasks = countVisibleRunningTasks(snapshot.agents, dashboardSettings.visibleTools)
+
   if (standaloneScreen)
     return (
       <div className="app-shell native-workstation h-full text-ink">
@@ -311,65 +324,52 @@ export function App(): JSX.Element {
 
   return (
     <div className="app-shell native-workstation flex h-full flex-col text-ink">
-      {window.codepulse.platform === 'win32' ? <WindowTitleBar /> : null}
-      <ProductFrame product={product} locale={locale} onLocale={toggleLocale}>
-        {product.focusMode && (
-          <section
-            className="product-page product-work"
-            aria-label={locale === 'zh' ? '专注模式' : 'Focus mode'}
-          >
-            <div className="product-desktop-work">
-              <div className="product-live-console">{liveConsole}</div>
-            </div>
-          </section>
-        )}
-        <section
-          className="product-page"
-          hidden={product.focusMode || !isSurfaceView(destination.page)}
-        >
+      <ProductFrame
+        product={product}
+        locale={locale}
+        onLocale={toggleLocale}
+        platform={platform}
+        titleIcon={platform === 'win32' ? codePulseIconSmall : undefined}
+        runningTasks={runningTasks}
+        collapsed={rail.collapsed}
+        onToggleRail={rail.toggle}
+      >
+        <section className="product-page" hidden={!isSurfaceView(destination.page)}>
           <ProductControl
             product={product}
             locale={locale}
             deviceCopy={copy.settings.deviceProvisioning}
-            active={!product.focusMode && isSurfaceView(destination.page)}
+            active={isSurfaceView(destination.page)}
             snapshot={snapshot}
             desktopPreview={liveConsole}
             cliVisibility={dashboardSettings.visibleTools}
           />
         </section>
         {product.visited.has('usage') && (
-          <section
-            className="product-page"
-            hidden={product.focusMode || destination.page !== 'usage'}
-          >
+          <section className="product-page" hidden={destination.page !== 'usage'}>
             <UsageDashboard
               locale={locale}
               copy={copy.usageBoard}
-              active={!product.focusMode && destination.page === 'usage'}
+              active={destination.page === 'usage'}
             />
           </section>
         )}
         {(['plugins', 'ambient', 'assistant'] as const).some((view) =>
           product.visited.has(view),
         ) && (
-          <section
-            className="product-page"
-            hidden={product.focusMode || destination.page !== 'plugins'}
-          >
+          <section className="product-page" hidden={destination.page !== 'plugins'}>
             <PluginManager
-              active={!product.focusMode && destination.page === 'plugins'}
+              active={destination.page === 'plugins'}
               product={product}
               locale={locale}
             />
           </section>
         )}
         {product.visited.has('settings') && (
-          <section
-            className="product-scroll"
-            hidden={product.focusMode || product.view !== 'settings'}
-          >
+          <section className="product-scroll" hidden={product.view !== 'settings'}>
             <SettingsDialog
               embedded
+              active={product.view === 'settings'}
               copy={copy.settings}
               locale={locale}
               onLocaleChange={changeLocale}
@@ -400,21 +400,6 @@ export function App(): JSX.Element {
           update={updateInfo}
         />
       )}
-    </div>
-  )
-}
-
-/**
- * Renders the draggable brand strip beneath native Windows window controls.
- *
- * @returns A non-interactive title-bar surface matching the active app theme.
-
- */
-function WindowTitleBar(): JSX.Element {
-  return (
-    <div aria-hidden="true" className="window-titlebar">
-      <img alt="" className="window-titlebar-logo" src={codePulseIconSmall} />
-      <span>CodePulse</span>
     </div>
   )
 }
@@ -599,7 +584,7 @@ function UpdateAvailableModal({
   const sizeLabel = formatDownloadSize(progress?.received, progress?.total)
 
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-sm">
+    <div className="product-window-overlay absolute inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-sm">
       <section
         aria-modal="true"
         className="liquid-glass w-full max-w-[28rem] p-5 shadow-card-hover"
@@ -791,7 +776,7 @@ function AgentSetupReminderModal({
     })),
   ]
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-sm">
+    <div className="product-window-overlay absolute inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-sm">
       <section
         aria-modal="true"
         className="liquid-glass flex max-h-[min(calc(100vh-2rem),42rem)] w-full max-w-[30rem] flex-col overflow-hidden shadow-card-hover"
@@ -1658,15 +1643,6 @@ function brandClass(agentType: AgentType): BrandClass {
  * @param state Runtime state to inspect.
  * @returns CSS class for the runtime state chip.
  */
-/** Turn states that animate as "working" (live status dot, shimmering context meter). */
-function isLiveState(state: AgentRuntimeState['state']): boolean {
-  return (
-    state === TurnState.PROMPT_SUBMITTED ||
-    state === TurnState.THINKING ||
-    state === TurnState.TOOL_RUNNING
-  )
-}
-
 function stateChipClass(state: AgentRuntimeState['state']): string {
   switch (state) {
     case TurnState.DONE:

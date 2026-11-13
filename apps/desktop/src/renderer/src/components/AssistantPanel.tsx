@@ -29,7 +29,7 @@ export function AssistantPanel({
   const [preview, setPreview] = useState<DeviceStatusV1>()
   const [previewError, setPreviewError] = useState(false)
   const [previewAttempt, setPreviewAttempt] = useState(0)
-  const ink = useInkStatus()
+  const ink = useInkStatus(active)
   const online = ink?.connection === 'connected'
   const [title, setTitle] = useState(''),
     [notes, setNotes] = useState(''),

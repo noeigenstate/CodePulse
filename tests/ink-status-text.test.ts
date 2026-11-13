@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import type { InkDisplayPlan, InkScreenStatus } from '@codepulse/shared'
 import {
   clockText,
+  inkNavText,
   inkPillText,
   inkPlanChip,
 } from '../apps/desktop/src/renderer/src/lib/inkStatusText.js'
@@ -121,6 +122,28 @@ test('a whitespace-only slotNote adds nothing to the title', () => {
   const plain = inkPillText(make({}), NOW, 'zh').title
   assert.equal(inkPillText(make({ slotNote: '   ' }), NOW, 'zh').title, plain)
   assert.ok(!plain.endsWith(' · '))
+})
+
+test('untranslated scheduling notes stay in Chinese tooltips and never enter English names', () => {
+  const note = '桌边内容时段：桌边内容已关闭，暂显示工作画面'
+  for (const patch of [
+    {},
+    { temporary: { kind: 'todos' as const, title: 'Tasks', until: NOW + 60000 } },
+  ]) {
+    const status = make({ ...patch, slotNote: note })
+    assert.ok(inkPillText(status, NOW, 'zh').title.endsWith(note))
+    assert.ok(inkNavText(status, NOW, 'zh').name.endsWith(note))
+    assert.equal(
+      inkPillText(status, NOW, 'en').title,
+      inkPillText({ ...status, slotNote: '' }, NOW, 'en').title,
+    )
+    assert.equal(
+      inkNavText(status, NOW, 'en').name,
+      inkNavText({ ...status, slotNote: '' }, NOW, 'en').name,
+    )
+    assert.match(inkNavText(status, NOW, 'en').name, /E-paper Device, connected/)
+    assert.doesNotMatch(inkNavText(status, NOW, 'en').name, /[\u3400-\u9fff]/u)
+  }
 })
 
 test('minutes never go negative once a deadline has passed', () => {

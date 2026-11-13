@@ -23,7 +23,6 @@ export interface ShellWindows {
   screen: () => void
   hideStandard: () => void
   hideHud: () => void
-  focusMode?: (focus: boolean) => void
   hudSettingsChanged?: (settings: HudAppearanceSettings) => void
 }
 /** Window selection has no access to agent, account, device or content state. */
@@ -56,8 +55,7 @@ export class ProductShell {
   navigate(view: unknown): ShellSnapshot {
     if (!isProductView(view)) throw new Error('Unknown product view')
     const target = targetForProductView(view, this.preferences.target)
-    this.commit({ view: canonicalProductView(view, target), target, focusMode: false })
-    this.windows.focusMode?.(false)
+    this.commit({ view: canonicalProductView(view, target), target })
     return this.snapshot()
   }
   selectTarget(target: unknown): ShellSnapshot {
@@ -73,15 +71,6 @@ export class ProductShell {
           ? { view: canonicalProductView('control', target as PresentationTarget) }
           : {}),
       })
-    return this.snapshot()
-  }
-  setFocusMode(focus: unknown): ShellSnapshot {
-    if (typeof focus !== 'boolean') throw new Error('Invalid focus mode')
-    this.commit({
-      focusMode: focus,
-      ...(!focus ? { view: canonicalProductView('control', this.preferences.target) } : {}),
-    })
-    this.windows.focusMode?.(focus)
     return this.snapshot()
   }
   setDesktopLayout(layout: unknown): ShellSnapshot {
@@ -165,9 +154,7 @@ export class ProductShell {
     this.preferences = {
       ...this.preferences,
       view: canonicalProductView('control', this.preferences.target),
-      focusMode: false,
     }
-    this.windows.focusMode?.(false)
     this.windows.standard()
     this.refresh()
   }

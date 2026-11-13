@@ -86,7 +86,7 @@ done, so you stop checking the terminal. The desktop app that feeds it also work
    CODEPULSE_DEVICE_SERVER_ENABLED=1 pnpm dev
    ```
 
-4. **Pair the display.** Open **Control**, choose **Connect Device** on the e-paper card, plug the
+4. **Pair the display.** Open **E-paper Device** in the sidebar, choose **Connect device**, plug the
    display in over USB and enter your Wi-Fi details. It then reads status from the
    [LAN device API](docs/device-api-v1.md).
 
@@ -103,17 +103,32 @@ is just as useful without the hardware:
 
 <p align="center"><img src="./docs/screenshots/demo.gif" alt="A Claude Code turn finishes, a desktop notification pops up and the tray icon turns green; another session asks for permission and the tray turns yellow" width="920" /></p>
 
-| Surface                 | What it does                                                                                |
-| ----------------------- | ------------------------------------------------------------------------------------------- |
-| **Desktop console**     | Control, multimedia, usage and settings in one window. Focus mode keeps only the dashboard. |
-| **HUD**                 | An always-on-top floating window in five styles: panel, island, pills, edge drawer or orb.  |
-| **E-paper workbench**   | Previews the 400×300 device screen pixel for pixel and saves what the display shows.        |
-| **Tasks and assistant** | Local todos and reminders that can also appear on the e-paper display.                      |
+| Surface                 | What it does                                                                                            |
+| ----------------------- | ------------------------------------------------------------------------------------------------------- |
+| **Desktop console**     | One window with a sidebar to Workbench, Overlay, E-paper Device, Plugins and Usage & cost.              |
+| **HUD**                 | The Overlay, an always-on-top floating window in five styles: panel, island, pills, edge drawer or orb. |
+| **E-paper workbench**   | Previews the 400×300 device screen pixel for pixel and saves what the display shows.                    |
+| **Tasks and assistant** | Local todos and reminders that can also appear on the e-paper display. Managed under Plugins.           |
+
+In the desktop console, the sidebar groups its pages into **Workspace** (Workbench, Overlay),
+**Devices & extensions** (E-paper Device, Plugins) and **Analytics** (Usage & cost).
+
+- **Collapsible.** Use the button at the sidebar's top right, or press `Ctrl+B` (`⌘B` on macOS; it is
+  ignored while you type in a text field). A collapsed sidebar is a 56 px icon rail that shows each
+  name on hover or keyboard focus. CodePulse remembers the last state.
+- **Status at the bottom.** The sidebar footer shows "Running · N tasks active" or "Running · idle".
+  The display's connection is a dot on the E-paper Device icon: hollow when not connected, solid
+  green when connected.
+- **On Windows.** There is no separate title bar. The logo and name sit at the top of the sidebar, the
+  content runs up to the top of the window and the system buttons float over it.
+- **Settings.** Settings sits at the bottom of the sidebar. It holds **Voice alerts**, with separate
+  switches for the Workbench and the E-paper Device, and the state guide with state names in English
+  and Chinese.
 
 <details>
-<summary><b>Usage page</b></summary>
+<summary><b>Usage & cost page</b></summary>
 
-<p align="center"><img src="./docs/screenshots/usage.png" alt="Usage page: cost, token mix, per-tool cards and cost trend" width="760" /></p>
+<p align="center"><img src="./docs/screenshots/usage.png" alt="Usage & cost page: cost, token mix, per-tool cards and cost trend" width="760" /></p>
 
 Exact tokens from each CLI's own logs, priced at official API rates, by tool, project and model.
 Read it as what the API would have charged. <sub>Sample data shown.</sub>
@@ -270,7 +285,7 @@ work-voice routes provide their own bounded operations. See [LAN device protocol
 
 - Status and usage data stay on your machine in one SQLite file in the app's user-data folder.
 - Prompts are stored as short previews, and raw events older than 30 days are pruned.
-- The Usage page reads your CLI logs on-device and uploads nothing.
+- The Usage & cost page reads your CLI logs on-device and uploads nothing.
 - The assistant's AI and speech features send a request to the provider you configure, and only
   when you use them.
 - Delete the database file to reset all history. It is at:

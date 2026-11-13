@@ -58,7 +58,6 @@ export function UsageDashboard({ locale, copy, active = true }: Props): JSX.Elem
       <div className="usage-head">
         <PageHeader
           title={copy.title}
-          subtitle={copy.subtitle}
           actions={
             <>
               <div className="page-segmented" role="group" aria-label={copy.title}>

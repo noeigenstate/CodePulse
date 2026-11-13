@@ -6,6 +6,8 @@ import type {
   WorkVoiceTargetsSnapshot,
 } from '@codepulse/shared'
 
+export const WORK_VOICE_HEARTBEAT_MS = 5_000
+
 export function WorkVoiceSettingsPanel({
   locale,
   target,
@@ -17,6 +19,14 @@ export function WorkVoiceSettingsPanel({
 }): JSX.Element {
   const zh = locale === 'zh',
     ink = target === 'ink'
+  const title = zh
+    ? ink
+      ? '墨水屏设备语音提醒'
+      : '工作台语音提醒'
+    : ink
+      ? 'E-paper device voice alerts'
+      : 'Workbench voice alerts'
+  const label = zh ? (ink ? '墨水屏设备' : '工作台') : ink ? 'E-paper Device' : 'Workbench'
   const [all, setAll] = useState<WorkVoiceTargetsSnapshot>()
   const [saving, setSaving] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -36,7 +46,7 @@ export function WorkVoiceSettingsPanel({
     }
     read()
     const stop = window.codepulse.onWorkVoice(accept)
-    const timer = ink ? setInterval(read, 5000) : undefined
+    const timer = ink ? setInterval(read, WORK_VOICE_HEARTBEAT_MS) : undefined
     return () => {
       alive = false
       stop()
@@ -74,21 +84,10 @@ export function WorkVoiceSettingsPanel({
   const disabled = !state || saving
   const ready = Boolean(state?.supported && (!ink || all?.ink.deviceAvailable))
   return (
-    <section
-      className="work-voice-options"
-      aria-label={
-        zh
-          ? ink
-            ? '墨水屏设备语音提醒'
-            : '主窗口语音提醒'
-          : ink
-            ? 'E-paper device voice alerts'
-            : 'Window voice alerts'
-      }
-    >
+    <section className="work-voice-options" aria-label={title}>
       <details className="work-voice-details">
         <summary>
-          <span>{zh ? '语音提醒' : 'Voice alerts'}</span>
+          <span>{label}</span>
           <small aria-live="polite" data-enabled={Boolean(state?.settings.enabled)}>
             {failed || state?.error
               ? zh
@@ -118,8 +117,8 @@ export function WorkVoiceSettingsPanel({
                 ? '从墨水屏扬声器播报。配置可先保存，音频固件与硬件就绪后生效。'
                 : 'Play through the e-paper speaker. Preferences can be saved before audio hardware and firmware are ready.'
               : zh
-                ? '从电脑扬声器播报，主窗口与悬浮窗 共用一次提醒。'
-                : 'Play through this computer. The window and overlay share one alert.'}
+                ? '从电脑扬声器播报，工作台与悬浮窗 共用一次提醒。'
+                : 'Play through this computer. The workbench and overlay share one alert.'}
           </p>
           <div className="grid gap-2 text-sm">
             <label className="hud-inline-check">
@@ -178,16 +177,6 @@ export function WorkVoiceSettingsPanel({
               </button>
             </div>
           </div>
-          <p className="product-caption">
-            {zh
-              ? '单独保存，即时生效。两端独立开关；稳定 2 秒、合并提醒、至少间隔 60 秒，不反复催促。'
-              : 'Saved immediately. Outputs are independent: settle for 2 seconds, batch alerts and stay at least 60 seconds apart.'}
-          </p>
-          <p className="product-caption">
-            {zh
-              ? '每次等待过程提醒一次；恢复工作后的新请求可以再提醒。已解决取消，旧任务不补播。'
-              : 'Each waiting episode alerts once. A new request after work resumes can alert again; resolved and historical alerts are skipped.'}
-          </p>
           <p className="product-caption" role="status" aria-live="polite">
             {failed
               ? zh

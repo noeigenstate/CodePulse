@@ -21,6 +21,9 @@ import {
   type StatusSnapshot,
 } from '@codepulse/shared'
 import { ProductShell, shellPreferenceStore } from '../apps/desktop/src/main/product-shell.js'
+import { windowChromePalette } from '../apps/desktop/src/main/window-chrome.js'
+import { INK_STATUS_HEARTBEAT_MS } from '../apps/desktop/src/renderer/src/lib/useInkStatus.js'
+import { WORK_VOICE_HEARTBEAT_MS } from '../apps/desktop/src/renderer/src/components/WorkVoiceSettings.js'
 import { registerProductIpc } from '../apps/desktop/src/main/product-ipc.js'
 import { ScreenWorkbenchWindow } from '../apps/desktop/src/main/screen-workbench-window.js'
 import { AmbientService } from '../apps/desktop/src/main/ambient-service.js'
@@ -47,16 +50,22 @@ import {
 } from '../apps/desktop/src/main/ambient-yuanbao.js'
 
 const output = resolve('.tmpshots/surface-smoke', process.env.CODEPULSE_SMOKE_RUN ?? 'local')
+const captureAll = process.env.CODEPULSE_SMOKE_CAPTURE_ALL === '1'
+const smokeStartedAt = Date.now()
 mkdirSync(output, { recursive: true })
 app.setPath('userData', join(output, 'profile'))
 app.disableHardwareAcceleration() // Isolated software rendering gives fresh hidden-window captures.
 const errors: string[] = [],
   visible = new Map<number, boolean>()
 const wait = (ms = 200) => new Promise((r) => setTimeout(r, ms))
-const deadline = setTimeout(() => {
-  writeFileSync(join(output, 'failure.txt'), 'timeout')
-  app.exit(1)
-}, 120000)
+// Full captures include extra hover/focus screenshots and need more time.
+const deadline = setTimeout(
+  () => {
+    writeFileSync(join(output, 'failure.txt'), 'timeout')
+    app.exit(1)
+  },
+  captureAll ? 180000 : 120000,
+)
 app.on('browser-window-created', (_e, win) => {
   // Exercise real window constructors and renderers without showing test windows.
   win.show = () => {
@@ -1031,6 +1040,7 @@ app.whenReady().then(async () => {
       desktop: voiceState(),
       ink: { ...voiceState(), deviceAvailable: false },
     }
+    const voiceCalls: { operation: 'set' | 'test' | 'stop'; target: 'desktop' | 'ink' }[] = []
     const handlers: Record<string, (...args: any[]) => any> = {
       'ink-status-get': () => inkSnapshot(),
       'ink-apply': (_e, request) => applyInk(request, inkApplyDependencies),
@@ -1041,12 +1051,23 @@ app.whenReady().then(async () => {
       },
       'work-voice-get': () => voiceFixture,
       'work-voice-set': (_e, target: 'desktop' | 'ink', value) => {
+        voiceCalls.push({ operation: 'set', target })
         voiceFixture[target].settings = value
         broadcast('codepulse:work-voice', voiceFixture)
         return voiceFixture
       },
-      'work-voice-test': () => voiceFixture,
-      'work-voice-stop': () => voiceFixture,
+      'work-voice-test': (_e, target: 'desktop' | 'ink') => {
+        voiceCalls.push({ operation: 'test', target })
+        voiceFixture[target].speaking = true
+        broadcast('codepulse:work-voice', voiceFixture)
+        return voiceFixture
+      },
+      'work-voice-stop': (_e, target: 'desktop' | 'ink') => {
+        voiceCalls.push({ operation: 'stop', target })
+        voiceFixture[target].speaking = false
+        broadcast('codepulse:work-voice', voiceFixture)
+        return voiceFixture
+      },
       'get-status': (event) => (hud.owns(event.sender) ? hud.snapshot() : hub.snapshot()),
       'sync-sessions': (event) => (hud.owns(event.sender) ? hud.snapshot() : hub.snapshot()),
       'detect-agents': () => [],
@@ -1095,6 +1116,16 @@ app.whenReady().then(async () => {
       },
     }
     for (const [name, run] of Object.entries(handlers)) measuredIpc.handle('codepulse:' + name, run)
+    // Installed-plugin views use their own namespace; keep this fixture offline and credential-free.
+    measuredIpc.handle('plugins:list', () => ({
+      state: 'offline',
+      platformOrigin: '',
+      plugins: [],
+    }))
+    measuredIpc.handle('plugins:logos', () => ({}))
+    measuredIpc.handle('plugins:open', () => ({
+      error: 'TEST FIXTURE: plugin platform is offline',
+    }))
     main = new BrowserWindow({
       show: false,
       frame: false,
@@ -1109,8 +1140,21 @@ app.whenReady().then(async () => {
         offscreen: true,
       },
     })
+    // Track the actual heartbeat lifecycle across visibility changes without waiting 30 seconds.
+    // CDP's Page commands need a loaded renderer; waiting on them before navigation deadlocks.
     await main.loadFile(join(host, 'out/renderer/index.html'))
+    main.webContents.debugger.attach('1.3')
+    await main.webContents.debugger.sendCommand('Page.enable')
+    await main.webContents.debugger.sendCommand('Page.addScriptToEvaluateOnNewDocument', {
+      source: `(() => {
+        const timers=new Map(), start=window.setInterval.bind(window), stop=window.clearInterval.bind(window);
+        window.__smokeHeartbeats=timers;
+        window.setInterval=(callback,delay,...args) => { const id=start(callback,delay,...args); timers.set(id,delay); return id };
+        window.clearInterval=(id) => { timers.delete(id); return stop(id) };
+      })()`,
+    })
     await wait(700)
+    console.log('SMOKE main renderer loaded; verifying HUD styles')
     await verifyHudStyles(hub, hud, product, join(host, 'out/hud/preload/index.js'))
     product.restore()
     await until(
@@ -1129,7 +1173,7 @@ app.whenReady().then(async () => {
     )
     assert.ok(
       await main.webContents.executeJavaScript(
-        `document.querySelector('[data-view=window]').textContent.includes('主窗口')`,
+        `document.querySelector('[data-view=window]').textContent.includes('工作台')`,
       ),
       'Chinese fixture locale',
     )
@@ -1150,8 +1194,15 @@ app.whenReady().then(async () => {
         main!.webContents.executeJavaScript(`Boolean(document.querySelector('.product-control'))`),
       'control reload',
     )
-    const capture = async (name: string) => {
-      await wait(350)
+    let firstCapture = true
+    const capture = async (name: string, fresh = false) => {
+      if (!captureAll) return
+      // Scrolled settings evidence must discard the hidden window's previous frame as well.
+      if (firstCapture || fresh) {
+        await main!.webContents.capturePage()
+        firstCapture = false
+      }
+      await wait(80)
       writeFileSync(join(output, name + '.png'), (await main!.webContents.capturePage()).toPNG())
     }
     const selectPlayback = async (value: string) => {
@@ -1237,7 +1288,7 @@ app.whenReady().then(async () => {
     }
     main.setContentSize(1120, 780)
     await wait(350)
-    // The e-ink state lives in one sidebar pill; there is no banner and no live-console footer.
+    // The e-ink state is a mark on the sidebar's device row; there is no banner, no pill and no live-console footer.
     assert.equal(
       await main.webContents.executeJavaScript(
         `Boolean(document.querySelector('.ink-status, .ink-status-slot'))`,
@@ -1247,10 +1298,24 @@ app.whenReady().then(async () => {
     )
     assert.match(
       await main.webContents.executeJavaScript(
-        `document.querySelector('.product-rail .ink-pill')?.textContent??''`,
+        `document.querySelector('.product-rail [data-view=ink]')?.getAttribute('aria-label')??''`,
       ),
-      /墨水屏/,
-      'sidebar pill shows the e-ink state',
+      /^墨水屏设备，.+/,
+      'the device row names the e-ink state',
+    )
+    assert.equal(
+      await main.webContents.executeJavaScript(
+        `document.querySelectorAll('.product-rail .product-nav-status').length`,
+      ),
+      1,
+      'the e-ink state is one mark on the device row',
+    )
+    assert.equal(
+      await main.webContents.executeJavaScript(
+        `document.querySelectorAll('.product-rail .product-brand, .ink-pill').length`,
+      ),
+      0,
+      'the sidebar has neither a brand row nor a status pill',
     )
     assert.equal(
       await main.webContents.executeJavaScript(
@@ -1259,7 +1324,7 @@ app.whenReady().then(async () => {
       false,
       'footer strip and rail caption are gone',
     )
-    // Desktop has one live workbench and one focus entry; the stored layout stays compatible.
+    // Desktop has one live workbench and no header actions; the stored layout stays compatible.
     assert.equal(
       await main.webContents.executeJavaScript(
         `Array.from(document.querySelectorAll('.product-control button')).filter(b=>b.textContent.includes('功能平铺')).length`,
@@ -1270,29 +1335,828 @@ app.whenReady().then(async () => {
       await main.webContents.executeJavaScript(
         `document.querySelectorAll('.product-control .page-header button').length`,
       ),
-      1,
+      0,
+      'the workbench has no redundant header action row',
     )
-    await button(main, '专注模式')
-    assert.equal(product.snapshot().focusMode, true)
+    // The sidebar's selected row already names the page: the title is a screen-reader heading and nothing repeats the state.
+    assert.deepEqual(
+      await main.webContents.executeJavaScript(`(() => {
+        const h=document.querySelector('.product-control h1'),box=h.getBoundingClientRect();
+        return {text:h.textContent, hidden:h.classList.contains('page-sr'), width:box.width, height:box.height,
+          subtitles:document.querySelectorAll('.product-control .page-header p').length};
+      })()`),
+      { text: '工作台', hidden: true, width: 1, height: 1, subtitles: 0 },
+    )
+    // The sidebar heading sits below the native buttons. Its spacing and row are both draggable.
+    const platform = (await main.webContents.executeJavaScript(
+      'window.codepulse.platform',
+    )) as string
+    const rgb = (hex: string) => {
+      const n = parseInt(hex.slice(1), 16)
+      return `rgb(${n >> 16}, ${(n >> 8) & 255}, ${n & 255})`
+    }
+    type Zone = { top: number; height: number; drag: string } | null
+    const shellTop = (await main.webContents.executeJavaScript(`(() => {
+      const zone=(selector) => { const el=document.querySelector(selector); if(!el) return null; const box=el.getBoundingClientRect(); return {top:box.top,height:box.height,drag:getComputedStyle(el).getPropertyValue('-webkit-app-region')} };
+      const overlay=navigator.windowControlsOverlay, area=overlay&&overlay.visible?overlay.getTitlebarAreaRect():null;
+      return {strips:document.querySelectorAll('.window-titlebar').length, heading:zone('.product-rail-heading'), row:zone('.product-rail-top'), band:zone('.product-dragbar'),
+        logo:Boolean(document.querySelector('.product-rail-logo')), name:document.querySelector('.product-rail-name')?.textContent??null,
+        content:zone('.product-console-live-stage'), area:area&&{height:area.height,bottom:area.y+area.height},
+        topBorder:getComputedStyle(document.querySelector('#root > .app-shell')).borderTopWidth,
+        mainBackground:getComputedStyle(document.querySelector('.product-main')).backgroundColor};
+    })()`)) as {
+      strips: number
+      row: Zone
+      heading: Zone
+      band: Zone
+      logo: boolean
+      name: string | null
+      content: Zone
+      area: { height: number; bottom: number } | null
+      topBorder: string
+      mainBackground: string
+    }
+    assert.equal(shellTop.strips, 0, 'no strip across the window')
     assert.equal(
-      await main.webContents.executeJavaScript(
-        `getComputedStyle(document.querySelector('.product-rail')).display`,
-      ),
-      'none',
+      shellTop.mainBackground,
+      rgb(windowChromePalette('light').overlayColor),
+      'light: the caption buttons blend with the main area',
     )
+    if (platform === 'win32') {
+      const { heading, row, band, content } = shellTop
+      assert.ok(heading && row && band && content, JSON.stringify(shellTop))
+      assert.deepEqual([heading.drag, row.drag, band.drag], ['drag', 'drag', 'drag'])
+      assert.equal(row.height, 40)
+      assert.equal(heading.height, 52)
+      assert.ok(Math.abs(row.top - heading.top - 12) < 0.5, 'the heading has 12px top spacing')
+      assert.equal(shellTop.topBorder, '0px', 'the Windows top edge has no separator')
+      assert.deepEqual([shellTop.logo, shellTop.name], [true, 'CodePulse'])
+      assert.ok(content.top >= band.top + band.height, 'workbench content clears the caption strip')
+      assert.notEqual(content.drag, 'drag')
+      if (shellTop.area)
+        assert.ok(content.top >= shellTop.area.bottom, 'outside the caption buttons')
+      else
+        console.log('SMOKE windowControlsOverlay is unavailable here; caption-button area skipped')
+      console.log(
+        'SMOKE frameless fixture reserved title bar height',
+        band.height,
+        'CSS px; native overlay height',
+        shellTop.area?.height ?? 'unavailable',
+      )
+    } else {
+      assert.equal(shellTop.band, null, 'the native title bar needs no drag band')
+      assert.deepEqual([shellTop.logo, shellTop.name], [false, null], 'no brand beside it')
+    }
+    await capture('shell-top-light')
+    // The sidebar collapses to icons from its toggle or Ctrl+B, remembers the choice and keeps every accessible name.
+    // The hidden window is never focused or hovered by the OS, so the page borrows both from the debugger.
+    type RailState = {
+      width: number
+      collapsed: boolean
+      expanded: string | null
+      label: string | null
+      stored: string | null
+    }
+    const railState = () =>
+      main!.webContents.executeJavaScript(`(() => {
+        const rail=document.querySelector('.product-rail'),toggle=document.querySelector('.product-rail-toggle');
+        return {width:rail.getBoundingClientRect().width, collapsed:rail.classList.contains('is-collapsed'),
+          expanded:toggle.getAttribute('aria-expanded'), label:toggle.getAttribute('aria-label'),
+          stored:localStorage.getItem('codepulse.railCollapsed')};
+      })()`) as Promise<RailState>
+    const railNames = () =>
+      main!.webContents.executeJavaScript(
+        `Array.from(document.querySelectorAll('.product-rail button[data-view]')).map(b=>[b.dataset.view,b.getAttribute('aria-label')??Array.from(b.childNodes).filter(n=>n.nodeType===3||n.getAttribute('aria-hidden')!=='true').map(n=>n.textContent).join('').trim()])`,
+      ) as Promise<string[][]>
+    const railWidth = (expected: number, description: string) =>
+      until(async () => Math.abs((await railState()).width - expected) < 0.5, description)
+    // [visibility, text] of the tooltip that belongs to a control.
+    const railTip = (control: string) =>
+      main!.webContents.executeJavaScript(
+        `(() => { const control=document.querySelector(${JSON.stringify(control)}),tip=control.querySelector(':scope > .product-tip')??control.parentElement.querySelector(':scope > .product-tip'); return [getComputedStyle(tip).visibility, tip.textContent] })()`,
+      ) as Promise<[string, string]>
+    const toggleFocus = () =>
+      main!.webContents.executeJavaScript(`(() => {
+        const toggle=document.querySelector('.product-rail-toggle'),style=getComputedStyle(toggle);
+        return {focused:document.activeElement===toggle, visible:toggle.matches(':focus-visible'), outline:style.outlineStyle+' '+style.outlineWidth};
+      })()`) as Promise<{ focused: boolean; visible: boolean; outline: string }>
+    const inspector = main.webContents.debugger
+    if (!inspector.isAttached()) inspector.attach('1.3')
+    await inspector.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true })
+    const centre = (selector: string) =>
+      main!.webContents.executeJavaScript(
+        `(() => { const box=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return {x:box.left+box.width/2, y:box.top+box.height/2} })()`,
+      ) as Promise<{ x: number; y: number }>
+    const hover = async (selector: string) => {
+      await inspector.sendCommand('Input.dispatchMouseEvent', {
+        type: 'mouseMoved',
+        ...(await centre(selector)),
+      })
+      await wait(120)
+    }
+    // A real mouse click: it carries a click count, which a script's .click() does not.
+    const mouseClick = async (selector: string) => {
+      const point = await centre(selector)
+      for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased'] as const)
+        await inspector.sendCommand('Input.dispatchMouseEvent', {
+          type,
+          ...point,
+          button: 'left',
+          clickCount: 1,
+        })
+      await wait(120)
+    }
+    const pressKey = async (keyCode: string, modifiers: ('control' | 'shift' | 'meta')[] = []) => {
+      for (const type of ['keyDown', 'keyUp'] as const)
+        main!.webContents.sendInputEvent({ type, keyCode, modifiers })
+      await wait(120)
+    }
+    const shortcut = platform === 'darwin' ? '⌘B' : 'Ctrl+B'
+    const shortcutModifiers: ('control' | 'meta')[] = [platform === 'darwin' ? 'meta' : 'control']
+    await main.webContents.executeJavaScript(`(() => {
+      const query=document.querySelectorAll.bind(document);window.__smokeModalQueries=0;
+      document.querySelectorAll=(selector) => { if(selector==='[aria-modal="true"]') window.__smokeModalQueries++; return query(selector) };
+      window.__restoreSmokeModalQuery=() => { document.querySelectorAll=query };
+    })()`)
+    await pressKey('A')
+    await pressKey('B')
+    assert.equal(
+      await main.webContents.executeJavaScript('window.__smokeModalQueries'),
+      0,
+      'unrelated keys never query modal layout',
+    )
+    await main.webContents.executeJavaScript('window.__restoreSmokeModalQuery()')
+    const expandedRail = await railState()
+    assert.ok(expandedRail.width > 56 && !expandedRail.collapsed, JSON.stringify(expandedRail))
+    assert.deepEqual(
+      [expandedRail.expanded, expandedRail.label, expandedRail.stored],
+      ['true', '收起侧边栏', '0'],
+    )
+    const expandedNames = await railNames()
+    assert.equal(expandedNames.length, 6, 'five pages and Settings')
+    const navigationTops = () =>
+      main!.webContents.executeJavaScript(
+        `Array.from(document.querySelectorAll('.product-rail nav button')).map(row=>row.getBoundingClientRect().top)`,
+      ) as Promise<number[]>
+    const expandedTops = await navigationTops()
+    // Both language choices and the separator stay opaque; color and weight identify the current one.
+    const languageStyles = await main.webContents.executeJavaScript(`(() => {
+        const read=(selector) => { const style=getComputedStyle(document.querySelector(selector)); return [style.opacity, style.fontWeight, style.color] };
+        return {current:read('.product-language-toggle [data-active=true]'),secondary:read('.product-language-toggle [data-active=false]'),
+          separator:read('.product-language-toggle > span[aria-hidden=true]:not(.product-tip)'),ink700:getComputedStyle(document.querySelector('.product-rail')).getPropertyValue('--ink-700').trim()};
+      })()`)
+    assert.deepEqual(languageStyles.current, [
+      '1',
+      '600',
+      rgb(windowChromePalette('light').symbolColor),
+    ])
+    assert.deepEqual(languageStyles.secondary, ['1', '400', rgb(languageStyles.ink700)])
+    assert.deepEqual(languageStyles.separator, ['1', '400', rgb(languageStyles.ink700)])
+    // Expanded, only the switch and the device row carry a tooltip.
+    await hover('.product-rail-toggle')
+    assert.deepEqual(await railTip('.product-rail-toggle'), ['visible', `收起侧边栏 · ${shortcut}`])
+    await hover('.product-rail [data-view=overlay]')
+    assert.deepEqual(await railTip('.product-rail [data-view=overlay]'), ['hidden', '悬浮窗'])
+    await hover('.product-rail [data-view=ink]')
+    const [markVisibility, markTip] = await railTip('.product-rail [data-view=ink]')
+    assert.ok(markVisibility === 'visible' && markTip.startsWith('墨水屏设备，'), markTip)
+    // A real mouse click collapses the sidebar and leaves no focus ring on the switch.
+    await mouseClick('.product-rail-toggle')
+    await railWidth(56, 'the toggle collapses the sidebar to 56px')
+    const collapsedRail = await railState()
+    assert.deepEqual(
+      [collapsedRail.collapsed, collapsedRail.expanded, collapsedRail.label, collapsedRail.stored],
+      [true, 'false', '展开侧边栏', '1'],
+    )
+    assert.equal((await toggleFocus()).focused, false, 'a mouse click lets go of the switch')
+    assert.deepEqual(
+      await navigationTops(),
+      expandedTops,
+      'collapsing never shifts the icon column vertically',
+    )
+    assert.deepEqual(await railNames(), expandedNames, 'collapsing keeps every accessible name')
+    assert.deepEqual(
+      await main.webContents.executeJavaScript(`(() => {
+        const clipped=(el) => { const style=getComputedStyle(el),box=el.getBoundingClientRect(); return style.display!=='none' && style.visibility!=='hidden' && box.width<=1 && box.height<=1 };
+        const name=document.querySelector('.product-rail-name'),logo=document.querySelector('.product-rail-logo');
+        return {
+          labelsClipped: Array.from(document.querySelectorAll('.product-rail .product-nav-label')).every(clipped),
+          nameClipped: name ? clipped(name) : null,
+          logoShown: logo ? getComputedStyle(logo).display!=='none' : null,
+          language: document.querySelector('.product-language-toggle').innerText.trim(),
+          stacked: getComputedStyle(document.querySelector('.product-settings-row')).flexDirection,
+          overflow: document.documentElement.scrollWidth-window.innerWidth,
+        };
+      })()`),
+      {
+        labelsClipped: true,
+        nameClipped: platform === 'win32' ? true : null,
+        logoShown: platform === 'win32' ? false : null,
+        language: '中',
+        stacked: 'column',
+        overflow: 0,
+      },
+    )
+    // Ctrl+B right after a click: the switch is not focused, so no focus ring shows.
+    await pressKey('B', shortcutModifiers)
+    await railWidth(expandedRail.width, 'Ctrl+B expands the sidebar')
+    assert.deepEqual(await railState(), { ...expandedRail, stored: '0' })
+    assert.deepEqual(await toggleFocus(), {
+      focused: false,
+      visible: false,
+      outline: (await toggleFocus()).outline,
+    })
+    // Tabbing onto the switch keeps its focus ring, and Enter keeps it there.
+    await main.webContents.executeJavaScript(
+      `document.querySelector('.product-rail [data-view=window]').focus()`,
+    )
+    await pressKey('Tab', ['shift'])
+    const tabbed = await toggleFocus()
     assert.ok(
+      tabbed.focused && tabbed.visible && tabbed.outline.startsWith('solid 2px'),
+      JSON.stringify(tabbed),
+    )
+    main.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' })
+    main.webContents.sendInputEvent({ type: 'char', keyCode: '\r' })
+    main.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Return' })
+    await railWidth(56, 'Enter on the focused switch collapses the sidebar')
+    const kept = await toggleFocus()
+    assert.ok(
+      kept.focused && kept.visible,
+      'the keyboard keeps the focus ring: ' + JSON.stringify(kept),
+    )
+    await main.webContents.executeJavaScript(`document.activeElement.blur()`)
+    // Collapsed, hovering or tabbing onto an icon shows its name and the other icons stay quiet.
+    await hover('.product-rail [data-view=overlay]')
+    assert.deepEqual(await railTip('.product-rail [data-view=overlay]'), ['visible', '悬浮窗'])
+    assert.equal((await railTip('.product-rail [data-view=usage]'))[0], 'hidden')
+    await capture('rail-collapsed')
+    await hover('.product-rail-toggle')
+    assert.deepEqual(await railTip('.product-rail-toggle'), ['visible', `展开侧边栏 · ${shortcut}`])
+    await hover('.product-rail [data-view=ink]')
+    assert.equal(
+      (await railTip('.product-rail [data-view=ink]'))[1].startsWith('墨水屏设备，'),
+      true,
+    )
+    // Escape hides the tooltips until the pointer leaves the sidebar, and is left alone otherwise.
+    await main.webContents.executeJavaScript(
+      `window.addEventListener('keydown', (event) => { if (event.key==='Escape') window.__escapeUsed = event.defaultPrevented })`,
+    )
+    const escapeUsed = () => main!.webContents.executeJavaScript(`window.__escapeUsed`)
+    const dismissed = () =>
+      main!.webContents.executeJavaScript(`'tipsDismissed' in document.documentElement.dataset`)
+    await hover('.product-rail [data-view=overlay]')
+    await pressKey('Escape')
+    assert.equal(await escapeUsed(), true, 'Escape is taken while a tooltip shows')
+    assert.deepEqual(await railTip('.product-rail [data-view=overlay]'), ['hidden', '悬浮窗'])
+    await hover('.product-rail [data-view=usage]')
+    assert.equal((await railTip('.product-rail [data-view=usage]'))[0], 'hidden', 'still dismissed')
+    assert.equal(await dismissed(), true)
+    await inspector.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 600, y: 300 })
+    await wait(120)
+    assert.equal(await dismissed(), false, 'leaving the sidebar ends the dismissal')
+    await pressKey('Escape')
+    assert.equal(await escapeUsed(), false, 'with no tooltip showing Escape is not ours')
+    await hover('.product-rail [data-view=overlay]')
+    assert.equal((await railTip('.product-rail [data-view=overlay]'))[0], 'visible')
+    await inspector.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 600, y: 300 })
+    // Tabbing: Escape hides the focused icon's name; the next icon shows its own.
+    await main.webContents.executeJavaScript(
+      `document.querySelector('.product-rail [data-view=window]').focus()`,
+    )
+    await pressKey('Tab')
+    assert.equal(
+      await main.webContents.executeJavaScript(`document.activeElement.dataset.view`),
+      'overlay',
+    )
+    assert.deepEqual(await railTip('.product-rail [data-view=overlay]'), ['visible', '悬浮窗'])
+    assert.equal((await railTip('.product-rail [data-view=usage]'))[0], 'hidden')
+    await pressKey('Escape')
+    assert.equal((await railTip('.product-rail [data-view=overlay]'))[0], 'hidden')
+    await pressKey('Tab')
+    assert.equal((await railTip('.product-rail [data-view=ink]'))[0], 'visible', 'next icon')
+    await main.webContents.executeJavaScript(`document.activeElement.blur()`)
+    // Ctrl+B keeps working from the keyboard; a text field owns it, a checkbox does not.
+    await pressKey('B', shortcutModifiers)
+    await railWidth(expandedRail.width, 'Ctrl+B expands the sidebar again')
+    assert.equal((await railState()).stored, '0')
+    await pressKey('B', shortcutModifiers)
+    await railWidth(56, 'Ctrl+B collapses the sidebar')
+    assert.equal((await railState()).stored, '1')
+    for (const [type, toggles] of [
+      ['text', false],
+      ['checkbox', true],
+      ['radio', true],
+      ['range', true],
+      ['button', true],
+      ['select', true],
+    ] as const) {
       await main.webContents.executeJavaScript(
-        `document.querySelector('.product-live-console').getClientRects().length > 0`,
+        `(() => { const type=${JSON.stringify(type)}, probe=document.createElement(type==='select'?'select':'input'); if(type!=='select') probe.type=type; probe.id='rail-shortcut-probe'; document.body.append(probe); probe.focus() })()`,
+      )
+      const before = (await railState()).collapsed
+      await pressKey('B', shortcutModifiers)
+      assert.equal(
+        (await railState()).collapsed,
+        toggles ? !before : before,
+        `${type} fields ${toggles ? 'pass' : 'keep'} Ctrl+B`,
+      )
+      await main.webContents.executeJavaScript(
+        `document.getElementById('rail-shortcut-probe').remove()`,
+      )
+    }
+    const beforeModal = (await railState()).collapsed
+    await main.webContents.executeJavaScript(
+      `(() => { const modal=document.createElement('div'); modal.id='rail-modal-probe'; modal.setAttribute('aria-modal','true'); modal.textContent='Modal fixture'; document.body.append(modal) })()`,
+    )
+    await pressKey('B', shortcutModifiers)
+    assert.equal((await railState()).collapsed, beforeModal, 'a visible modal owns the shortcut')
+    await main.webContents.executeJavaScript(
+      `document.getElementById('rail-modal-probe').hidden=true`,
+    )
+    await pressKey('B', shortcutModifiers)
+    assert.equal(
+      (await railState()).collapsed,
+      !beforeModal,
+      'a hidden modal leaves the shortcut available',
+    )
+    await main.webContents.executeJavaScript(`document.getElementById('rail-modal-probe').remove()`)
+    // Restore the expanded state after the input and modal probes.
+    if ((await railState()).collapsed) await pressKey('B', shortcutModifiers)
+    await railWidth(expandedRail.width, 'the sidebar is expanded again')
+    assert.equal((await railState()).stored, '0')
+    // A narrow window keeps the same expanded width; it must still collapse without horizontal scroll.
+    main.setContentSize(720, 600)
+    await wait(350)
+    await click(main, '.product-rail-toggle')
+    await railWidth(56, 'the sidebar collapses in a narrow window')
+    assert.deepEqual(
+      await main.webContents.executeJavaScript(
+        `({page: document.documentElement.scrollWidth-window.innerWidth, content: document.querySelector('.product-scroll').scrollWidth-document.querySelector('.product-scroll').clientWidth})`,
+      ),
+      { page: 0, content: 0 },
+      'no horizontal scroll with a collapsed sidebar at 720px',
+    )
+    await capture('rail-collapsed-720')
+    await click(main, '.product-rail-toggle')
+    await railWidth(200, 'the narrow sidebar expands to 200px')
+    main.setContentSize(1120, 780)
+    await wait(350)
+    assert.deepEqual(
+      await railState(),
+      { ...expandedRail, stored: '0' },
+      'the sidebar ends expanded',
+    )
+    // The grouped rail, status and connection badge are measured in both themes and both states.
+    const railLayouts: unknown[] = []
+    const captionLayouts: unknown[] = []
+    const verifyRail = async (collapsed: boolean) => {
+      const layout = await main!.webContents.executeJavaScript(`(() => {
+        const rail=document.querySelector('.product-rail'), current=rail.querySelector('[aria-current=page]'),
+          pill=rail.querySelector('.product-rail-status'), text=pill.querySelector('.product-rail-status-text'),
+          dot=pill.querySelector('.product-rail-status-dot'), settings=rail.querySelector('.product-settings-row'),
+          device=rail.querySelector('[data-view=ink]'), glyph=device.querySelector('.product-nav-glyph'),
+          mark=device.querySelector('.product-nav-status'), g=glyph.getBoundingClientRect(), m=mark.getBoundingClientRect(),
+          p=pill.getBoundingClientRect(), t=text.getBoundingClientRect(), style=getComputedStyle(current),
+          groups=Array.from(rail.querySelectorAll('.product-nav-group'));
+        return {width:rail.getBoundingClientRect().width,viewport:[innerWidth,innerHeight],dpr:devicePixelRatio,theme:document.documentElement.dataset.theme,
+          groups:groups.map(group=>({role:group.getAttribute('role'),labelled:group.getAttribute('aria-labelledby')===group.firstElementChild.id,
+            text:group.firstElementChild.textContent,font:getComputedStyle(group.firstElementChild).fontSize,
+            color:getComputedStyle(group.firstElementChild).color,visible:getComputedStyle(group.firstElementChild).visibility==='visible'})),
+          muted:getComputedStyle(rail).getPropertyValue('--ink-muted').trim(),
+          groupInk:getComputedStyle(rail).getPropertyValue('--rail-group-ink').trim(),
+          current:{font:style.fontSize,weight:style.fontWeight,height:current.getBoundingClientRect().height,
+            icon:current.querySelector('svg').getBoundingClientRect().width,radius:style.borderRadius,shadow:style.boxShadow,
+            row:style.getPropertyValue('--row-bg').trim(),solid:style.getPropertyValue('--surface-solid').trim()},
+          marker:{pinned:Math.abs(m.left+m.width/2-g.right)<.5&&Math.abs(m.top-g.top+4)<.5,
+            border:getComputedStyle(mark).borderTopColor,background:getComputedStyle(mark).backgroundColor,row:getComputedStyle(device).backgroundColor,
+            hollow:mark.classList.contains('is-hollow')},
+          status:{text:text.textContent,height:p.height,role:pill.getAttribute('role'),
+            overflow:text.scrollWidth-text.clientWidth,clipped:t.width<=1&&t.height<=1,dot:[dot.getBoundingClientRect().width,dot.getBoundingClientRect().height],
+            beforeSettings:p.bottom<=settings.getBoundingClientRect().top,inside:p.left>=0&&p.right<=rail.getBoundingClientRect().right&&p.bottom<=innerHeight,
+            footerInside:Array.from(settings.querySelectorAll('button')).every(button=>button.getBoundingClientRect().bottom<=innerHeight)},
+          children:rail.querySelectorAll('.product-nav-child,[data-parent],[data-section-active]').length,
+          overflow:document.documentElement.scrollWidth-innerWidth};
+      })()`)
+      assert.equal(layout.width, collapsed ? 56 : 200)
+      assert.deepEqual(
+        layout.groups.map((group: { text: string }) => group.text),
+        ['工作空间', '设备与扩展', '数据分析'],
+      )
+      for (const group of layout.groups) {
+        assert.equal(group.role, 'group')
+        assert.equal(group.labelled, true)
+        assert.equal(group.font, '12px')
+        assert.equal(group.color, rgb(layout.groupInk))
+        assert.equal(group.visible, !collapsed)
+      }
+      assert.deepEqual(
+        [
+          layout.current.font,
+          layout.current.weight,
+          layout.current.height,
+          layout.current.icon,
+          layout.current.radius,
+        ],
+        ['14px', '600', 36, 18, '8px'],
+      )
+      assert.equal(layout.current.row, layout.current.solid)
+      assert.match(layout.current.shadow, /0px 0px 0px 1px inset/)
+      assert.doesNotMatch(
+        layout.current.shadow,
+        /3px 0px 0px 0px inset/,
+        'no inset left selection bar',
+      )
+      assert.equal(layout.children, 0, 'plugins and the device stay peers')
+      assert.equal(layout.marker.pinned, true, 'the status mark stays on the icon corner')
+      if (layout.marker.hollow) {
+        assert.equal(layout.marker.border, rgb(layout.muted))
+        assert.equal(layout.marker.background, layout.marker.row)
+      }
+      assert.deepEqual([layout.status.role, layout.status.dot], ['status', [8, 8]])
+      assert.ok(layout.status.height >= 32, 'status text can grow beyond one line')
+      assert.equal(
+        layout.status.beforeSettings && layout.status.inside,
+        true,
+        JSON.stringify(layout.status),
+      )
+      assert.equal(
+        layout.status.footerInside,
+        true,
+        'every footer control fits below the lowered heading',
+      )
+      assert.match(layout.status.text, /^运行正常 · (?:空闲|\d+ 个任务执行中)$/)
+      if (collapsed) {
+        assert.equal(layout.status.clipped, true)
+        assert.equal(layout.status.height, 32)
+      } else
+        assert.ok(
+          layout.status.overflow <= 1,
+          'the full status fits: ' + JSON.stringify(layout.status),
+        )
+      assert.equal(layout.overflow, 0)
+      railLayouts.push({ collapsed, ...layout })
+    }
+    for (const theme of ['light', 'dark'] as const) {
+      await click(main, '[data-view=settings]')
+      await click(main, `.theme-swatch-${theme}`)
+      await openCurrentSurface(main)
+      // The full screenshot matrix is opt-in; the default keeps every assertion at the minimum size.
+      for (const [width, height] of captureAll
+        ? [
+            [1440, 900],
+            [1024, 768],
+            [720, 480],
+          ]
+        : [[720, 480]]) {
+        main.setContentSize(width!, height!)
+        await wait(200)
+        await verifyRail(false)
+        const tops = await navigationTops()
+        await capture(`rail-${theme}-expanded-${width}`)
+        await mouseClick('.product-rail-toggle')
+        await railWidth(56, 'collapsed acceptance rail')
+        await verifyRail(true)
+        assert.deepEqual(
+          await navigationTops(),
+          tops,
+          'group spacing keeps the icon column aligned',
+        )
+        await hover('.product-rail-status')
+        assert.equal((await railTip('.product-rail-status'))[0], 'visible')
+        await main.webContents.executeJavaScript(
+          `document.querySelector('.product-rail [data-view=usage]').focus()`,
+        )
+        await pressKey('Tab')
+        assert.equal(
+          await main.webContents.executeJavaScript(
+            `document.activeElement.classList.contains('product-rail-status')`,
+          ),
+          true,
+        )
+        assert.equal(
+          (await railTip('.product-rail-status'))[0],
+          'visible',
+          'keyboard focus explains the status dot',
+        )
+        await main.webContents.executeJavaScript(`document.activeElement.blur()`)
+        await inspector.sendCommand('Input.dispatchMouseEvent', {
+          type: 'mouseMoved',
+          x: width! - 100,
+          y: 300,
+        })
+        await capture(`rail-${theme}-collapsed-${width}`)
+        await mouseClick('.product-rail-toggle')
+        await railWidth(200, 'expanded acceptance rail')
+      }
+      if (platform === 'win32') {
+        const chrome = await main.webContents.executeJavaScript(`(() => {
+          const band=document.querySelector('.product-dragbar'),content=document.querySelector('.product-content');
+          return {background:getComputedStyle(band).backgroundColor,bottom:band.getBoundingClientRect().bottom,contentTop:content.getBoundingClientRect().top};
+        })()`)
+        assert.equal(
+          chrome.background,
+          rgb(windowChromePalette(theme).overlayColor),
+          `${theme} caption strip matches the overlay`,
+        )
+        assert.ok(chrome.contentTop >= chrome.bottom, 'page content starts below the caption strip')
+        captionLayouts.push({ theme, ...chrome })
+        await capture(`caption-top-${theme}`)
+      }
+    }
+    main.setContentSize(940, 720)
+    await wait(200)
+    await verifyRail(false)
+    main.setContentSize(1120, 780)
+    await click(main, '[data-view=settings]')
+    await click(main, '.theme-swatch-light')
+    await openCurrentSurface(main)
+    await click(main, '.product-language-toggle')
+    await until(
+      () => main!.webContents.executeJavaScript(`document.documentElement.lang==='en'`),
+      'English rail',
+    )
+    const englishDevice = await main.webContents.executeJavaScript(`(() => {
+      const text=document.querySelector('.product-rail [data-view=ink] .product-nav-label');
+      return {text:text.textContent,overflow:text.scrollWidth-text.clientWidth};
+    })()`)
+    assert.equal(englishDevice.text, 'E-paper Device')
+    assert.ok(englishDevice.overflow <= 1, JSON.stringify(englishDevice))
+    await capture('rail-english-1120')
+    await click(main, '.product-language-toggle')
+    if (captureAll) {
+      // These renderer-only fixtures leave the shared Hub and the default smoke path untouched.
+      const savedSnapshot = (await main.webContents.executeJavaScript(
+        'window.codepulse.getStatus()',
+      )) as StatusSnapshot
+      const savedLocale =
+        (await main.webContents.executeJavaScript('document.documentElement.lang')) === 'en'
+          ? 'en'
+          : 'zh'
+      const savedCollapsed = (await railState()).collapsed
+      const savedSize = main.getContentSize()
+      const savedStatusText = await main.webContents.executeJavaScript(
+        `document.querySelector('.product-rail-status-text').textContent`,
+      )
+      const savedInkConnected = inkConnected
+      const canonicalBeforeEvidence = JSON.stringify(hub.snapshot().agents)
+      const seed = savedSnapshot.agents[0]
+      assert.ok(seed, 'capture fixtures start from an existing synthetic agent')
+      const evidence: unknown[] = []
+      const setEvidenceLocale = async (locale: 'zh' | 'en') => {
+        const language = locale === 'zh' ? 'zh-CN' : 'en'
+        if (
+          (await main!.webContents.executeJavaScript('document.documentElement.lang')) !== language
+        )
+          await click(main!, '.product-language-toggle')
+        await until(
+          () =>
+            main!.webContents.executeJavaScript(
+              `document.documentElement.lang===${JSON.stringify(language)}`,
+            ),
+          'evidence locale',
+        )
+      }
+      const setEvidenceCollapsed = async (collapsed: boolean) => {
+        if ((await railState()).collapsed !== collapsed) await mouseClick('.product-rail-toggle')
+        await railWidth(collapsed ? 56 : 200, 'evidence sidebar state')
+      }
+      const clearEvidenceInteraction = async () => {
+        await main!.webContents.executeJavaScript('document.activeElement?.blur()')
+        const width = await main!.webContents.executeJavaScript('innerWidth')
+        await inspector.sendCommand('Input.dispatchMouseEvent', {
+          type: 'mouseMoved',
+          x: width - 48,
+          y: 120,
+        })
+      }
+      const showEvidenceTasks = async (count: number, text: string) => {
+        const now = Date.now()
+        const snapshot: StatusSnapshot = {
+          ...savedSnapshot,
+          updatedAt: now,
+          agents: Array.from({ length: count }, (_, index) => ({
+            ...seed,
+            agentType: 'codex',
+            workspacePath: `F:/fixture/rail/task-${index + 1}`,
+            externalSessionId: `rail-evidence-${index + 1}`,
+            state: TurnState.THINKING,
+            lastEventAt: now,
+            terminalAt: undefined,
+            taskHidden: false,
+            unread: false,
+            needPermission: false,
+            needUserInput: false,
+          })),
+        }
+        main!.webContents.send('codepulse:status', snapshot)
+        await until(
+          () =>
+            main!.webContents.executeJavaScript(
+              `document.querySelector('.product-rail-status-text').textContent===${JSON.stringify(text)}`,
+            ),
+          'evidence task count',
+        )
+      }
+      const captureEvidence = async (name: string, condition: string, state: string) => {
+        try {
+          await until(() => main!.webContents.executeJavaScript(condition), state)
+        } catch (error) {
+          const diagnostic = await main!.webContents.executeJavaScript(`(() => {
+            const pill=document.querySelector('.product-rail-status'),label=pill.querySelector('.product-rail-status-text'),dot=getComputedStyle(pill.querySelector('.product-rail-status-dot')),style=getComputedStyle(label);
+            return {text:label.textContent,classes:pill.className,label:[label.scrollWidth,label.clientWidth,label.scrollHeight,label.clientHeight],pill:[pill.scrollWidth,pill.clientWidth,pill.getBoundingClientRect().height],font:style.fontSize,whiteSpace:style.whiteSpace,dot:dot.backgroundColor,viewport:[innerWidth,innerHeight]};
+          })()`)
+          writeFileSync(
+            join(output, 'rail-evidence-failure.json'),
+            JSON.stringify({ name, state, diagnostic }, null, 2),
+          )
+          throw error
+        }
+        assert.equal(await main!.webContents.executeJavaScript(condition), true, state)
+        const measured = await main!.webContents.executeJavaScript(`(() => {
+          const pill=document.querySelector('.product-rail-status'),text=pill.querySelector('.product-rail-status-text');
+          return {viewport:[innerWidth,innerHeight],locale:document.documentElement.lang,collapsed:document.querySelector('.product-rail').classList.contains('is-collapsed'),
+            status:{text:text.textContent,width:text.clientWidth,scrollWidth:text.scrollWidth,height:pill.getBoundingClientRect().height}};
+        })()`)
+        await capture(name)
+        evidence.push({ file: name + '.png', state, ...measured })
+      }
+      const connectedMark = (collapsed: boolean) => `(() => {
+        const rail=document.querySelector('.product-rail'),mark=rail.querySelector('[data-view=ink] .product-nav-status'),style=getComputedStyle(mark),channels=style.backgroundColor.match(/\\d+/g).map(Number);
+        return rail.classList.contains('is-collapsed')===${collapsed} && mark.classList.contains('is-filled') && style.visibility==='visible' && style.opacity==='1' && style.borderTopWidth==='0px' && mark.getBoundingClientRect().width===8 && channels[1]>channels[0] && channels[1]>channels[2];
+      })()`
+      const statusFits = (text: string, busy: boolean) => `(() => {
+        const pill=document.querySelector('.product-rail-status'),label=pill.querySelector('.product-rail-status-text'),style=getComputedStyle(label),box=pill.getBoundingClientRect(),
+          dot=getComputedStyle(pill.querySelector('.product-rail-status-dot')),token=getComputedStyle(pill).getPropertyValue(${JSON.stringify(busy ? '--ok' : '--ink-muted')}).trim(),
+          actual=dot.backgroundColor.match(/\\d+/g).slice(0,3).map(Number),expected=[1,3,5].map(offset=>parseInt(token.slice(offset,offset+2),16));
+        return !document.querySelector('.product-rail').classList.contains('is-collapsed') && pill.classList.contains(${JSON.stringify(busy ? 'is-busy' : 'is-idle')}) && label.textContent===${JSON.stringify(text)} && label.scrollWidth<=label.clientWidth && label.scrollHeight<=label.clientHeight && pill.scrollWidth<=pill.clientWidth && style.fontSize==='12px' && style.whiteSpace==='normal' && style.textOverflow!=='ellipsis' && box.height>=32 && box.bottom<=innerHeight && JSON.stringify(actual)===JSON.stringify(expected) && Array.from(document.querySelectorAll('.product-settings-row button')).every(button=>button.getBoundingClientRect().bottom<=innerHeight);
+      })()`
+      try {
+        await setEvidenceLocale('zh')
+        await setEvidenceCollapsed(false)
+        await clearEvidenceInteraction()
+        inkConnected = true
+        publishInk()
+        await captureEvidence(
+          'rail-evidence-ink-connected-expanded',
+          connectedMark(false),
+          'connected filled green mark, expanded',
+        )
+        await setEvidenceCollapsed(true)
+        await clearEvidenceInteraction()
+        await captureEvidence(
+          'rail-evidence-ink-connected-collapsed',
+          connectedMark(true),
+          'connected filled green mark, collapsed',
+        )
+        await setEvidenceCollapsed(false)
+        await showEvidenceTasks(0, '运行正常 · 空闲')
+        await captureEvidence(
+          'rail-evidence-status-idle',
+          statusFits('运行正常 · 空闲', false),
+          'idle status and its full label',
+        )
+        for (const locale of ['zh', 'en'] as const) {
+          await setEvidenceLocale(locale)
+          const text = locale === 'zh' ? '运行正常 · 12 个任务执行中' : 'Running · 12 tasks active'
+          await showEvidenceTasks(12, text)
+          for (const [width, height] of [
+            [720, 480],
+            [1120, 780],
+          ]) {
+            main.setContentSize(width!, height!)
+            await wait(200)
+            await clearEvidenceInteraction()
+            await captureEvidence(
+              `rail-evidence-status-12-${locale}-${width}`,
+              statusFits(text, true),
+              `12 ${locale} tasks fit at ${width}px without clipping`,
+            )
+          }
+        }
+        const englishRail = (collapsed: boolean) =>
+          `document.documentElement.lang==='en' && document.querySelector('.product-rail').classList.contains('is-collapsed')===${collapsed} && document.querySelector('.product-rail [data-view=ink] .product-nav-label').textContent==='E-paper Device'`
+        await captureEvidence(
+          'rail-evidence-english-expanded',
+          englishRail(false),
+          'English expanded sidebar',
+        )
+        await setEvidenceCollapsed(true)
+        await clearEvidenceInteraction()
+        await captureEvidence(
+          'rail-evidence-english-collapsed',
+          englishRail(true),
+          'English collapsed sidebar',
+        )
+        await setEvidenceCollapsed(false)
+        await clearEvidenceInteraction()
+        await main.webContents.executeJavaScript(
+          `document.querySelector('.product-rail-toggle').focus()`,
+        )
+        await pressKey('Tab')
+        await captureEvidence(
+          'rail-evidence-navigation-tab-focus',
+          `(() => {
+          const row=document.querySelector('.product-rail [data-view=window]'),style=getComputedStyle(row);
+          return document.activeElement===row && row.matches(':focus-visible') && style.outlineStyle==='solid' && style.outlineWidth==='2px';
+        })()`,
+          'Tab focus has a visible navigation outline',
+        )
+        await clearEvidenceInteraction()
+        await hover('.product-rail [data-view=ink]')
+        await captureEvidence(
+          'rail-evidence-ink-hover-expanded',
+          `(async () => {
+          const row=document.querySelector('.product-rail [data-view=ink]'),tip=row.querySelector('.product-tip'),note=(await window.codepulse.getInkStatus()).slotNote.trim();
+          return !document.querySelector('.product-rail').classList.contains('is-collapsed') && row.matches(':hover') && getComputedStyle(tip).visibility==='visible' && tip.textContent.startsWith('E-paper Device, connected') && (!note || (!tip.textContent.includes(note) && !row.getAttribute('aria-label').includes(note)));
+        })()`,
+          'hovering the expanded device row shows its status tooltip',
+        )
+        await setEvidenceCollapsed(true)
+        await clearEvidenceInteraction()
+        await hover('.product-rail-status')
+        await captureEvidence(
+          'rail-evidence-status-hover-collapsed',
+          `(() => {
+          const pill=document.querySelector('.product-rail-status'),tip=pill.parentElement.querySelector(':scope > .product-tip');
+          return document.querySelector('.product-rail').classList.contains('is-collapsed') && pill.matches(':hover') && getComputedStyle(tip).visibility==='visible' && tip.textContent==='Running · 12 tasks active';
+        })()`,
+          'hovering the collapsed status reveals its full text',
+        )
+        await hover('.product-language-toggle')
+        await captureEvidence(
+          'rail-evidence-language-hover-collapsed',
+          `(() => {
+          const button=document.querySelector('.product-language-toggle'),tip=button.querySelector('.product-tip');
+          return document.querySelector('.product-rail').classList.contains('is-collapsed') && button.matches(':hover') && getComputedStyle(tip).visibility==='visible' && tip.textContent.includes('Switch to Chinese');
+        })()`,
+          'hovering the collapsed language button reveals its action',
+        )
+      } finally {
+        main.webContents.send('codepulse:status', savedSnapshot)
+        inkConnected = savedInkConnected
+        publishInk()
+        await setEvidenceLocale(savedLocale)
+        await setEvidenceCollapsed(savedCollapsed)
+        main.setContentSize(savedSize[0]!, savedSize[1]!)
+        await clearEvidenceInteraction()
+        await until(
+          () =>
+            main!.webContents.executeJavaScript(
+              `document.querySelector('.product-rail-status-text').textContent===${JSON.stringify(savedStatusText)}`,
+            ),
+          'original capture state restored',
+        )
+        assert.equal(
+          JSON.stringify(hub.snapshot().agents),
+          canonicalBeforeEvidence,
+          'capture fixtures never mutate canonical agents',
+        )
+      }
+      writeFileSync(join(output, 'rail-evidence.json'), JSON.stringify(evidence, null, 2))
+    }
+    writeFileSync(
+      join(output, 'rail-layout.json'),
+      JSON.stringify(
+        {
+          titlebar: shellTop,
+          layouts: railLayouts,
+          captionChrome: captionLayouts,
+          englishDevice,
+        },
+        null,
+        2,
       ),
     )
-    await capture('focus')
+    await inspector.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: false })
+    inspector.detach()
+    const heartbeatCount = () =>
+      main!.webContents.executeJavaScript(
+        `Array.from(window.__smokeHeartbeats.values()).filter(delay=>delay===${INK_STATUS_HEARTBEAT_MS}).length`,
+      )
+    const workbenchReaders = await heartbeatCount()
+    assert.equal(workbenchReaders, 2, 'exactly the sidebar and ProductControl read ink status')
+    await click(main, '[data-view=settings]')
+    const settingsReaders = await heartbeatCount()
+    assert.equal(settingsReaders, 1, 'only the sidebar reads ink status on the settings page')
+    await click(main, '[data-view=window]')
+    const resumedReaders = await heartbeatCount()
     assert.equal(
-      await main.webContents.executeJavaScript(`document.body.innerText.includes('助手分屏')`),
-      false,
-      'focus mode has no footer strip',
+      resumedReaders,
+      2,
+      'returning to the workbench restores exactly its reader and the sidebar reader',
     )
-    await button(main, '返回控制台')
-    assert.equal(product.snapshot().focusMode, false)
+    writeFileSync(
+      join(output, 'ink-status-readers.json'),
+      JSON.stringify({
+        workbench: workbenchReaders,
+        settings: settingsReaders,
+        resumed: resumedReaders,
+      }),
+    )
+    console.log(
+      `SMOKE ink status readers: ${workbenchReaders} -> ${settingsReaders} -> ${resumedReaders}`,
+    )
     assert.equal(product.snapshot().desktopLayout, 'work')
     assert.ok(
       await main.webContents.executeJavaScript(
@@ -1313,17 +2177,23 @@ app.whenReady().then(async () => {
     )
     const beforeStatusClick = product.snapshot()
     const statusDisplay = await main.webContents.executeJavaScript(`(() => {
-      const pill=document.querySelector('.product-rail .ink-pill');
-      return {role:pill.getAttribute('role'), focusable:pill.hasAttribute('tabindex'),
-        controls:pill.querySelectorAll('button,a,input,[role=button],[tabindex]').length};
+      const mark=document.querySelector('.product-rail [data-view=ink] .product-nav-status');
+      return {hidden:mark.getAttribute('aria-hidden'), role:mark.getAttribute('role'), focusable:mark.hasAttribute('tabindex'),
+        controls:mark.querySelectorAll('button,a,input,[role=button],[tabindex]').length};
     })()`)
-    assert.deepEqual(statusDisplay, { role: 'status', focusable: false, controls: 0 })
-    await click(main, '.product-rail .ink-pill')
-    assert.equal(product.snapshot().view, beforeStatusClick.view, 'status click never navigates')
+    assert.deepEqual(statusDisplay, { hidden: 'true', role: null, focusable: false, controls: 0 })
+    await click(main, '.product-rail [data-view=ink] .product-nav-status')
+    // The mark is part of its row, so a click does what the row does and nothing of its own.
+    assert.equal(product.snapshot().view, 'ink', 'status click only follows its row')
+    assert.deepEqual(
+      product.snapshot().inkPlan,
+      beforeStatusClick.inkPlan,
+      'status click never edits the playlist',
+    )
     assert.equal(
-      product.snapshot().target,
-      beforeStatusClick.target,
-      'status click never selects a target',
+      product.snapshot().hudVisible,
+      beforeStatusClick.hudVisible,
+      'status click never opens the overlay',
     )
     await openCurrentSurface(main)
     await click(main, '[data-view=ink]')
@@ -1416,6 +2286,20 @@ app.whenReady().then(async () => {
       ),
       'connect reveals the existing provisioning panel',
     )
+    const connectedLayout = await main.webContents.executeJavaScript(`(() => {
+      const preview=document.querySelector('.ink-preview-card').getBoundingClientRect(),playlist=document.querySelector('.ink-config').getBoundingClientRect(),
+        connection=document.querySelector('#ink-provisioning').getBoundingClientRect();
+      return {viewport:[innerWidth,innerHeight],top:Math.abs(preview.top-playlist.top),bottom:Math.abs(preview.bottom-playlist.bottom),connectionBelow:connection.top>=preview.bottom};
+    })()`)
+    assert.deepEqual(connectedLayout.viewport, [1120, 780])
+    assert.ok(
+      connectedLayout.top <= 1 && connectedLayout.bottom <= 1,
+      JSON.stringify(connectedLayout),
+    )
+    assert.ok(
+      connectedLayout.connectionBelow,
+      'connection details occupy their own row below the preview',
+    )
     await button(main, '收起')
     assert.equal(
       await main.webContents.executeJavaScript(
@@ -1466,7 +2350,35 @@ app.whenReady().then(async () => {
     // Disabled reasons are keyboard-reachable explanations (InfoTip) and stay inside a narrow window.
     main.setContentSize(720, 600)
     await wait(350)
+    await click(main, '[data-view=plugins]')
+    await click(main, '#plugins-market-tab')
+    await until(
+      () =>
+        main!.webContents.executeJavaScript(
+          `Boolean(document.querySelector('.plugin-store .page-header p'))`,
+        ),
+      'offline store reason',
+    )
+    const storeReason = await main.webContents.executeJavaScript(`(() => {
+      const reason=document.querySelector('.plugin-store .page-header p'),style=getComputedStyle(reason);
+      return {font:style.fontSize,color:style.color,muted:style.getPropertyValue('--ink-muted').trim()};
+    })()`)
+    assert.equal(storeReason.font, '13px')
+    assert.equal(storeReason.color, rgb(storeReason.muted))
+    await capture('plugin-store-offline')
     await openInstalledPlugins(main, 'local:todo')
+    if (platform === 'win32') {
+      const detail = await main.webContents.executeJavaScript(`(() => {
+        const layer=document.querySelector('.plugin-details-layer:not([hidden])'),close=layer.querySelector('.plugin-details-close button');
+        return {top:layer.getBoundingClientRect().top,closeTop:close.getBoundingClientRect().top,bottom:layer.getBoundingClientRect().bottom,height:innerHeight};
+      })()`)
+      assert.ok(
+        detail.top >= shellTop.band!.height && detail.closeTop >= shellTop.band!.height,
+        'the plugin close button clears the caption strip: ' + JSON.stringify(detail),
+      )
+      assert.ok(detail.bottom <= detail.height, 'the drawer stays inside the remaining viewport')
+      await capture('plugin-details-caption-clearance')
+    }
     const tip = (await main.webContents.executeJavaScript(
       `(()=>{const b=document.querySelector('.desk-assistant .info-tip');return b?{id:b.getAttribute('aria-describedby'),text:document.getElementById(b.getAttribute('aria-describedby')).textContent,h:b.getBoundingClientRect().height,w:b.getBoundingClientRect().width,tab:b.tabIndex}:null})()`,
     )) as { id: string; text: string; h: number; w: number; tab: number } | null
@@ -1537,8 +2449,13 @@ app.whenReady().then(async () => {
       const control = document.querySelector('.product-control');
       const stage = document.querySelector('.ink-control-workspace .product-preview-stage');
       const canvas = stage.querySelector('.device-preview-scroll canvas').getBoundingClientRect();
+      const preview=stage.getBoundingClientRect(),playlist=document.querySelector('.ink-config').getBoundingClientRect();
       const apply = document.querySelector('.ink-config .product-config-actions')?.getBoundingClientRect() ?? {top:0,bottom:0};
+      const titleCenter=(selector)=>{const range=document.createRange();range.selectNodeContents(document.querySelector(selector));const box=range.getBoundingClientRect();return box.top+box.height/2};
       return {viewport: [innerWidth,innerHeight], dpr: devicePixelRatio, canvas: [canvas.width,canvas.height], origin: [canvas.left,canvas.top],
+        cards:{preview:[preview.top,preview.bottom],playlist:[playlist.top,playlist.bottom]},
+        titleCenters:[titleCenter('.ink-preview-card .device-preview-header h2'),titleCenter('.ink-config .product-config-heading h2')],
+        moreButtonHeight:stage.querySelector('.device-preview-more').getBoundingClientRect().height,
         canvasBottom: canvas.bottom, applyBottom: apply.bottom, applyTop: apply.top,
         pageOverflow: control.scrollHeight-control.clientHeight,
         previewOverflow: stage.scrollHeight-stage.clientHeight,
@@ -1591,6 +2508,31 @@ app.whenReady().then(async () => {
         `document.querySelector('.product-control').scrollTop=0`,
       )
       assert.equal(measured.horizontalOverflow, 0)
+      if (width! >= 1120) {
+        assert.ok(
+          Math.abs(measured.cards.preview[0] - measured.cards.playlist[0]) <= 1 &&
+            Math.abs(measured.cards.preview[1] - measured.cards.playlist[1]) <= 1,
+          `side-by-side cards share their top and bottom: ${JSON.stringify(measured)}`,
+        )
+      }
+      if (width === 1120) {
+        assert.ok(
+          Math.abs(measured.titleCenters[0] - measured.titleCenters[1]) <= 1,
+          `ink card title text shares its vertical center: ${JSON.stringify(measured)}`,
+        )
+        assert.ok(measured.moreButtonHeight >= 36, 'the preview menu button keeps its hit area')
+      }
+      if (width === 1120 && captureAll) {
+        await until(
+          () =>
+            main!.webContents.executeJavaScript(`(() => {
+            const preview=document.querySelector('.ink-preview-card'),playlist=document.querySelector('.ink-config'),a=preview.getBoundingClientRect(),b=playlist.getBoundingClientRect();
+            return innerWidth===1120 && innerHeight===780 && document.documentElement.dataset.theme==='light' && preview.querySelector('.device-preview').dataset.renderState==='ready' && Math.abs(a.top-b.top)<=1 && Math.abs(a.bottom-b.bottom)<=1;
+          })()`),
+          'light 1120px ink cards are ready and equally tall before capture',
+        )
+        await capture('ink-equal-height-light-1120', true)
+      }
       await capture('ink-' + width + 'x' + height)
     }
     main.setContentSize(1120, 780)
@@ -1881,10 +2823,12 @@ app.whenReady().then(async () => {
     await wait()
     await button(main, '开销看板')
     assert.equal(config.mode, 'hud')
-    product.setFocusMode(true)
-    await wait()
-    await button(main, '返回控制台')
+    const draftPlan = structuredClone(product.snapshot().inkPlan)
+    await click(main, '[data-view=settings]')
+    await click(main, '[data-view=ink]')
     assert.equal(product.snapshot().target, 'ink')
+    assert.equal(config.mode, 'hud', 'ordinary navigation never applies the retained draft')
+    assert.deepEqual(product.snapshot().inkPlan, draftPlan)
     assert.ok(
       await main.webContents.executeJavaScript(
         `Array.from(document.querySelectorAll('.product-control .ink-config button')).some(b=>b.textContent==='开销看板' && b.getAttribute('aria-pressed')==='true')`,
@@ -2091,10 +3035,12 @@ app.whenReady().then(async () => {
       JSON.stringify({ restored, focused, area, bounds, visible: hud.isVisible() }, null, 2),
     )
     assert.equal(product.snapshot().form, 'standard', 'opening HUD preserves launch preference')
-    product.setFocusMode(true)
-    await wait()
+    const clientLayout = product.snapshot().desktopLayout
+    main.hide()
     await button(hudWindow, '标准')
-    assert.equal(product.snapshot().focusMode, false)
+    assert.equal(visible.get(main.id), true, 'the HUD standard action reveals the client')
+    assert.equal(product.snapshot().form, 'standard')
+    assert.equal(product.snapshot().desktopLayout, clientLayout)
     assert.equal(
       product.snapshot().view,
       product.snapshot().target === 'hud'
@@ -2104,7 +3050,8 @@ app.whenReady().then(async () => {
           : 'window',
     )
     assert.equal(visible.get(hudWindow.id), true, 'HUD return opens console without hiding HUD')
-    writeFileSync(join(output, 'hud.png'), (await hudWindow.webContents.capturePage()).toPNG())
+    if (captureAll)
+      writeFileSync(join(output, 'hud.png'), (await hudWindow.webContents.capturePage()).toPNG())
     // Updates keeps the original bounded service; synthetic content never touches live accounts.
     await openInstalledPlugins(main)
     assert.equal(product.snapshot().target, 'ink')
@@ -2748,11 +3695,13 @@ app.whenReady().then(async () => {
     )
     writeFileSync(join(output, 'device.json'), JSON.stringify(device().status, null, 2))
     await button(screenWindow, '专注展示')
-    await wait(700)
-    writeFileSync(
-      join(output, 'screen.png'),
-      (await screenWindow.webContents.capturePage()).toPNG(),
-    )
+    if (captureAll) {
+      await wait(100)
+      writeFileSync(
+        join(output, 'screen.png'),
+        (await screenWindow.webContents.capturePage()).toPNG(),
+      )
+    }
     await button(screenWindow, '退出展示')
     await new Promise<void>((resolve) => {
       screenWindow.webContents.once('did-finish-load', () => resolve())
@@ -2801,62 +3750,452 @@ app.whenReady().then(async () => {
         `Boolean(document.querySelector('.settings-embedded'))`,
       ),
     )
-    assert.equal(
-      await main.webContents.executeJavaScript(
-        `Boolean(document.querySelector('.settings-embedded .work-voice-options'))`,
-      ),
-      false,
-    )
-    await openCurrentSurface(main)
-    await click(main, '[data-view=window]')
+    voiceFixture.ink.deviceAvailable = true
+    broadcast('codepulse:work-voice', voiceFixture)
     await until(
       () =>
         main!.webContents.executeJavaScript(
-          `Boolean(document.querySelector('section[aria-label="主窗口语音提醒"] input:not(:disabled)'))`,
+          `(() => { const panels=Array.from(document.querySelectorAll('.settings-embedded .work-voice-options')); return panels.length===2&&panels.every(panel=>panel.querySelector('input')&&!panel.querySelector('input').matches(':disabled')) })()`,
         ),
       'voice preferences loaded',
     )
     assert.equal(
-      (await main.webContents.executeJavaScript('window.codepulse.getWorkVoice()')).desktop.settings
-        .enabled,
-      false,
+      await main.webContents.executeJavaScript(
+        `document.querySelectorAll('.product-control .work-voice-options,.product-control .product-state-guide').length`,
+      ),
+      0,
+      'surface pages no longer contain global settings',
     )
     assert.equal(
       await main.webContents.executeJavaScript(
-        `document.querySelector('.work-voice-details').open`,
+        `document.querySelector('.settings-embedded .product-state-guide-toggle').getAttribute('aria-expanded')`,
       ),
-      false,
+      'false',
     )
-    await click(main, 'section[aria-label="主窗口语音提醒"] summary')
-    await main.webContents.executeJavaScript(
-      `document.querySelector('section[aria-label="主窗口语音提醒"] input').click()`,
+    await click(main, '.settings-embedded .product-state-guide-toggle')
+    assert.ok(
+      await main.webContents.executeJavaScript(
+        `(() => { const toggle=document.querySelector('.settings-embedded .product-state-guide-toggle'), table=document.getElementById(toggle.getAttribute('aria-controls')); return toggle.getAttribute('aria-expanded')==='true' && !table.hidden && table.getClientRects().length>0 && table.textContent.includes('English') })()`,
+      ),
     )
-    await until(
-      async () =>
-        (await main!.webContents.executeJavaScript('window.codepulse.getWorkVoice()')).desktop
-          .settings.enabled,
-      'voice opt-in through preload IPC',
+    await click(main, '.settings-embedded .product-state-guide-toggle')
+    assert.equal(
+      await main.webContents.executeJavaScript(
+        `(() => { const toggle=document.querySelector('.settings-embedded .product-state-guide-toggle'); return toggle.getAttribute('aria-expanded')==='false' && document.getElementById(toggle.getAttribute('aria-controls')).hidden })()`,
+      ),
+      true,
     )
-    const voiceTestsBefore = readCount('work-voice-test')
-    await button(main, '试听语音')
-    await until(
-      () => Promise.resolve(readCount('work-voice-test') === voiceTestsBefore + 1),
-      'voice preview through IPC fixture',
+    const voiceSelector = (target: 'desktop' | 'ink') =>
+      `.settings-embedded section[aria-label="${target === 'desktop' ? '工作台语音提醒' : '墨水屏设备语音提醒'}"]`
+    const voiceSnapshot = () =>
+      main!.webContents.executeJavaScript('window.codepulse.getWorkVoice()')
+    const toggleVoice = async (target: 'desktop' | 'ink', enabled: boolean) => {
+      await click(main!, `${voiceSelector(target)} input[type=checkbox]`)
+      await until(
+        async () => (await voiceSnapshot())[target].settings.enabled === enabled,
+        `${target} voice opt-in through preload IPC`,
+      )
+      assert.equal(voiceCalls.at(-1)?.operation, 'set')
+      assert.equal(voiceCalls.at(-1)?.target, target)
+    }
+    const pressVoiceButton = async (target: 'desktop' | 'ink', label: string) => {
+      await main!.webContents.executeJavaScript(`(() => {
+        const section=document.querySelector(${JSON.stringify(voiceSelector(target))}),button=Array.from(section.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(label)}&&!button.matches(':disabled'));
+        if(!button)throw Error('Missing enabled voice action');button.click();
+      })()`)
+      await wait(120)
+    }
+    assert.deepEqual(
+      [
+        (await voiceSnapshot()).desktop.settings.enabled,
+        (await voiceSnapshot()).ink.settings.enabled,
+      ],
+      [false, false],
     )
-    await main.webContents.executeJavaScript(
-      `document.querySelector('section[aria-label="主窗口语音提醒"] input').click()`,
+    for (const target of ['desktop', 'ink'] as const) {
+      assert.equal(
+        await main.webContents.executeJavaScript(
+          `document.querySelector(${JSON.stringify(voiceSelector(target) + ' details')}).open`,
+        ),
+        false,
+      )
+      await click(main, `${voiceSelector(target)} summary`)
+    }
+    await toggleVoice('desktop', true)
+    assert.equal((await voiceSnapshot()).ink.settings.enabled, false)
+    await toggleVoice('ink', true)
+    assert.equal((await voiceSnapshot()).desktop.settings.enabled, true)
+    await toggleVoice('desktop', false)
+    assert.equal((await voiceSnapshot()).ink.settings.enabled, true)
+    await toggleVoice('ink', false)
+    for (const target of ['desktop', 'ink'] as const) {
+      const other = target === 'desktop' ? 'ink' : 'desktop'
+      await toggleVoice(target, true)
+      const previewBefore = readCount('work-voice-test')
+      await pressVoiceButton(target, '试听语音')
+      await until(
+        () => Promise.resolve(readCount('work-voice-test') === previewBefore + 1),
+        `${target} preview reaches IPC`,
+      )
+      assert.deepEqual(voiceCalls.at(-1), { operation: 'test', target })
+      assert.equal((await voiceSnapshot())[target].speaking, true)
+      assert.equal((await voiceSnapshot())[other].speaking, false)
+      const stopBefore = readCount('work-voice-stop')
+      await pressVoiceButton(target, target === 'desktop' ? '停止播报' : '取消待播')
+      await until(
+        () => Promise.resolve(readCount('work-voice-stop') === stopBefore + 1),
+        `${target} stop reaches IPC`,
+      )
+      assert.deepEqual(voiceCalls.at(-1), { operation: 'stop', target })
+      assert.equal((await voiceSnapshot())[target].speaking, false)
+      assert.equal((await voiceSnapshot())[other].settings.enabled, false)
+      await toggleVoice(target, false)
+      await click(main, `${voiceSelector(target)} summary`)
+    }
+    voiceFixture.ink.deviceAvailable = false
+    broadcast('codepulse:work-voice', voiceFixture)
+    const voiceHeartbeatCount = () =>
+      main!.webContents.executeJavaScript(
+        `Array.from(window.__smokeHeartbeats.values()).filter(delay=>delay===${WORK_VOICE_HEARTBEAT_MS}).length`,
+      )
+    assert.equal(await voiceHeartbeatCount(), 1, 'the visible ink voice panel polls')
+    await click(main, '[data-view=window]')
+    assert.equal(
+      await voiceHeartbeatCount(),
+      0,
+      'hidden voice settings stop polling on the workbench',
     )
-    await until(
-      async () =>
-        !(await main!.webContents.executeJavaScript('window.codepulse.getWorkVoice()')).desktop
-          .settings.enabled,
-      'voice can be disabled',
+    await click(main, '[data-view=ink]')
+    assert.equal(await voiceHeartbeatCount(), 0, 'surface navigation never mounts voice settings')
+    assert.equal(
+      await main.webContents.executeJavaScript(
+        `document.querySelectorAll('.product-control .work-voice-options,.product-control .product-state-guide').length`,
+      ),
+      0,
     )
-    await click(main, 'section[aria-label="主窗口语音提醒"] summary')
+    await click(main, '[data-view=settings]')
+    assert.equal(await voiceHeartbeatCount(), 1, 'returning to settings resumes its voice reader')
+    const savedSettingsSize = main.getContentSize()
+    const settingsEvidenceState = () =>
+      main!.webContents.executeJavaScript(`(() => {
+        const page=document.querySelector('.settings-embedded'),voice=page.querySelector('.settings-work-voice-card'),guide=page.querySelector('.product-state-guide'),
+          toggle=guide.querySelector('.product-state-guide-toggle'),table=document.getElementById(toggle.getAttribute('aria-controls')),
+          rows=Array.from(voice.querySelectorAll('.work-voice-details')),scroll=page.closest('.product-scroll'),
+          elements=[document.documentElement,document.querySelector('.product-content'),scroll,page,voice,guide,...rows.filter(row=>row.open).map(row=>row.querySelector('.work-voice-content')),...(table.hidden?[]:[table])],outer=[];
+        for(let parent=scroll.parentElement;parent;parent=parent.parentElement) outer.push({element:parent.className||parent.tagName,top:parent.scrollTop,left:parent.scrollLeft});
+        const textRect=(element)=>{const walker=document.createTreeWalker(element,NodeFilter.SHOW_TEXT);let node;while(node=walker.nextNode()){if(!node.textContent.trim())continue;const range=document.createRange();range.selectNodeContents(node);return range.getBoundingClientRect()}throw Error('Missing settings label')},
+          bounds=(element)=>{const box=element.getBoundingClientRect();return {top:box.top,bottom:box.bottom,left:box.left,right:box.right,height:box.height}},
+          headings=Array.from(page.querySelectorAll('.page-card > h2')).map(heading=>{const box=textRect(heading);return {text:heading.textContent,left:box.left,insetTop:box.top-heading.parentElement.getBoundingClientRect().top}});
+        return {viewport:[innerWidth,innerHeight],locale:document.documentElement.lang,theme:document.documentElement.dataset.theme,
+          voiceExpanded:rows.map(row=>row.open),voiceLoaded:rows.every(row=>['Off','On','已关闭','已开启'].includes(row.querySelector('small').textContent)),
+          guideOpen:toggle.getAttribute('aria-expanded')==='true'&&!table.hidden&&table.getClientRects().length>0,
+          guideHidden:table.hidden,
+          guideToggle:bounds(toggle),
+          overflow:elements.map(element=>({element:element.className||element.tagName,width:element.clientWidth,scrollWidth:element.scrollWidth})),
+          secondary:Array.from(voice.querySelectorAll('summary small,.product-caption')).map(element=>({font:getComputedStyle(element).fontSize,color:getComputedStyle(element).color})),
+          voiceLabels:rows.map(row=>row.querySelector('summary > span').textContent),headings,
+          rowAlignment:rows.map(row=>{const summary=row.querySelector('summary'),label=summary.querySelector('span');return {title:textRect(label).left,font:getComputedStyle(summary).fontSize,weight:getComputedStyle(summary).fontWeight,
+            description:row.open?textRect(row.querySelector('.work-voice-content > p')).left:null,checkbox:row.open?row.querySelector('input').getBoundingClientRect().left:null}}),
+          sharedNotes:voice.querySelectorAll(':scope > .product-caption').length,
+          scroll:{top:scroll.scrollTop,left:scroll.scrollLeft,viewport:bounds(scroll),outer,window:[scrollX,scrollY],frame:bounds(document.querySelector('.product-frame'))},
+          cards:{voice:bounds(voice),guide:bounds(guide)}};
+      })()`)
+    const expandSettingsCards = async (expanded: boolean) => {
+      await main!.webContents.executeJavaScript(`(() => {
+        for(const details of document.querySelectorAll('.settings-embedded .work-voice-details')) details.open=${expanded};
+        const toggle=document.querySelector('.settings-embedded .product-state-guide-toggle');
+        if(toggle.getAttribute('aria-expanded')!==${JSON.stringify(String(expanded))}) toggle.click();
+      })()`)
+      await until(async () => {
+        const state = await settingsEvidenceState()
+        return (
+          state.voiceExpanded.length === 2 &&
+          state.voiceExpanded.every((open: boolean) => open === expanded) &&
+          state.voiceLoaded &&
+          state.guideOpen === expanded
+        )
+      }, 'both voice outputs and the state table match the requested expansion state')
+    }
+    const assertSettingsFit = async (width: number, height: number, expanded = true) => {
+      await until(async () => {
+        const state = await settingsEvidenceState()
+        return state.viewport[0] === width && state.viewport[1] === height
+      }, `settings viewport ${width}x${height}`)
+      const state = await settingsEvidenceState()
+      assert.deepEqual(state.voiceExpanded, [expanded, expanded])
+      assert.ok(state.voiceLoaded && state.guideOpen === expanded, JSON.stringify(state))
+      assert.equal(state.guideHidden, !expanded)
+      assert.ok(state.guideToggle.height >= 32, 'the state-guide toggle has a usable hit area')
+      for (const element of state.overflow) {
+        assert.ok(element.width > 0 && element.scrollWidth <= element.width, JSON.stringify(state))
+      }
+      const reference = state.headings[0]
+      assert.ok(state.headings.length >= 2)
+      for (const heading of state.headings) {
+        assert.ok(Math.abs(heading.left - reference.left) <= 1, JSON.stringify(state.headings))
+        assert.ok(
+          Math.abs(heading.insetTop - reference.insetTop) <= 1,
+          JSON.stringify(state.headings),
+        )
+      }
+      for (const row of state.rowAlignment) {
+        assert.ok(Math.abs(row.title - reference.left) <= 1, JSON.stringify(row))
+        assert.deepEqual([row.font, row.weight], ['14px', '600'])
+        if (expanded)
+          assert.ok(
+            Math.abs(row.title - row.description) <= 1 && Math.abs(row.title - row.checkbox) <= 1,
+            JSON.stringify(row),
+          )
+      }
+      assert.equal(state.sharedNotes, 2, 'shared voice guidance appears once below both outputs')
+      return state
+    }
+    await expandSettingsCards(false)
+    await assertSettingsFit(savedSettingsSize[0]!, savedSettingsSize[1]!, false)
+    await expandSettingsCards(true)
+    await assertSettingsFit(savedSettingsSize[0]!, savedSettingsSize[1]!)
+    main.setContentSize(720, 480)
+    const compactSettings = await assertSettingsFit(720, 480)
+    writeFileSync(
+      join(output, 'settings-compact-layout.json'),
+      JSON.stringify(compactSettings, null, 2),
+    )
+    if (captureAll) {
+      const evidence: Record<string, unknown>[] = []
+      const savedTheme = compactSettings.theme
+      const savedLocale = compactSettings.locale
+      const savedScroll = await main.webContents.executeJavaScript(
+        `document.querySelector('.settings-embedded').closest('.product-scroll').scrollTop`,
+      )
+      const ownSettingsInspector = !inspector.isAttached()
+      if (ownSettingsInspector) inspector.attach('1.3')
+      await inspector.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true })
+      const positionSettingsEvidence = (selector: string | null = null, delta = 0) =>
+        main!.webContents.executeJavaScript(`(async () => {
+          const scroll=document.querySelector('.settings-embedded').closest('.product-scroll');
+          for(let parent=scroll.parentElement;parent;parent=parent.parentElement){parent.scrollTop=0;parent.scrollLeft=0}
+          document.scrollingElement.scrollTop=0;document.scrollingElement.scrollLeft=0;document.body.scrollTop=0;document.body.scrollLeft=0;window.scrollTo(0,0);
+          const target=${JSON.stringify(selector)};
+          if(target) scroll.scrollTop+=document.querySelector(target).getBoundingClientRect().top-scroll.getBoundingClientRect().top-8;
+          scroll.scrollTop+=${delta};scroll.scrollLeft=0;
+          let previous='';const started=performance.now();
+          while(performance.now()-started<1000){
+            await new Promise(requestAnimationFrame);
+            const signature=JSON.stringify([scroll.scrollTop,scroll.scrollHeight,scroll.clientWidth,scroll.clientHeight,...Array.from(document.querySelectorAll('.settings-work-voice-card,.product-state-guide'),card=>{const box=card.getBoundingClientRect();return [box.top,box.bottom,box.left,box.right]}),...Array.from(document.querySelectorAll('.work-voice-details > summary,.product-state-guide-toggle'),row=>getComputedStyle(row,'::after').transform)]);
+            if(signature===previous)return;previous=signature;
+          }
+          throw Error('Settings layout did not settle');
+        })()`)
+      const captureSettingsEvidence = async (
+        name: string,
+        theme: 'light' | 'dark',
+        width: number,
+        height: number,
+        locale: 'zh' | 'en',
+        expanded: boolean,
+        condition = 'true',
+      ) => {
+        const verify = async () => {
+          const state = await assertSettingsFit(width, height, expanded)
+          assert.equal(state.theme, theme)
+          assert.equal(state.locale, locale === 'zh' ? 'zh-CN' : 'en')
+          assert.deepEqual(
+            state.voiceLabels,
+            locale === 'zh' ? ['工作台', '墨水屏设备'] : ['Workbench', 'E-paper Device'],
+          )
+          assert.deepEqual(state.scroll.window, [0, 0])
+          assert.ok(
+            state.scroll.outer.every(
+              (parent: { top: number; left: number }) => parent.top === 0 && parent.left === 0,
+            ),
+            JSON.stringify(state.scroll),
+          )
+          assert.ok(
+            Math.abs(state.scroll.frame.top) <= 1 && state.scroll.frame.bottom <= height + 1,
+            JSON.stringify(state.scroll),
+          )
+          assert.equal(await main!.webContents.executeJavaScript(condition), true, name)
+          return state
+        }
+        await until(() => main!.webContents.executeJavaScript(condition), name + ' state')
+        const before = await verify()
+        await capture(name, true)
+        const after = await verify()
+        assert.deepEqual(
+          after.scroll,
+          before.scroll,
+          'capture preserves the verified scroll positions',
+        )
+        assert.deepEqual(
+          after.cards,
+          before.cards,
+          'captured card bounds match the evidence record',
+        )
+        evidence.push({ file: name + '.png', ...before })
+      }
+      // Scroll through each entire card at the requested viewport, including all expanded text.
+      const captureSettingsCard = async (
+        card: 'voice' | 'guide',
+        theme: 'light' | 'dark',
+        width: number,
+        height: number,
+        locale: 'zh' | 'en',
+      ) => {
+        const selector = card === 'voice' ? '.settings-work-voice-card' : '.product-state-guide'
+        await assertSettingsFit(width, height)
+        await positionSettingsEvidence(selector)
+        let covered = 0
+        for (let part = 1; ; part++) {
+          assert.ok(part <= 8, 'each settings card has bounded screenshot coverage')
+          const tile = await main!.webContents.executeJavaScript(`(() => {
+            const card=document.querySelector(${JSON.stringify(selector)}),scroll=card.closest('.product-scroll'),box=card.getBoundingClientRect(),viewport=scroll.getBoundingClientRect(),
+              top=Math.max(viewport.top,0),bottom=Math.min(viewport.bottom,innerHeight);
+            return {start:Math.max(0,top-box.top),end:Math.min(box.height,bottom-box.top),height:box.height,viewportHeight:bottom-top,scrollTop:scroll.scrollTop};
+          })()`)
+          assert.ok(
+            tile.start <= covered + 1 && tile.end > covered,
+            JSON.stringify({ covered, tile }),
+          )
+          const name = `settings-evidence-${locale}-${theme}-${width}-${card}-${part}`
+          await captureSettingsEvidence(name, theme, width, height, locale, true)
+          Object.assign(evidence.at(-1)!, { card, part, coverage: tile })
+          covered = tile.end
+          if (covered >= tile.height - 1) break
+          await positionSettingsEvidence(null, tile.viewportHeight - 24)
+          await until(
+            () =>
+              main!.webContents.executeJavaScript(
+                `document.querySelector('.settings-embedded').closest('.product-scroll').scrollTop>${tile.scrollTop}`,
+              ),
+            'the next settings-card segment is visible',
+          )
+        }
+      }
+      try {
+        for (const theme of ['light', 'dark'] as const) {
+          await click(main, `.theme-swatch-${theme}`)
+          await until(
+            () =>
+              main!.webContents.executeJavaScript(
+                `document.documentElement.dataset.theme===${JSON.stringify(theme)}`,
+              ),
+            'settings evidence theme applied',
+          )
+          main.setContentSize(1120, 780)
+          await expandSettingsCards(false)
+          await assertSettingsFit(1120, 780, false)
+          await positionSettingsEvidence('.settings-work-voice-card')
+          const collapsedCardsVisible = `(() => {const page=document.querySelector('.settings-embedded'),scroll=page.closest('.product-scroll').getBoundingClientRect(),voice=page.querySelector('.settings-work-voice-card').getBoundingClientRect(),guide=page.querySelector('.product-state-guide').getBoundingClientRect();return voice.top>=scroll.top&&guide.bottom<=Math.min(scroll.bottom,innerHeight)})()`
+          await captureSettingsEvidence(
+            `settings-evidence-zh-${theme}-1120-collapsed`,
+            theme,
+            1120,
+            780,
+            'zh',
+            false,
+            collapsedCardsVisible,
+          )
+          for (const [name, row, preceding] of [
+            ['voice-desktop', `${voiceSelector('desktop')} summary`, null],
+            ['voice-ink', `${voiceSelector('ink')} summary`, `${voiceSelector('desktop')} summary`],
+            [
+              'guide',
+              '.settings-embedded .product-state-guide-toggle',
+              `${voiceSelector('ink')} summary`,
+            ],
+          ] as const) {
+            await positionSettingsEvidence(row)
+            const visible = `(() => {const row=document.querySelector(${JSON.stringify(row)}),box=row.getBoundingClientRect(),viewport=row.closest('.product-scroll').getBoundingClientRect();return box.top>=Math.max(viewport.top,0)+6&&box.bottom<=Math.min(viewport.bottom,innerHeight)-6})()`
+            await hover(row)
+            await captureSettingsEvidence(
+              `settings-evidence-zh-${theme}-1120-${name}-hover`,
+              theme,
+              1120,
+              780,
+              'zh',
+              false,
+              `${visible} && (() => {const row=document.querySelector(${JSON.stringify(row)});return row.matches(':hover')&&!row.matches(':focus-visible')&&getComputedStyle(row).backgroundColor!=='rgba(0, 0, 0, 0)'})()`,
+            )
+            await inspector.sendCommand('Input.dispatchMouseEvent', {
+              type: 'mouseMoved',
+              x: 1096,
+              y: 120,
+            })
+            await main.webContents.executeJavaScript(`(() => {
+              const preceding=${JSON.stringify(preceding)},card=document.querySelector('.settings-work-voice-card'),
+                previous=preceding?document.querySelector(preceding):Array.from(card.previousElementSibling.querySelectorAll('input:not(:disabled)')).at(-1);
+              if(!previous)throw Error('Missing preceding settings control');previous.focus({preventScroll:true});
+            })()`)
+            await pressKey('Tab')
+            await positionSettingsEvidence(row)
+            await captureSettingsEvidence(
+              `settings-evidence-zh-${theme}-1120-${name}-tab-focus`,
+              theme,
+              1120,
+              780,
+              'zh',
+              false,
+              `${visible} && (() => {const row=document.querySelector(${JSON.stringify(row)}),style=getComputedStyle(row);return document.activeElement===row&&row.matches(':focus-visible')&&!row.matches(':hover')&&style.outlineStyle==='solid'&&style.outlineWidth==='2px'})()`,
+            )
+            await main.webContents.executeJavaScript('document.activeElement.blur()')
+          }
+          main.setContentSize(720, 480)
+          await assertSettingsFit(720, 480, false)
+          await positionSettingsEvidence('.settings-work-voice-card')
+          await captureSettingsEvidence(
+            `settings-evidence-zh-${theme}-720-collapsed`,
+            theme,
+            720,
+            480,
+            'zh',
+            false,
+            collapsedCardsVisible,
+          )
+          await expandSettingsCards(true)
+          for (const [width, height] of [
+            [1120, 780],
+            [940, 720],
+            [720, 480],
+          ] as const) {
+            main.setContentSize(width, height)
+            for (const card of ['voice', 'guide'] as const) {
+              await captureSettingsCard(card, theme, width, height, 'zh')
+            }
+          }
+        }
+        await click(main, '.product-language-toggle')
+        await until(
+          () => main!.webContents.executeJavaScript(`document.documentElement.lang==='en'`),
+          'English settings evidence applied',
+        )
+        for (const card of ['voice', 'guide'] as const) {
+          await captureSettingsCard(card, 'dark', 720, 480, 'en')
+        }
+      } finally {
+        if ((await settingsEvidenceState()).locale !== savedLocale)
+          await click(main, '.product-language-toggle')
+        await click(main, `.theme-swatch-${savedTheme}`)
+        await positionSettingsEvidence()
+        await main.webContents.executeJavaScript(
+          `document.querySelector('.settings-embedded').closest('.product-scroll').scrollTop=${savedScroll}`,
+        )
+        await inspector.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: false })
+        if (ownSettingsInspector) inspector.detach()
+        writeFileSync(join(output, 'settings-evidence.json'), JSON.stringify(evidence, null, 2))
+      }
+    }
+    main.setContentSize(savedSettingsSize[0]!, savedSettingsSize[1]!)
+    await expandSettingsCards(false)
     await click(main, '.product-language-toggle')
     await until(
       () => main!.webContents.executeJavaScript(`document.documentElement.lang==='en'`),
       'rail switches to English without opening Settings',
+    )
+    assert.ok(
+      await main.webContents.executeJavaScript(
+        `(() => { const page=document.querySelector('.settings-embedded'),rows=Array.from(page.querySelectorAll('.work-voice-details summary > span')); return rows.length===2 && rows[0].textContent==='Workbench' && rows[1].textContent==='E-paper Device' && page.querySelector('.product-state-guide > h2').textContent.includes('State guide') })()`,
+      ),
+      'moved settings retain English titles',
     )
     await click(main, '.product-language-toggle')
     await until(
@@ -2873,30 +4212,40 @@ app.whenReady().then(async () => {
     await capture('control-dark')
     main.setSize(720, 600)
     await capture('compact')
-    // A narrow rail keeps a visible state word beside the mark, without an interactive hit area.
-    const narrowPill = (await main.webContents.executeJavaScript(`(() => {
-      const pill=document.querySelector('.product-rail .ink-pill'),text=pill.querySelector('.ink-pill-text');
-      return {display:getComputedStyle(text).display, word:text.innerText.trim(), width:text.getBoundingClientRect().width,
-        mark:pill.querySelector('.ink-pill-dot').getBoundingClientRect().width,
-        label:pill.getAttribute('aria-label'), role:pill.getAttribute('role'),
-        controls:pill.querySelectorAll('button,a,input,[role=button],[tabindex]').length};
+    // A narrow rail keeps the state mark inside the device row, clear of its label and without an interactive hit area;
+    // the words stay in the row's accessible name.
+    const narrowMark = (await main.webContents.executeJavaScript(`(() => {
+      const row=document.querySelector('.product-rail [data-view=ink]'),mark=row.querySelector('.product-nav-status'),
+        label=row.querySelector('.product-nav-label'),box=mark.getBoundingClientRect(),rowBox=row.getBoundingClientRect(),
+        text=document.createRange();
+      text.selectNodeContents(label);
+      return {display:getComputedStyle(mark).display, width:box.width,
+        inside:box.left>=rowBox.left&&box.right<=rowBox.right&&box.top>=rowBox.top&&box.bottom<=rowBox.bottom,
+        clear:text.getBoundingClientRect().left>=box.right, labelCut:label.scrollWidth>label.clientWidth,
+        name:row.getAttribute('aria-label'), hidden:mark.getAttribute('aria-hidden'),
+        controls:mark.querySelectorAll('button,a,input,[role=button],[tabindex]').length};
     })()`)) as {
       display: string
-      word: string
       width: number
-      mark: number
-      label: string
-      role: string
+      inside: boolean
+      clear: boolean
+      labelCut: boolean
+      name: string
+      hidden: string
       controls: number
     }
-    assert.notEqual(narrowPill.display, 'none', 'narrow status keeps its word visible')
+    assert.notEqual(narrowMark.display, 'none', 'narrow status keeps its mark visible')
     assert.ok(
-      narrowPill.word.length > 0 && narrowPill.width >= 24 && narrowPill.mark > 0,
-      JSON.stringify(narrowPill),
+      narrowMark.width > 0 && narrowMark.inside && narrowMark.clear,
+      JSON.stringify(narrowMark),
     )
-    assert.equal(narrowPill.role, 'status')
-    assert.equal(narrowPill.controls, 0)
-    assert.ok(narrowPill.label.includes('墨水屏'), 'narrow status retains its full accessible name')
+    assert.equal(narrowMark.labelCut, false, 'the narrow device row keeps its whole label')
+    assert.equal(narrowMark.hidden, 'true')
+    assert.equal(narrowMark.controls, 0)
+    assert.ok(
+      narrowMark.name.includes('墨水屏设备'),
+      'narrow status retains its full accessible name',
+    )
     assert.equal(
       await main.webContents.executeJavaScript(
         `document.documentElement.scrollWidth<=window.innerWidth`,
@@ -2986,13 +4335,20 @@ app.whenReady().then(async () => {
       viewBeforeEnd = product.snapshot().view
     assert.match(
       await main.webContents.executeJavaScript(
-        `document.querySelector('.product-rail .ink-pill')?.textContent??''`,
+        `document.querySelector('.product-rail [data-view=ink]')?.getAttribute('aria-label')??''`,
       ),
       /临时展示/,
     )
     assert.equal(
       await main.webContents.executeJavaScript(
-        `document.querySelectorAll('.product-rail .ink-pill button').length`,
+        `document.querySelector('.product-rail .product-nav-status')?.classList.contains('is-filled')`,
+      ),
+      true,
+      'a temporary display keeps the connected mark; its name carries the display details',
+    )
+    assert.equal(
+      await main.webContents.executeJavaScript(
+        `document.querySelectorAll('.product-rail .product-nav-status button').length`,
       ),
       0,
     )
@@ -3085,22 +4441,24 @@ app.whenReady().then(async () => {
     )
     assert.equal(JSON.stringify(hub.snapshot().agents), attentionState)
     // Preview controls sit directly above the frame, right-aligned to its edge, on both pages; captured for review.
-    for (const theme of ['light', 'dark'] as const) {
+    for (const theme of captureAll ? (['light', 'dark'] as const) : (['light'] as const)) {
       await click(main, '[data-view=settings]')
       await click(main, `.theme-swatch-${theme}`)
       await wait(300)
-      for (const [width, height] of [
-        [1440, 900],
-        [720, 480],
-      ] as const) {
-        main.setContentSize(width, height)
+      for (const [width, height] of captureAll
+        ? [
+            [1440, 900],
+            [720, 480],
+          ]
+        : [[720, 480]]) {
+        main.setContentSize(width!, height!)
         await wait(450)
         for (const page of ['ambient', 'ink'] as const) {
           if (page === 'ambient') {
             await openInstalledPlugins(main)
             await category('concept')
             await previewReady()
-            await wait(700)
+            if (captureAll) await wait(100)
           } else {
             await openCurrentSurface(main)
             await click(main, '[data-view=ink]')
@@ -3166,8 +4524,16 @@ app.whenReady().then(async () => {
           views: 5,
           assistantTasks: true,
           todoPlan: true,
-          focusRoundTrip: true,
+          contentVisibilityRoundTrip: true,
           consolidatedNavigation: true,
+          groupedRail: true,
+          reservedTitlebarHeight: shellTop.band?.height ?? null,
+          nativeTitlebarHeight: shellTop.area?.height ?? null,
+          fixtureWindowFrame: false,
+          captureAll,
+          durationMs: Date.now() - smokeStartedAt,
+          captionButtonBoundsVerified: Boolean(shellTop.area),
+          hiddenPageStatusPaused: true,
           fixedPixelResize: true,
           inspectionPixelEquality: true,
           visibleApply: true,

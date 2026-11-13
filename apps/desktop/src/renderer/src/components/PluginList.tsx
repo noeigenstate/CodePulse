@@ -56,6 +56,7 @@ export function PluginList({
   logos,
   selected,
   busy,
+  showSource = true,
   onOpen,
   onToggle,
 }: {
@@ -64,6 +65,8 @@ export function PluginList({
   logos: Record<string, string>
   selected: string | undefined
   busy: boolean
+  /** False when the group heading already says where these plugins come from. */
+  showSource?: boolean
   onOpen: (id: string) => void
   onToggle: (row: PluginRow) => void
 }): JSX.Element {
@@ -88,7 +91,7 @@ export function PluginList({
             <PluginLogo name={row.name} glyph={row.glyph} sources={[logos[row.id], row.logo]} />
             <div>
               <strong>{row.name}</strong>
-              <p className="page-muted">{row.source}</p>
+              {showSource && <p className="page-muted">{row.source}</p>}
             </div>
           </div>
           <div className="plugin-status-cell" role="cell">

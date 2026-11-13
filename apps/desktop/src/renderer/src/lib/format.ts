@@ -53,6 +53,15 @@ export function turnStateStyle(state: TurnState): StateStyle {
   }
 }
 
+/** Turn states that animate as "working" (live status dot, shimmering context meter) and count as running. */
+export function isLiveState(state: TurnState): boolean {
+  return (
+    state === TurnState.PROMPT_SUBMITTED ||
+    state === TurnState.THINKING ||
+    state === TurnState.TOOL_RUNNING
+  )
+}
+
 /**
  * 紧凑格式化已用时长，例如 `"3m 12s"` 或 `"1h 4m"`。
  *

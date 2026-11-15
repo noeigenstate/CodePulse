@@ -238,6 +238,19 @@ test('on Windows the sidebar carries the brand and the main area keeps a drag ba
   assert.match(frame({ locale: 'en', platform: 'win32', titleIcon: 'x' }), />CodePulse<\/span>/)
 })
 
+test('elsewhere the sidebar still carries the brand, without the Windows drag band', async () => {
+  const frame = await render()
+  for (const platform of ['linux', 'darwin']) {
+    const html = frame({ locale: 'zh', platform, titleIcon: 'logo.svg' })
+    assert.match(html, /<div class="product-frame">/)
+    assert.match(
+      html,
+      /<div class="product-rail-top"><img class="product-rail-logo" alt="" aria-hidden="true" src="logo.svg"\/><span class="product-rail-name">CodePulse<\/span><button/,
+    )
+    assert.doesNotMatch(html, /product-dragbar/)
+  }
+})
+
 test('a collapsed sidebar keeps the name for assistive technology and offers to expand', async () => {
   const frame = await render()
   const html = frame({ locale: 'zh', collapsed: true, titleIcon: 'logo.svg' })

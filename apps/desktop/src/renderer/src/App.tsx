@@ -329,7 +329,7 @@ export function App(): JSX.Element {
         locale={locale}
         onLocale={toggleLocale}
         platform={platform}
-        titleIcon={platform === 'win32' ? codePulseIconSmall : undefined}
+        titleIcon={codePulseIconSmall}
         runningTasks={runningTasks}
         collapsed={rail.collapsed}
         onToggleRail={rail.toggle}

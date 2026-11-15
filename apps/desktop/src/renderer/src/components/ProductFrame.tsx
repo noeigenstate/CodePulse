@@ -365,8 +365,8 @@ export function ProductFrame({
   onLocale?: () => void
   platform?: string
   /**
-   * Windows draws no title bar strip: this brand mark moves into the sidebar's first row and the
-   * main area gets a drag band for the system buttons. Elsewhere the native title bar says it.
+   * The brand mark in the sidebar's first row, on every platform. On Windows, which draws no title
+   * bar strip, the main area also gets a drag band for the system buttons.
    */
   titleIcon?: string
   /** The sidebar shows icons only. */
@@ -377,8 +377,9 @@ export function ProductFrame({
   children: ReactNode
 }): JSX.Element {
   const zh = locale === 'zh'
+  const windowControls = platform === 'win32' && Boolean(titleIcon)
   return (
-    <div className={`product-frame${titleIcon ? ' has-window-controls' : ''}`}>
+    <div className={`product-frame${windowControls ? ' has-window-controls' : ''}`}>
       <aside className={`product-rail${collapsed ? ' is-collapsed' : ''}`} data-tip-scope>
         <ProductRail
           product={product}
@@ -392,7 +393,7 @@ export function ProductFrame({
         />
       </aside>
       <div className="product-main">
-        {titleIcon && <div className="product-dragbar" />}
+        {windowControls && <div className="product-dragbar" />}
         {product.error && (
           <p className="product-attention" role="alert">
             {product.error}

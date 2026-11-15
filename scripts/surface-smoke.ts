@@ -1405,7 +1405,7 @@ app.whenReady().then(async () => {
       )
     } else {
       assert.equal(shellTop.band, null, 'the native title bar needs no drag band')
-      assert.deepEqual([shellTop.logo, shellTop.name], [false, null], 'no brand beside it')
+      assert.deepEqual([shellTop.logo, shellTop.name], [true, 'CodePulse'], 'the sidebar keeps the brand')
     }
     await capture('shell-top-light')
     // The sidebar collapses to icons from its toggle or Ctrl+B, remembers the choice and keeps every accessible name.
@@ -1550,8 +1550,8 @@ app.whenReady().then(async () => {
       })()`),
       {
         labelsClipped: true,
-        nameClipped: platform === 'win32' ? true : null,
-        logoShown: platform === 'win32' ? false : null,
+        nameClipped: true,
+        logoShown: false,
         language: '中',
         stacked: 'column',
         overflow: 0,

@@ -878,11 +878,11 @@
 .product-frame .product-rail .product-nav-label { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; }
 /* Collapsible rail: its first row holds the switch (and, on Windows, the brand); collapsed, the rail keeps only icons and a status mark. */
 .product-rail-heading { flex:none; }
-.product-rail-top { display:flex; align-items:center; justify-content:flex-end; gap:8px; }
+.product-rail-top { display:flex; align-items:center; justify-content:flex-end; gap:8px; padding-inline:12px 0; }
 /* Windows keeps the system caption strip above the main area; the sidebar brand has its own lower heading. Both its top spacing and its row remain draggable. */
 .product-frame.has-window-controls .product-rail { padding-top:0; }
 .product-frame.has-window-controls .product-rail-heading { padding-top:12px; -webkit-app-region:drag; }
-.product-frame.has-window-controls .product-rail-top { height:40px; padding-inline:12px 0; -webkit-app-region:drag; }
+.product-frame.has-window-controls .product-rail-top { height:40px; -webkit-app-region:drag; }
 .product-rail-toggle, .page-header-actions button, .hud-workspace-header button { -webkit-app-region:no-drag; }
 .product-dragbar { flex:none; height:env(titlebar-area-height, 32px); -webkit-app-region:drag; background:var(--surface-muted); }
 /* Integer size with the small-size mark (no CSS clip) keeps the badge edge crisp. */

@@ -18,3 +18,8 @@ typedef struct {
 esp_err_t epd_quiet_refresh(const epd_canvas_t *canvas,
     const uint8_t *previous, size_t previous_size, unsigned y, unsigned height,
     epd_quiet_metrics_t *metrics);
+#if defined(CODEPULSE_QUIET_RED_CRISP_TRIAL) && CODEPULSE_QUIET_RED_CRISP_TRIAL
+esp_err_t epd_quiet_bwr_refresh(const epd_canvas_t *canvas,
+    const uint8_t *old_black, const uint8_t *old_red, size_t previous_size,
+    unsigned *out_y, unsigned *out_height, epd_quiet_metrics_t *metrics);
+#endif

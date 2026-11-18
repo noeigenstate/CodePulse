@@ -1,0 +1,283 @@
+{
+  "schema": 1,
+  "profile": "Tail48",
+  "version": "0.0.48-red-tail100",
+  "baseCommit": "3489a30d1076273845f7c6a2f09a3bb781316b7c",
+  "sourceLocationType": "saved-worktree-patch-against-base",
+  "sourceCommit": null,
+  "uncommittedSourceDifferences": true,
+  "sourcePatchSha256": "8aacf371e0bc34a9b6b3eea64efd715ea1358e4c415dfdcccc05622579d606da",
+  "originalManifestSha256": "1e12bffcfb02a4100f1ecccec6ae430e4b487cc222c61614bec6ac0ed1789f46",
+  "sourceFilesFingerprintCount": 157,
+  "archiveValidation": {
+    "originalManifestUnmodified": true,
+    "originalLabSourceMatchesManifest": true,
+    "localApplicationBytesAndHashVerified": true,
+    "localPartitionHashVerified": true,
+    "buildConfigMatchesTrackedSdkconfig": true,
+    "restoredSourceHashesVerified": true,
+    "originalPatchRestoredWithoutSourceReconstruction": true,
+    "sourceRestoreMethod": "Detached worktree at baseCommit, apply verbatim historical source.patch, verify all original manifest hashes"
+  },
+  "build": {
+    "sdk": "ESP-IDF v6.0.1",
+    "target": "esp32s3",
+    "jobs": 2,
+    "board": "Board1 ESP32-S3 N16R8 / WFT0420CZ15 400x300 BWR",
+    "options": {
+      "CODEPULSE_AUDIO_AMP_ACTIVE_HIGH": "OFF",
+      "CODEPULSE_AUDIO_COMPILE_TEST": "OFF",
+      "CODEPULSE_AUDIO_ENABLED": "OFF",
+      "CODEPULSE_AUDIO_INPUT_ENABLED": "OFF",
+      "CODEPULSE_AUDIO_PINS_CONFIRMED": "OFF",
+      "CODEPULSE_EPD_PANEL_READBACK": "OFF",
+      "CODEPULSE_EPD_QUIET_PROBE": "OFF",
+      "CODEPULSE_EPD_RED_BADGE_HOLD": "OFF",
+      "CODEPULSE_EPD_RED_BADGE_PROBE": "OFF",
+      "CODEPULSE_EPD_RED_BW_ONLY": "OFF",
+      "CODEPULSE_EPD_RED_LUT5_PROBE": "OFF",
+      "CODEPULSE_EPD_RED_LUT_PROBE": "OFF",
+      "CODEPULSE_EPD_RED_MASK_ACTIVATE": "ON",
+      "CODEPULSE_EPD_RED_MASK_BLACK": "ON",
+      "CODEPULSE_EPD_RED_MASK_COLOR": "ON",
+      "CODEPULSE_EPD_RED_MASK_FAST": "OFF",
+      "CODEPULSE_EPD_RED_MASK_PROBE": "ON",
+      "CODEPULSE_EPD_RED_MASK_PULSE": "ON",
+      "CODEPULSE_EPD_RED_MASK_TAIL100": "ON",
+      "CODEPULSE_EPD_RED_REGION_PROBE": "OFF",
+      "CODEPULSE_EPD_RED_RETAINED": "OFF",
+      "CODEPULSE_EPD_RESOLUTION_PROBE": "OFF",
+      "CODEPULSE_EPD_TEXT_PROBE": "OFF",
+      "CODEPULSE_EPD_TEXT_TIMING_PROBE": "OFF",
+      "CODEPULSE_EPD_WAVEFORM_PROBE": "OFF",
+      "CODEPULSE_EPD_WINDOW_PROBE": "OFF",
+      "CODEPULSE_QUIET_PAIR150_TRIAL": "ON",
+      "CODEPULSE_QUIET_RECT_TRIAL": "ON"
+    },
+    "compileUnits": [
+      {
+        "file": "firmware/main/epd_ssd1683.c",
+        "codepulseDefines": [
+          "CODEPULSE_EPD_RED_MASK_ACTIVATE=1",
+          "CODEPULSE_EPD_RED_MASK_BLACK=1",
+          "CODEPULSE_EPD_RED_MASK_COLOR=1",
+          "CODEPULSE_EPD_RED_MASK_PROBE=1",
+          "CODEPULSE_EPD_RED_MASK_PULSE=1",
+          "CODEPULSE_EPD_RED_MASK_TAIL100=1",
+          "CODEPULSE_QUIET_PAIR150_TRIAL=1",
+          "CODEPULSE_QUIET_RECT_TRIAL=1"
+        ]
+      },
+      {
+        "file": "firmware/experiments/epd-red-mask-probe/red_mask_probe.c",
+        "codepulseDefines": [
+          "CODEPULSE_EPD_RED_MASK_ACTIVATE=1",
+          "CODEPULSE_EPD_RED_MASK_BLACK=1",
+          "CODEPULSE_EPD_RED_MASK_COLOR=1",
+          "CODEPULSE_EPD_RED_MASK_PROBE=1",
+          "CODEPULSE_EPD_RED_MASK_PULSE=1",
+          "CODEPULSE_EPD_RED_MASK_TAIL100=1",
+          "CODEPULSE_QUIET_PAIR150_TRIAL=1",
+          "CODEPULSE_QUIET_RECT_TRIAL=1"
+        ]
+      },
+      {
+        "file": "firmware/experiments/epd-red-mask-probe/red_mask_pattern.c",
+        "codepulseDefines": [
+          "CODEPULSE_EPD_RED_MASK_ACTIVATE=1",
+          "CODEPULSE_EPD_RED_MASK_BLACK=1",
+          "CODEPULSE_EPD_RED_MASK_COLOR=1",
+          "CODEPULSE_EPD_RED_MASK_PROBE=1",
+          "CODEPULSE_EPD_RED_MASK_PULSE=1",
+          "CODEPULSE_EPD_RED_MASK_TAIL100=1",
+          "CODEPULSE_QUIET_PAIR150_TRIAL=1",
+          "CODEPULSE_QUIET_RECT_TRIAL=1"
+        ]
+      },
+      {
+        "file": "firmware/experiments/epd-red-mask-probe/red_mask_plan.c",
+        "codepulseDefines": [
+          "CODEPULSE_EPD_RED_MASK_ACTIVATE=1",
+          "CODEPULSE_EPD_RED_MASK_BLACK=1",
+          "CODEPULSE_EPD_RED_MASK_COLOR=1",
+          "CODEPULSE_EPD_RED_MASK_PROBE=1",
+          "CODEPULSE_EPD_RED_MASK_PULSE=1",
+          "CODEPULSE_EPD_RED_MASK_TAIL100=1",
+          "CODEPULSE_QUIET_PAIR150_TRIAL=1",
+          "CODEPULSE_QUIET_RECT_TRIAL=1"
+        ]
+      }
+    ],
+    "sdkconfigSha256": "ccfd0ab92fd2971eecada3a1775eaceeb9239e62f8ffac0483b0ec6a6430e55e",
+    "appOffset": "0x10000",
+    "appPartitionBytes": 1536000,
+    "appBytes": 1399856,
+    "appFreeBytes": 136144,
+    "appSha256": "924e90eb20db87cc107aaf44c05b5e2b36ee6098f78ee75e4329cefad9b8ff95",
+    "partitionSha256": "5295e8c42d6fb5f95e4e8a185932c6191d27cfc5078322475347e40e71af815a",
+    "spiHz": 2000000,
+    "clockMeasurement": "Frame clock is configured/nominal; electrical frequency 未记录",
+    "phases": [
+      {
+        "order": 1,
+        "name": "TAIL100_RED",
+        "configuredFrameHz": 100,
+        "pllHex": "3a",
+        "configuredFrames": 427,
+        "nominalMs": 4270,
+        "measuredRefreshMs": 4376,
+        "busySeen": true,
+        "result": "ESP_OK",
+        "timingGateMs": 5200,
+        "timingGatePassed": true,
+        "lutSource": "Offline replay of manifest-verified frozen C; not electrical/SPI readback",
+        "luts": {
+          "20": "001a1a000001000a0a000001000e010e0101000a0a00000100010400001e0001050000140023000000010000",
+          "21": "001a1a000001000a0a000001000e010e0101000a0a00000100010400001e000105000014002300000001",
+          "22": "a01a1a000001000a0a000001840e010e0101900a0a000001b0010400001eb00105000014c02300000001",
+          "23": "001a1a000001000a0a000001000e010e0101000a0a00000100010400001e000105000014002300000001",
+          "24": "001a1a000001000a0a000001000e010e0101000a0a00000100010400001e000105000014002300000001"
+        },
+        "selectedPixelsR22R23R24": [
+          1888,
+          118112,
+          0
+        ],
+        "outsideNonHoldPixels": 0
+      },
+      {
+        "order": 2,
+        "name": "WHITE_GLYPHS",
+        "configuredFrameHz": 100,
+        "pllHex": "3a",
+        "configuredFrames": 179,
+        "nominalMs": 1790,
+        "measuredRefreshMs": 1855,
+        "busySeen": true,
+        "result": "ESP_OK",
+        "timingGateMs": 3500,
+        "timingGatePassed": true,
+        "lutSource": "Offline replay of manifest-verified frozen C; not electrical/SPI readback",
+        "luts": {
+          "20": "00b2000100010000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "21": "00b200010001000000000000000000000000000000000000000000000000000000000000000000000000",
+          "22": "00b200010001000000000000000000000000000000000000000000000000000000000000000000000000",
+          "23": "00b200010001000000000000000000000000000000000000000000000000000000000000000000000000",
+          "24": "80b200010001000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "selectedPixelsR22R23R24": [
+          0,
+          119648,
+          352
+        ],
+        "outsideNonHoldPixels": 0
+      }
+    ],
+    "nominalTotalFrames": 606,
+    "nominalDriveMs": 6060,
+    "totalDriveGateMs": 7500,
+    "redCombinedGateMs": null,
+    "physicalVoltageMeasurements": "未记录",
+    "electricalChargeBalance": "未记录",
+    "supplyVcomOtpWritesChanged": false,
+    "flashMode": "dio",
+    "flashFrequencyMHz": 80,
+    "flashSizeMB": 16,
+    "headerVerifiedFromOriginalApplication": true
+  },
+  "notes": [
+    "Original manifest is a verbatim pre-flash build record; its hardwareFlashed/opticalValidation flags remain false.",
+    "Saved worktree patches include historical tracked lab docs and test entrypoints; newly-created historical documents were not in those patches.",
+    "All 157 manifest input files must match after restoring; the current branch head is not used to invent old versions."
+  ],
+  "trial": {
+    "date": "2026-11-08",
+    "timezone": "Asia/Shanghai",
+    "operation": "DRAW_RED",
+    "manualStep": 1,
+    "write": {
+      "applicationOnly": true,
+      "selectedVersion": "0.0.48-red-tail100",
+      "hashVerified": true,
+      "previousVersion": "0.0.47-red-fast",
+      "completedUtc": "2026-11-08T04:15:39.128146+00:00",
+      "completedLocal": "2026-11-08T12:15:39.128146+08:00",
+      "afterReset": "no-reset",
+      "freshVersionAndPowerHoldConfirmed": true,
+      "originalReceiptRewritten": false
+    },
+    "actualRuntime": {
+      "version": "0.0.48-red-tail100",
+      "hardwareRevision": 1,
+      "verifiedBy": "Existing read-only CP1 hello/getStatus; identifying fields omitted",
+      "verifiedSameBoard": true,
+      "startupVersionLineCaptured": false
+    },
+    "baseline": {
+      "expectedTitle": "RED TAIL100 LAB",
+      "screen": "白底黑字 READY；左右上下固定红黑对照清楚完整",
+      "completionReceivedUtc": "2026-11-08T04:16:39.472796+00:00",
+      "completionReceivedLocal": "2026-11-08T12:16:39.472796+08:00",
+      "measuredTotalMs": 16241,
+      "result": "ESP_OK",
+      "humanFeedback": "正常"
+    },
+    "steps": [
+      "正常开机并确认本次版本和 OTP READY 基准",
+      "从首刷完成起至少180秒，人工短按一次",
+      "等待全部阶段完成，按提示观察至少10秒并反馈",
+      "失败后保持现场，结束被动观察；无后续刷新或重试"
+    ],
+    "startReceivedUtc": "2026-11-08T04:20:12.319963+00:00",
+    "endReceivedUtc": "2026-11-08T04:20:18.971299+00:00",
+    "startReceivedLocal": "2026-11-08T12:20:12.319963+08:00",
+    "endReceivedLocal": "2026-11-08T12:20:18.971299+08:00",
+    "timestampMeaning": "Host log-receive timestamps; firmware monotonic clock supplies cooldown and duration metrics",
+    "cooldownMonotonicMs": 213060,
+    "cooldownPassed": true,
+    "measuredRefreshMs": 6231,
+    "measuredTotalMs": 6786,
+    "busySeenAllPhases": true,
+    "allPhaseTimingGatesPassed": true,
+    "totalDriveGatePassed": true,
+    "combinedRedGatePassed": null,
+    "temperature": {
+      "panel": {
+        "value": null,
+        "source": "未记录"
+      },
+      "ambient": {
+        "value": null,
+        "source": "未记录"
+      },
+      "note": "未使用环境温度或AHT20值替代面板温度"
+    },
+    "humanObservationDuration": "按提示在刷新后至少观察10秒；独立的人眼观察时长未记录",
+    "passiveCaptureLimitSeconds": 7200,
+    "window": {
+      "x": 160,
+      "y": 130,
+      "width": 80,
+      "height": 28
+    },
+    "observations": {
+      "red": "红底出现；原话含“军衣”，不另据此宣称均匀度量化通过",
+      "text": "旧字最终擦净，ERROR 白字清楚；擦字过程有短暂阴影",
+      "surrounds": "周围稳定",
+      "flicker": "仍较严重，显红聚闪，不可接受"
+    },
+    "humanFeedback": "擦净了，红底军衣，白字清楚，周围稳定，但是闪烁还是较为严重，黑字被擦除的过程中还会有短时间的阴影残留，红底显现的时侯还会聚闪",
+    "clarification": "未记录",
+    "overallAccepted": false,
+    "observerStopped": true,
+    "rawCaptureEndPresent": false,
+    "subsequentHardwareActions": 0,
+    "missingEvidence": [
+      "面板/环境温度未记录",
+      "阶段视频及光学曲线未记录",
+      "源极/VCOM实际电压及段间输出未记录",
+      "未形成同轮A/B/A重复对照"
+    ],
+    "sourcePolicy": "Sanitized technical summary of existing records; no device access during handoff; raw captures and receipts stay local"
+  }
+}

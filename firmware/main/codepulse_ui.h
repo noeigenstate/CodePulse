@@ -128,6 +128,8 @@ typedef struct {
   bool battery_valid;
   uint8_t battery_percent;
   bool wifi_connected;
+  /* Local transport freshness, not a replacement for the host task state. */
+  bool work_status_stale;
 
   codepulse_ui_agent_t agents[CODEPULSE_UI_MAX_AGENTS];
   size_t agent_count;

@@ -26,7 +26,9 @@ int preview_render(unsigned length, int sensors, float temperature,
     .temperature_c = temperature, .humidity_rh = humidity,
     .battery_valid = battery >= 0 && battery <= 100,
     .battery_percent = (uint8_t)(battery >= 0 && battery <= 100 ? battery : 0),
-    .wifi_connected = wifi != 0,
+    /* 0 means unknown preview telemetry; -1 explicitly simulates stale data. */
+    .wifi_connected = wifi > 0,
+    .work_status_stale = wifi < 0,
   };
   codepulse_remote_apply(&remote, &model);
   epd_canvas_t canvas = { black, red };
@@ -43,6 +45,14 @@ esp_err_t epd_quiet_refresh(const epd_canvas_t *c, const uint8_t *old,
   (void)c; (void)old; (void)n; (void)y; (void)h; (void)metrics;
   return ESP_FAIL;
 }
+#if defined(CODEPULSE_QUIET_RED_CRISP_TRIAL) && CODEPULSE_QUIET_RED_CRISP_TRIAL
+esp_err_t epd_quiet_bwr_refresh(const epd_canvas_t *c, const uint8_t *old_black,
+    const uint8_t *old_red, size_t n, unsigned *y, unsigned *h,
+    epd_quiet_metrics_t *metrics) {
+  (void)c; (void)old_black; (void)old_red; (void)n; (void)y; (void)h; (void)metrics;
+  return ESP_FAIL;
+}
+#endif
 #ifdef PREVIEW_NATIVE
 int main(int argc, char **argv) {
   if (argc != 3 && argc != 4 && argc != 8 && argc != 9) return 1;

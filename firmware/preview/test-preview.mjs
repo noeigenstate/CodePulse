@@ -33,11 +33,11 @@ const { exports: api } = await WebAssembly.instantiate(module, { wasi_snapshot_p
 memory = api.memory
 api._initialize?.()
 assert.equal(typeof api.preview_red_frame, 'function')
-function renderPlanes(status) {
+function renderPlanes(status, wifi = 0) {
   const input = new TextEncoder().encode(JSON.stringify(status))
   assert.ok(input.length < api.preview_capacity())
   new Uint8Array(api.memory.buffer, api.preview_input(), input.length).set(input)
-  assert.equal(api.preview_render(input.length, 0, 0, 0, -1, 0), 0)
+  assert.equal(api.preview_render(input.length, 0, 0, 0, -1, wifi), 0)
   assert.equal(api.preview_size(), 15000)
   return {
     black: new Uint8Array(api.memory.buffer, api.preview_frame(), 15000).slice(),
@@ -655,3 +655,23 @@ writeFileSync(join(output, 'fixtures.json'), JSON.stringify(Object.fromEntries(o
 console.log(
   `PASS: ${cases.length} native/Wasm black/red pixel-identical cases; 400 BW + 400 two-plane repeated renders, immutable inputs, malformed/oversize data rejected.`,
 )
+
+// Offline native/Wasm parity uses an explicit -1 transport signal. Ordinary
+// desktop previews use 0 (unknown telemetry) and keep the current target states.
+for (const inverted of [false, true]) {
+  const input = data(2)
+  input.display.inverted = inverted
+  const name = `offline-${inverted ? 'inverted' : 'normal'}`
+  writeFileSync(join(output, `${name}.json`), JSON.stringify(input))
+  execFileSync(native, [join(output, `${name}.json`), join(output, `${name}.native.bin`),
+    '0', '0', '0', '-1', '-1', join(output, `${name}.native.red.bin`)])
+  const offline = renderPlanes(input, -1)
+  assert.deepEqual(offline.black, new Uint8Array(readFileSync(join(output, `${name}.native.bin`))))
+  assert.deepEqual(offline.red, new Uint8Array(readFileSync(join(output, `${name}.native.red.bin`))))
+  assert.ok(offline.red.every(byte => byte === 255), 'Stale work labels do not demand red refreshes')
+  assert.notDeepEqual(offline.black, renderPlanes(input, 0).black)
+  input.threads[0].state = 'error'
+  input.threads[0].level = 'fault'
+  assert.deepEqual(renderPlanes(input, -1), offline, 'Old task state is never presented as live while disconnected')
+}
+console.log('PASS: 2 explicit offline native/Wasm cases; unknown preview telemetry retains live target labels')

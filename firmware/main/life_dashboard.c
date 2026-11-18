@@ -812,13 +812,13 @@ static int flow(epd_canvas_t *c,display_font_t font,int x,int base,int width,int
     if(used+1==lines && s[last]){
       fit_font(font,s,width,line);
       /* "word …" reads as a stray gap: keep the ellipsis against the last word. */
-      size_t n=strlen(line);
-      if(n>=4 && !strcmp(line+n-3,"…")){
-        size_t end=n-3;
+      size_t length=strlen(line);
+      if(length>=4 && !strcmp(line+length-3,"…")){
+        size_t end=length-3;
         while(end && line[end-1]==' '){
           end--;
         }
-        if(end<n-3){
+        if(end<length-3){
           strcpy(line+end,"…");
         }
       }

@@ -1,6 +1,13 @@
 import { isIPv4 } from 'node:net'
 
-export function pluginPlatformUrl(value = 'http://127.0.0.1:18080'): string {
+export interface PluginPlatformUrlOptions {
+  allowHttp?: boolean
+}
+
+export function pluginPlatformUrl(
+  value = 'http://127.0.0.1:18080',
+  options: PluginPlatformUrlOptions = {},
+): string {
   const url = new URL(value)
   const [first, second] = url.hostname.split('.').map(Number)
   // Self-hosted LAN platforms may lack TLS; their client token stays on the private network.
@@ -17,6 +24,7 @@ export function pluginPlatformUrl(value = 'http://127.0.0.1:18080'): string {
     url.search ||
     url.hash ||
     (url.protocol === 'http:' &&
+      !options.allowHttp &&
       !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) &&
       !privateIpv4)
   )

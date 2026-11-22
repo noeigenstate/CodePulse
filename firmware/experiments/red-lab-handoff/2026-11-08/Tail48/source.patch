@@ -1,0 +1,500 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 8fe4c07..b47d22a 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -23,4 +23,7 @@ integrate main, create a release or flash hardware. Main protection is unchanged
+ Preserve the original worktree's dirty files; do not import unrelated desktop work.
+ Every flash still requires a fresh physical power-hold confirmation. Red must
+ actually change; static-red/BW-only updates are not acceptance of this task.
+-The .46 color result passed once but flicker failed; .47 has not been optically tested.
++The .46 color result passed once but flicker failed. The .47 hardware trial failed:
++READY black fragments remained and target red did not appear; outside controls
++stayed normal. Continue with the default-off Tail48 / 0.0.48-red-tail100 candidate
++only after reading firmware/doc/RED-TAIL100-LAB-2026-11-08.md. No automatic flash.
+diff --git a/README.md b/README.md
+index f293dfc..2be4151 100644
+--- a/README.md
++++ b/README.md
+@@ -1,7 +1,7 @@
+ > **Temporary branch / 动态红色减闪实验：`codex/epd-red-flicker-lab`**
+ >
+ > 跨电脑继续测试请先读 [Board1 减闪交接与构建说明](firmware/doc/RED-REFRESH-HANDOFF.md)。
+-> `.46` 显色通过但闪烁未通过；`.47` 已构建、尚未做实机验证。本分支不合并 main、不自动刷机。
++> `.46` 显色通过但闪烁未通过；`.47` 实测未显红且残留旧黑字，失败。下一候选为默认关闭的 [`.48` 100Hz 尾段实验](firmware/doc/RED-TAIL100-LAB-2026-11-08.md)。本分支不合并 main、不自动刷机。
+ > This is a source checkpoint for manual Board1 red-refresh experiments, not a firmware release.
+ 
+ <div align="center">
+diff --git a/firmware/CMakeLists.txt b/firmware/CMakeLists.txt
+index 37395b9..8f86ef2 100644
+--- a/firmware/CMakeLists.txt
++++ b/firmware/CMakeLists.txt
+@@ -121,7 +121,13 @@ option(CODEPULSE_EPD_RED_MASK_FAST "Diagnostic: subdivide the accepted red tail
+ if(CODEPULSE_EPD_RED_MASK_FAST AND NOT CODEPULSE_EPD_RED_MASK_ACTIVATE)
+     message(FATAL_ERROR "Fast-tail diagnostic requires RED_MASK_ACTIVATE")
+ endif()
+-if(CODEPULSE_EPD_RED_MASK_FAST)
++option(CODEPULSE_EPD_RED_MASK_TAIL100 "Diagnostic: retain 100Hz conditioning and subdivide only the red tail" OFF)
++if(CODEPULSE_EPD_RED_MASK_TAIL100 AND (NOT CODEPULSE_EPD_RED_MASK_ACTIVATE OR CODEPULSE_EPD_RED_MASK_FAST))
++    message(FATAL_ERROR "100Hz-tail diagnostic requires RED_MASK_ACTIVATE and excludes RED_MASK_FAST")
++endif()
++if(CODEPULSE_EPD_RED_MASK_TAIL100)
++    set(PROJECT_VER "0.0.48-red-tail100")
++elseif(CODEPULSE_EPD_RED_MASK_FAST)
+     set(PROJECT_VER "0.0.47-red-fast")
+ elseif(CODEPULSE_EPD_RED_MASK_ACTIVATE)
+     set(PROJECT_VER "0.0.46-red-activate")
+diff --git a/firmware/README.md b/firmware/README.md
+index 993025c..ff2bdfd 100644
+--- a/firmware/README.md
++++ b/firmware/README.md
+@@ -1,5 +1,6 @@
+ > **减闪临时分支**：开始前读 [跨电脑交接](doc/RED-REFRESH-HANDOFF.md)。
+-> 使用 `scripts/build-red-lab.ps1` 明确选择 Fast47 / Color46 / Erase43 / Production33。
++> `.47` 实测未显红且残留旧字；下一候选为 `.48-red-tail100`，见[实验记录](doc/RED-TAIL100-LAB-2026-11-08.md)。
++> 使用 `scripts/build-red-lab.ps1` 明确选择 Tail48 / Fast47 / Color46 / Erase43 / Production33。
+ > 本分支保留默认关闭的实验入口；构建、实机刷写和光学验收互不等价。
+ 
+ # CodePulse firmware / 墨水屏固件
+diff --git a/firmware/doc/RED-FAST-LAB-2026-11-06.md b/firmware/doc/RED-FAST-LAB-2026-11-06.md
+index 7e5fa04..4cdca1a 100644
+--- a/firmware/doc/RED-FAST-LAB-2026-11-06.md
++++ b/firmware/doc/RED-FAST-LAB-2026-11-06.md
+@@ -58,3 +58,14 @@ ESP-IDF6.0.1 / ESP32-S3 目标构建通过，最多两个并行编译任务。
+ 分区余量 136064 字节。
+ SHA-256：4713c4ae53823bfd0e3a2d6f26050a3eb778a1fbf8d4bef343c5a64397e1eb45。
+ 分区表不变，.33 已验证恢复镜像已核对；此时设备仍为 .46，没有 .47 刷写或光学结论。
++
++## 2026-11-08 实测：显红失败
++
++迁移后按本次持续按键确认，仅写入 `.47` 应用并校验，实读运行身份与正常基准确认。
++首刷 16241ms，225150ms 后人工短按一次；pass=1/2 显红 4356ms、pass=2/2 白字清理
++1855ms，refresh=6211ms、total=6766ms，均 ESP_OK。此次实际计时不改写 .46 的缺失值。
++
++用户看到旧 READY 黑字未擦净、留下文字碎片；目标红底未出现，未见阴影或闪烁。
++左右、上下固定红黑对照保持正常。综合 **显红失败**；白字清晰度未独立确认，
++无闪烁不能算合格减闪。观察已结束，保持失败现场，没有自动重试或补刷。
++下一候选见 [100Hz 尾段实验](RED-TAIL100-LAB-2026-11-08.md)。
+diff --git a/firmware/doc/RED-REFRESH-HANDOFF.md b/firmware/doc/RED-REFRESH-HANDOFF.md
+index ebfac2f..435d0d5 100644
+--- a/firmware/doc/RED-REFRESH-HANDOFF.md
++++ b/firmware/doc/RED-REFRESH-HANDOFF.md
+@@ -1,6 +1,6 @@
+ # Board1 动态红色减闪：跨电脑继续开发
+ 
+-更新：2026-11-07。临时远端分支 **`codex/epd-red-flicker-lab`**，产品仓库
++更新：2026-11-08。临时远端分支 **`codex/epd-red-flicker-lab`**，产品仓库
+ <https://github.com/noeigenstate/CodePulse>。这是实验检查点，未申请合并 main。
+ 
+ ## 当前目标与准确进度
+@@ -14,9 +14,11 @@
+ | `.43-red-black` / Erase43 | 退红后写黑字一次通过：清楚、周边正常、闪烁可接受；显红步骤呈黑，失败 | 保留有效退红路径，按需对照，不重复默认全套 |
+ | `.44` / `.45` | 显红呈黑或混色、白字偏弱，失败 | 保留源码追溯，不作为默认测试 |
+ | `.46-red-activate` / Color46 | 红色、白字、周边稳定一次通过；**闪烁严重，不可接受** | 已通过的色彩对照，仍不是合格产品波形 |
+-| `.47-red-fast` / Fast47 | 主机测试、目标编译及镜像检查通过；**尚未刷入，尚无光学结果** | 周末首先测此候选的减闪效果 |
++| `.47-red-fast` / Fast47 | 11 月 8 日实测：旧 READY 黑字残留、目标红底未出现；周边正常、未见闪烁；**显红失败** | 保留失败源码、镜像和实际计时，不默认重跑 |
++| `.48-red-tail100` / Tail48 | 保留 .46 的 100Hz 与前段，仅改尾段为 50–60ms 周期；主机与工具检查通过，**目标构建和实机待确认** | 当前下一候选，见 [100Hz 尾段记录](RED-TAIL100-LAB-2026-11-08.md) |
+ 
+-最后一次实机身份确认是 `.46`，不能据文档猜测新一轮连接的设备版本。
++2026-11-08 本轮已只写应用并实读确认 `.47`，单次显红失败后保持现场；
++不能据文档猜测新一轮连接的设备版本。
+ `.46` 动态测试的串口观察已在用户操作前超时，实际耗时缺失；不能将名义 6060ms
+ 当作测量值。新观察入口默认持续 2 小时，手动按键前确认它仍在运行。
+ 公开结论见各 [RED-* 实验记录](RED-FAST-LAB-2026-11-06.md)；原始设备身份、OTP、
+@@ -25,7 +27,7 @@
+ 基线来自根提交 `ca3efd7a8aa4516ebd0bd00a36ac7a0ca74d486f`，包含此前已提交的
+ 桌面功能。检查点另外收录 `.33` 离线状态修复及对应双端生产预览，保证固件源码基础一致。
+ 没有带入正在开发的电脑状态第四布局、市场服务或 Antigravity 桌面改动。
+-生产默认不开任何红色实验开关，双端生产预览仍为 `.33`；`.47` 是独立手动测试页。
++生产默认不开任何红色实验开关，双端生产预览仍为 `.33`；`.47`、`.48` 是独立手动测试页。
+ 
+ ## 驱动与硬件边界
+ 
+@@ -38,9 +40,12 @@
+   前 1220ms 的名义电平顺序及所有电平累计时间保留；再恢复 100Hz / 3A 清理白字 179 帧。
+   原 170–200ms 的慢周期改为 25–30ms，合计名义驱动仍 6060ms。
+   相同累计驱动不是物理等价证明，芯片支持 200Hz 也不是此批玻璃通过验证。
++- `.48` 从 .46 出发，始终 100Hz / R30=3A，原前四组逐帧保留；仅尾段改为
++  10/40ms×30 与 10/50ms×20，末 350ms 显红保持和白字清理不变。
++  仍须同时验收颜色、旧字擦除、白字、周边与闪烁，不能预判通过。
+ - 电压、VCOM_DC、OTP、GPIO、配网和 NVS 不改。五表完整加载；分阶段超时、BUSY
+   异常或失败后停止，不自动重试。外部未变区域仍作同排、上下的红黑对照。
+-- `.47` 尚未证明温度适应性、长期循环、电荷平衡或产品寿命；软件测试不模拟这些。
++- 各候选尚未证明温度适应性、长期循环、电荷平衡或产品寿命；软件测试不模拟这些。
+ 
+ 关键文件：
+ 
+@@ -51,7 +56,7 @@
+ | `firmware/experiments/epd-red-mask-probe/driver_red_black.inc` | 两阶段加载、帧率恢复、BUSY 和失败停止 |
+ | `red_mask_probe.c` / `red_mask_pattern.c`（同目录） | 人工状态机、冷却间隔、400×300 对照画面 |
+ | 同目录 `tests/` / `test.ps1` | 真实驱动调用的事务、像素和故障路径主机测试 |
+-| `firmware/scripts/build-red-lab.ps1` | 跨电脑构建四种配置，不刷机、不启动客户端 |
++| `firmware/scripts/build-red-lab.ps1` | 跨电脑构建五种配置，不刷机、不启动客户端 |
+ | `firmware/scripts/red-lab-artifact.py` | 源码、配置、版本、分区、镜像哈希检查及独立本地包 |
+ | `firmware/scripts/observe-red-lab.py` | 只读日志观察，不发命令、不复位，不保存普通 Wi-Fi/CP1 日志 |
+ 
+@@ -89,11 +94,12 @@ git log -1 --oneline
+ 
+ ```powershell
+ node scripts/check-firmware-preview.mjs
++.\firmware\experiments\epd-red-mask-probe\test.ps1 -Tail100Stage -Output .tmpshots/red-tail100-host
+ .\firmware\experiments\epd-red-mask-probe\test.ps1 -FastStage -Output .tmpshots/red-fast-host
+ .\firmware\experiments\epd-red-mask-probe\test.ps1 -ActivateStage -Output .tmpshots/red-color-host
+ .\firmware\experiments\epd-red-mask-probe\test.ps1 -BlackStage -Output .tmpshots/red-erase-host
+ python -m unittest discover -s firmware/tests/red-lab -p "test_*.py"
+-.\firmware\scripts\build-red-lab.ps1 -Profile Fast47
++.\firmware\scripts\build-red-lab.ps1 -Profile Tail48
+ ```
+ 
+ Windows 输出目录完整路径需不超过 80 个字符；入口在 SDK 启动前检查，避免深目录在
+@@ -102,18 +108,18 @@ Windows 输出目录完整路径需不超过 80 个字符；入口在 SDK 启动
+ 
+ 默认最多 2 个编译任务。该入口先显式关闭其他探测和音频开关，再开启所选链条；
+ `-PlanOnly` 只显示配置，不初始化 SDK 或接触硬件。生成配置写在 build 目录，
+-不改已提交的 `firmware/sdkconfig`。选择 `Color46` / `Erase43` / `Production33` 可分别构建对照或正常应用。
++不改已提交的 `firmware/sdkconfig`。选择 `Fast47` / `Color46` / `Erase43` / `Production33` 可分别构建对照或正常应用。
+ 每种配置的缓存和本地包互不混用。已有 `package/manifest.json` 的目录不覆盖；
+ 修改波形后用新的 `-BuildDirectory build-red-lab-fast47-b`，并记录新版本/源码差异。
+ 增加新候选运行版本时，同时更新 CMake、构建脚本和产物工具中的版本映射，保留必要对照；
+ 不要只覆盖旧包或在日志里把不同波形当成同一已验收版本。
+ 
+-包位于 `firmware/build-red-lab-fast47/package/`，包括应用、待对照分区和 manifest。
++包位于 `firmware/build-red-lab-tail48/package/`，包括应用、待对照分区和 manifest。
+ manifest 标注根提交、源码/配置哈希、运行版本、分区、应用大小和 SHA256，光学验收仍为 false。
+ 不同电脑、路径、编译时间的镜像哈希可能不同；只将同一包的 manifest 与其镜像核对。
+ 原机器 `.47` 镜像哈希见 [实验记录](RED-FAST-LAB-2026-11-06.md)，是历史定位值，不是跨电脑构建承诺。
+ 
+-已知主机检查：Fast47 每模式 1121 个故障点，Color46 为 1117，Erase43 为 893，
++已知主机检查：Tail48 / Color46 每模式 1117 个故障点，Fast47 为 1121，Erase43 为 893，
+ 均已通过 Debug/NDEBUG；两套生产预览的 75 项源哈希已通过。
+ 完整 quiet 套件仍有旧基线失败 `test_dashboard.c:180`、`test_pacing.c:74`，
+ 不把整套 quiet 测试宣称通过，也不修改预期去掩盖它们。
+@@ -128,8 +134,8 @@ manifest 标注根提交、源码/配置哈希、运行版本、分区、应用
+ 
+ ```powershell
+ . .\firmware\scripts\idf-env.ps1
+-$b = Join-Path $FirmwareRoot 'build-red-lab-fast47'
+-& $IdfPython .\firmware\scripts\red-lab-artifact.py check --build $b --profile Fast47
++$b = Join-Path $FirmwareRoot 'build-red-lab-tail48'
++& $IdfPython .\firmware\scripts\red-lab-artifact.py check --build $b --profile Tail48
+ if ($LASTEXITCODE -ne 0) { throw 'Package check failed; stop.' }
+ .\firmware\scripts\probe.ps1 -List
+ $port = Read-Host 'Board1 native USB COM port'
+@@ -164,7 +170,7 @@ Invoke-RedLabEsp -EspArguments @('write-flash', '--flash-mode', 'dio', '--flash-
+ 再按约 3 秒正常开机，灯亮后松开。记录实读版本、分区与写入结果在忽略目录；
+ 未获取写入校验、开机身份或光学结论时分别标为未确认。
+ 
+-## 周末第一步：只测 .47 的显红
++## 当前手动步骤：只测 .48 的显红
+ 
+ 在正常开机前启动被动日志观察，端口断开后它会等同一 COM 号重连：
+ 
+@@ -176,7 +182,7 @@ Invoke-RedLabEsp -EspArguments @('write-flash', '--flash-mode', 'dio', '--flash-
+ 它是被动日志，未捕获到版本或某次测试就不能推断设备身份/时序；需要时用正常启动日志
+ 或只读 CP1 探测核对身份，避免两个程序争用端口。
+ 
+-1. `.47` 首刷应显示 **RED FAST LAB**：中间白底黑字 READY，左右及上下固定红黑文字。
++1. `.48` 首刷应显示 **RED TAIL100 LAB**：中间白底黑字 READY，左右及上下固定红黑文字。
+    先确认启动日志版本与基准清楚完整。
+ 2. 从首次刷新完成起至少等 180 秒，再**短按一次**。等待显红与白字清理两阶段都结束。
+    目标是红底白字 ERROR，周边保持不变。判断颜色、白字和闪烁，不能只问“是否更新”。
+@@ -186,7 +192,7 @@ Invoke-RedLabEsp -EspArguments @('write-flash', '--flash-mode', 'dio', '--flash-
+ 4. 不连续按键、不自动重试。颜色正确但闪烁仍不可接受就记录为失败，继续改具体波形。
+    冷却后下一次短按会返回正常联网应用并进行恢复首刷；需要永久退出实验则构建 Production33 后另行升级。
+ 
+-`.47` 只验证红色出现；退红继续保留 `.43` 的已通过路径。进入下一版前说明
++`.48` 只验证红色出现；退红继续保留 `.43` 的已通过路径。进入下一版前说明
+ 本次失败的是哪个指标、改哪个阶段、预期影响及验收，不重新让用户跑完所有失败历史。
+ 诊断期间无需桌面客户端或局域网服务；恢复正常应用后，换办公室可能需要重新配网/绑定新宿主，
+ 用正常客户端入口处理，不把旧机器凭据放进 Git。
+diff --git a/firmware/experiments/epd-red-mask-probe/red_mask_pattern.c b/firmware/experiments/epd-red-mask-probe/red_mask_pattern.c
+index 3ea2bfe..17058e9 100644
+--- a/firmware/experiments/epd-red-mask-probe/red_mask_pattern.c
++++ b/firmware/experiments/epd-red-mask-probe/red_mask_pattern.c
+@@ -3,7 +3,9 @@
+ bool red_mask_draw(epd_canvas_t *c, unsigned frame) {
+   if (!c || !c->black || !c->red || frame > RED_MASK_LAST_FRAME) return false;
+   epd_canvas_clear(c, EPD_COLOR_WHITE);
+-#if defined(CODEPULSE_EPD_RED_MASK_FAST)
++#if defined(CODEPULSE_EPD_RED_MASK_TAIL100)
++  epd_canvas_draw_text(c, 12, 12, "RED TAIL100 LAB", 3, EPD_COLOR_BLACK);
++#elif defined(CODEPULSE_EPD_RED_MASK_FAST)
+   epd_canvas_draw_text(c, 12, 12, "RED FAST LAB", 3, EPD_COLOR_BLACK);
+ #elif defined(CODEPULSE_EPD_RED_MASK_ACTIVATE)
+   epd_canvas_draw_text(c, 12, 12, "RED PHASE LAB", 3, EPD_COLOR_BLACK);
+@@ -23,7 +25,9 @@ bool red_mask_draw(epd_canvas_t *c, unsigned frame) {
+ #else
+   epd_canvas_draw_text(c, 12, 84, "1 RED ERASES / 2 RED RETURNS", 1, EPD_COLOR_BLACK);
+ #endif
+-#if defined(CODEPULSE_EPD_RED_MASK_FAST)
++#if defined(CODEPULSE_EPD_RED_MASK_TAIL100)
++  epd_canvas_draw_text(c, 12, 102, "100HZ PREFIX - 50/60MS RED TAIL", 1, EPD_COLOR_BLACK);
++#elif defined(CODEPULSE_EPD_RED_MASK_FAST)
+   epd_canvas_draw_text(c, 12, 102, "SHORT RED PULSES - WHITE GLYPHS LAST", 1, EPD_COLOR_BLACK);
+ #elif defined(CODEPULSE_EPD_RED_MASK_ACTIVATE)
+   epd_canvas_draw_text(c, 12, 102, "RED PHASES FIRST - WHITE GLYPHS LAST", 1, EPD_COLOR_BLACK);
+diff --git a/firmware/experiments/epd-red-mask-probe/red_mask_plan.c b/firmware/experiments/epd-red-mask-probe/red_mask_plan.c
+index 801fe12..28e41a1 100644
+--- a/firmware/experiments/epd-red-mask-probe/red_mask_plan.c
++++ b/firmware/experiments/epd-red-mask-probe/red_mask_plan.c
+@@ -166,7 +166,17 @@ size_t red_black_make_lut(unsigned table,const red_mask_plan_t *plan,
+        * to one. Red-only pixels get the entire sequence, NOT just its tail.
+        * Numeric data attribution is the same as the retained .45 tail below.
+        * Remaining selectors retain level 00 with synchronized durations. */
+-#ifdef CODEPULSE_EPD_RED_MASK_FAST
++#if defined(CODEPULSE_EPD_RED_MASK_TAIL100)
++      /* .47 failed optically. Keep .46's clock and first four groups exact;
++       * only redistribute its tail into 10/40ms and 10/50ms pulse pairs.
++       * Tail totals remain 500ms VDL + 2200ms VDHR, then 350ms VDHR.
++       * Equal totals do not establish equivalent pigment response. */
++      static const uint8_t conditioned[7][6]={
++        {0xa0,26,26,0,0,1}, {0x00,10,10,0,0,1},
++        {0x84,14,1,14,1,1}, {0x90,10,10,0,0,1},
++        {0xb0,1,4,0,0,30}, {0xb0,1,5,0,0,20}, {0xc0,35,0,0,0,1}
++      };
++#elif defined(CODEPULSE_EPD_RED_MASK_FAST)
+       /* UC8176 R30=39 selects 200Hz (M=7,N=1); .46 was 3A/100Hz.
+        * The prefix is IDENTICAL in nominal milliseconds: two 26-frame
+        * white dwells + 20 neutral frames merge into one group at 2x counts.
+diff --git a/firmware/experiments/epd-red-mask-probe/red_mask_probe.h b/firmware/experiments/epd-red-mask-probe/red_mask_probe.h
+index 6a3913a..95beb28 100644
+--- a/firmware/experiments/epd-red-mask-probe/red_mask_probe.h
++++ b/firmware/experiments/epd-red-mask-probe/red_mask_probe.h
+@@ -20,7 +20,9 @@
+ #endif
+ #define RED_MASK_PAINT_GATE_MS 7500u
+ #define RED_MASK_PAINT_PASS_GATE_MS(pass) ((pass)==0?5200u:3500u)
+-#ifdef CODEPULSE_EPD_RED_MASK_FAST
++#if defined(CODEPULSE_EPD_RED_MASK_TAIL100)
++#define RED_MASK_PAINT_PHASE(pass) ((pass)==0?"TAIL100_RED":"WHITE_GLYPHS")
++#elif defined(CODEPULSE_EPD_RED_MASK_FAST)
+ #define RED_MASK_PAINT_PHASE(pass) ((pass)==0?"FAST_RED_TAIL":"WHITE_GLYPHS")
+ #else
+ #define RED_MASK_PAINT_PHASE(pass) ((pass)==0?"CONDITION_AND_RED":"WHITE_GLYPHS")
+diff --git a/firmware/experiments/epd-red-mask-probe/test.ps1 b/firmware/experiments/epd-red-mask-probe/test.ps1
+index f7f5e09..3b58048 100644
+--- a/firmware/experiments/epd-red-mask-probe/test.ps1
++++ b/firmware/experiments/epd-red-mask-probe/test.ps1
+@@ -1,5 +1,6 @@
+-param([string]$Output,[switch]$BlackStage,[switch]$ColorStage,[switch]$PulseStage,[switch]$ActivateStage,[switch]$FastStage)
++param([string]$Output,[switch]$BlackStage,[switch]$ColorStage,[switch]$PulseStage,[switch]$ActivateStage,[switch]$FastStage,[switch]$Tail100Stage)
+ $ErrorActionPreference = 'Stop'
++if ($Tail100Stage -and $FastStage) { throw 'Tail100 and Fast are separate candidates.' }
+ $experiment = $PSScriptRoot
+ $firmware = (Resolve-Path -LiteralPath (Join-Path $experiment '../..')).Path
+ if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
+@@ -13,7 +14,7 @@ if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
+         if ($entry -match '^([^=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process') }
+     }
+ }
+-$useBlackDriver = $BlackStage -or $ColorStage -or $PulseStage -or $ActivateStage -or $FastStage
++$useBlackDriver = $BlackStage -or $ColorStage -or $PulseStage -or $ActivateStage -or $FastStage -or $Tail100Stage
+ $driverTest = if($useBlackDriver) { 'test_black_driver.c' } else { 'test_driver.c' }
+ $out = if ($Output) { [IO.Path]::GetFullPath($Output) } else { Join-Path $firmware 'build-red-mask-host' }
+ $common = @('/nologo','/std:c11','/utf-8','/W4','/WX','/D_CRT_SECURE_NO_WARNINGS',
+@@ -25,10 +26,11 @@ foreach($mode in @('debug','ndebug')) {
+     try {
+         [string[]]$defines = if($mode -eq 'ndebug') { @('/DNDEBUG') } else { @() }
+         if($useBlackDriver) { $defines += '/DCODEPULSE_EPD_RED_MASK_BLACK=1' }
+-        if($ColorStage -or $PulseStage -or $ActivateStage -or $FastStage) { $defines += '/DCODEPULSE_EPD_RED_MASK_COLOR=1' }
+-        if($PulseStage -or $ActivateStage -or $FastStage) { $defines += '/DCODEPULSE_EPD_RED_MASK_PULSE=1' }
+-        if($ActivateStage -or $FastStage) { $defines += '/DCODEPULSE_EPD_RED_MASK_ACTIVATE=1' }
++        if($ColorStage -or $PulseStage -or $ActivateStage -or $FastStage -or $Tail100Stage) { $defines += '/DCODEPULSE_EPD_RED_MASK_COLOR=1' }
++        if($PulseStage -or $ActivateStage -or $FastStage -or $Tail100Stage) { $defines += '/DCODEPULSE_EPD_RED_MASK_PULSE=1' }
++        if($ActivateStage -or $FastStage -or $Tail100Stage) { $defines += '/DCODEPULSE_EPD_RED_MASK_ACTIVATE=1' }
+         if($FastStage) { $defines += '/DCODEPULSE_EPD_RED_MASK_FAST=1' }
++        if($Tail100Stage) { $defines += '/DCODEPULSE_EPD_RED_MASK_TAIL100=1' }
+         & cl.exe @common @defines ('/I'+$firmware+'/tests/panel/include') ($experiment+'/tests/'+$driverTest) ($experiment+'/red_mask_pattern.c') ($experiment+'/red_mask_plan.c') ($firmware+'/main/epd_canvas.c') /Fe:test-driver.exe *> driver-build.log
+         if($LASTEXITCODE -ne 0) { Get-Content driver-build.log; throw 'Red mask driver test compile failed' }
+         & .\test-driver.exe
+diff --git a/firmware/experiments/epd-red-mask-probe/tests/test_black_driver.c b/firmware/experiments/epd-red-mask-probe/tests/test_black_driver.c
+index c8028ff..6c3be3a 100644
+--- a/firmware/experiments/epd-red-mask-probe/tests/test_black_driver.c
++++ b/firmware/experiments/epd-red-mask-probe/tests/test_black_driver.c
+@@ -138,6 +138,10 @@ static void check_candidate_drive(void) {
+         const uint8_t red_levels[]={0xa0,0x84,0x90,0xb0,0xb0,0xb0,0xc0};
+         const uint8_t times[7][5]={{52,52,40,0,1},{28,2,28,2,1},
+           {20,20,0,0,1},{1,4,0,0,40},{1,4,0,0,20},{1,5,0,0,40},{70,0,0,0,1}};
++#elif defined(CODEPULSE_EPD_RED_MASK_TAIL100)
++        const uint8_t red_levels[]={0xa0,0x00,0x84,0x90,0xb0,0xb0,0xc0};
++        const uint8_t times[7][5]={{26,26,0,0,1},{10,10,0,0,1},
++          {14,1,14,1,1},{10,10,0,0,1},{1,4,0,0,30},{1,5,0,0,20},{35,0,0,0,1}};
+ #else
+         const uint8_t red_levels[]={0xa0,0x00,0x84,0x90,0xb0,0xb0,0xc0};
+         const uint8_t times[7][5]={{26,26,0,0,1},{10,10,0,0,1},
+@@ -343,7 +347,54 @@ static void transitions(void) {
+     memcpy(previous_black,black,15000); memcpy(previous_red,red,15000);
+   }
+ }
++#ifdef CODEPULSE_EPD_RED_MASK_TAIL100
++static unsigned expand_levels(const uint8_t *lut,uint8_t expanded[427]) {
++  unsigned count=0;
++  for(unsigned group=0;group<7;++group)
++    for(unsigned repeat=0;repeat<lut[group*6+5];++repeat)
++      for(unsigned phase=0;phase<4;++phase)
++        for(unsigned frame=0;frame<lut[group*6+1+phase];++frame) {
++          CHECK(count<427);
++          expanded[count++]=(uint8_t)((lut[group*6]>>(6u-2u*phase))&3u);
++        }
++  return count;
++}
++static void check_tail100_reference(void) {
++  /* Frozen .46 reference, independent of the new LUT. Compare the actual
++   * nominal level sequence and budgets; this does not model pigments. */
++  const uint8_t color46[42]={
++      0xa0,26,26,0,0,1, 0x00,10,10,0,0,1,
++      0x84,14,1,14,1,1, 0x90,10,10,0,0,1,
++      0xb0,4,16,0,0,5, 0xb0,3,14,0,0,10, 0xc0,35,0,0,0,1};
++  const red_mask_plan_t paint={.operation=RED_MASK_PAINT};
++  uint8_t lut[44],reference[427],candidate[427];
++  CHECK(red_black_make_lut(2,&paint,0,lut)==42);
++  CHECK(expand_levels(color46,reference)==427 && expand_levels(lut,candidate)==427);
++  CHECK(!memcmp(reference,candidate,122));
++  CHECK(!memcmp(reference+392,candidate+392,35));
++  unsigned reference_total[4]={0},candidate_total[4]={0};
++  for(unsigned frame=0;frame<427;++frame) {
++    ++reference_total[reference[frame]];++candidate_total[candidate[frame]];
++  }
++  CHECK(!memcmp(reference_total,candidate_total,sizeof(reference_total)));
++  unsigned negative=0,red_drive=0,run=0,last=4;
++  for(unsigned frame=122;frame<392;++frame) {
++    const unsigned level=candidate[frame];
++    CHECK(level==2 || level==3);
++    negative+=level==2;red_drive+=level==3;
++    run=level==last?run+1u:1u;last=level;
++    CHECK(run<=(level==2?1u:5u));
++  }
++  CHECK(negative==50 && red_drive==220);
++  CHECK(red_mask_frames(&paint)==606 && red_mask_nominal_ms(&paint)==6060);
++  CHECK(red_black_pass_hz(&paint,0)==100 && red_black_pass_hz(&paint,1)==100);
++  CHECK(red_black_pass_hz(&paint,2)==0);
++}
++#endif
+ int main(void) {
++#ifdef CODEPULSE_EPD_RED_MASK_TAIL100
++  check_tail100_reference();
++#endif
+   epd_quiet_metrics_t m;
+   red_mask_plan_t invalid_plan={.operation=RED_MASK_ERASE};
+   CHECK(red_mask_frames(&invalid_plan)==179 && red_mask_nominal_ms(&invalid_plan)==1790);
+@@ -421,6 +472,9 @@ int main(void) {
+     CHECK(pll==0x3a); /* The accepted white/erase clock is restored. */
+ #ifdef CODEPULSE_EPD_RED_MASK_FAST
+     CHECK(pll_writes==3); /* Initial 100Hz, red 200Hz, white 100Hz. */
++#endif
++#ifdef CODEPULSE_EPD_RED_MASK_TAIL100
++    CHECK(pll_writes==1); /* Keep .46's single 100Hz setting throughout. */
+ #endif
+     CHECK(!memcmp(ram[0],black,15000) && !memcmp(ram[1],red,15000));
+   }
+diff --git a/firmware/main/CMakeLists.txt b/firmware/main/CMakeLists.txt
+index 619ad3f..9db8b0b 100644
+--- a/firmware/main/CMakeLists.txt
++++ b/firmware/main/CMakeLists.txt
+@@ -86,6 +86,9 @@ if(CODEPULSE_EPD_RED_MASK_PROBE)
+                     if(CODEPULSE_EPD_RED_MASK_FAST)
+                         target_compile_definitions(${COMPONENT_LIB} PRIVATE CODEPULSE_EPD_RED_MASK_FAST=1)
+                     endif()
++                    if(CODEPULSE_EPD_RED_MASK_TAIL100)
++                        target_compile_definitions(${COMPONENT_LIB} PRIVATE CODEPULSE_EPD_RED_MASK_TAIL100=1)
++                    endif()
+                 endif()
+             endif()
+         endif()
+diff --git a/firmware/scripts/build-red-lab.ps1 b/firmware/scripts/build-red-lab.ps1
+index bd83604..9a5eff8 100644
+--- a/firmware/scripts/build-red-lab.ps1
++++ b/firmware/scripts/build-red-lab.ps1
+@@ -1,14 +1,14 @@
+ param(
+-    [ValidateSet('Fast47', 'Color46', 'Erase43', 'Production33')][string]$Profile = 'Fast47',
++    [ValidateSet('Tail48', 'Fast47', 'Color46', 'Erase43', 'Production33')][string]$Profile = 'Tail48',
+     [string]$BuildDirectory,
+     [ValidateRange(1, 2)][int]$Jobs = 2,
+     [switch]$PlanOnly
+ )
+ $ErrorActionPreference = 'Stop'
+ $firmware = Split-Path -Parent $PSScriptRoot
+-$versions = @{ Fast47 = '0.0.47-red-fast'; Color46 = '0.0.46-red-activate';
++$versions = @{ Tail48 = '0.0.48-red-tail100'; Fast47 = '0.0.47-red-fast'; Color46 = '0.0.46-red-activate';
+     Erase43 = '0.0.43-red-black'; Production33 = '0.0.33-status-region-pair150' }
+-$levels = @{ Production33 = 0; Erase43 = 2; Color46 = 5; Fast47 = 6 }
++$levels = @{ Production33 = 0; Erase43 = 2; Color46 = 5; Fast47 = 6; Tail48 = 5 }
+ $chain = @('CODEPULSE_EPD_RED_MASK_PROBE', 'CODEPULSE_EPD_RED_MASK_BLACK',
+     'CODEPULSE_EPD_RED_MASK_COLOR', 'CODEPULSE_EPD_RED_MASK_PULSE',
+     'CODEPULSE_EPD_RED_MASK_ACTIVATE', 'CODEPULSE_EPD_RED_MASK_FAST')
+@@ -21,6 +21,8 @@ foreach ($name in $chain) {
+     if (-not $options.Contains($name)) { throw "Missing explicit experiment option: $name" }
+ }
+ for ($i = 0; $i -lt $levels[$Profile]; $i++) { $options[$chain[$i]] = 'ON' }
++if (-not $options.Contains('CODEPULSE_EPD_RED_MASK_TAIL100')) { throw 'Missing 100Hz-tail option.' }
++if ($Profile -eq 'Tail48') { $options['CODEPULSE_EPD_RED_MASK_TAIL100'] = 'ON' }
+ $options['CODEPULSE_QUIET_PAIR150_TRIAL'] = 'ON'
+ $options['CODEPULSE_QUIET_RECT_TRIAL'] = 'ON'
+ if ($PlanOnly) {
+diff --git a/firmware/scripts/red-lab-artifact.py b/firmware/scripts/red-lab-artifact.py
+index 9daa59c..a544236 100644
+--- a/firmware/scripts/red-lab-artifact.py
++++ b/firmware/scripts/red-lab-artifact.py
+@@ -10,12 +10,12 @@ import subprocess
+ 
+ FIRMWARE = Path(__file__).resolve().parents[1]
+ ROOT = FIRMWARE.parent
+-VERSIONS = {"Fast47": "0.0.47-red-fast", "Color46": "0.0.46-red-activate",
++VERSIONS = {"Tail48": "0.0.48-red-tail100", "Fast47": "0.0.47-red-fast", "Color46": "0.0.46-red-activate",
+             "Erase43": "0.0.43-red-black", "Production33": "0.0.33-status-region-pair150"}
+ CHAIN = ["CODEPULSE_EPD_RED_MASK_PROBE", "CODEPULSE_EPD_RED_MASK_BLACK",
+          "CODEPULSE_EPD_RED_MASK_COLOR", "CODEPULSE_EPD_RED_MASK_PULSE",
+          "CODEPULSE_EPD_RED_MASK_ACTIVATE", "CODEPULSE_EPD_RED_MASK_FAST"]
+-LEVELS = {"Production33": 0, "Erase43": 2, "Color46": 5, "Fast47": 6}
++LEVELS = {"Production33": 0, "Erase43": 2, "Color46": 5, "Fast47": 6, "Tail48": 5}
+ PARTITION_SHA = "5295e8c42d6fb5f95e4e8a185932c6191d27cfc5078322475347e40e71af815a"
+ 
+ 
+@@ -62,6 +62,8 @@ def configured(build, profile):
+     cmake = (FIRMWARE / "CMakeLists.txt").read_text(encoding="utf-8")
+     reset = re.findall(r"option\((CODEPULSE_(?:EPD_[A-Z0-9_]+|AUDIO_[A-Z0-9_]+))\s", cmake)
+     enabled = set(CHAIN[:LEVELS[profile]])
++    if profile == "Tail48":
++        enabled.add("CODEPULSE_EPD_RED_MASK_TAIL100")
+     for option in reset:
+         value = "ON" if option in enabled else "OFF"
+         require(f"{option}:BOOL={value}\n" in cache, f"Unexpected option: {option}")
+diff --git a/firmware/tests/red-lab/test_red_lab_tools.py b/firmware/tests/red-lab/test_red_lab_tools.py
+index 5e0ec8b..bbb7c1c 100644
+--- a/firmware/tests/red-lab/test_red_lab_tools.py
++++ b/firmware/tests/red-lab/test_red_lab_tools.py
+@@ -3,6 +3,7 @@ from pathlib import Path
+ import hashlib
+ import importlib.util
+ import json
++import re
+ import struct
+ import tempfile
+ import unittest
+@@ -23,6 +24,26 @@ observer = load('red_observer', 'observe-red-lab.py')
+ 
+ 
+ class ImageTests(unittest.TestCase):
++    def test_tail48_configuration_rejects_fast_or_missing_tail_flag(self):
++        cmake = (lab.FIRMWARE / 'CMakeLists.txt').read_text(encoding='utf-8')
++        options = re.findall(r'option\((CODEPULSE_(?:EPD_[A-Z0-9_]+|AUDIO_[A-Z0-9_]+))\s', cmake)
++        with tempfile.TemporaryDirectory() as directory:
++            build = Path(directory)
++            (build / 'project_description.json').write_text(json.dumps({
++                'target': 'esp32s3', 'project_version': '0.0.48-red-tail100'}), encoding='utf-8')
++            enabled = set(lab.CHAIN[:5]) | {'CODEPULSE_EPD_RED_MASK_TAIL100'}
++            def configure(selected):
++                cache = ''.join(f'{name}:BOOL={"ON" if name in selected else "OFF"}\n' for name in options)
++                cache += 'CODEPULSE_QUIET_RECT_TRIAL:BOOL=ON\nCODEPULSE_QUIET_PAIR150_TRIAL:BOOL=ON\n'
++                (build / 'CMakeCache.txt').write_text(cache, encoding='utf-8')
++            configure(enabled)
++            lab.configured(build, 'Tail48')
++            for invalid in (enabled | {'CODEPULSE_EPD_RED_MASK_FAST'},
++                            enabled - {'CODEPULSE_EPD_RED_MASK_TAIL100'}):
++                configure(invalid)
++                with self.assertRaises(ValueError):
++                    lab.configured(build, 'Tail48')
++
+     def test_actual_checkout_source_snapshot(self):
+         files = lab.sources()
+         self.assertIn('firmware/scripts/build-red-lab.ps1', files)

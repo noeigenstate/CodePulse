@@ -117,14 +117,27 @@ static void fit(display_font_t f, const char *s, int width, char *out, size_t ca
     if (display_font_width(f, out) <= width) return;
   }
 }
+/* Keep host identities/states intact. A disconnected screen must not claim
+ * that its last snapshot is still running or waiting for an action. */
+static codepulse_ui_thread_t visible_thread(const codepulse_ui_model_t *m, size_t i) {
+  codepulse_ui_thread_t thread = m->threads[i];
+  if (m->work_status_stale) {
+    thread.state = CODEPULSE_UI_AGENT_OFFLINE;
+    thread.level = CODEPULSE_LEVEL_QUIET;
+    thread.state_reason[0] = 0;
+    snprintf(thread.detail, sizeof(thread.detail), "电脑未连接");
+  }
+  return thread;
+}
 /* Quota lives only in the footer; rows carry the task, its agent and its state. */
 static void hud(epd_canvas_t *c, const codepulse_ui_model_t *m) {
   const size_t n = m->thread_count > 9 ? 9 : m->thread_count;
-  if (!n) { type(c, DISPLAY_STATE, 200, 138, "暂无活动任务", DISPLAY_CENTER); return; }
+  if (!n) { type(c, DISPLAY_STATE, 200, 138, m->work_status_stale ? "电脑未连接" : "暂无活动任务", DISPLAY_CENTER); return; }
   char text[200], clipped[200];
   if (n <= 3) {
     for (size_t i = 0; i < n; i++) {
-      const codepulse_ui_thread_t *t = &m->threads[i];
+      codepulse_ui_thread_t visible = visible_thread(m, i);
+      const codepulse_ui_thread_t *t = &visible;
       const int y = 32 + (int)i * 77;
       if (i) epd_canvas_fill_rect(c, 26, y - 1, 362, 1, EPD_COLOR_BLACK);
       bar(c, y + 4, 68, t);
@@ -140,7 +153,8 @@ static void hud(epd_canvas_t *c, const codepulse_ui_model_t *m) {
   }
   const int h = n > 6 ? 25 : 37;
   for (size_t i = 0; i < n; i++) {
-    const codepulse_ui_thread_t *t = &m->threads[i];
+    codepulse_ui_thread_t visible = visible_thread(m, i);
+    const codepulse_ui_thread_t *t = &visible;
     const int y = 33 + (int)i * h;
     if (i) epd_canvas_fill_rect(c, 26, y - 1, 362, 1, EPD_COLOR_BLACK);
     bar(c, y + 3, h - 6, t);
@@ -218,9 +232,9 @@ static void header(epd_canvas_t *c, const codepulse_ui_model_t *m, bool is_hud) 
     line(c, points[i-1][0], points[i-1][1], points[i][0], points[i][1]);
   type(c, DISPLAY_BRAND, 29, 20, "CodePulse", DISPLAY_LEFT);
   /* The task screen shows only the brand; other screens name themselves. */
-  if (m->ambient || !is_hud) {
+  if (m->ambient || !is_hud || m->work_status_stale) {
     line(c, 107, 10, 107, 21);
-    type(c, DISPLAY_BRAND, 114, 20, m->ambient ? "动态" : "用量", DISPLAY_LEFT);
+    type(c, DISPLAY_BRAND, 114, 20, m->work_status_stale ? "离线" : m->ambient ? "动态" : "用量", DISPLAY_LEFT);
   }
   static const uint16_t thermo[12] = {0x000,0x060,0x090,0x090,0x0d0,0x0d0,0x0f0,0x0d0,0x1d8,0x168,0x090,0x060};
   static const uint16_t drop[12] = {0x000,0x040,0x0a0,0x090,0x110,0x208,0x204,0x402,0x402,0x402,0x204,0x1f8};
@@ -444,6 +458,9 @@ esp_err_t quiet_dashboard_update(quiet_dashboard_t *s, epd_canvas_t *c,
   if (!display_text_init())
     return ESP_ERR_NO_MEM;
   quiet_dashboard_render(c, m);
+#if defined(CODEPULSE_QUIET_RED_CRISP_TRIAL) && CODEPULSE_QUIET_RED_CRISP_TRIAL
+  (void)now_ms;
+#else
   const bool fold_red = s->initialized && !s->previous_has_red && s->has_runtime_full &&
       (now_ms < s->last_full_ms || now_ms - s->last_full_ms < CODEPULSE_RED_FULL_COOLDOWN_MS);
   const bool inverted = m->display.valid && m->display.inverted;
@@ -451,14 +468,17 @@ esp_err_t quiet_dashboard_update(quiet_dashboard_t *s, epd_canvas_t *c,
     /* There is no red circle in this BW downgrade: retain contrast on its
      * white foreground ink without changing the full-refresh/cooldown gate. */
     calendar(c, &m->ambient->calendar, true, EPD_COLOR_BLACK);
+#endif
   bool has_red = false;
   uint32_t checksum = 2166136261u;
   for (size_t i = 0; i < EPD_CANVAS_BUFFER_SIZE; i++) {
+#if !(defined(CODEPULSE_QUIET_RED_CRISP_TRIAL) && CODEPULSE_QUIET_RED_CRISP_TRIAL)
     if (fold_red) {
       /* Fold red into foreground ink; inverted red already has a white bit. */
       if (!inverted) c->black[i] &= c->red[i];
       c->red[i] = 0xff;
     }
+#endif
     if (c->red[i] != 0xff) has_red = true;
     checksum = (checksum ^ c->red[i]) * 16777619u;
   }
@@ -469,19 +489,33 @@ esp_err_t quiet_dashboard_update(quiet_dashboard_t *s, epd_canvas_t *c,
     err = epd_ssd1683_refresh(c, &r->timing.total_ms);
   } else {
     unsigned first = BOARD_EPD_HEIGHT, end = 0;
-    for (unsigned y = 0; y < BOARD_EPD_HEIGHT; y++)
-      if (memcmp(c->black + y * 50u, s->previous + y * 50u, 50)) {
+    for (unsigned y = 0; y < BOARD_EPD_HEIGHT; y++) {
+      const bool bw_diff = memcmp(c->black + y * 50u, s->previous + y * 50u, 50) != 0;
+#if defined(CODEPULSE_QUIET_RED_CRISP_TRIAL) && CODEPULSE_QUIET_RED_CRISP_TRIAL
+      const bool red_diff = memcmp(c->red + y * 50u, s->previous_red + y * 50u, 50) != 0;
+#else
+      const bool red_diff = false;
+#endif
+      if (bw_diff || red_diff) {
         if (y < first)
           first = y;
         end = y + 1;
       }
+    }
     if (first == BOARD_EPD_HEIGHT && checksum == s->red_checksum)
       return ESP_OK;
     r->changed = true;
     if (has_red || s->previous_has_red) {
+#if defined(CODEPULSE_QUIET_RED_CRISP_TRIAL) && CODEPULSE_QUIET_RED_CRISP_TRIAL
+      r->red_crisp = true;
+      err = epd_quiet_bwr_refresh(c, s->previous, s->previous_red,
+                                  sizeof(s->previous), &r->y, &r->height,
+                                  &r->timing);
+#else
       r->full = r->red_full = true;
       r->height = BOARD_EPD_HEIGHT;
       err = epd_ssd1683_refresh(c, &r->timing.total_ms);
+#endif
     } else {
       /* One bounding BW window, never one drive per card/column. The quiet
        * driver still rejects color; failures never trigger an OTP fallback. */
@@ -497,6 +531,9 @@ esp_err_t quiet_dashboard_update(quiet_dashboard_t *s, epd_canvas_t *c,
       s->last_full_ms = now_ms + r->timing.total_ms;
     }
     memcpy(s->previous, c->black, sizeof(s->previous));
+#if defined(CODEPULSE_QUIET_RED_CRISP_TRIAL) && CODEPULSE_QUIET_RED_CRISP_TRIAL
+    memcpy(s->previous_red, c->red, sizeof(s->previous_red));
+#endif
     s->previous_has_red = has_red;
     s->red_checksum = checksum;
     s->initialized = true;

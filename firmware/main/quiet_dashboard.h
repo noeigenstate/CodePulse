@@ -11,10 +11,16 @@ typedef struct {
   uint32_t red_checksum;
   int64_t last_full_ms;
   uint8_t previous[EPD_CANVAS_BUFFER_SIZE];
+#if defined(CODEPULSE_QUIET_RED_CRISP_TRIAL) && CODEPULSE_QUIET_RED_CRISP_TRIAL
+  uint8_t previous_red[EPD_CANVAS_BUFFER_SIZE];
+#endif
 } quiet_dashboard_t;
 
 typedef struct {
   bool full, changed, red_full;
+#if defined(CODEPULSE_QUIET_RED_CRISP_TRIAL) && CODEPULSE_QUIET_RED_CRISP_TRIAL
+  bool red_crisp;
+#endif
   unsigned y, height;
   epd_quiet_metrics_t timing;
 } quiet_dashboard_result_t;

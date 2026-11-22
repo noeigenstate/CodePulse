@@ -11,6 +11,7 @@ export function AgentLogo({ agentType }: { agentType: AgentType }): JSX.Element 
   if (agentType === 'grok') return <GrokLogo />
   if (agentType === 'kimi') return <KimiLogo />
   if (agentType === 'opencode') return <OpenCodeLogo />
+  if (agentType === 'antigravity') return <AntigravityLogo />
   return <ClaudeLogo />
 }
 
@@ -99,6 +100,31 @@ function OpenCodeLogo(): JSX.Element {
     <svg viewBox="0 0 24 24" role="img" aria-label="OpenCode" className="h-7 w-7 text-ink">
       <path fill="currentColor" fillOpacity={0.4} d="M9 10.5h6v6H9z" />
       <path fill="currentColor" fillRule="evenodd" d="M18 19.5H6v-15h12v15zM15 7.5H9v9h6v-9z" />
+    </svg>
+  )
+}
+
+/**
+ * Antigravity floating-arch mark in Google's four-color brand gradient.
+ *
+ * @returns Rendered React element.
+ */
+function AntigravityLogo(): JSX.Element {
+  const gradient = `antigravity-logo-${useId().replace(/:/g, '')}`
+  return (
+    <svg viewBox="0 0 24 24" role="img" aria-label="Antigravity" className="h-7 w-7">
+      <path
+        fill={`url(#${gradient})`}
+        d="M19.94 20.59c1.09.82 2.73.27 1.23-1.23C16.67 15 17.62 3 12.03 3S7.39 15 2.89 19.36c-1.64 1.64.14 2.05 1.23 1.23c4.23-2.86 3.95-7.91 7.91-7.91s3.68 5.05 7.91 7.91Z"
+      />
+      <defs>
+        <linearGradient gradientUnits="userSpaceOnUse" id={gradient} x1="3" x2="21" y1="20" y2="12">
+          <stop offset="0" stopColor="#34A853" />
+          <stop offset=".32" stopColor="#FBBC04" />
+          <stop offset=".62" stopColor="#EA4335" />
+          <stop offset="1" stopColor="#3186FF" />
+        </linearGradient>
+      </defs>
     </svg>
   )
 }

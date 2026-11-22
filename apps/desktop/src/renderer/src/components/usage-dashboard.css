@@ -233,6 +233,9 @@
 .usage-tool[data-agent='opencode'] {
   --agent-accent: var(--opencode);
 }
+.usage-tool[data-agent='antigravity'] {
+  --agent-accent: var(--antigravity);
+}
 .usage-tool .usage-tool-icon {
   width: 36px;
   height: 36px;
@@ -297,6 +300,9 @@
 }
 .usage-share [data-agent='opencode'] {
   background: var(--opencode);
+}
+.usage-share [data-agent='antigravity'] {
+  background: var(--antigravity);
 }
 
 .usage-chart {

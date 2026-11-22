@@ -1623,7 +1623,13 @@ function effectiveContextWindow(agent: AgentRuntimeState): number | undefined {
   return agent.token?.contextWindow
 }
 
-type BrandClass = 'brand-claude' | 'brand-codex' | 'brand-grok' | 'brand-kimi' | 'brand-opencode'
+type BrandClass =
+  | 'brand-claude'
+  | 'brand-codex'
+  | 'brand-grok'
+  | 'brand-kimi'
+  | 'brand-opencode'
+  | 'brand-antigravity'
 
 /**
  * Computes brand class.
@@ -1635,6 +1641,7 @@ function brandClass(agentType: AgentType): BrandClass {
   if (agentType === 'grok') return 'brand-grok'
   if (agentType === 'kimi') return 'brand-kimi'
   if (agentType === 'opencode') return 'brand-opencode'
+  if (agentType === 'antigravity') return 'brand-antigravity'
   return 'brand-claude'
 }
 

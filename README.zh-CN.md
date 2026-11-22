@@ -10,7 +10,7 @@
 
 [![open hardware](https://img.shields.io/badge/hardware-open%20source-0b7a68)](#-硬件)
 [![MCU](https://img.shields.io/badge/MCU-ESP32--S3-2f6fec)](#-硬件)
-[![version](https://img.shields.io/badge/desktop-v1.8.0-brightgreen)](https://github.com/noeigenstate/CodePulse/releases/latest)
+[![version](https://img.shields.io/badge/desktop-v1.8.1-brightgreen)](https://github.com/noeigenstate/CodePulse/releases/latest)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#-下载)
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 

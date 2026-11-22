@@ -1405,7 +1405,11 @@ app.whenReady().then(async () => {
       )
     } else {
       assert.equal(shellTop.band, null, 'the native title bar needs no drag band')
-      assert.deepEqual([shellTop.logo, shellTop.name], [true, 'CodePulse'], 'the sidebar keeps the brand')
+      assert.deepEqual(
+        [shellTop.logo, shellTop.name],
+        [true, 'CodePulse'],
+        'the sidebar keeps the brand',
+      )
     }
     await capture('shell-top-light')
     // The sidebar collapses to icons from its toggle or Ctrl+B, remembers the choice and keeps every accessible name.

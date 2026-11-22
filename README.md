@@ -11,7 +11,7 @@ done, so you stop checking the terminal. The desktop app that feeds it also work
 
 [![open hardware](https://img.shields.io/badge/hardware-open%20source-0b7a68)](#-the-hardware)
 [![MCU](https://img.shields.io/badge/MCU-ESP32--S3-2f6fec)](#-the-hardware)
-[![version](https://img.shields.io/badge/desktop-v1.8.0-brightgreen)](https://github.com/noeigenstate/CodePulse/releases/latest)
+[![version](https://img.shields.io/badge/desktop-v1.8.1-brightgreen)](https://github.com/noeigenstate/CodePulse/releases/latest)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#-download)
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 

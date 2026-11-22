@@ -206,6 +206,9 @@
 .meter-fill.brand-opencode {
   --fill: var(--opencode);
 }
+.meter-fill.brand-antigravity {
+  --fill: var(--antigravity);
+}
 .meter-fill.warn {
   --fill: #f59e0b;
 }

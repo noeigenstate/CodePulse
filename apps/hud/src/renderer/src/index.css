@@ -19,6 +19,7 @@
   --codex: var(--ink-700);
   --grok: var(--ink-700);
   --kimi: var(--ink-700);
+  --antigravity: var(--ink-700);
   --radius-card: 14px;
   --radius-badge: 8px;
   --space: 8px;
@@ -585,6 +586,10 @@ body[data-surface='settings'] {
   }
 
   .meter-fill.brand-kimi {
+    background: var(--ink-700);
+  }
+
+  .meter-fill.brand-antigravity {
     background: var(--ink-700);
   }
 

@@ -999,6 +999,7 @@ function agentName(agent: AgentType): string {
   if (agent === 'codex') return 'Codex'
   if (agent === 'grok') return 'Grok'
   if (agent === 'kimi') return 'Kimi Code'
+  if (agent === 'antigravity') return 'Antigravity'
   return 'Claude Code'
 }
 
@@ -1356,6 +1357,7 @@ function AgentLogo({ agentType }: { agentType: AgentType }): JSX.Element {
   if (agentType === 'codex') return <CodexLogo />
   if (agentType === 'grok') return <GrokLogo />
   if (agentType === 'kimi') return <KimiLogo />
+  if (agentType === 'antigravity') return <AntigravityLogo />
   return <ClaudeLogo />
 }
 
@@ -1405,6 +1407,18 @@ function KimiLogo(): JSX.Element {
         fill="currentColor"
         className="text-ink"
         d="M5 3.5h3v7.15L14.35 3.5h3.8l-6.8 7.5 7.15 9.5h-3.7l-5.55-7.35L8 14.5v6H5v-17z"
+      />
+    </svg>
+  )
+}
+
+function AntigravityLogo(): JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" role="img" aria-label="Antigravity" className="h-7 w-7">
+      <path
+        fill="currentColor"
+        className="text-ink"
+        d="M19.94 20.59c1.09.82 2.73.27 1.23-1.23C16.67 15 17.62 3 12.03 3S7.39 15 2.89 19.36c-1.64 1.64.14 2.05 1.23 1.23c4.23-2.86 3.95-7.91 7.91-7.91s3.68 5.05 7.91 7.91Z"
       />
     </svg>
   )
@@ -1735,12 +1749,13 @@ function effectiveContextWindow(agent: AgentRuntimeState): number | undefined {
   return agent.token?.contextWindow ?? (agent.agentType === 'codex' ? 256_000 : undefined)
 }
 
-type BrandClass = 'brand-claude' | 'brand-codex' | 'brand-grok' | 'brand-kimi'
+type BrandClass = 'brand-claude' | 'brand-codex' | 'brand-grok' | 'brand-kimi' | 'brand-antigravity'
 
 function brandClass(agentType: AgentType): BrandClass {
   if (agentType === 'codex') return 'brand-codex'
   if (agentType === 'grok') return 'brand-grok'
   if (agentType === 'kimi') return 'brand-kimi'
+  if (agentType === 'antigravity') return 'brand-antigravity'
   return 'brand-claude'
 }
 

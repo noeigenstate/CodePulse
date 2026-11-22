@@ -105,3 +105,23 @@ test('Antigravity refuses malformed config and an unrelated hook with the same k
     await rm(home, { recursive: true, force: true })
   }
 })
+test('Antigravity renders its own logo and HUD display name', async () => {
+  const { createElement } = await import('react')
+  const { renderToStaticMarkup } = await import('react-dom/server')
+  const { AgentLogo } = await import('../apps/desktop/src/renderer/src/components/AgentLogo.js')
+  const { agentName } = await import('../apps/hud/src/renderer/src/lib/format.js')
+  const html = renderToStaticMarkup(
+    createElement(
+      'div',
+      null,
+      createElement(AgentLogo, { agentType: 'antigravity' }),
+      createElement(AgentLogo, { agentType: 'antigravity' }),
+    ),
+  )
+  assert.match(html, /aria-label="Antigravity"/)
+  assert.doesNotMatch(html, /aria-label="Claude Code"/)
+  const ids = [...html.matchAll(/id="(antigravity-logo-[^"]+)"/g)].map((m) => m[1])
+  assert.equal(ids.length, 2)
+  assert.notEqual(ids[0], ids[1])
+  assert.equal(agentName('antigravity'), 'Antigravity')
+})

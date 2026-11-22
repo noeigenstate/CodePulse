@@ -1,8 +1,8 @@
 import type { Plugin } from 'vite'
-import { pluginPlatformUrl } from './src/plugin-platform-config.js'
+import { pluginPlatformUrl, type PluginPlatformUrlOptions } from './src/plugin-platform-config.js'
 
-export function pluginPlatformCsp(value: string): Plugin {
-  const origin = new URL(pluginPlatformUrl(value)).origin
+export function pluginPlatformCsp(value: string, options?: PluginPlatformUrlOptions): Plugin {
+  const origin = new URL(pluginPlatformUrl(value, options)).origin
   return {
     name: 'plugin-platform-csp',
     transformIndexHtml(html) {

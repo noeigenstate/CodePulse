@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { Plugin } from 'vite'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
@@ -5,7 +6,13 @@ import react from '@vitejs/plugin-react'
 import { pluginPlatformCsp } from './plugin-platform-csp.js'
 import { pluginPlatformUrl } from './src/plugin-platform-config.js'
 
-const platformUrl = pluginPlatformUrl(process.env.CODEPULSE_PLATFORM_URL)
+// Root .env configures local desktop builds; existing process environment variables win.
+const rootEnvFile = resolve(__dirname, '../../.env')
+if (existsSync(rootEnvFile)) process.loadEnvFile(rootEnvFile)
+const allowHttpPlatform = process.env.CODEPULSE_PLATFORM_ALLOW_HTTP === '1'
+const platformUrl = pluginPlatformUrl(process.env.CODEPULSE_PLATFORM_URL || undefined, {
+  allowHttp: allowHttpPlatform,
+})
 
 // Workspace packages are TypeScript source — must be bundled, not externalized.
 // Pure JS deps (fastify, drizzle-orm, …) are also bundled so the installer only
@@ -45,7 +52,10 @@ function stubOptionalWsNatives(): Plugin {
 
 export default defineConfig({
   main: {
-    define: { __CODEPULSE_PLATFORM_URL__: JSON.stringify(platformUrl) },
+    define: {
+      __CODEPULSE_PLATFORM_URL__: JSON.stringify(platformUrl),
+      __CODEPULSE_PLATFORM_ALLOW_HTTP__: JSON.stringify(allowHttpPlatform),
+    },
     resolve: {
       alias: {
         bufferutil: emptyNativeStub,
@@ -87,7 +97,7 @@ export default defineConfig({
       },
       dedupe: ['react', 'react-dom'],
     },
-    plugins: [react(), pluginPlatformCsp(platformUrl)],
+    plugins: [react(), pluginPlatformCsp(platformUrl, { allowHttp: allowHttpPlatform })],
     build: {
       minify: 'esbuild',
       cssMinify: true,

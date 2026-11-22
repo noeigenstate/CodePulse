@@ -17,6 +17,7 @@ import { allowedMemeImage, fetchBytes } from './ambient-sources.js'
 import { checkMemeImage, packMemeBitmap, packPicture } from './ambient-image.js'
 
 declare const __CODEPULSE_PLATFORM_URL__: string
+declare const __CODEPULSE_PLATFORM_ALLOW_HTTP__: boolean
 
 export function createAmbientRuntime(
   directory: string,
@@ -70,6 +71,7 @@ export function createAmbientRuntime(
     const baseUrl = __CODEPULSE_PLATFORM_URL__
     plugins = new PluginSource({
       baseUrl,
+      allowHttp: __CODEPULSE_PLATFORM_ALLOW_HTTP__,
       credentials: new PluginCredentialStore(baseUrl, {
         available: () =>
           safeStorage.isEncryptionAvailable() &&

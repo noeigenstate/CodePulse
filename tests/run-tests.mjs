@@ -7,8 +7,12 @@ import { build } from 'esbuild'
 
 const testsDir = resolve('tests')
 const outdir = resolve(testsDir, '.generated')
+// Optional arguments pick test files by name (`node tests/run-tests.mjs product-rail`).
+const only = process.argv.slice(2)
 const allTestFiles = (await readdir(testsDir)).filter(
-  (file) => file.endsWith('.test.ts') || file.endsWith('.test.js'),
+  (file) =>
+    (file.endsWith('.test.ts') || file.endsWith('.test.js')) &&
+    (only.length === 0 || only.some((name) => file.includes(name))),
 )
 const tsTestFiles = allTestFiles
   .filter((file) => file.endsWith('.test.ts'))

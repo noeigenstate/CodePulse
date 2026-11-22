@@ -105,7 +105,7 @@ function fixture(
   }
 }
 
-test('platform URL accepts HTTP only for loopback and literal private IPv4, with root paths only', () => {
+test('platform URL accepts HTTP only for loopback and literal private IPv4 unless allowHttp is set, with root paths only', () => {
   for (const url of [
     baseUrl,
     baseUrl + '/',
@@ -133,10 +133,22 @@ test('platform URL accepts HTTP only for loopback and literal private IPv4, with
     'http://192.169.0.1',
     'http://example.com',
     'http://8.8.8.8',
+    'http://203.0.113.10:18000',
     'http://10.1.2.3.example.com',
     'http://localhost.example/',
   ])
     assert.throws(() => pluginPlatformUrl(url))
+  assert.equal(
+    pluginPlatformUrl('http://203.0.113.10:18000/', { allowHttp: true }),
+    'http://203.0.113.10:18000',
+  )
+  for (const url of [
+    'file:///tmp/platform',
+    'http://user:secret@203.0.113.10:18000',
+    'http://203.0.113.10:18000/store',
+    'http://203.0.113.10:18000/?a=1',
+  ])
+    assert.throws(() => pluginPlatformUrl(url, { allowHttp: true }))
 })
 
 test('platform URL defaults never read a runtime environment override', () => {

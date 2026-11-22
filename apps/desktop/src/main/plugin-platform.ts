@@ -113,6 +113,7 @@ export class PluginSource {
   constructor(
     private deps: {
       baseUrl?: string
+      allowHttp?: boolean
       credentials: PluginCredentialStore
       fetch: typeof fetch
       changed: () => void
@@ -120,7 +121,7 @@ export class PluginSource {
       timeoutMs?: number
     },
   ) {
-    this.baseUrl = pluginPlatformUrl(deps.baseUrl)
+    this.baseUrl = pluginPlatformUrl(deps.baseUrl, { allowHttp: deps.allowHttp })
   }
   private now(): number {
     return this.deps.now?.() ?? Date.now()

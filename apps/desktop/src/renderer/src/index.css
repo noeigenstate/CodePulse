@@ -16,6 +16,7 @@
   --grok: #17c083;
   --kimi: #6d5ef5;
   --opencode: #e11d48;
+  --antigravity: #4285f4;
   --radius-card: 20px;
   --radius-badge: 12px;
   --space: 8px;
@@ -227,6 +228,13 @@ body {
       inset 3px 0 0 var(--opencode);
   }
 
+  .agent-panel[data-agent='antigravity'] {
+    --agent-accent: var(--antigravity);
+    box-shadow:
+      var(--shadow-card),
+      inset 3px 0 0 var(--antigravity);
+  }
+
   .project-tile {
     border: 1px solid var(--line);
     border-radius: var(--radius-card);
@@ -413,6 +421,11 @@ body {
     background: linear-gradient(180deg, #fff1f2 0%, #ffffff 100%);
   }
 
+  .agent-brand-icon[data-agent='antigravity'] {
+    border-color: rgba(66, 133, 244, 0.28);
+    background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+  }
+
   .meter-fill.brand-claude {
     background: var(--claude);
   }
@@ -431,6 +444,10 @@ body {
 
   .meter-fill.brand-opencode {
     background: var(--opencode);
+  }
+
+  .meter-fill.brand-antigravity {
+    background: var(--antigravity);
   }
 
   .meter-fill.warn {
@@ -700,6 +717,10 @@ body {
 
 :root[data-theme='dark'] .agent-brand-icon[data-agent='opencode'] {
   background: linear-gradient(180deg, #4c1220 0%, var(--surface-solid) 100%);
+}
+
+:root[data-theme='dark'] .agent-brand-icon[data-agent='antigravity'] {
+  background: linear-gradient(180deg, #172a4a 0%, var(--surface-solid) 100%);
 }
 
 @media (prefers-reduced-transparency: reduce) {

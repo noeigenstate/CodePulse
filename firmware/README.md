@@ -56,7 +56,7 @@ python tests/test_bitmap_fonts.py
 | 默认构建 | `0.0.33-status`，PAIR125、窄窗口关闭、音频关闭 |
 | 已有板的可选配置 | `CODEPULSE_QUIET_PAIR150_TRIAL=ON` 与 `CODEPULSE_QUIET_RECT_TRIAL=ON`；动态三色试验配置另加 `CODEPULSE_QUIET_RED_CRISP_TRIAL=ON`（`0.0.68-status-red-crisp`） |
 | 音频 | 新板参数未定，默认关闭；禁止驱动的单独编译入口见 `scripts/build-audio-check.ps1` |
-| 真实板最新记录 | 2026-11-05 **0.0.33-status-region-pair150** 已仅刷应用并校验；正常开机、USB/LAN 身份、Wi-Fi 与桌面连接通过；光学状态切换和红色性能另行验收 |
+| 真实板最新记录 | 2026-11-05 **0.0.33-status-region-pair150** 已仅刷应用并校验；正常开机、USB/LAN 身份、Wi-Fi 与桌面连接通过；2026-11-22 新设计板型已完成首次完整刷机（**0.0.68-status-red-crisp** / `ProductionRed68`，含 bootloader、分区表与应用校验）并正常开机运行，具体板型改动待后续补充 |
 
 0.0.33-status 新增本地连接新鲜度提示：断线持续超过 3 秒，工作卡显示“离线”，
 保留任务名称；同一份状态重连也会恢复实时标签。此提示不修改主机任务状态、

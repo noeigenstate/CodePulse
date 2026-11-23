@@ -217,11 +217,11 @@ test('v2 升级 v3 保留开发者、客户端、版本、安装、令牌和缓�
     'card_cache',
   ]
   const previous = tables.map((table) => old.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all())
-  old.exec('DROP TABLE logos; PRAGMA user_version = 2;')
+  old.exec('DROP TABLE invites; DROP TABLE logos; PRAGMA user_version = 2;')
   old.close()
   const db = openDatabase(dbPath)
   try {
-    assert.equal(db.pragma('user_version', { simple: true }), 3)
+    assert.equal(db.pragma('user_version', { simple: true }), 4)
     for (const [i, table] of tables.entries()) {
       assert.deepEqual(db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(), previous[i])
     }
@@ -239,6 +239,6 @@ test('v2 升级 v3 保留开发者、客户端、版本、安装、令牌和缓�
   assert.equal((await call(app, 'GET', '/api/v1/dev/me', undefined, dev)).status, 200)
   assert.equal((await call(app, 'GET', installs, undefined, a.client)).body.installs.length, 1)
   const reopened = openDatabase(dbPath)
-  assert.equal(reopened.pragma('user_version', { simple: true }), 3)
+  assert.equal(reopened.pragma('user_version', { simple: true }), 4)
   reopened.close()
 })

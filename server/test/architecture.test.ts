@@ -19,6 +19,7 @@ import {
   upload,
   approve,
   livePack,
+  inviteCode,
 } from './helpers.js'
 
 test('注册不能自升管理员；CLI提升已有开发者且不启动服务', async (t) => {
@@ -27,6 +28,7 @@ test('注册不能自升管理员；CLI提升已有开发者且不启动服务',
     email: 'admin@example.com',
     password: 'password123',
     name: '管理员邮箱注册者',
+    invite: inviteCode(app),
     admin: true,
   })
   const token = registered.body.token
@@ -74,11 +76,11 @@ test('注册不能自升管理员；CLI提升已有开发者且不启动服务',
   assert.match(usage.stderr, /用法/)
 })
 
-test('v1数据库迁移到v3，已有开发者默认无管理员权限', (t) => {
+test('v1数据库迁移到v4，已有开发者默认无管理员权限', (t) => {
   const { dbPath } = fixture(t)
   const original = openDatabase(dbPath)
   original.exec(
-    `DROP TABLE logos; ALTER TABLE developers DROP COLUMN admin; PRAGMA user_version = 1;`,
+    `DROP TABLE invites; DROP TABLE logos; ALTER TABLE developers DROP COLUMN admin; PRAGMA user_version = 1;`,
   )
   original
     .prepare(
@@ -88,7 +90,7 @@ test('v1数据库迁移到v3，已有开发者默认无管理员权限', (t) => 
   original.close()
   const migrated = openDatabase(dbPath)
   try {
-    assert.equal(migrated.pragma('user_version', { simple: true }), 3)
+    assert.equal(migrated.pragma('user_version', { simple: true }), 4)
     assert.deepEqual(
       migrated
         .prepare('SELECT name, password_hash, admin FROM developers WHERE id = ?')
@@ -106,7 +108,7 @@ test('v1数据库迁移到v3，已有开发者默认无管理员权限', (t) => 
     migrated.close()
   }
   const reopened = openDatabase(dbPath)
-  assert.equal(reopened.pragma('user_version', { simple: true }), 3)
+  assert.equal(reopened.pragma('user_version', { simple: true }), 4)
   reopened.close()
 })
 

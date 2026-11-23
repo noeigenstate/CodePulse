@@ -1,7 +1,7 @@
 // In-memory stand-in for the platform API, used by `?mock=1` in dev to build and screenshot the
 // pages without the server. Never imported by production code (see main.tsx).
 import type { PluginCard, PluginKind, PluginListing, PluginSetting } from '@codepulse/shared'
-import type { Api, DevPlugin, Developer, InstallRow, Review } from './api'
+import type { Api, DevPlugin, Developer, Invite, InstallRow, Review } from './api'
 
 const minutes = (n: number) => Date.now() - n * 60000
 const later = () => Date.now() + 3600000
@@ -261,6 +261,19 @@ let reviews: Review[] = [
 const ok = <T>(value: T) => Promise.resolve(structuredClone(value))
 const authed = { token: 'mock', developer }
 
+let invites: Invite[] = [
+  {
+    id: 'invite-used',
+    note: '内测开发者',
+    state: 'used',
+    createdAt: Date.now() - 5 * 86400000,
+    expiresAt: Date.now() + 9 * 86400000,
+    createdBy: '示例开发者',
+    usedBy: { email: 'friend@example.com', name: '朋友' },
+    usedAt: Date.now() - 4 * 86400000,
+  },
+]
+
 export const mockApi: Api = {
   storeSession: () => ok({ token: 'mock' }),
   plugins: () => ok(plugins),
@@ -321,6 +334,25 @@ export const mockApi: Api = {
       error: draft.endpoint ? '接口 5 秒内没有响应' : '',
     }),
   reviews: () => ok(reviews),
+  invites: () => ok(invites),
+  createInvite: ({ note = '', days = 14 }) => {
+    const invite: Invite = {
+      id: `invite-${invites.length + 1}`,
+      note,
+      state: 'unused',
+      createdAt: Date.now(),
+      expiresAt: Date.now() + days * 86400000,
+      createdBy: developer.name,
+      usedBy: null,
+      usedAt: null,
+    }
+    invites = [invite, ...invites]
+    return ok({ code: 'CP-7KQM-3XWD-9PHT', invite })
+  },
+  revokeInvite: (id) => {
+    invites = invites.map((i) => (i.id === id ? { ...i, state: 'revoked' as const } : i))
+    return ok({ ok: true as const })
+  },
   decide: (versionId) => {
     reviews = reviews.filter((r) => r.versionId !== versionId)
     return ok({ ok: true as const })

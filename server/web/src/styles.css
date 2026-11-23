@@ -138,12 +138,19 @@ button {
   margin-bottom: 16px;
   border-bottom: 1px solid var(--line);
 }
+/* Five tabs do not fit a phone: the row scrolls instead of breaking labels. It overlaps the
+   toolbar's bottom border by 1px so the selected underline still sits on that line. */
 .tabs {
   display: flex;
   gap: 4px;
+  margin-bottom: -1px;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 .tabs button {
   position: relative;
+  flex: none;
+  white-space: nowrap;
   height: 40px;
   padding: 0 12px;
   border: 0;
@@ -159,7 +166,7 @@ button {
   position: absolute;
   left: 12px;
   right: 12px;
-  bottom: -1px;
+  bottom: 0;
   height: 2px;
   background: var(--ink);
 }
@@ -907,4 +914,114 @@ details.field:not([open]) summary::after {
 }
 .toolbar.embedded {
   border-bottom: 0;
+}
+
+/* Invites (review page) and the developer guide */
+.hint a {
+  color: var(--ink-700);
+  text-underline-offset: 3px;
+}
+.hint a:hover {
+  color: var(--ink);
+}
+.invites {
+  margin-top: 24px;
+}
+.invite-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.invite-form input.control {
+  flex: 1 1 220px;
+  width: auto;
+  min-width: 0;
+}
+.invite-form select.control {
+  width: auto;
+}
+.guide {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  max-width: 820px;
+}
+.guide > .hint {
+  margin-bottom: 0;
+}
+.guide h2 {
+  margin-bottom: 12px;
+}
+.guide-steps {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding-left: 20px;
+}
+.guide-steps li {
+  padding-left: 4px;
+}
+.guide-steps strong {
+  display: block;
+  font-weight: var(--fw-medium);
+}
+.guide-steps span,
+.guide-terms dd,
+.guide-list {
+  color: var(--ink-700);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.guide-terms {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+.guide-terms > div {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 12px;
+}
+.guide-terms dt {
+  font-weight: var(--fw-medium);
+}
+.guide-terms dd {
+  margin: 0;
+}
+/* Chinese in examples falls back to the UI face, not a wide CJK monospace one. */
+.guide code {
+  font:
+    var(--fs-sm)/var(--lh-sm) ui-monospace,
+    'Cascadia Mono',
+    Consolas,
+    'SFMono-Regular',
+    Menlo,
+    'PingFang SC',
+    'Microsoft YaHei',
+    monospace;
+}
+.guide-code {
+  margin: 12px 0 0;
+  padding: 12px;
+  overflow-x: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-control);
+  background: var(--surface-muted);
+  white-space: pre;
+}
+.guide-code + .hint {
+  margin: 12px 0 0;
+}
+.guide-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 20px;
+}
+@container (max-width: 560px) {
+  .guide-terms > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
 }

@@ -8,6 +8,7 @@ import type { PluginSetting } from '@codepulse/shared'
 import { buildApp, type AppOptions } from '../src/app.js'
 import { openDatabase } from '../src/db.js'
 import { promoteAdmin } from '../src/admin.js'
+import { createInvite } from '../src/invites.js'
 
 const temporary = resolve(dirname(fileURLToPath(import.meta.url)), '../server-fixtures')
 mkdirSync(temporary, { recursive: true })
@@ -114,11 +115,22 @@ export async function call(
   return { status: response.statusCode, body: response.json() }
 }
 
+/** A fresh single-use invite, issued the way the server's `invite` command does. */
+export function inviteCode(app: FastifyInstance, days = 90): string {
+  const db = openDatabase(databases.get(app)!)
+  try {
+    return createInvite(db, { now: INITIAL, days }).code
+  } finally {
+    db.close()
+  }
+}
+
 export async function developer(app: FastifyInstance, email = 'dev@example.com') {
   const response = await call(app, 'POST', '/api/v1/dev/register', {
     email,
     password: 'password123',
     name: '测试开发者',
+    invite: inviteCode(app),
   })
   assert.equal(response.status, 200)
   assert.equal(response.body.developer.admin, false)

@@ -1,6 +1,6 @@
 # 插件平台
 
-2026-11-08 第一轮：骨架与开发者上传。服务端说明和 webhook 开发指南见 [server/README.md](../server/README.md)。
+2026-11-08 第一轮：骨架与开发者上传。服务端和接口参考见 [server/README.md](../server/README.md)；面向插件开发者的分步教程见 [PLUGIN-DEVELOPER-GUIDE.md](PLUGIN-DEVELOPER-GUIDE.md)。
 
 ## 是什么
 
@@ -38,6 +38,12 @@ pnpm build && pnpm start                                                       #
 - 插件 · 已安装：本机插件（原桌边内容各来源和待办与助手，在电脑上运行）和平台插件（插件市场安装）在同一个列表里，每行有开关和设置；详情面板里有图标、原有设置和墨水屏预览。插件 · 插件市场：嵌入商店网页（`?embed=desktop`），主题跟随桌面端。
 - 插件图标：开发者在开发者中心上传默认图标（PNG、JPEG、WebP，正方形 64–1024 像素，不超过 200 KB，不接受 SVG）；管理员可以删除不合适的图标。用户可以在本机替换任意插件的图标，只保存在这台电脑。三端用同一个检查函数 `inspectPluginLogo`（`packages/shared/src/plugin-logo.ts`），文字图标用同一个 `pluginGlyph`。
 - 桌面端通过客户端接口 `/api/v1/client/installs` 列出、开关和卸载平台插件，不需要打开商店页；未打开过插件市场时不注册客户端。
+
+## 开发者邀请制（2026-11-23）
+
+- 开发者注册必须填邀请码，一码一号，默认 14 天有效。管理员在商店「审核」页生成、查看和撤销邀请码；部署之初还没有管理员时，用服务器命令 `node server/dist/main.js invite` 生成第一个。已注册的账号不受影响。
+- 数据库 schema 升到 4，新增 `invites` 表，只存邀请码的 SHA-256。
+- 商店网页新增「开发指南」页，是 [PLUGIN-DEVELOPER-GUIDE.md](PLUGIN-DEVELOPER-GUIDE.md) 的精简版。
 
 ## 下一步
 

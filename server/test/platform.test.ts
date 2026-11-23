@@ -69,6 +69,7 @@ test('注册、登录、个人信息和退出；错误密码为401', async (t) =
         email: 'dev@example.com',
         password: 'password123',
         name: '重复',
+        invite: 'CP-AAAA-AAAA-AAAA',
       })
     ).status,
     409,
@@ -120,7 +121,7 @@ test('数据库只保存令牌哈希，开发者会话7天过期', async () => {
         ),
       /登录已失效/,
     )
-    assert.equal(db.pragma('user_version', { simple: true }), 3)
+    assert.equal(db.pragma('user_version', { simple: true }), 4)
   } finally {
     db.close()
   }

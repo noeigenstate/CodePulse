@@ -30,7 +30,7 @@ export function openDatabase(path: string): Database.Database {
   db.pragma('foreign_keys = ON')
   db.pragma('journal_mode = WAL')
   const revision = db.pragma('user_version', { simple: true }) as number
-  if (revision > 3) {
+  if (revision > 4) {
     db.close()
     throw new Error('数据库版本过新')
   }
@@ -90,6 +90,18 @@ export function openDatabase(path: string): Database.Database {
         type TEXT NOT NULL, bytes BLOB NOT NULL, hash TEXT NOT NULL, updated_at INTEGER NOT NULL
       );
       PRAGMA user_version = 3;`)
+    })()
+  }
+  if (revision < 4) {
+    // Registration is by invitation. Only the code's SHA-256 is stored, like session tokens.
+    db.transaction(() => {
+      db.exec(`CREATE TABLE invites (
+        id TEXT PRIMARY KEY, code_hash TEXT NOT NULL UNIQUE, note TEXT NOT NULL DEFAULT '',
+        created_by TEXT REFERENCES developers(id), created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL, used_by TEXT REFERENCES developers(id), used_at INTEGER,
+        revoked_at INTEGER
+      );
+      PRAGMA user_version = 4;`)
     })()
   }
   return db

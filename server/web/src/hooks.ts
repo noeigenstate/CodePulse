@@ -46,7 +46,7 @@ const hashListeners = (listener: () => void) => {
 }
 
 export type Route =
-  | { page: 'discover' | 'installed' | 'developer' | 'review' }
+  | { page: 'discover' | 'installed' | 'developer' | 'guide' | 'review' }
   | { page: 'plugin'; id: string }
 
 /** The tab and plugin live in the hash so the back button works. */
@@ -55,6 +55,9 @@ export function useRoute(): Route {
   const [, page = '', id = ''] = hash.split('/')
   if (page === 'plugin' && id) return { page, id: decodeURIComponent(id) }
   return {
-    page: page === 'installed' || page === 'developer' || page === 'review' ? page : 'discover',
+    page:
+      page === 'installed' || page === 'developer' || page === 'guide' || page === 'review'
+        ? page
+        : 'discover',
   }
 }

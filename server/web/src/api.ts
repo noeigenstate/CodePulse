@@ -45,6 +45,17 @@ export interface Review {
   cardCount: number | null
   endpoint: string | null
 }
+export interface Invite {
+  id: string
+  note: string
+  state: 'unused' | 'used' | 'expired' | 'revoked'
+  createdAt: number
+  expiresAt: number
+  createdBy: string | null
+  usedBy: { email: string; name: string } | null
+  usedAt: number | null
+}
+
 export interface VersionDraft {
   manifest: PluginManifest
   cards?: unknown[]
@@ -95,7 +106,7 @@ const realApi = {
     send<{ install: PluginInstall }>('PUT', `/installs/${enc(id)}`, storeSession, change),
   deleteInstall: (id: string) => send<{ ok: true }>('DELETE', `/installs/${enc(id)}`, storeSession),
 
-  devRegister: (body: { email: string; name: string; password: string }) =>
+  devRegister: (body: { email: string; name: string; password: string; invite: string }) =>
     send<{ token: string; developer: Developer }>('POST', '/dev/register', undefined, body),
   devLogin: (body: { email: string; password: string }) =>
     send<{ token: string; developer: Developer }>('POST', '/dev/login', undefined, body),
@@ -126,6 +137,11 @@ const realApi = {
   reviews: () => get<{ reviews: Review[] }>('/admin/reviews', devSession).then((r) => r.reviews),
   decide: (versionId: string, body: { decision: 'approved' | 'rejected'; note?: string }) =>
     send<{ ok: true }>('POST', `/admin/reviews/${enc(versionId)}`, devSession, body),
+  invites: () => get<{ invites: Invite[] }>('/admin/invites', devSession).then((r) => r.invites),
+  createInvite: (body: { note?: string; days?: number }) =>
+    send<{ code: string; invite: Invite }>('POST', '/admin/invites', devSession, body),
+  revokeInvite: (id: string) =>
+    send<{ ok: true }>('DELETE', `/admin/invites/${enc(id)}`, devSession),
 }
 
 export type Api = typeof realApi

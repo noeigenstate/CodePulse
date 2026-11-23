@@ -1,6 +1,8 @@
 # CodePulse 插件平台
 
-插件在云端生成卡片，桌面端负责下载、校验和展示。开发者上传内容包或提供 HTTPS 接口；版本经管理员审核后才进入公开目录。现有桌边内置内容不迁移。
+插件在云端生成卡片，桌面端负责下载、校验和展示。开发者凭邀请码注册，上传内容包或提供 HTTPS 接口；版本经管理员审核后才进入公开目录。现有桌边内置内容不迁移。
+
+面向插件开发者的分步教程见 [docs/PLUGIN-DEVELOPER-GUIDE.md](../docs/PLUGIN-DEVELOPER-GUIDE.md)，商店网页的「开发指南」页是它的精简版。本文是服务端和接口参考。
 
 ## 运行
 
@@ -33,13 +35,21 @@ better-sqlite3 使用独立的 11.x 副本，桌面端使用 12.x。不要用桌
 
 ## 管理员授权
 
-注册不会赋予管理员权限，权限读取数据库中的 `developers.admin`。已有数据库首次打开时会自动迁移到 schema 版本 3，新增 `logos` 表；从 v1 升级的已有开发者默认 `admin=0`，v2 升级保留现有权限与业务数据。服务器维护者核实账号归属后，使用与平台相同的 `CODEPULSE_PLATFORM_DB` 设置运行：
+注册不会赋予管理员权限，权限读取数据库中的 `developers.admin`。已有数据库首次打开时会自动迁移到 schema 版本 4：v3 新增 `logos` 表，v4 新增 `invites` 表；从 v1 升级的已有开发者默认 `admin=0`，其余升级保留现有权限与业务数据，已注册的账号不需要邀请码。
+
+**第一个管理员**：开发者注册需要邀请码，而部署之初还没有管理员能发码。先在服务器上生成一个邀请码，用它注册，再提升为管理员：
+
+```sh
+node server/dist/main.js invite --days=7 第一位管理员   # 打印 CP-XXXX-XXXX-XXXX，--days 可省略（默认 14 天，1–90）
+```
+
+之后的邀请码由管理员在商店「审核」页生成。服务器维护者核实账号归属后，使用与平台相同的 `CODEPULSE_PLATFORM_DB` 设置运行：
 
 ```sh
 node server/dist/main.js admin developer@example.com
 ```
 
-命令只提升**已经注册**的开发者，邮箱不区分大小写；不存在的账号会报错。它执行完即退出，不启动 HTTP 服务。现有会话下一次请求即能读取新权限。
+命令只提升**已经注册**的开发者，邮箱不区分大小写；不存在的账号会报错。`admin` 和 `invite` 都执行完即退出，不启动 HTTP 服务。现有会话下一次请求即能读取新权限。
 
 工作区 `admin` 脚本接入后，也可运行 `pnpm --filter @codepulse/server admin developer@example.com`。
 
@@ -47,7 +57,7 @@ node server/dist/main.js admin developer@example.com
 
 API 前缀为 `/api/v1`，除公开图标读取返回图片原始字节外，请求和响应均为 JSON。认证使用 `Authorization: Bearer <token>`，不设置 cookie；数据库只保存 token 的 SHA-256。错误统一为 `{ "error": "中文原因" }`，使用 401、403、404、409、422、429 或 5xx 状态。
 
-1. `POST /dev/register` 提交 `{email,password,name}`，密码至少 8 位；或通过 `POST /dev/login` 登录。响应包含 `{token,developer:{email,name,admin}}`，开发者会话有效期为 7 天。`GET /dev/me` 查看身份，`POST /dev/logout` 注销当前会话。
+1. `POST /dev/register` 提交 `{invite,email,password,name}`，密码至少 8 位，名称最多 32 字；或通过 `POST /dev/login` 登录。邀请码无效、已用、过期或撤销时返回 403“邀请码无效、已使用或已过期”；邮箱已注册返回 409，此时邀请码不会被消耗。响应包含 `{token,developer:{email,name,admin}}`，开发者会话有效期为 7 天。`GET /dev/me` 查看身份，`POST /dev/logout` 注销当前会话。
 2. `POST /dev/plugins` 提交 `{id,name,summary}`。插件 id 全局唯一，长度 3–40，使用小写字母、数字以及分隔用的点或短横线；`codepulse.` 前缀仅供官方种子使用。响应为 `{plugin,webhookSecret}`，**密钥只在这次响应中提供**，请保存到开发者自己的安全配置中。
 3. `POST /dev/plugins/:id/versions` 提交 `{manifest,cards}`（内容包）或 `{manifest,endpoint}`（接口插件），进入 `pending`。版本号只接受 `MAJOR.MINOR.PATCH`，必须高于最近提交版本。开发者不能提交 `builtin`。
 4. `POST /dev/plugins/:id/test` 使用同样的提交内容，可增加 `settings`，返回 `{cards,error}`，不写缓存。`GET /dev/plugins` 查看自己插件的各版本审核状态。
@@ -77,6 +87,17 @@ manifest 示例：
 ```json
 { "id": "daily-1", "source": "每日一句", "text": "今天也留一点时间给自己。" }
 ```
+
+## 开发者邀请码
+
+开发者注册采用邀请制。邀请码形如 `CP-XXXX-XXXX-XXXX`（12 位，不含易混的 I、O、0、1，约 60 位随机量），输入时忽略大小写、空格和短横线。数据库只保存它的 SHA-256，明文只在生成时出现一次。
+
+- 一码一号：注册时建账号和核销邀请码在同一事务内完成，同一个码并发注册只有一个成功。
+- 有效期默认 14 天，可设 1–90 天；过期或撤销后不能再用。已使用的码不能撤销。
+- `GET /admin/invites` → `{invites}`，每项为 `{id,note,state,createdAt,expiresAt,createdBy,usedBy,usedAt}`，`state` 为 `unused`、`used`、`expired` 或 `revoked`，`usedBy` 为 `{email,name}` 或 null，`createdBy` 为管理员名称，服务器命令生成的为 null。列表不含邀请码明文。
+- `POST /admin/invites` 提交 `{note?,days?}`（备注最多 40 字）→ `{code,invite}`；每管理员每小时 30 次。
+- `DELETE /admin/invites/:id` 撤销未使用的邀请码 → `{ok:true}`；已使用返回 409，不存在返回 404。
+- 服务器命令 `node server/dist/main.js invite [--days=N] [备注]` 生成邀请码，`createdBy` 为 null。
 
 ## 插件图标
 
@@ -149,7 +170,7 @@ function verifyWebhook(headers, rawBody, secret) {
 - `PUT /client/installs/:id` 使用客户端 token，提交 `{enabled?,settings?}` → `{install: PluginInstall}`，仅修改已有安装，未安装时返回 404“插件未安装”；`DELETE /client/installs/:id` → `{ok:true}`。与商店会话的 `/installs` 共用数据和处理逻辑；所有安装接口的 GET/PUT/DELETE 按客户端共用每分钟 30 次额度，切换凭据不会重置计数。
 - `GET /client/cards` 使用客户端 token → `PluginFeed`，仅包含启用的安装。并行生成、合并相同缓存键的请求；缓存键包含公开版本和归一化设置，过期时间取刷新间隔与卡片最早有效期的较小值。失败会记录错误并短暂退避，保留尚未过期的上次成功卡片，不延长它们的有效期。每次再生成会清除该插件废弃版本和设置的缓存，并清除全表中已过期超过一天的缓存；其他安装仍使用的设置及默认预览缓存会保留。
 
-注册和登录各每 IP 每分钟 10 次，注册客户端 5 次，生成商店码 20 次；卡片拉取每客户端每分钟 12 次。创建插件与提交版本分别每开发者每小时 10 次，试生成每开发者每分钟 6 次，跨插件累计。图标上传和删除共用每开发者每小时 20 次额度；两套安装接口共用每客户端每分钟 30 次额度。限流状态只在当前进程内保存。当前版本不提供部署、自动发布或外部插件代码执行能力。
+注册和登录各每 IP 每分钟 10 次（含邀请码错误的尝试），注册客户端 5 次，生成商店码 20 次；卡片拉取每客户端每分钟 12 次。创建插件与提交版本分别每开发者每小时 10 次，试生成每开发者每分钟 6 次，跨插件累计。图标上传和删除共用每开发者每小时 20 次额度；两套安装接口共用每客户端每分钟 30 次额度。限流状态只在当前进程内保存。当前版本不提供部署、自动发布或外部插件代码执行能力。
 
 商店网页的静态资源、SPA 回退和非 API 错误响应设置 `X-Content-Type-Options: nosniff` 及以下 CSP；允许桌面端嵌入，不设置 `frame-ancestors`：
 

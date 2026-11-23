@@ -5,6 +5,7 @@ import { useAsync, useRoute, useToken, type Route } from './hooks'
 import { Detail } from './pages/Detail'
 import { Developer } from './pages/Developer'
 import { Discover } from './pages/Discover'
+import { Guide } from './pages/Guide'
 import { Installed } from './pages/Installed'
 import { ReviewPage } from './pages/Review'
 import { devSession, storeSession } from './session'
@@ -15,6 +16,7 @@ const tabs = [
   ['discover', '发现'],
   ['installed', '已安装'],
   ['developer', '开发者'],
+  ['guide', '开发指南'],
   ['review', '审核'],
 ] as const
 
@@ -96,6 +98,7 @@ export function App() {
   const view = () => {
     if (current.page === 'developer')
       return <Developer developer={devToken ? developer.data : null} notify={notify} />
+    if (current.page === 'guide') return <Guide />
     if (current.page === 'review')
       return <ReviewPage reviews={reviews.data ?? []} reload={reviews.reload} notify={notify} />
     if (!store) {

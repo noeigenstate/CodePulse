@@ -5,6 +5,7 @@ import { checkPassword, hashPassword, randomToken, tokenHash } from '../auth.js'
 import type { Context } from '../context.js'
 import type { Developer, Version } from '../db.js'
 import { logoUrl, validateLogo } from '../logo.js'
+import { claimInvite, inviteUsable } from '../invites.js'
 import { generationError } from '../generate/index.js'
 import { checkedEndpoint, deadline } from '../generate/webhook.js'
 import {
@@ -17,6 +18,8 @@ import {
   validateCards,
   validateManifest,
 } from '../validation.js'
+
+const INVITE_REJECTED = '邀请码无效、已使用或已过期'
 
 interface OwnedPlugin {
   id: string
@@ -86,8 +89,11 @@ export function developerRoutes(app: FastifyInstance, context: Context): void {
     const { email, password, body } = credentials(request.body)
     if (password.length < 8) invalid('密码至少8位')
     const name = text(body.name, 32, '开发者名称')
+    const invite = text(body.invite, 64, '邀请码')
     if (db.prepare('SELECT id FROM developers WHERE email = ?').get(email))
       throw new HttpError(409, '邮箱已注册')
+    // Check before the slow password hash; the claim below decides for real.
+    if (!inviteUsable(db, invite, now())) throw new HttpError(403, INVITE_REJECTED)
     const developer: Developer = {
       id: randomUUID(),
       email,
@@ -95,11 +101,15 @@ export function developerRoutes(app: FastifyInstance, context: Context): void {
       password_hash: await hashPassword(password),
       admin: 0,
     }
-    // Hashing yields to other registrations, so the unique constraint must also guard this insert.
+    // Hashing yields to other registrations, so the account and the invite are claimed together:
+    // the unique email and the single-use code both hold even when two requests race.
     try {
-      db.prepare(
-        'INSERT INTO developers (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)',
-      ).run(developer.id, email, name, developer.password_hash, now())
+      db.transaction(() => {
+        db.prepare(
+          'INSERT INTO developers (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)',
+        ).run(developer.id, email, name, developer.password_hash, now())
+        if (!claimInvite(db, invite, developer.id, now())) throw new HttpError(403, INVITE_REJECTED)
+      })()
     } catch (error) {
       if ((error as { code?: string }).code === 'SQLITE_CONSTRAINT_UNIQUE')
         throw new HttpError(409, '邮箱已注册')

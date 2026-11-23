@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildApp } from './app.js'
 import { openDatabase } from './db.js'
-import { promoteAdmin } from './admin.js'
+import { adminCommand } from './admin.js'
 
 const serverDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // server/.env holds this deployment's settings; variables already set in the environment win.
@@ -14,12 +14,10 @@ const args = process.argv.slice(2)
 
 try {
   if (args.length) {
-    if (args[0] !== 'admin' || args.length !== 2 || !args[1].trim())
-      throw new Error('用法：node dist/main.js admin <email>')
+    const command = adminCommand(args)
     const db = openDatabase(dbPath)
     try {
-      promoteAdmin(db, args[1])
-      console.log('已设为管理员')
+      console.log(command(db))
     } finally {
       db.close()
     }

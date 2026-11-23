@@ -42,6 +42,7 @@ function AuthPanel() {
             email: field('email'),
             name: field('name'),
             password: field('password'),
+            invite: field('invite'),
           })
         : await api.devLogin({ email: field('email'), password: field('password') })
       devSession.set(token)
@@ -55,13 +56,33 @@ function AuthPanel() {
           {registering ? '已有账号，去登录' : '没有账号，去注册'}
         </button>
       </div>
-      <p className="hint">开发者可以提交插件，通过审核后上架。</p>
+      <p className="hint">
+        {registering
+          ? '开发者账号采用邀请制：向平台管理员索取邀请码，一个邀请码只能注册一个账号。'
+          : '开发者可以提交插件，通过审核后上架。'}{' '}
+        <a href="#/guide">开发指南</a>
+      </p>
+      {registering && (
+        <Field label="邀请码">
+          {(id) => (
+            <input
+              id={id}
+              name="invite"
+              autoComplete="off"
+              spellCheck={false}
+              required
+              maxLength={64}
+              placeholder="CP-XXXX-XXXX-XXXX"
+            />
+          )}
+        </Field>
+      )}
       <Field label="邮箱">
         {(id) => <input id={id} name="email" type="email" autoComplete="email" required />}
       </Field>
       {registering && (
         <Field label="名称">
-          {(id) => <input id={id} name="name" autoComplete="nickname" required maxLength={40} />}
+          {(id) => <input id={id} name="name" autoComplete="nickname" required maxLength={32} />}
         </Field>
       )}
       <Field label="密码">
@@ -143,7 +164,7 @@ function CreateForm({ onCreated }: { onCreated: (secret: string) => void }) {
           />
         )}
       </Field>
-      <Field label="名称">{(id) => <input id={id} name="name" required maxLength={40} />}</Field>
+      <Field label="名称">{(id) => <input id={id} name="name" required maxLength={24} />}</Field>
       <Field label="简介">
         {(id) => (
           <input id={id} name="summary" required maxLength={60} placeholder="一行，最多 60 字" />

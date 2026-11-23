@@ -4,15 +4,34 @@ import type { Context } from '../context.js'
 import { logoUrl } from '../logo.js'
 import { liveVersion } from '../db.js'
 import { HttpError, invalid, newerVersion, object, text } from '../validation.js'
+import { INVITE_NOTE_MAX, createInvite, inviteDays, listInvites, revokeInvite } from '../invites.js'
 
 export function adminRoutes(app: FastifyInstance, context: Context): void {
-  const { db, auth, now } = context
+  const { db, auth, rate, now } = context
   app.delete<{ Params: { id: string } }>('/api/v1/admin/plugins/:id/logo', async (request) => {
     auth.admin(request)
     if (!db.prepare('SELECT id FROM plugins WHERE id = ?').get(request.params.id))
       throw new HttpError(404, '插件不存在')
     db.prepare('DELETE FROM logos WHERE plugin_id = ?').run(request.params.id)
     return { logoUrl: null }
+  })
+
+  app.get('/api/v1/admin/invites', async (request) => {
+    auth.admin(request)
+    return { invites: listInvites(db, now()) }
+  })
+  app.post('/api/v1/admin/invites', async (request) => {
+    const admin = auth.admin(request)
+    rate.check(`admin-invite:${admin.id}`, 30, 3600000)
+    const body = object(request.body)
+    const note = body.note === undefined ? '' : text(body.note, INVITE_NOTE_MAX, '备注', true)
+    // The code is returned only here; the platform keeps nothing but its hash.
+    return createInvite(db, { now: now(), days: inviteDays(body.days), note, createdBy: admin.id })
+  })
+  app.delete<{ Params: { id: string } }>('/api/v1/admin/invites/:id', async (request) => {
+    auth.admin(request)
+    revokeInvite(db, request.params.id, now())
+    return { ok: true }
   })
 
   app.get('/api/v1/admin/reviews', async (request) => {

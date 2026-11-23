@@ -332,16 +332,47 @@ test('cloud rows and detail logos share the HN glyph and actionable credential s
   )
   assert.equal(row!.glyph, 'HN')
   assert.equal(row!.state, '需要设置')
-  assert.match(
-    renderToStaticMarkup(
-      createElement(PluginLogo, { name: row!.name, glyph: row!.glyph, sources: [] }),
-    ),
-    />HN<\/span>/,
+  const cloudLogo = renderToStaticMarkup(
+    createElement(PluginLogo, { id: row!.id, name: row!.name, glyph: row!.glyph, sources: [] }),
   )
-  assert.match(
-    renderToStaticMarkup(createElement(PluginLogo, { name: '概念卡', sources: [] })),
-    />概<\/span>/,
+  assert.match(cloudLogo, />HN<\/span>/)
+  assert.match(cloudLogo, /class="plugin-logo is-tinted"/)
+  assert.doesNotMatch(cloudLogo, /<svg/)
+})
+
+test('every built-in plugin has a colour illustration, and a picked or platform image wins', async () => {
+  const { createElement } = await import('react')
+  const { renderToStaticMarkup } = await import('react-dom/server')
+  const { PluginLogo } = await import('../apps/desktop/src/renderer/src/components/PluginList.js')
+  const { PLUGIN_ART } = await import('../apps/desktop/src/renderer/src/components/PluginArt.js')
+  const ids = [...CATEGORIES.map((category) => `local:${category.id}`), 'local:todo']
+  assert.deepEqual(
+    Object.keys(PLUGIN_ART).sort(),
+    [...ids].sort(),
+    'one picture per built-in plugin',
   )
+  for (const id of ids) {
+    const html = renderToStaticMarkup(createElement(PluginLogo, { id, name: id, sources: [] }))
+    assert.match(
+      html,
+      /^<span class="plugin-logo is-tinted" style="--plugin-hue:#[0-9a-f]{6}" aria-hidden="true"><svg viewBox="0 0 48 48"/,
+      id,
+    )
+    assert.doesNotMatch(html, /<img/, id)
+    const large = renderToStaticMarkup(
+      createElement(PluginLogo, { id, name: id, sources: [], large: true }),
+    )
+    assert.match(large, /class="plugin-logo is-tinted is-large"/, id)
+  }
+  const picked = renderToStaticMarkup(
+    createElement(PluginLogo, {
+      id: 'local:concept',
+      name: '概念卡',
+      sources: ['file:///picked.png', 'https://platform/logo.png'],
+    }),
+  )
+  assert.match(picked, /<img alt="" src="file:\/\/\/picked.png"\/>/)
+  assert.doesNotMatch(picked, /<svg|is-tinted/)
 })
 
 test('all plugin statuses render a mark alongside the status word', async () => {

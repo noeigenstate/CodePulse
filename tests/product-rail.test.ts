@@ -528,6 +528,15 @@ test('the overlay page has no repeated h2 and plugins have no page subtitle', as
         createElement(PluginManager, { product, locale, active: false }),
       )
       assert.match(plugins, /<h1 class="page-sr">插件<\/h1>/)
+      // Search and the display rules sit beside the tabs; no rules card, no empty platform group.
+      assert.match(
+        plugins,
+        /class="plugin-manager-tools"><div class="plugin-search">.*role="searchbox" aria-label="搜索插件".*>展示规则<\/button><\/div>/,
+      )
+      assert.doesNotMatch(
+        plugins,
+        /plugin-display-rules|打开插件市场后|还没有安装平台插件|平台插件/,
+      )
       assert.doesNotMatch(
         plugins,
         /管理已安装的插件，或从市场添加|class="page-header"|class="page-header-subtitle"/,

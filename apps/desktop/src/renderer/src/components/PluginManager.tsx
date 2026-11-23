@@ -13,6 +13,7 @@ import { PluginStatus } from './PluginStatus.js'
 import { AssistantPanel } from './AssistantPanel.js'
 import { PageHeader } from './PageHeader.js'
 import { PluginStore } from './PluginStore.js'
+import { PluginSearch } from './PluginSearch.js'
 import type { ProductNavigation } from './ProductFrame.js'
 import type { Locale } from '../lib/i18n.js'
 
@@ -29,6 +30,7 @@ export function PluginManager({
   const [route, setRoute] = useState<string>()
   const [selected, setSelected] = useState<string>()
   const [rulesOpen, setRulesOpen] = useState(false)
+  const [query, setQuery] = useState('')
   const [todoCount, setTodoCount] = useState<number>()
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -92,6 +94,10 @@ export function PluginManager({
     local.snapshot?.cards ?? [],
   )
   const current = [...rows, ...platformRows].find((row) => row.id === selected)
+  const needle = query.trim().toLocaleLowerCase()
+  const matches = (row: PluginRow) => !needle || row.name.toLocaleLowerCase().includes(needle)
+  const localHits = rows.filter(matches)
+  const platformHits = platformRows.filter(matches)
   const openDetails = (id: string) => {
     setError('')
     setRulesOpen(false)
@@ -119,31 +125,48 @@ export function PluginManager({
     <section className="product-page plugin-manager">
       <div className="plugin-manager-header">
         <PageHeader title="插件" />
-        <div className="product-page-tabs" role="tablist" aria-label="插件页面">
-          <button
-            type="button"
-            role="tab"
-            id="plugins-installed-tab"
-            aria-controls="plugins-installed"
-            aria-selected={tab === 'installed'}
-            onClick={() => {
-              closeDetails()
-              setTab('installed')
-              void refresh()
-            }}
-          >
-            已安装
-          </button>
-          <button
-            type="button"
-            role="tab"
-            id="plugins-market-tab"
-            aria-controls="plugins-market"
-            aria-selected={tab === 'market'}
-            onClick={() => openMarket()}
-          >
-            插件市场
-          </button>
+        <div className="plugin-manager-bar">
+          <div className="product-page-tabs" role="tablist" aria-label="插件页面">
+            <button
+              type="button"
+              role="tab"
+              id="plugins-installed-tab"
+              aria-controls="plugins-installed"
+              aria-selected={tab === 'installed'}
+              onClick={() => {
+                closeDetails()
+                setTab('installed')
+                void refresh()
+              }}
+            >
+              已安装
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="plugins-market-tab"
+              aria-controls="plugins-market"
+              aria-selected={tab === 'market'}
+              onClick={() => openMarket()}
+            >
+              插件市场
+            </button>
+          </div>
+          {tab === 'installed' && (
+            <div className="plugin-manager-tools">
+              <PluginSearch value={query} onChange={setQuery} />
+              <button
+                type="button"
+                className="product-button"
+                onClick={() => {
+                  setSelected(undefined)
+                  setRulesOpen(true)
+                }}
+              >
+                展示规则
+              </button>
+            </div>
+          )}
         </div>
       </div>
       {(error || cloudError) && !current && !rulesOpen && (
@@ -158,93 +181,66 @@ export function PluginManager({
         className="product-scroll plugin-installed"
         hidden={tab !== 'installed'}
       >
-        <div className="plugin-display-rules">
-          <div>
-            <strong>展示规则</strong>
-            <p className="page-muted">
-              {local.draft.enabled ? '已开启' : '已关闭'} · 安静时段 {local.draft.quietStart}:00–
-              {local.draft.quietEnd}:00 · 每 {local.draft.gapMinutes} 分钟一张 · 每天最多{' '}
-              {local.draft.dailyLimit} 张
-            </p>
-          </div>
-          <button
-            type="button"
-            className="product-button is-compact"
-            onClick={() => {
-              setSelected(undefined)
-              setRulesOpen(true)
-            }}
-          >
-            修改
-          </button>
-        </div>
-        <div className="plugin-group-title">
-          <h2>本机插件</h2>
-          <p className="page-muted">随应用自带，在这台电脑上运行</p>
-        </div>
-        {!local.snapshot && (
+        {!local.snapshot && !needle && (
           <p className="plugin-empty" role="status">
             {local.loadError || '正在读取本机插件…'}
           </p>
         )}
-        <PluginList
-          label="本机插件"
-          rows={rows}
-          logos={logos}
-          selected={selected}
-          busy={busy}
-          showSource={false}
-          onOpen={openDetails}
-          onToggle={toggle}
-        />
-        <div className="plugin-group-title">
-          <h2>平台插件</h2>
-          <p className="page-muted">从插件市场安装，云端生成卡片</p>
-        </div>
-        {cloud?.state === 'unregistered' && (
-          <p className="plugin-empty">
-            打开插件市场后，这里会列出平台插件。
-            <button type="button" className="page-link" onClick={() => openMarket()}>
-              打开插件市场
-            </button>
-          </p>
+        {localHits.length > 0 && (
+          <>
+            <div className="plugin-group-title">
+              <h2>本机插件</h2>
+              <p className="page-muted">随应用自带，在这台电脑上运行</p>
+            </div>
+            <PluginList
+              label="本机插件"
+              rows={localHits}
+              logos={logos}
+              selected={selected}
+              busy={busy}
+              showSource={false}
+              highlight={needle}
+              onOpen={openDetails}
+              onToggle={toggle}
+            />
+          </>
         )}
-        {cloud?.state === 'offline' && (
+        {/* Only plugins someone installed earn a group; the market tab is the way to find more. */}
+        {platformHits.length > 0 && (
+          <>
+            <div className="plugin-group-title">
+              <h2>平台插件</h2>
+              <p className="page-muted">从插件市场安装，云端生成卡片</p>
+            </div>
+            {cloud?.state === 'offline' && (
+              <p className="plugin-empty" role="status">
+                插件平台暂未连接。
+                <button
+                  type="button"
+                  className="page-link"
+                  disabled={loading}
+                  onClick={() => void refresh()}
+                >
+                  重试
+                </button>
+              </p>
+            )}
+            <PluginList
+              label="平台插件"
+              rows={platformHits}
+              logos={logos}
+              selected={selected}
+              busy={busy || cloud?.state !== 'ok'}
+              highlight={needle}
+              onOpen={openDetails}
+              onToggle={toggle}
+            />
+          </>
+        )}
+        {needle && !localHits.length && !platformHits.length && (
           <p className="plugin-empty" role="status">
-            插件平台暂未连接。
-            <button
-              type="button"
-              className="page-link"
-              disabled={loading}
-              onClick={() => void refresh()}
-            >
-              重试
-            </button>
+            没有找到与「{query.trim()}」相关的插件。
           </p>
-        )}
-        {!cloud && (
-          <p className="plugin-empty" role="status">
-            正在读取插件…
-          </p>
-        )}
-        {cloud?.state === 'ok' && !platformRows.length && (
-          <p className="plugin-empty">
-            还没有安装平台插件。
-            <button type="button" className="page-link" onClick={() => openMarket()}>
-              浏览插件市场
-            </button>
-          </p>
-        )}
-        {platformRows.length > 0 && (
-          <PluginList
-            label="平台插件"
-            rows={platformRows}
-            logos={logos}
-            selected={selected}
-            busy={busy || cloud?.state !== 'ok'}
-            onOpen={openDetails}
-            onToggle={toggle}
-          />
         )}
       </div>
       {tab === 'market' && active && (

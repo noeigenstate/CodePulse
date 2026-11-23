@@ -2376,6 +2376,47 @@ app.whenReady().then(async () => {
     assert.equal(storeReason.font, '13px')
     assert.equal(storeReason.color, rgb(storeReason.muted))
     await capture('plugin-store-offline')
+    // Search sits beside the tabs and filters the installed plugins by name, marking the match.
+    await openInstalledPlugins(main)
+    const searchPlugins = (text: string) =>
+      main!.webContents.executeJavaScript(
+        `(()=>{const i=document.querySelector('.plugin-search input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,${JSON.stringify(text)});i.dispatchEvent(new Event('input',{bubbles:true}))})()`,
+      )
+    const pluginNames = () =>
+      main!.webContents.executeJavaScript(
+        `JSON.stringify(Array.from(document.querySelectorAll('#plugins-installed .plugin-row strong')).map(s=>s.innerHTML))`,
+      ) as Promise<string>
+    for (const [width, height] of [
+      [720, 600],
+      [1440, 900],
+    ] as const) {
+      main.setContentSize(width, height)
+      await searchPlugins('日历')
+      await until(
+        async () => (await pluginNames()) === '["<mark>日历</mark>"]',
+        `plugin search filters to the calendar at ${width}`,
+      )
+      const tools = await main.webContents.executeJavaScript(`(()=>{
+        const r=document.querySelector('.plugin-manager-tools').getBoundingClientRect();
+        return {right:r.right,width:innerWidth,scroll:document.documentElement.scrollWidth<=innerWidth};
+      })()`)
+      assert.ok(
+        tools.right <= tools.width && tools.scroll,
+        'plugin tools fit: ' + JSON.stringify(tools),
+      )
+      if (captureAll) await capture(`plugin-search-${width}`)
+    }
+    await searchPlugins('不存在的插件')
+    await until(
+      () =>
+        main!.webContents.executeJavaScript(
+          `document.querySelector('#plugins-installed .plugin-empty')?.textContent === '没有找到与「不存在的插件」相关的插件。' && !document.querySelector('#plugins-installed .plugin-row')`,
+        ),
+      'plugin search reports no match',
+    )
+    await searchPlugins('')
+    main.setContentSize(720, 600)
+    await wait(350)
     await openInstalledPlugins(main, 'local:todo')
     if (platform === 'win32') {
       const detail = await main.webContents.executeJavaScript(`(() => {

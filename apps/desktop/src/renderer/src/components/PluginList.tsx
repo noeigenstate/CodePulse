@@ -1,6 +1,7 @@
 import { useState, type CSSProperties } from 'react'
 import { PluginStatus } from './PluginStatus.js'
 import { PLATFORM_PLUGIN_HUE, PLUGIN_ART } from './PluginArt.js'
+import { Highlight } from './PluginSearch.js'
 import type { PluginRow } from '../lib/pluginPresentation.js'
 
 export type { PluginRow } from '../lib/pluginPresentation.js'
@@ -78,6 +79,7 @@ export function PluginList({
   selected,
   busy,
   showSource = true,
+  highlight,
   onOpen,
   onToggle,
 }: {
@@ -88,6 +90,8 @@ export function PluginList({
   busy: boolean
   /** False when the group heading already says where these plugins come from. */
   showSource?: boolean
+  /** Lower-cased search text to mark in each name. */
+  highlight?: string
   onOpen: (id: string) => void
   onToggle: (row: PluginRow) => void
 }): JSX.Element {
@@ -116,7 +120,9 @@ export function PluginList({
               sources={[logos[row.id], row.logo]}
             />
             <div>
-              <strong>{row.name}</strong>
+              <strong>
+                <Highlight text={row.name} needle={highlight} />
+              </strong>
               {showSource && <p className="page-muted">{row.source}</p>}
             </div>
           </div>

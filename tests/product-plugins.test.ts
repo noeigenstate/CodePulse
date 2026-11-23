@@ -375,6 +375,42 @@ test('every built-in plugin has a colour illustration, and a picked or platform 
   assert.doesNotMatch(picked, /<svg|is-tinted/)
 })
 
+test('plugin search marks the matching part of each name, ignoring case', async () => {
+  const { createElement } = await import('react')
+  const { renderToStaticMarkup } = await import('react-dom/server')
+  const { PluginList } = await import('../apps/desktop/src/renderer/src/components/PluginList.js')
+  const { Highlight } = await import('../apps/desktop/src/renderer/src/components/PluginSearch.js')
+  const mark = (text: string, needle?: string) =>
+    renderToStaticMarkup(createElement(Highlight, { text, needle }))
+  assert.equal(mark('X 与 meme', 'meme'), 'X 与 <mark>meme</mark>')
+  assert.equal(mark('Hacker News', 'news'), 'Hacker <mark>News</mark>')
+  assert.equal(mark('日历', '天气'), '日历')
+  assert.equal(mark('日历', ''), '日历')
+  const row = {
+    id: 'local:calendar',
+    name: '日历',
+    source: '本机',
+    enabled: true,
+    state: '正常',
+    count: '1 张',
+  } as const
+  const list = (highlight?: string) =>
+    renderToStaticMarkup(
+      createElement(PluginList, {
+        label: '本机插件',
+        rows: [row],
+        logos: {},
+        selected: undefined,
+        busy: false,
+        highlight,
+        onOpen: () => {},
+        onToggle: () => {},
+      }),
+    )
+  assert.match(list('历'), /<strong>日<mark>历<\/mark><\/strong>/)
+  assert.match(list(), /<strong>日历<\/strong>/)
+})
+
 test('all plugin statuses render a mark alongside the status word', async () => {
   const { createElement } = await import('react')
   const { renderToStaticMarkup } = await import('react-dom/server')

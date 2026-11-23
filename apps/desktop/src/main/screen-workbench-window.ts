@@ -1,6 +1,6 @@
 import { BrowserWindow } from 'electron'
 import type { WorkbenchWindowState } from '@codepulse/shared'
-import { scheduledWindowTheme, windowChromePalette } from './window-chrome.js'
+import { alwaysOnTopLevel, scheduledWindowTheme, windowChromePalette } from './window-chrome.js'
 
 /** A presentation window only: the host owns every collector and device connection. */
 export class ScreenWorkbenchWindow {
@@ -30,7 +30,8 @@ export class ScreenWorkbenchWindow {
       )
     )
       throw new Error('Invalid screen window settings')
-    if (typeof patch.pinned === 'boolean') this.window!.setAlwaysOnTop(patch.pinned)
+    if (typeof patch.pinned === 'boolean')
+      this.window!.setAlwaysOnTop(patch.pinned, alwaysOnTopLevel())
     if (typeof patch.fullscreen === 'boolean') this.window!.setFullScreen(patch.fullscreen)
     const next = this.state()
     this.broadcast('codepulse:workbench-window', next)

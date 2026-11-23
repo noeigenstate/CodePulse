@@ -65,3 +65,15 @@ export function scheduledWindowTheme(now: Date = new Date()): WindowTheme {
   const hour = now.getHours()
   return hour >= 8 && hour < 20 ? 'light' : 'dark'
 }
+
+/**
+ * The level for windows that stay above other apps. On Windows, Electron's default "floating" level
+ * only slots the window in right behind the taskbar. A full-screen app such as Remote Desktop
+ * demotes the taskbar, which takes the window down behind that app. Other levels use plain topmost
+ * there; macOS and Linux keep the default.
+ */
+export function alwaysOnTopLevel(
+  platform: NodeJS.Platform = process.platform,
+): 'pop-up-menu' | 'floating' {
+  return platform === 'win32' ? 'pop-up-menu' : 'floating'
+}

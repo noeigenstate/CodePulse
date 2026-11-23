@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { windowChromePalette } from '../apps/desktop/src/main/window-chrome.js'
+import { alwaysOnTopLevel, windowChromePalette } from '../apps/desktop/src/main/window-chrome.js'
 
 const SHELL_CSS = 'apps/desktop/src/renderer/src/components/product-shell.css'
 
@@ -46,4 +46,20 @@ test('the main area, which the caption buttons sit over, uses the same muted sur
   assert.match(css, /\.product-dragbar\s*\{[^}]*height:\s*env\(titlebar-area-height, 32px\)/)
   assert.match(css, /\.product-dragbar\s*\{[^}]*background:\s*var\(--surface-muted\)/)
   assert.doesNotMatch(css, /\.window-titlebar/)
+})
+
+test('windows that stay on top use a level that is really topmost on Windows', () => {
+  // "floating" only sits behind the taskbar there, so a full-screen Remote Desktop covers it.
+  assert.equal(alwaysOnTopLevel('win32'), 'pop-up-menu')
+  assert.equal(alwaysOnTopLevel('darwin'), 'floating')
+  assert.equal(alwaysOnTopLevel('linux'), 'floating')
+  for (const file of [
+    'apps/desktop/src/main/hud-surface.ts',
+    'apps/desktop/src/main/screen-workbench-window.ts',
+  ]) {
+    const source = readFileSync(file, 'utf8')
+    for (const call of source.match(/setAlwaysOnTop\(.*/g) ?? [])
+      assert.match(call, /alwaysOnTopLevel\(\)/, `${file}: ${call}`)
+    assert.match(source, /setAlwaysOnTop\(/, file)
+  }
 })

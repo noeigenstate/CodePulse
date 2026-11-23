@@ -10,7 +10,12 @@ import {
   type HudStageInfo,
   type StatusSnapshot,
 } from '@codepulse/shared'
-import { normalizeWindowTheme, windowChromePalette, type WindowTheme } from './window-chrome.js'
+import {
+  alwaysOnTopLevel,
+  normalizeWindowTheme,
+  windowChromePalette,
+  type WindowTheme,
+} from './window-chrome.js'
 import { HUD_AGENT_TYPES, HudProjection } from './hud-projection.js'
 import {
   HUD_WINDOW_SHELL_OPTIONS,
@@ -302,6 +307,7 @@ export class HudSurface {
         nodeIntegration: false,
       },
     })
+    window.setAlwaysOnTop(true, alwaysOnTopLevel())
     this.window = window
     this.setInteractive(false)
     this.visibilityChanged()

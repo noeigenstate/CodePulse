@@ -272,6 +272,7 @@ export function PluginManager({
           <>
             <header className="plugin-details-header">
               <PluginLogo
+                id={current.id}
                 name={current.name}
                 glyph={current.glyph}
                 sources={[logos[current.id], current.logo]}

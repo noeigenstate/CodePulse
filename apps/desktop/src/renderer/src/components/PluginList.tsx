@@ -1,15 +1,22 @@
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { PluginStatus } from './PluginStatus.js'
+import { PLATFORM_PLUGIN_HUE, PLUGIN_ART } from './PluginArt.js'
 import type { PluginRow } from '../lib/pluginPresentation.js'
 
 export type { PluginRow } from '../lib/pluginPresentation.js'
 
+/**
+ * A plugin's picture: the user's or the platform's image when one loads, otherwise the built-in
+ * illustration for that plugin, otherwise its initials, both on a tint of the plugin's hue.
+ */
 export function PluginLogo({
+  id,
   name,
   glyph,
   sources,
   large = false,
 }: {
+  id: string
   name: string
   glyph?: string
   sources: (string | null | undefined)[]
@@ -17,10 +24,24 @@ export function PluginLogo({
 }): JSX.Element {
   const [failed, setFailed] = useState<string[]>([])
   const src = sources.find((source) => source && !failed.includes(source))
-  return (
-    <span className={`plugin-logo${large ? ' is-large' : ''}`} aria-hidden="true">
-      {src ? (
+  const art = PLUGIN_ART[id]
+  const size = large ? ' is-large' : ''
+  if (src)
+    return (
+      <span className={`plugin-logo${size}`} aria-hidden="true">
         <img alt="" src={src} onError={() => setFailed((old) => [...old, src])} />
+      </span>
+    )
+  return (
+    <span
+      className={`plugin-logo is-tinted${size}`}
+      style={{ '--plugin-hue': art?.hue ?? PLATFORM_PLUGIN_HUE } as CSSProperties}
+      aria-hidden="true"
+    >
+      {art ? (
+        <svg viewBox="0 0 48 48" focusable="false">
+          {art.art}
+        </svg>
       ) : (
         (glyph ?? Array.from(name)[0])
       )}
@@ -88,7 +109,12 @@ export function PluginList({
           data-selected={selected === row.id}
         >
           <div className="plugin-who" role="cell">
-            <PluginLogo name={row.name} glyph={row.glyph} sources={[logos[row.id], row.logo]} />
+            <PluginLogo
+              id={row.id}
+              name={row.name}
+              glyph={row.glyph}
+              sources={[logos[row.id], row.logo]}
+            />
             <div>
               <strong>{row.name}</strong>
               {showSource && <p className="page-muted">{row.source}</p>}

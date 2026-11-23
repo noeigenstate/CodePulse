@@ -615,10 +615,19 @@
   height: 64px;
   font-size: var(--fs-xl);
 }
-.plugin-logo img {
+.plugin-logo img,
+.plugin-logo svg {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+/* Built-in illustrations and platform initials sit on a tint of the plugin's hue in either theme. */
+.plugin-logo.is-tinted {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--plugin-hue) 16%, var(--surface-solid));
+  /* Mixed toward the text colour so initials keep at least 4.5:1 on the tint in both themes. */
+  color: color-mix(in srgb, var(--plugin-hue) 60%, var(--ink));
+  font-weight: var(--fw-strong);
 }
 .plugin-state {
   font-size: var(--fs-sm);
